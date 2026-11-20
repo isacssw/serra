@@ -6,7 +6,7 @@ Thanks for trying Serra. It is an alpha, so bug reports from real installs are t
 
 Open an issue with the **Bug report** template. Include the output of `pnpm run doctor --profile …` and the relevant lines of `logs/bot.log`. Before pasting, remove tokens, Slack IDs, names, repository paths and anything from your knowledge pages you don't want public. Never paste the contents of `.env` or `secrets.json`.
 
-Security problems go to [SECURITY.md](SECURITY.md), not to a public issue.
+Security problems go to [SECURITY.md](SECURITY.md), not to a public issue. Everyone taking part follows the [Code of Conduct](CODE_OF_CONDUCT.md).
 
 ## Development setup
 
@@ -33,6 +33,20 @@ To try a change against a real bot, use a separate Slack app and profile from th
 | `docs/` | Configuration, knowledge interview and app notes |
 
 ## Pull requests
+
+`main` is protected: nobody pushes to it directly, including the maintainer. Every change comes in as a pull request.
+
+1. Fork the repository (or branch, if you have access) and make your change on a branch off `main`.
+2. Open a PR and fill in the template. For a larger change, open an issue first so we can agree on the approach.
+3. CI (`check`) runs `pnpm check`, `pnpm test`, `pnpm knowledge` and the installer's `--help` on macOS. A first-time contributor's run waits for the maintainer to approve it.
+4. The PR needs an approving review from the code owner, all review conversations resolved, and a branch that is up to date with `main` (use **Update branch**). New pushes dismiss earlier approvals.
+5. It lands as a single squash commit, and the branch is deleted.
+
+### Commits and PR titles
+
+The PR title and description become the commit on `main`, so write them for someone reading `git log` later: a plain sentence about what changes for a user (`Keep the bot working when the knowledge index runs over its cap`), and a description that says why. A `docs:` prefix is fine for documentation-only changes. Commits inside the PR can be as messy as you like.
+
+### What makes a PR easy to merge
 
 - Keep each PR to one change, with tests for new behaviour. `pnpm check` and `pnpm test` must pass.
 - Node runs the TypeScript directly with type stripping, so use only erasable syntax (no enums, namespaces or parameter properties) and include the `.ts` extension in imports.
