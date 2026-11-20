@@ -1,16 +1,55 @@
 name: Bug report
-description: Something in Serra doesn't work as the README says.
-labels: [bug]
+description: Something in Serra breaks, crashes, regressed, or doesn't work as the README says.
+title: "[Bug]: "
+labels: [bug, needs-triage]
 body:
   - type: markdown
     attributes:
       value: |
-        Thanks for reporting. **Remove tokens, Slack IDs, names, local paths and private repository details** from anything you paste. Security problems go to SECURITY.md instead.
-  - type: textarea
-    id: what
+        One problem per issue. **Remove tokens, Slack IDs, names, local paths and private repository details** from anything you paste.
+        Security problems go to SECURITY.md instead. Ideas go in a feature request.
+  - type: checkboxes
+    id: checks
     attributes:
-      label: What happened
-      description: What you did, what you expected, and what happened instead.
+      label: Before submitting
+      options:
+        - label: I searched open and closed issues and didn't find a duplicate.
+          required: true
+        - label: I removed tokens and private details from everything below.
+          required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options: [Daemon / bot in the chat channel, The app, Setup, install or doctor, Background service (launchd), Knowledge pages, Docs, Not sure]
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Run pnpm bot activate --profile …
+        2. Mention the bot in a thread with …
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: dropdown
+    id: impact
+    attributes:
+      label: Impact
+      options: [Blocks me completely, Often fails or degrades, Occasional or minor, Cosmetic]
     validations:
       required: true
   - type: textarea
@@ -23,7 +62,7 @@ body:
     id: log
     attributes:
       label: Relevant log lines
-      description: From the profile's `logs/bot.log` (redacted).
+      description: Only the relevant lines from the profile's `logs/bot.log` (redacted).
       render: text
   - type: input
     id: version
@@ -40,3 +79,8 @@ body:
     attributes:
       label: How you run it
       options: [Foreground (pnpm start), Background service (pnpm bot activate), The app]
+  - type: textarea
+    id: workaround
+    attributes:
+      label: Workaround
+      description: Anything that got you unstuck, if you found something.

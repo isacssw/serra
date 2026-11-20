@@ -1,7 +1,19 @@
 name: Feature request
-description: Something Serra should do.
-labels: [enhancement]
+description: Propose something Serra should do. Discuss it here before anyone writes a PR.
+title: "[Idea]: "
+labels: [enhancement, needs-triage]
 body:
+  - type: markdown
+    attributes:
+      value: |
+        Feature PRs are only accepted when the maintainer asks for one, so start here. Accepted ideas get the `accepted` label.
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched open and closed issues and didn't find the same idea.
+          required: true
   - type: textarea
     id: problem
     attributes:
@@ -13,3 +25,7 @@ body:
     id: idea
     attributes:
       label: What you'd like
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: What you do today instead
