@@ -11,7 +11,7 @@ import { stoppedStatusSource } from '../app/main/status.ts';
 import {
   addPersonFieldMessage, addPersonProblem, appliesLabel, botForm, branchPatternForm, channelIdProblem, emptyTriggerRow,
   formChanged, memberIdProblem, ownerForm, parseRepositories, parseTriggers, peopleRows, pendingRestart, projectForm,
-  repositoryRows, reviewForm, sectionList, serviceLabelForm, t3BinForm, triggerRows, workerForm, type SectionForm,
+  repositoryRows, reviewForm, sectionList, serviceLabelForm, t3BinForm, triggerRows, updatesForm, workerForm, type SectionForm,
 } from '../app/renderer/screens/settings/settings.logic.ts';
 import { loadConfig } from '../src/config.ts';
 import { validateProfile, type BotStatus, type Profile, type ProfileSection } from '../src/contracts.ts';
@@ -40,9 +40,10 @@ const fullProfile = (): Required<Profile> => ({
   serviceLabel: 'dev.serra.friday',
   t3Bin: '/Users/you/.t3/bin/t3',
   branchPattern: '{id}/{slug}-{stamp}',
+  updates: { source: '/Users/you/git/serra', ref: 'origin/main' },
 });
 
-const forms: SectionForm[] = [botForm, ownerForm, reviewForm, serviceLabelForm, projectForm, workerForm, branchPatternForm, t3BinForm] as SectionForm[];
+const forms: SectionForm[] = [botForm, ownerForm, reviewForm, serviceLabelForm, projectForm, workerForm, branchPatternForm, t3BinForm, updatesForm] as SectionForm[];
 
 // --- field validation messages --------------------------------------------------------------------------------
 

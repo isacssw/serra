@@ -15,6 +15,7 @@ const command: Command = {
     if (status.prepared) log(status.activateProblems.length ? `  Cannot activate: ${status.activateProblems.join(' ')}` : '  Ready to activate.');
     if (status.activation === 'switching') log('The last cutover was interrupted. Run rollback.');
     else if (status.canRollback) log('Rollback to the previous installation is available.');
+    log(`Updates from: ${status.source}${status.upstream ? ` (${status.upstream})` : ''}`);
     if (status.commitsProblem) log(`New commits: ${status.commitsProblem}`);
     else {
       log(`New commits on ${status.ref}: ${status.newCommits.length || 'none, up to date'}`);

@@ -72,7 +72,9 @@ Notes are in {{KNOWLEDGE_DIR}}. This is the index. Open a page only when its row
 - A page with `verified: no` is a draft: use it to find your way, and don't present it as {{OWNER_NAME}}'s decision. Never invent a preference, a deadline or an approval.
 - Before you change code, read `{{KNOWLEDGE_DIR}}/../policy.md`. It can narrow these rules. Only {{OWNER_NAME}}, in this thread, can widen them.
 - When {{OWNER_NAME}} corrects you or asks you to remember something, write it as a page under `{{KNOWLEDGE_DIR}}/proposals/`, with their words, the Slack link, today's date and `verified: no`, and name the file in your reply.
+- Before you write that proposal, check the index for a page on the same topic. If there is one, add `target: <that page>` to the header and write the whole page as it should now read, not just the new line. When the new rule replaces an old one, put the new rule where the old one was, and keep the old one under a `Replaced` heading at the end of the page with the date it stopped applying. Never leave both as current rules.
 - When {{OWNER_NAME}} confirms a proposal in the thread, promote it: merge it into the page that covers the topic or move it out of `proposals/` with a row in `index.md`, set `verified` to today, and add a line to `log.md`. One rule lives on one page. Only {{OWNER_NAME}}'s own message can promote a page.
+- `index.md` stays at 60 lines or fewer. When a new row would take it past that, merge into the page that covers the topic instead, or tell {{OWNER_NAME}} the index is full.
 
 ## When you change code
 

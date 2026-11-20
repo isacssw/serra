@@ -42,6 +42,12 @@ export interface Profile {
    * unique suffix, {DDMM} and {MMDD} today's date. Must contain {slug} and {stamp}, so two jobs never share a branch.
    */
   branchPattern?: string;
+  /**
+   * Where Updates and Prepare get new code. `source` is a git checkout of the Serra repository (a packaged app has
+   * none of its own) and `ref` the branch to follow in it, `origin/main` by default. Without it, the code the app or
+   * CLI runs from is used.
+   */
+  updates?: { source: string; ref?: string };
 }
 
 export const DEFAULT_BRANCH_PATTERN = '{id}/{slug}-{stamp}';
@@ -152,6 +158,12 @@ export const validateProfile = (value: unknown): Profile => {
   }
   if (value.serviceLabel !== undefined && !/^[a-zA-Z0-9][a-zA-Z0-9.-]+$/.test(string(value, 'serviceLabel'))) throw new Error('Invalid service label');
   if (value.t3Bin !== undefined && !isAbsolute(string(value, 't3Bin'))) throw new Error('t3Bin must be absolute');
+  if (value.updates !== undefined) {
+    const updates = object('updates');
+    if (!isAbsolute(string(updates, 'source'))) throw new Error('updates.source must be an absolute path');
+    // `ref` becomes a git argument, so it may not read as a flag.
+    if (updates.ref !== undefined && string(updates, 'ref').startsWith('-')) throw new Error('Invalid updates.ref');
+  }
   if (value.branchPattern !== undefined) {
     const problem = branchPatternProblem(string(value, 'branchPattern'));
     if (problem) throw new Error(problem);

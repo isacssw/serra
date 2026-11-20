@@ -40,7 +40,7 @@ The version shown in the app is `extraMetadata.version` in `electron-builder.yml
 | `assets/brand/serra-status-*.png` | The menubar icons (APP-11), loaded from `assets/brand` next to `app/` |
 | `node_modules/` | Production dependencies only (`@slack/bolt`, `electron-store`) |
 
-Beside it, `Serra.app/Contents/Resources/release-source/` holds the daemon's own code (`src/`, `templates/`, `examples/`, the `docs/*.md` pages, and the original `package.json` and `pnpm-lock.yaml`). Updates › Prepare and Install the service make releases from it: the app folder has only the bundle, and its `package.json` has no devDependencies, so `pnpm install --frozen-lockfile` would refuse it. `pnpm app:build` stages it in `app/out/release-source/`.
+Beside it, `Serra.app/Contents/Resources/release-source/` holds the daemon's own code (`src/`, `templates/`, `examples/`, the `docs/*.md` pages, and the original `package.json` and `pnpm-lock.yaml`). Updates › Prepare and Install the service make releases from it: the app folder has only the bundle, and its `package.json` has no devDependencies, so `pnpm install --frozen-lockfile` would refuse it. `pnpm app:build` stages it in `app/out/release-source/`. That copy is frozen at build time and has no git: to follow the repository's new commits from a packaged app, set the profile's `updates.source` to a clone of it (Settings › Worker › Update source, see [configuration](../configuration.md)). Updates and Prepare then use that clone instead.
 
 [`app/main/runtime-files.ts`](../../app/main/runtime-files.ts) lists the files the code reads from disk. `tests/app-package.test.ts` checks that `electron-builder.yml` copies each of them, and `--smoke` checks that they are there in the built app.
 

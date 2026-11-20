@@ -241,3 +241,36 @@ test('screen logic: limits match the service, and an app task spins on T3\'s wor
   assert.equal(rowIcon({ ...task, channel: 'C0123456789' }, { state: 'stopped' }), 'paused');
   assert.match(linkButtons(task).find((link) => link.kind === 'slack')!.hint, /Started in the app/);
 });
+
+test('an index pushed over its cap outside the app still lets the daemon and a task start a job with every row', async (t) => {
+  const { profileDir, recorded } = fixture(t);
+  const config = loadConfig({ profileDir, env: {} });
+  const rows = Array.from({ length: 70 }, (_, i) => `| topic ${i} | \`owner/page-${i}.md\` |`).join('\n');
+  writeFileSync(join(config.knowledgeDir, 'index.md'), `# Index\n\n| When | Open |\n|---|---|\n${rows}\n`);
+
+  let daemon: StartThreadInput | undefined;
+  const quiet = (): void => {};
+  const client = {
+    users: { info: async () => ({ user: { real_name: 'Alex' } }) },
+    chat: { getPermalink: async () => ({ permalink: 'https://acme.slack.com/archives/D0123456789/p100' }), postMessage: async () => ({ ts: '1' }) },
+    reactions: { add: async () => ({}), remove: async () => ({}) },
+    assistant: { threads: { setStatus: async () => ({ ok: true }) } },
+    conversations: { replies: async () => ({ messages: [] }) },
+  } as unknown as webApi.WebClient;
+  const bot = createBot({
+    config, client, botUserId: () => 'UBOT', store: createStore(config.statePath),
+    loadIndex: createKnowledge(config.knowledgeDir).loadIndex,
+    logger: { info: quiet, warn: quiet, debug: quiet, error: (message) => assert.fail(message) },
+    t3: {
+      startThread: async (input) => { daemon = input; return 'slack-thread'; },
+      sendToThread: async () => {}, showThread: async () => assert.fail('not polled'),
+    },
+    fetchBase: noFetch, now: () => NOW.getTime(),
+  });
+  await bot.handle({ channel: 'D0123456789', threadTs: '100.000', messageTs: '100.000', user: OWNER, text: REQUEST, direct: true });
+  assert.ok(daemon, 'the daemon started a thread');
+  assert.match(daemon.brief, /topic 0 \|[\s\S]*topic 69 \|/, 'the whole index is in the brief');
+
+  await startTask(profileDir, REQUEST, { fetchBase: noFetch, now: () => NOW });
+  assert.match(recorded()[0]!.input, /topic 69 \|/);
+});

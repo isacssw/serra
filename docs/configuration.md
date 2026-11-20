@@ -52,9 +52,12 @@ Optional fields:
   "worker": { "provider": "claude", "model": "opus" },
   "t3Bin": "/absolute/path/to/t3",
   "serviceLabel": "dev.serra.friday",
-  "branchPattern": "{id}/{slug}-{stamp}"
+  "branchPattern": "{id}/{slug}-{stamp}",
+  "updates": { "source": "/absolute/path/to/serra", "ref": "origin/main" }
 }
 ```
+
+`updates` says where Updates and Prepare get new Serra code. `source` is a git checkout of the Serra repository and `ref` the branch to follow in it (`origin/main` by default). Updates counts the commits on `ref` the active release lacks, and **Check for updates** fetches that branch from its remote first; Prepare copies the checkout as it is (keep it on `ref` and run `git pull` there). Without `updates`, both use the code they run from: fine for a checkout, but a packaged app has no git, so its Updates screen can't list new commits and Prepare can only re-release the code the app was built with. Set it in the app under Settings › Worker › Update source. It applies at once; the daemon doesn't read it.
 
 `branchPattern` names the task branch each job's worktree starts on. Placeholders: `{id}` the bot ID, `{slug}` from the request, `{stamp}` a short unique suffix, `{DDMM}` and `{MMDD}` today's date. It must contain `{slug}` and `{stamp}` so two jobs never share a branch, and setup rejects patterns that can't make a valid Git branch. The default is `{id}/{slug}-{stamp}`. Example for a team that names branches after a placeholder ticket: `TEAM-{DDMM}/{slug}-{stamp}`. The worker can still rename the branch before its first push.
 

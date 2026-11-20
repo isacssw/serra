@@ -87,6 +87,16 @@ const codeCommit = async (root: string): Promise<{ commit?: string; dirty?: bool
     return { commit, dirty: changes.length > 0 };
   } catch { return {}; }
 };
+/** The branch Updates follows in the profile's update source when `updates.ref` isn't set. */
+export const DEFAULT_UPDATES_REF = 'origin/main';
+
+/** Prepare copies the checkout as it is; say so when that isn't the branch Updates follows. */
+const warnIfBehind = async (root: string, commit: string, ref: string, log: DeployLog): Promise<void> => {
+  try {
+    const target = (await run('git', ['-C', root, 'rev-parse', '--verify', '--quiet', `${ref}^{commit}`], { timeoutMs: 10_000 })).trim();
+    if (target && target !== commit) log(`Note: ${root} is at ${commit.slice(0, 12)}, not ${ref} (${target.slice(0, 12)}). Run git pull there to release ${ref}.`);
+  } catch { /* no such ref: status reports it */ }
+};
 export const releasedPaths = ['src', 'templates', 'docs', 'examples', 'README.md', 'package.json', 'pnpm-lock.yaml', 'tsconfig.json'];
 /** What the daemon can't run without. The rest of `releasedPaths` is copied when it is there. */
 const requiredPaths = ['src', 'templates', 'examples', 'package.json', 'pnpm-lock.yaml', 'tsconfig.json'];
@@ -173,11 +183,14 @@ export interface PrepareOptions {
 }
 
 /** Snapshot code and install its dependencies without touching launchd or the live checkout. */
-export const prepareRelease = async (directory: string, { root = codeRoot, install = true, node, log = quiet }: PrepareOptions = {}): Promise<Prepared> => {
+export const prepareRelease = async (directory: string, { root, install = true, node, log = quiet }: PrepareOptions = {}): Promise<Prepared> => {
   directory = resolve(directory);
   node ??= defaultNode();
   const config = loadConfig({ profileDir: directory, env: {} });
-  root = releaseSourceRoot(root);
+  // The profile's update source (a checkout of the Serra repository) wins over the code this runs from.
+  const updates = config.profile.updates;
+  root = releaseSourceRoot(root ?? updates?.source ?? codeRoot);
+  log(`Taking the code from ${root}`);
   const preparedAt = new Date().toISOString();
   const id = preparedAt.replace(/[:.]/g, '-') + `-${process.pid}`;
   const release = join(directory, 'releases', id);
@@ -190,6 +203,7 @@ export const prepareRelease = async (directory: string, { root = codeRoot, insta
   }
   const source = await codeCommit(root);
   if (source.commit) log(`Code at ${source.commit.slice(0, 12)}${source.dirty ? ' with uncommitted changes' : ''}`);
+  if (source.commit && updates) await warnIfBehind(root, source.commit, updates.ref ?? DEFAULT_UPDATES_REF, log);
   writeFileSync(join(release, 'service.plist'), servicePlist({ directory, release, label: config.serviceLabel, node }), { mode: 0o600 });
   const releaseFiles = files(release);
   const releaseHash = digest(release, releaseFiles);

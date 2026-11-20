@@ -87,6 +87,11 @@ export const createKnowledge = (knowledgeDir: string, { backupDir }: KnowledgeOp
     proposals: string[];
     /** Things worth a look that don't make the folder wrong: old verifications, paths that no longer exist. Never fail `pnpm knowledge`. */
     warnings: string[];
+    /**
+     * The index-over-cap message when index.md is longer than the cap, else null. It is also in `problems`; it is
+     * separate so `doctor` can show it without failing, since jobs still run on an over-cap index.
+     */
+    indexOverCap: string | null;
   }
 
   const read = (relativePath: string): string => readFileSync(join(knowledgeDir, relativePath), 'utf8');
@@ -105,13 +110,13 @@ export const createKnowledge = (knowledgeDir: string, { backupDir }: KnowledgeOp
       : [];
   };
 
-  /** Reads the index for a brief. Throws when it is missing or over the cap, so a job never runs on a cut-off index. */
-  const loadIndex = (): string => {
-    const index = read('index.md').trim();
-    const [problem] = indexProblems(index);
-    if (problem) throw new Error(`knowledge/${problem}`);
-    return index;
-  };
+  /**
+   * Reads the whole index for a brief. Throws only when it is missing. An index over the cap is still loaded whole:
+   * it can get there outside the app (a hand edit, or a worker adding a row in Slack), and a bot that stops taking
+   * jobs or won't start is worse than a slightly longer brief, while cutting rows would hide pages without a word.
+   * `checkKnowledge` still reports it, `pnpm knowledge` fails on it, and the daemon logs it at startup.
+   */
+  const loadIndex = (): string => read('index.md').trim();
 
   /**
    * The backticked tokens of a page that are repository paths: relative, with a `/`, no spaces, URLs, globs,
@@ -208,7 +213,8 @@ export const createKnowledge = (knowledgeDir: string, { backupDir }: KnowledgeOp
     const index = read('index.md');
     const indexed = indexedPages(index);
 
-    const problems = indexProblems(index);
+    const [indexOverCap = null] = indexProblems(index);
+    const problems = indexOverCap ? [indexOverCap] : [];
     const unverified: string[] = [];
     const warnings: string[] = [];
     for (const page of pages) {
@@ -220,7 +226,7 @@ export const createKnowledge = (knowledgeDir: string, { backupDir }: KnowledgeOp
     for (const entry of indexed) {
       if (!pages.includes(entry)) problems.push(`index.md: points at \`${entry}\`, which doesn't exist.`);
     }
-    return { problems, pages, unverified, proposals, warnings };
+    return { problems, pages, unverified, proposals, warnings, indexOverCap };
   };
 
   const readIndexed = (): Set<string> => indexedPages(existsSync(join(root, 'index.md')) ? read('index.md') : '');

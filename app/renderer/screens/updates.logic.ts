@@ -37,6 +37,18 @@ export const commitsHeading = (status: Pick<UpdatesStatus, 'newCommits' | 'commi
   return `${plural(status.newCommits.length, 'new commit', 'new commits')} on ${branch(status.ref)}`;
 };
 
+/** `git@github.com:owner/serra.git` or `https://github.com/owner/serra` → `owner/serra`; other URLs as they are. */
+export const repositoryName = (url: string): string => {
+  const github = /github\.com[:/]([\w.-]+\/[\w.-]+?)(?:\.git)?\/?$/.exec(url);
+  return github ? github[1]! : url;
+};
+
+/** Where updates come from, under the heading: `From isacssw/serra main, in /path/to/checkout`. */
+export const sourceLabel = (status: Pick<UpdatesStatus, 'ref' | 'source' | 'upstream'>): string =>
+  status.upstream && status.ref
+    ? `From ${repositoryName(status.upstream)} ${status.ref.replace(/^[^/]+\//, '')}, in ${status.source}`
+    : `From ${status.source}`;
+
 export interface ActionState { enabled: boolean; reason?: string }
 
 const BUSY: Record<UpdateAction, string> = { prepare: 'Preparing…', activate: 'Activating…', rollback: 'Rolling back…' };

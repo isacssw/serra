@@ -28,6 +28,7 @@ const fullProfile = (): Required<Profile> => ({
   serviceLabel: 'dev.serra.friday',
   t3Bin: '/Users/you/.t3/bin/t3',
   branchPattern: '{id}/{slug}-{stamp}',
+  updates: { source: '/Users/you/git/serra', ref: 'origin/main' },
 });
 
 const tempProfile = (t: TestContext, profile: unknown = baseProfile()): string => {
@@ -147,6 +148,8 @@ test('an invalid section value is rejected and the file is untouched', (t) => {
     ['worker', { model: '--evil' }, /Invalid worker model/],
     ['branchPattern', '{slug}', /must contain/],
     ['messageTriggers', 'not a list', /Invalid messageTriggers/],
+    ['updates', { source: 'git/serra' }, /updates\.source must be an absolute path/],
+    ['updates', { source: '/Users/you/git/serra', ref: '--upload-pack=evil' }, /Invalid updates\.ref/],
   ];
   for (const [section, value, message] of invalid) {
     assert.throws(() => updateProfileSection(directory, section, value as never, { io: noWrites }), message, section);

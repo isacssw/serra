@@ -6,7 +6,7 @@ import { GitCommitHorizontal, Layers, LoaderCircle, Play, RefreshCw, RotateCcw, 
 import { serra } from '../bridge.ts';
 import { Button, cx, Dialog, Page, useToast } from '../ui/index.ts';
 import {
-  actionStates, activateDialog, activationNotice, busyLabel, commitsHeading, preparedLabel, releaseLabel, rollbackDialog,
+  actionStates, activateDialog, activationNotice, busyLabel, commitsHeading, preparedLabel, releaseLabel, rollbackDialog, sourceLabel,
   rollbackNotice, type Notice, type UpdateAction, type UpdatesStatus,
 } from './updates.logic.ts';
 
@@ -197,6 +197,7 @@ export const Updates = () => {
 
       <section className="flex flex-col gap-2">
         <h2 className="text-lg font-semibold">{commitsHeading(status)}</h2>
+        <p className="break-all text-xs text-muted">{sourceLabel(status)}</p>
         {status.commitsProblem
           ? <p className="text-sm text-muted">{status.commitsProblem}</p>
           : status.newCommits.length > 0 && (

@@ -3,7 +3,10 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, 
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import test, { type TestContext } from 'node:test';
+import { loadConfig } from '../src/config.ts';
+import { diagnose } from '../src/doctor.ts';
 import { createKnowledge } from '../src/knowledge.ts';
+import { createProfile } from '../src/setup.ts';
 import { saveProblems, saveRefusal } from '../src/knowledge-rules.ts';
 
 const NOW = new Date('2026-11-18T12:00:00Z');
@@ -181,4 +184,55 @@ test('savePage and readPage only touch existing pages inside knowledge/', (t) =>
   assert.throws(() => service.savePage('owner/new.md', text), /No page owner\/new\.md.*Proposals/);
   assert.throws(() => service.savePage('owner/role.txt', text), /must be a \.md file/);
   assert.equal(existsSync(join(knowledge, 'owner/new.md')), false);
+});
+
+/** An index of `rows` table rows under the template-like header. */
+const longIndex = (rows: number): string =>
+  `# Index\n\n| When | Open |\n|---|---|\n${Array.from({ length: rows }, (_, i) => `| topic ${i} | \`owner/role.md\` |`).join('\n')}\n`;
+
+test('an index over its cap is still loaded whole, and the check still reports it', (t) => {
+  const dir = mkdtempSync(join(tmpdir(), 'bots-knowledge-cap-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  mkdirSync(join(dir, 'owner'), { recursive: true });
+  writeFileSync(join(dir, 'owner/role.md'), ['---', 'type: role', 'description: A page', 'written: 2026-11-16', 'verified: no', 'sources: code', '---', ''].join('\n'));
+  // Written outside the app, as a hand edit or a worker promoting in Slack would: 4 header lines + 70 rows.
+  writeFileSync(join(dir, 'index.md'), longIndex(70));
+  const service = createKnowledge(dir);
+
+  const index = service.loadIndex();
+  assert.equal(index, longIndex(70).trim(), 'every row reaches the brief; none is cut');
+  assert.match(index, /topic 69/);
+
+  const report = service.checkKnowledge({ now: NOW });
+  assert.equal(report.indexOverCap, 'index.md: 74 lines. The cap is 60, because the index goes into every brief.');
+  assert.ok(report.problems.includes(report.indexOverCap!), '`pnpm knowledge` still fails on it');
+
+  writeFileSync(join(dir, 'index.md'), longIndex(10));
+  assert.equal(service.checkKnowledge({ now: NOW }).indexOverCap, null);
+
+  rmSync(join(dir, 'index.md'));
+  assert.throws(() => service.loadIndex(), /ENOENT/, 'a missing index still stops the daemon at startup');
+});
+
+test('doctor passes the knowledge check with an over-cap index and says to tidy it, but still fails on a broken page', async (t) => {
+  const dir = mkdtempSync(join(tmpdir(), 'bots-knowledge-doctor-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  createProfile(dir, {
+    version: 1, bot: { id: 'friday', name: 'Friday' }, owner: { name: 'Alex', slackUserId: 'U0123456789', githubLogin: 'alex' },
+    project: { path: '/Users/you/project', remote: 'origin', baseRef: 'origin/main', githubRepo: 'acme/project' },
+    allowedUsers: [], worker: { provider: 'claude', model: 'opus' },
+  });
+  const knowledgeCheck = async () =>
+    (await diagnose(loadConfig({ profileDir: dir, env: {} }), { offline: true })).find((check) => check.name === 'Knowledge and brief')!;
+
+  writeFileSync(join(dir, 'knowledge/index.md'), longIndex(70).replaceAll('`owner/role.md`', 'nothing'));
+  const overCap = await knowledgeCheck();
+  assert.equal(overCap.ok, true, overCap.detail);
+  assert.match(overCap.detail, /Jobs still run, but tidy it: index\.md: 74 lines\. The cap is 60/);
+
+  writeFileSync(join(dir, 'knowledge/owner.md'), 'No header.\n');
+  const broken = await knowledgeCheck();
+  assert.equal(broken.ok, false);
+  assert.match(broken.detail, /owner\.md: no header/);
+  assert.doesNotMatch(broken.detail, /74 lines/, 'the index cap is not among the failures');
 });

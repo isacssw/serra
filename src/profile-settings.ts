@@ -36,6 +36,8 @@ export const PROFILE_SETTINGS = {
   serviceLabel: { appliesWhen: 'after restart', required: false, note: 'Prepare a new release after changing it: activation refuses a release made for another label.' },
   t3Bin: { appliesWhen: 'after restart', required: false },
   branchPattern: { appliesWhen: 'after restart', required: false },
+  // Read by Updates and Prepare each time they run; the daemon doesn't use it.
+  updates: { appliesWhen: 'now', required: false },
 } as const satisfies Record<ProfileSection, SectionSetting>;
 
 export const PROFILE_SECTIONS = Object.keys(PROFILE_SETTINGS) as ProfileSection[];

@@ -75,9 +75,12 @@ export const diagnose = async (config: Config, { offline = false, nodeBinary, sl
   await check('Knowledge and brief', () => {
     const knowledge = createKnowledge(config.knowledgeDir);
     const report = knowledge.checkKnowledge();
-    if (report.problems.length) throw new Error(report.problems.join('; '));
+    // An index over its cap doesn't stop jobs, so it doesn't fail doctor (or the install preflight that runs it).
+    const blocking = report.problems.filter((problem) => problem !== report.indexOverCap);
+    if (blocking.length) throw new Error(blocking.join('; '));
     fillBrief(config, knowledge.loadIndex(), { request: 'Diagnostic only', requester: 'doctor', permalink: 'none', thread: 'none' });
-    return `${report.pages.length} pages, ${report.unverified.length} drafts`;
+    const tidy = report.indexOverCap ? `. Jobs still run, but tidy it: ${report.indexOverCap}` : '';
+    return `${report.pages.length} pages, ${report.unverified.length} drafts${tidy}`;
   });
   await check('Git repository and base', async () => {
     await run('git', ['-C', config.project, 'rev-parse', '--show-toplevel']);

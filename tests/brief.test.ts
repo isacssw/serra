@@ -14,7 +14,7 @@ import {
 } from '../src/brief.ts';
 import { emptyDraft, isDirty, loadedDraft, proposedLabel, replacesLine } from '../app/renderer/screens/brief.logic.ts';
 import { codeRoot, loadConfig } from '../src/config.ts';
-import { createKnowledge } from '../src/knowledge.ts';
+import { createKnowledge, INDEX_MAX_LINES } from '../src/knowledge.ts';
 
 const TEMPLATE = readFileSync(join(codeRoot, 'templates/brief.md'), 'utf8');
 const POLICY = '# Owner policy\n\nOpen draft PRs.\n';
@@ -208,4 +208,13 @@ test('screen helpers: proposal labels, dirty drafts and the apply line', () => {
   assert.equal(isDirty(loadedDraft('a')), false);
   assert.equal(isDirty({ saved: 'a', text: 'b' }), true);
   assert.match(replacesLine(['policy', 'brief']), /^Replaces brief\.md and policy\.md\./);
+});
+
+test('the brief tells workers to replace an old rule rather than add beside it, and to keep the index under its cap', () => {
+  const text = TEMPLATE.replace(/\s+/g, ' ');
+  assert.match(text, /check the index for a page on the same topic\. If there is one, add `target: <that page>`/);
+  assert.match(text, /write the whole page as it should now read/);
+  assert.match(text, /keep the old one under a `Replaced` heading .* with the date it stopped applying\. Never leave both as current rules\./);
+  assert.match(text, new RegExp(`\`index\\.md\` stays at ${INDEX_MAX_LINES} lines or fewer`), 'the number matches the cap in code');
+  assert.match(readFileSync(join(codeRoot, 'templates/knowledge/proposals/README.md'), 'utf8'), /`Replaced` heading with the date it stopped applying/);
 });

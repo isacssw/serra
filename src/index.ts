@@ -74,7 +74,7 @@ app.message(async ({ message }) => {
   if (msg) await track(bot.handle(msg));
 });
 
-// A broken index stops the daemon here instead of failing the first request. Page problems only warn.
+// A missing index stops the daemon here instead of failing the first request. An index over its cap and page problems only warn.
 loadIndex();
 const knowledge = checkKnowledge({
   roots: [{ name: basename(config.project), path: config.project }, ...config.repositories.map(({ name, path }) => ({ name, path }))],

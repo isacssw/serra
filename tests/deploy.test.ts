@@ -187,7 +187,55 @@ test('status explains when commits cannot be counted', async (t) => {
   const active = JSON.parse(readFileSync(join(f.directory, 'active.json'), 'utf8'));
   writeFileSync(join(f.directory, 'active.json'), JSON.stringify({ ...active, commit: undefined }));
   assert.match((await releaseStatus(f.directory, { root: code })).commitsProblem ?? '', /does not record its commit/);
+  assert.match((await releaseStatus(f.directory, { root: f.root })).commitsProblem ?? '', /isn't a git checkout.*updates\.source/);
+  gitIn(f.root, 'init', '-q');
   assert.match((await releaseStatus(f.directory, { root: f.root })).commitsProblem ?? '', /No main branch/);
+});
+
+/** Points the fixture profile's `updates` at `source`, as Settings › Worker › Update source does. */
+const followUpdates = (directory: string, updates: { source: string; ref?: string }): void => {
+  const path = join(directory, 'profile.json');
+  writeFileSync(path, JSON.stringify({ ...JSON.parse(readFileSync(path, 'utf8')), updates }, null, 2));
+};
+
+test('a packaged install follows the profile\'s update source: prepare copies it, status fetches and counts its origin/main', async (t) => {
+  const f = await fixture(t);
+  const upstream = codeCheckout(f.root);
+  const clone = join(f.root, 'clone');
+  execFileSync('git', ['clone', '-q', upstream, clone]);
+  followUpdates(f.directory, { source: clone });
+
+  const log: string[] = [];
+  const plan = await prepareRelease(f.directory, { install: false, log: (line) => log.push(line) });
+  assert.equal(plan.commit, gitIn(upstream, 'rev-parse', 'HEAD'));
+  assert.ok(log.includes(`Taking the code from ${clone}`));
+  mkdirSync(join(plan.release, 'node_modules/@slack/bolt'), { recursive: true });
+  await activate(f.directory, f.opts);
+
+  writeFileSync(join(upstream, 'README.md'), 'second'); gitIn(upstream, 'commit', '-qam', 'Second change');
+  const offline = await releaseStatus(f.directory);
+  assert.equal(offline.source, clone); assert.equal(offline.upstream, upstream); assert.equal(offline.ref, 'origin/main');
+  assert.deepEqual(offline.newCommits, [], 'without a fetch the clone has not seen the new commit');
+  const fetched = await releaseStatus(f.directory, { fetch: true });
+  assert.equal(fetched.commitsProblem, null);
+  assert.deepEqual(fetched.newCommits.map((c) => c.subject), ['Second change']);
+
+  // Prepare copies the checkout as it is, and says when that isn't the branch Updates follows.
+  log.length = 0;
+  await prepareRelease(f.directory, { install: false, log: (line) => log.push(line) });
+  assert.ok(log.some((line) => line.startsWith(`Note: ${clone} is at`)), log.join('\n'));
+});
+
+test('status says when the active release came from another repository\'s history', async (t) => {
+  const f = await fixture(t);
+  const code = codeCheckout(f.root);
+  await activate(f.directory, f.opts);
+  const active = JSON.parse(readFileSync(join(f.directory, 'active.json'), 'utf8'));
+  writeFileSync(join(f.directory, 'active.json'), JSON.stringify({ ...active, commit: 'bfecea37a03cb5085312525b31eacb4a6a930cf2' }));
+  followUpdates(f.directory, { source: code, ref: 'main' });
+  const status = await releaseStatus(f.directory);
+  assert.equal(status.ref, 'main'); assert.equal(status.upstream, null);
+  assert.match(status.commitsProblem ?? '', /bfecea3 isn't in .*Prepare and activate a release from main/);
 });
 
 test('activation preflight lists running jobs, newest activity first, without writing state', async (t) => {

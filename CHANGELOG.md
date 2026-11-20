@@ -12,4 +12,5 @@ First public alpha, for trying Serra locally on macOS. Serra bridges a chat app 
 - Background service under launchd with prepare, activate, status, restart and rollback.
 - Knowledge interview and a proposals queue for teaching the bot how you work.
 - Automatic investigations of messages in configured alert channels.
+- `updates` in profile.json (Settings › Worker › Update source): the Serra checkout and branch that Updates counts new commits in and Prepare copies from, so a packaged app can follow the repository.
 - macOS menubar app (built locally, unsigned): first-run wizard, Jobs, Knowledge, Brief and policy, Settings, Secrets, Tools, Updates and Diagnostics.

@@ -8,10 +8,10 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, delimiter, join, resolve } from 'node:path';
-import { codeRoot } from './config.ts';
+import { codeRoot, readProfileFile } from './config.ts';
 import type { ReleaseStatus } from './contracts.ts';
 import {
-  activate, activationPhase, CutoverError, preparedProblems, prepareRelease, rollback,
+  activate, activationPhase, CutoverError, DEFAULT_UPDATES_REF, preparedProblems, prepareRelease, rollback,
   type DeployLog, type DeployOptions, type Prepared, type PrepareOptions,
 } from './deploy.ts';
 import { createStore } from './state.ts';
@@ -27,6 +27,10 @@ const errorText = (error: unknown): string => error instanceof Error ? error.mes
 export interface ReleaseOverview extends ReleaseStatus {
   /** The ref new commits were counted on, like `origin/main`. Null when no ref was found. */
   ref: string | null;
+  /** The checkout commits are counted in and Prepare copies from: the profile's `updates.source`, else the running code. */
+  source: string;
+  /** The URL of the ref's remote in `source`, like `git@github.com:owner/serra.git`. Null when it has none. */
+  upstream: string | null;
   /** Why `newCommits` couldn't be listed. Null when the list is real (an empty list then means up to date). */
   commitsProblem: string | null;
   /** The last cutover: none yet, interrupted (`switching`), done (`active`) or undone (`rolled-back`). */
@@ -38,11 +42,11 @@ export interface ReleaseOverview extends ReleaseStatus {
 }
 
 export interface StatusOptions {
-  /** The code checkout whose commits are compared. Defaults to the code this module runs from. */
+  /** The code checkout whose commits are compared. Defaults to the profile's `updates.source`, then the running code. */
   root?: string;
-  /** The ref to compare against. Defaults to `origin/main`, then `main`, whichever exists. */
+  /** The ref to compare against. Defaults to the profile's `updates.ref`, then `origin/main`, then `main`, whichever exists. */
   ref?: string;
-  /** Run `git fetch origin main` first. Off by default so status stays fast and offline. */
+  /** Fetch the ref's branch from its remote first. Off by default so status stays fast and offline. */
   fetch?: boolean;
 }
 
@@ -50,26 +54,61 @@ const git = (root: string, args: string[]): Promise<string> => run('git', ['-C',
 const refExists = async (root: string, ref: string): Promise<boolean> => {
   try { await git(root, ['rev-parse', '--verify', '--quiet', `${ref}^{commit}`]); return true; } catch { return false; }
 };
+const isCheckout = async (root: string): Promise<boolean> => {
+  try { return (await git(root, ['rev-parse', '--is-inside-work-tree'])).trim() === 'true'; } catch { return false; }
+};
+/** `origin/main` → `origin` and `main`, when `origin` is a remote of `root`. Null for a local branch. */
+const remoteOf = async (root: string, ref: string): Promise<{ remote: string; branch: string } | null> => {
+  const slash = ref.indexOf('/');
+  if (slash <= 0) return null;
+  const remote = ref.slice(0, slash);
+  try { return (await git(root, ['remote'])).split('\n').includes(remote) ? { remote, branch: ref.slice(slash + 1) } : null; }
+  catch { return null; }
+};
 
-const listNewCommits = async (root: string, active: Prepared | null, options: StatusOptions):
-Promise<Pick<ReleaseOverview, 'ref' | 'newCommits' | 'commitsProblem'>> => {
-  const none = (commitsProblem: string, ref: string | null = null) => ({ ref, newCommits: [], commitsProblem });
-  if (options.fetch) {
-    try { await git(root, ['fetch', '--quiet', 'origin', 'main']); }
-    catch (error) { return none(`Fetching origin failed: ${errorText(error)}`); }
+/** Where updates come from: the profile's `updates` section, else the running code and its `origin/main`. */
+export const updateSource = (directory: string, options: Pick<StatusOptions, 'root' | 'ref'> = {}): { root: string; ref?: string } => {
+  let updates: { source: string; ref?: string } | undefined;
+  try { updates = readProfileFile(directory).updates; } catch { /* status still works on a broken profile */ }
+  if (options.root) return { root: options.root, ref: options.ref };
+  if (updates) return { root: updates.source, ref: options.ref ?? updates.ref ?? DEFAULT_UPDATES_REF };
+  return { root: codeRoot, ref: options.ref };
+};
+
+const listNewCommits = async (directory: string, active: Prepared | null, options: StatusOptions):
+Promise<Pick<ReleaseOverview, 'ref' | 'newCommits' | 'commitsProblem' | 'source' | 'upstream'>> => {
+  const { root, ref: wanted } = updateSource(directory, options);
+  let upstream: string | null = null;
+  const none = (commitsProblem: string, ref: string | null = null) => ({ ref, newCommits: [], commitsProblem, source: root, upstream });
+  if (!await isCheckout(root)) {
+    return none(`${root} isn't a git checkout, so there are no commits to compare (a packaged app ships without one). `
+      + 'Set updates.source in profile.json to a clone of the Serra repository.');
   }
-  let ref = options.ref;
+  let ref = wanted;
   if (!ref) for (const candidate of ['origin/main', 'main']) if (await refExists(root, candidate)) { ref = candidate; break; }
+  const tracked = ref ? await remoteOf(root, ref) : null;
+  if (tracked) {
+    try { upstream = (await git(root, ['remote', 'get-url', tracked.remote])).trim() || null; } catch { /* no URL */ }
+  }
+  if (options.fetch) {
+    const { remote, branch } = tracked ?? { remote: 'origin', branch: 'main' };
+    try { await git(root, ['fetch', '--quiet', remote, `+refs/heads/${branch}:refs/remotes/${remote}/${branch}`]); }
+    catch (error) { return none(`Fetching ${remote} failed: ${errorText(error)}`, ref ?? null); }
+  }
   if (!ref || !await refExists(root, ref)) return none(`No ${ref ?? 'main'} branch in ${root}`);
   if (!active) return none('No active release to compare with', ref);
   if (!active.commit) return none('The active release does not record its commit. Prepare and activate a new release to track commits.', ref);
+  if (!await refExists(root, active.commit)) {
+    return none(`The active release's commit ${active.commit.slice(0, 7)} isn't in ${root} (it came from another repository or history). `
+      + `Prepare and activate a release from ${ref} to track new commits.`, ref);
+  }
   try {
     const out = await git(root, ['log', '--max-count=200', '--format=%H%x1f%s', `${active.commit}..${ref}`]);
     const newCommits = out.split('\n').filter(Boolean).map((line) => {
       const [sha = '', subject = ''] = line.split('\x1f');
       return { sha, subject };
     });
-    return { ref, newCommits, commitsProblem: null };
+    return { ref, newCommits, commitsProblem: null, source: root, upstream };
   } catch (error) { return none(`Could not compare ${active.commit.slice(0, 12)} with ${ref}: ${errorText(error)}`, ref); }
 };
 
@@ -88,7 +127,7 @@ export const releaseStatus = async (directory: string, options: StatusOptions = 
     active, prepared, activation,
     canRollback: activation === 'active' || activation === 'switching',
     activateProblems,
-    ...await listNewCommits(options.root ?? codeRoot, active, options),
+    ...await listNewCommits(directory, active, options),
   };
 };
 

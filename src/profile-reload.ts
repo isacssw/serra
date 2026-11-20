@@ -29,6 +29,8 @@ const APPLY: { [S in LiveSection]: (config: Config, profile: Profile) => void } 
   // The owner is always allowed. A changed owner applies after restart, so this keeps the running one.
   allowedUsers: (config, profile) => { config.allowed = new Set([config.owner, ...profile.allowedUsers]); },
   messageTriggers: (config, profile) => { config.messageTriggers = profile.messageTriggers ?? []; },
+  // Only Updates and Prepare read it, from the file each time: nothing in the running daemon to change.
+  updates: () => {},
 };
 
 export const LIVE_SECTIONS = Object.keys(APPLY) as LiveSection[];

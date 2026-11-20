@@ -51,6 +51,7 @@ export const sectionTitles: Record<ProfileSection, string> = {
   serviceLabel: 'Service label',
   t3Bin: 'T3 command',
   branchPattern: 'Task branches',
+  updates: 'Update source',
 };
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -280,6 +281,25 @@ export const t3BinForm: SectionForm<'t3Bin'> = {
     const value = (form.t3Bin ?? '').trim();
     if (!value) return { value: undefined, errors: {} };
     return { value, errors: collect({ t3Bin: absolutePathProblem(value, 'T3 command path', '/Users/you/.t3/bin/t3') }) };
+  },
+};
+
+export const updatesForm: SectionForm<'updates'> = {
+  section: 'updates',
+  description: 'The Serra checkout Updates counts new commits in and Prepare copies from, and the branch it follows. Empty uses the code the app runs from (a packaged app has no git, so it can\'t list new commits).',
+  fields: [
+    { key: 'source', label: 'Checkout path', placeholder: '/Users/you/git/serra' },
+    { key: 'ref', label: 'Branch', hint: 'Empty uses origin/main.', placeholder: 'origin/main' },
+  ],
+  toForm: (profile) => ({ source: optional(profile.updates?.source), ref: optional(profile.updates?.ref) }),
+  parse: (form) => {
+    const source = (form.source ?? '').trim();
+    const ref = (form.ref ?? '').trim();
+    if (!source && !ref) return { value: undefined, errors: {} };
+    return {
+      value: ref ? { source, ref } : { source },
+      errors: collect({ source: absolutePathProblem(source, 'Checkout path', '/Users/you/git/serra'), ref: ref ? notFlagProblem(ref, 'Branch') : null }),
+    };
   },
 };
 

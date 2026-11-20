@@ -10,7 +10,7 @@ import { updatesHandlers } from '../app/main/ipc/updates.ts';
 import { memoryPrefs } from '../app/main/prefs.ts';
 import { stoppedStatusSource } from '../app/main/status.ts';
 import {
-  actionStates, activateDialog, activationNotice, commitsHeading, preparedLabel, releaseLabel, rollbackDialog, rollbackNotice,
+  actionStates, activateDialog, activationNotice, commitsHeading, preparedLabel, releaseLabel, rollbackDialog, rollbackNotice, sourceLabel,
   type UpdatesStatus,
 } from '../app/renderer/screens/updates.logic.ts';
 import { type ServiceDriver } from '../src/deploy.ts';
@@ -53,6 +53,12 @@ test('release labels use the commit, mark uncommitted changes, and fall back to 
   assert.match(preparedLabel({ preparedAt: '2026-11-19T12:00:00.000Z' }), /^prepared Nov (19|20), \d\d:\d\d$/);
 });
 
+test('the source line names the GitHub repository and branch Updates follows', () => {
+  assert.equal(sourceLabel({ ref: 'origin/main', source: '/Users/you/git/serra', upstream: 'git@github.com:acme/serra.git' }), 'From acme/serra main, in /Users/you/git/serra');
+  assert.equal(sourceLabel({ ref: 'upstream/release', source: '/code', upstream: 'https://github.com/acme/serra' }), 'From acme/serra release, in /code');
+  assert.equal(sourceLabel({ ref: null, source: '/Applications/Serra.app/Contents/Resources/app', upstream: null }), 'From /Applications/Serra.app/Contents/Resources/app');
+});
+
 test('the commits heading counts commits on main, says when up to date, and when it cannot tell', () => {
   const commit = { sha: 'abc', subject: 'Keep job state on restart' };
   assert.equal(commitsHeading({ ref: 'origin/main', commitsProblem: null, newCommits: [commit, commit, commit, commit] }), '4 new commits on main');
@@ -62,7 +68,7 @@ test('the commits heading counts commits on main, says when up to date, and when
 });
 
 const status = (patch: Partial<UpdatesStatus> = {}): UpdatesStatus => ({
-  active: null, prepared: null, newCommits: [], ref: 'main', commitsProblem: null, activation: null,
+  active: null, prepared: null, newCommits: [], ref: 'main', commitsProblem: null, activation: null, source: '/code', upstream: null,
   canRollback: false, activateProblems: [], running: null, log: [], ...patch,
 });
 
@@ -156,7 +162,7 @@ test('prepare uses the Node findNode resolves, never process.execPath, and strea
   assert.equal(after.running, null);
   assert.deepEqual(after.log, pushes);
   assert.deepEqual(after.activateProblems, ['Prepared dependencies missing. Run prepare again.']);
-  assert.match(after.commitsProblem ?? '', /No main branch/);
+  assert.match(after.commitsProblem ?? '', /isn't a git checkout.*updates\.source/);
 });
 
 test('a prepare that cannot find Node fails before anything is written, with the reason in the log', async (t) => {
