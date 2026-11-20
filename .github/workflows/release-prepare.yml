@@ -1,0 +1,77 @@
+name: "Release: prepare"
+
+# Step 1 of a release (docs/releasing.md). Run it from the Actions tab with the new version. It raises package.json's
+# version, dates the changelog's Unreleased section, pushes a release/v<version> branch and opens a release PR.
+# Nothing is tagged or published here: merging the release PR does that (release-publish.yml).
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "New version, without the v (for example 0.1.0-alpha.2 or 0.2.0)"
+        required: true
+        type: string
+
+permissions:
+  contents: write # push the release branch (main itself is protected)
+  pull-requests: write # open the release PR
+  actions: write # start CI on the release branch
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      VERSION: ${{ inputs.version }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Check the version is new
+        run: |
+          if git ls-remote --exit-code --tags origin "refs/tags/v$VERSION" >/dev/null; then
+            echo "::error::Tag v$VERSION already exists."; exit 1
+          fi
+          if git ls-remote --exit-code --heads origin "refs/heads/release/v$VERSION" >/dev/null; then
+            echo "::error::Branch release/v$VERSION already exists. Delete it or close its PR first."; exit 1
+          fi
+
+      - name: Raise the version and date the changelog
+        run: node scripts/release.ts prepare "$VERSION"
+
+      - name: Push the release branch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -c "release/v$VERSION"
+          git commit -am "chore(release): v$VERSION"
+          git push origin "release/v$VERSION"
+
+      - name: Open the release PR
+        run: |
+          {
+            echo "Releases **v$VERSION**. Merging this PR (squash) tags the merge commit \`v$VERSION\`, builds the app and publishes a GitHub Release with these notes:"
+            echo
+            node scripts/release.ts notes "$VERSION"
+            echo
+            echo "Edit CHANGELOG.md on this branch to change the notes before merging."
+          } > body.md
+          if ! gh pr create --base main --head "release/v$VERSION" --title "chore(release): v$VERSION" --body-file body.md; then
+            # Needs Settings › Actions › General › "Allow GitHub Actions to create and approve pull requests".
+            url="https://github.com/${GITHUB_REPOSITORY}/compare/main...release/v$VERSION?expand=1"
+            echo "::warning::Couldn't open the PR with the workflow token. Open it yourself: $url"
+            echo "Open the release PR: $url" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Run CI on the release branch
+        run: gh workflow run ci.yml --ref "release/v$VERSION"

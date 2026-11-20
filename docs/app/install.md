@@ -27,7 +27,7 @@ To check a build before sharing it, run its smoke test. It opens the window, che
 release/mac-arm64/Serra.app/Contents/MacOS/Serra --smoke
 ```
 
-The version shown in the app is `extraMetadata.version` in `electron-builder.yml`. Raise it when you share a new build.
+The version shown in the app is `version` in `package.json`, which a release PR raises (see [releasing](../releasing.md)). Release builds are also attached to each [GitHub Release](https://github.com/isacssw/serra/releases).
 
 ## What is in the app
 

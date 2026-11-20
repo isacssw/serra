@@ -4,9 +4,16 @@ on:
   push:
     branches: [main]
   pull_request:
+  # Release PRs are opened by the Release: prepare workflow, and GitHub doesn't start pull_request runs for a PR the
+  # workflow token opens, so that workflow dispatches this one on the release branch to get its `check`.
+  workflow_dispatch:
 
 permissions:
   contents: read
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   check:
@@ -30,3 +37,31 @@ jobs:
       - run: pnpm test
       - run: pnpm knowledge
       - run: ./scripts/install.sh --help
+
+  # Builds the app the way a release does (unsigned, ad-hoc), runs its smoke test and keeps the .dmg for a week, so
+  # every PR and every merge shows the app still packages. No secrets: this runs fork PR code.
+  app:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: |
+          mkdir -p "$RUNNER_TEMP/pnpm-bin"
+          corepack enable --install-directory "$RUNNER_TEMP/pnpm-bin" pnpm
+          echo "$RUNNER_TEMP/pnpm-bin" >> "$GITHUB_PATH"
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm app:package
+      - name: Smoke-test the packaged app
+        timeout-minutes: 5
+        run: |
+          app=$(ls -d release/mac*/Serra.app | head -n 1)
+          "$app/Contents/MacOS/Serra" --smoke
+      - uses: actions/upload-artifact@v4
+        with:
+          name: serra-app-${{ github.sha }}
+          path: release/*.dmg
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0

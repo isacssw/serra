@@ -1,5 +1,6 @@
 {
   "name": "serra",
+  "version": "0.0.0",
   "private": true,
   "type": "module",
   "description": "A bridge from your team chat to the coding agents on your Mac: chat requests become T3 Code worktree threads. Slack today, more channels planned.",

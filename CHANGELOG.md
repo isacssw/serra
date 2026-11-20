@@ -2,7 +2,7 @@
 
 Serra follows [Semantic Versioning](https://semver.org) once it reaches 1.0. Until then, any alpha may change the profile or state format; such changes are called out here.
 
-## 0.1.0-alpha.1 (unreleased)
+## Unreleased
 
 First public alpha, for trying Serra locally on macOS. Serra bridges a chat app to your local coding agents; this alpha supports one chat channel, Slack.
 
@@ -14,3 +14,4 @@ First public alpha, for trying Serra locally on macOS. Serra bridges a chat app 
 - Automatic investigations of messages in configured alert channels.
 - `updates` in profile.json (Settings › Worker › Update source): the Serra checkout and branch that Updates counts new commits in and Prepare copies from, so a packaged app can follow the repository.
 - macOS menubar app (built locally, unsigned): first-run wizard, Jobs, Knowledge, Brief and policy, Settings, Secrets, Tools, Updates and Diagnostics.
+- Releases are cut in CI: a release PR raises the version and dates this changelog, and merging it tags the commit and publishes a GitHub Release with the app (docs/releasing.md). CI also builds the app on every PR.

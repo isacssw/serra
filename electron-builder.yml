@@ -2,9 +2,7 @@
 # See docs/app/install.md for installing it and docs/app/electron-build.md for the bundle it ships.
 appId: dev.serra.app
 productName: Serra
-# package.json has no version of its own (the daemon doesn't need one); the app reports this one.
-extraMetadata:
-  version: 0.1.0
+# The app reports package.json's version: the last release, set by a release PR (docs/releasing.md).
 directories:
   output: release
   buildResources: assets/brand
