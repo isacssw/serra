@@ -93,3 +93,14 @@ test('the people roster skips expired cards and never takes a line from replaced
   assert.match(about.text, /Ben Ode: Design lead/);
   assert.doesNotMatch(about.text, /release manager/);
 });
+
+test('off-limits pages from before the cap share one budget in About me, and what\'s cut is listed', () => {
+  const long = (n: number) => Array.from({ length: n }, (_, i) => `- Rule ${i}: never discuss this topic with anyone at all.`).join('\n');
+  const about = compileAboutMe([
+    page('owner/offlimits-a.md', { type: 'offlimits' }, long(30)),
+    page('owner/offlimits-b.md', { type: 'offlimits' }, long(30)),
+    page('owner/offlimits-c.md', { type: 'offlimits' }, long(30)),
+  ], 'owner', NOW);
+  assert.ok(about.chars <= ABOUT_MAX_CHARS, `About me is ${about.chars} characters`);
+  assert.ok(about.left.some((item) => /over 1500 characters together/.test(item.reason)));
+});

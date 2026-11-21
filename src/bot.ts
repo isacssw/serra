@@ -509,8 +509,12 @@ export const createBot = ({
     // checked right before it's sent. Otherwise it's the owner's to check and post.
     const reviewMayHear = async (): Promise<boolean> => {
       if (!loadKnowledge || !config.reviewChannel) return true;
-      const audience = await replyVisibility({ channel: config.reviewChannel, threadTs: job.threadTs, messageTs: job.threadTs, user: config.owner, text: '', direct: false }, { fresh: true });
-      return (await revocation({ ...job, visibility: audience })).revoked.length === 0;
+      // The review channel's audience must be confirmed by Slack, and every page the worker read must be for it and
+      // for whoever sees this thread now.
+      const destination = await visibilityNow({ ...job, channel: config.reviewChannel, requester: config.owner });
+      if (destination === null) return false;
+      const forDestination = await revocation({ ...job, visibility: destination });
+      return !forDestination.unknown && forDestination.revoked.length === 0 && (await revocation(job)).revoked.length === 0;
     };
     const review = await reviewRequest(client, text, {
       channel: config.reviewChannel,
@@ -524,7 +528,14 @@ export const createBot = ({
     });
     // Images go up first, so they sit in the thread just above the reply that refers to them. Checked again right
     // before uploading and before posting: who can see the thread, and what its worker was told, can change meanwhile.
+    // Slack can't say who sees the thread before anything is uploaded: the reply waits for the next check. A review
+    // request already posted is recorded first, so the retry doesn't post it twice.
     const toShare = await stillMayPost(job, review.reply);
+    if (toShare === UNCONFIRMED) {
+      if (review.postedFor) updateJob(key, (latest) => ({ reviewRequestedPrs: [...(latest.reviewRequestedPrs ?? []), review.postedFor!] }));
+      logger.warn(`Could not confirm who can see ${key} before uploading; the reply waits for the next check.`);
+      return;
+    }
     const shared = await share(client, toShare, { channel: job.channel, threadTs: job.threadTs, mayPost: async () => (await revokedFor(job)).length === 0 });
     const uploaded = shared !== toShare;
     const prepared = truncate(localLinksToText(shared, pathRoots).trim() || '(No reply text. Check the T3 thread.)');
@@ -681,6 +692,11 @@ export const createBot = ({
     const answers = { ...state.answers, [question.id]: answer };
     const rememberReply = (latest: Job): Partial<Job> => messageTs
       ? { answeredQuestionMessages: [...(latest.answeredQuestionMessages ?? []), messageTs].slice(-20) } : {};
+    // When Slack can't say who sees the thread, the form doesn't move on: the next question is the worker's words.
+    if (loadKnowledge && (await revocation(job)).unknown) {
+      await questionFeedback(job, 'I couldn\u2019t confirm who can see this thread just now, so I haven\u2019t taken that answer. Please answer again in a minute.');
+      return;
+    }
     // The next question is the worker's own words too: a thread whose knowledge was taken back shows none, and the
     // answers so far go to a fresh thread.
     const answered = typeof answer === 'string' ? answer : answer.join(', ');

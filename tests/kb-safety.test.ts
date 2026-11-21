@@ -438,7 +438,7 @@ const botOn = async (profileDir: string) => {
   const started: string[] = []; const sent: string[] = []; const answered: unknown[] = []; const bases: string[] = []; const posted: string[] = []; const updated: string[] = [];
   const reviews: { heldBack?: string }[] = [];
   const outside = new Set<string>();
-  const hooks: { beforeShare?: () => void | Promise<void>; onUpdate?: () => void; failUpdates?: boolean; history: { ts: string; user?: string; bot_id?: string; text: string }[] } = { history: [] };
+  const hooks: { beforeShare?: () => void | Promise<void>; beforeReview?: () => void | Promise<void>; onUpdate?: () => void; failUpdates?: boolean; history: { ts: string; user?: string; bot_id?: string; text: string }[] } = { history: [] };
   let pendingQuestions: { requestId: string; questions: unknown[] }[] = [];
   let transcript: { role: string; runId: string; text: string }[] = [];
   let activeRunId: string | null = null;
@@ -446,7 +446,7 @@ const botOn = async (profileDir: string) => {
   const client = {
     users: { info: async ({ user }: { user: string }) => ({ user: { real_name: user, team_id: 'THOME' } }) },
     conversations: { replies: async () => ({ messages: hooks.history }), info: async ({ channel }: { channel: string }) => {
-      if (outside.has('FAIL')) throw new Error('ratelimited');
+      if (outside.has('FAIL') || outside.has(`FAIL:${channel}`)) throw new Error('ratelimited');
       return { channel: { id: channel, is_ext_shared: outside.has(channel), is_pending_ext_shared: false } };
     } },
     chat: { getPermalink: async () => ({ permalink: 'https://x/p' }), postMessage: async (body: { text: string }) => { posted.push(body.text); return { ts: '9.1' }; }, update: async (body: { ts?: string; text?: string }) => {
@@ -473,6 +473,7 @@ const botOn = async (profileDir: string) => {
     questions: { listQuestions: async () => pendingQuestions as never, answerQuestion: async (...args: unknown[]) => { answered.push(args); } },
     fetchBase: async () => {}, share: async (_c, text) => { await hooks.beforeShare?.(); return text; },
     reviewRequest: async (_c, text, opts) => {
+      await hooks.beforeReview?.();
       // As the real handler does, right before it would post to the review channel.
       const ok = opts.mayPost ? await opts.mayPost() : true;
       reviews.push(ok ? {} : { heldBack: 'some people in the review channel may not hear it' });
@@ -996,4 +997,42 @@ test('a new card in place of a failed edit is checked again: knowledge taken bac
   await form.bot.handle({ channel: 'CTEAM', threadTs: '29.1', messageTs: '29.6', user: PRIYA, text: 'Tuesday', direct: false });
   await new Promise((done) => setTimeout(done, 50));
   assert.ok(!form.posted.some((text) => /despite the freeze/.test(text)), 'no new card with the next question');
+});
+
+test('during a Slack outage a form doesn\'t move on, a review request needs a confirmed channel, and a reply waits rather than being used up', async (t) => {
+  // A two-question form: answering the first while Slack can't describe the channel shows no second question.
+  const form = await botOn(fixture(t));
+  await form.bot.handle({ channel: 'CTEAM', threadTs: '30.1', messageTs: '30.1', user: PRIYA, text: '<@UMOSS> how do I cut a release?', direct: true });
+  const questions = [
+    { id: 'q1', header: 'Day', question: 'Which day?', options: [{ label: 'Tuesday', description: '' }, { label: 'Wednesday', description: '' }] },
+    { id: 'q2', header: 'Freeze', question: 'Release on Thursday despite the freeze?', options: [{ label: 'Yes', description: '' }, { label: 'No', description: '' }] },
+  ];
+  form.setQuestions([{ requestId: 'r30', questions }]);
+  const job = form.store.getJob('CTEAM:30.1')!;
+  form.store.putJob('CTEAM:30.1', { ...job, question: { requestId: 'r30', questions, ts: '30.5', nonce: 'n', index: 0, answers: {}, runId: null } as never });
+  form.outside.add('FAIL');
+  await form.bot.handle({ channel: 'CTEAM', threadTs: '30.1', messageTs: '30.6', user: PRIYA, text: 'Tuesday', direct: false });
+  await new Promise((done) => setTimeout(done, 50));
+  assert.ok(![...form.posted, ...form.updated].some((text) => /despite the freeze/.test(text)));
+  assert.ok(form.posted.some((text) => /answer again in a minute/.test(text)));
+  assert.equal(form.store.getJob('CTEAM:30.1')!.question?.index, 0, 'the form stays on the first question');
+
+  // Slack can't describe the review channel: the request is the owner's to post.
+  const review = await botOn(fixture(t));
+  (review.config as { reviewChannel?: string }).reviewChannel = 'CREVIEW';
+  review.outside.add('FAIL:CREVIEW');
+  await review.bot.handle({ channel: 'CTEAM', threadTs: '31.1', messageTs: '31.1', user: PRIYA, text: '<@UMOSS> open the PR and ask for review', direct: true });
+  await review.finish('Done. <review-request>Please review https://github.com/larchwood/moss/pull/7</review-request>');
+  assert.match(review.reviews[0]?.heldBack ?? '', /may not hear/);
+
+  // Slack stops answering while the reply is being prepared: the reply waits, and posts once when Slack is back.
+  const late = await botOn(fixture(t));
+  await late.bot.handle({ channel: 'CTEAM', threadTs: '32.1', messageTs: '32.1', user: PRIYA, text: '<@UMOSS> how do I cut a release?', direct: true });
+  late.hooks.beforeReview = () => { late.outside.add('FAIL'); };
+  await late.finish('Run pnpm release:prepare.');
+  assert.ok(!late.posted.some((text) => /release:prepare|couldn't confirm/.test(text)), 'nothing posted, nothing used up');
+  late.hooks.beforeReview = undefined;
+  late.outside.delete('FAIL');
+  await late.bot.poll();
+  assert.equal(late.posted.filter((text) => /release:prepare/.test(text)).length, 1);
 });
