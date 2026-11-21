@@ -1,11 +1,12 @@
 name: PR title
 
 # The PR title becomes the squash commit on main, so it must be a Conventional Commit (CONTRIBUTING.md › Naming).
-# pull_request_target so it also runs on fork PRs and when only the title is edited. It never checks out PR code.
-# A PR the workflow token opens (the release PR) gets no run here; its title is fixed in release-prepare.yml.
+# It only reads the PR's title through the API, so the read-only token of a fork PR is enough, and `edited` reruns it
+# when only the title changes. A PR the workflow token opens (the release PR) gets no run here; its title is fixed in
+# release-prepare.yml.
 
 on:
-  pull_request_target:
+  pull_request:
     types: [opened, edited, reopened, synchronize]
 
 permissions:
