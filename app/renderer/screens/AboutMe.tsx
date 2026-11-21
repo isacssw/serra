@@ -9,8 +9,8 @@ import { Button, cx, Dialog, Page, useToast } from '../ui/index.ts';
 
 const AUDIENCES: { value: Visibility; label: string; icon: typeof User; hint: string }[] = [
   { value: 'owner', label: 'You', icon: User, hint: 'Your DMs with the bot and tasks you start in the app.' },
-  { value: 'team', label: 'Your team', icon: Users, hint: 'Channels and teammates’ DMs. Pages marked audience: owner are left out.' },
-  { value: 'external', label: 'Outside your company', icon: Building2, hint: 'Channels shared with another company. Only pages marked audience: external.' },
+  { value: 'team', label: 'Your team', icon: Users, hint: 'Channels and teammates’ DMs. Pages only you may hear are left out.' },
+  { value: 'external', label: 'Outside your company', icon: Building2, hint: 'Channels shared with another company. Only pages for people outside your company.' },
 ];
 
 const message = (error: unknown): string => (error instanceof Error ? error.message : String(error));

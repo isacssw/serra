@@ -103,6 +103,9 @@ export const removeHeaderField = (text: string, key: string): string => {
   return `---\n${lines.join('\n')}\n---\n${text.slice(match[0].length)}`;
 };
 
+/** The page template's header order. */
+const HEADER_ORDER = ['type', 'description', 'audience', 'written', 'verified', 'expires'];
+
 export const setHeaderField = (text: string, key: string, value: string): string => {
   const match = /^---\n([\s\S]*?)\n---\n/.exec(text);
   if (!match?.[1]) return text;
@@ -110,7 +113,11 @@ export const setHeaderField = (text: string, key: string, value: string): string
   const lines = match[1].split('\n');
   const index = lines.findIndex((line) => line.startsWith(`${key}:`));
   const kept = lines.filter((line, at) => at === index || !line.startsWith(`${key}:`));
-  if (index === -1) kept.push(`${key}: ${value}`);
-  else kept[kept.indexOf(lines[index]!)] = `${key}: ${value}`;
+  if (index === -1) {
+    // A new key goes where the page template has it, so a diff against a page that has it shows no moved line.
+    const before = HEADER_ORDER.slice(0, Math.max(0, HEADER_ORDER.indexOf(key)));
+    const after = kept.reduce((last, line, at) => (before.some((field) => line.startsWith(`${field}:`)) ? at : last), -1);
+    kept.splice(HEADER_ORDER.includes(key) && after !== -1 ? after + 1 : kept.length, 0, `${key}: ${value}`);
+  } else kept[kept.indexOf(lines[index]!)] = `${key}: ${value}`;
   return `---\n${kept.join('\n')}\n---\n${text.slice(match[0].length)}`;
 };

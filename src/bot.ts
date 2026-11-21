@@ -738,8 +738,11 @@ export const createBot = ({
    * Serra recorded its pages was briefed with every page there was, including any removed since, which can't be
    * checked: unless only the owner sees it, it counts as revoked. Every path that shows worker text checks this first.
    */
+  const WIDTH: Record<Visibility, number> = { owner: 0, team: 1, external: 2 };
   const revocation = async (job: Job): Promise<{ visibility: Visibility; knowledge: BriefKnowledge; revoked: string[] }> => {
-    const visibility = job.visibility ?? await replyVisibility({ channel: job.channel, threadTs: job.threadTs, messageTs: job.threadTs, user: job.requester, text: '', direct: false });
+    // Who sees the thread now, not only when it started: a channel shared with another company since is outside.
+    const current = await replyVisibility({ channel: job.channel, threadTs: job.threadTs, messageTs: job.threadTs, user: job.requester, text: '', direct: false });
+    const visibility = job.visibility && WIDTH[job.visibility] >= WIDTH[current] ? job.visibility : current;
     const knowledge = loadKnowledge!(visibility);
     if (!job.knowledgePages) return { visibility, knowledge, revoked: visibility === 'owner' ? [] : ['(pages from before Serra recorded them)'] };
     return { visibility, knowledge, revoked: job.knowledgePages.filter((page) => !knowledge.pages.includes(page)) };

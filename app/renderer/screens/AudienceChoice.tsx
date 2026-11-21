@@ -5,7 +5,7 @@ import type { Audience } from '../../../src/owner-model.ts';
 import { cx } from '../ui/index.ts';
 
 const OPTIONS: { value: Audience; label: string }[] = [
-  { value: 'owner', label: 'Only you' }, { value: 'team', label: 'Your team' }, { value: 'external', label: 'Outside too' },
+  { value: 'owner', label: 'Only you' }, { value: 'team', label: 'Your team' }, { value: 'external', label: 'Outside your company' },
 ];
 
 /** Arrow keys move the choice, as in any radio group; only the chosen option is a Tab stop. */

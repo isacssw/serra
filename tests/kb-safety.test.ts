@@ -212,7 +212,7 @@ test('a teammate\'s brief never names the files that changed outside Serra, and 
   assert.doesNotMatch(teammate, /unreviewed changes|Don't open pages/);
   assert.doesNotMatch(teammate, /private-notes/);
   assert.match(teammate, /workflows\/release\.md/);
-  assert.match(teammate, /\.knowledge-approved/);
+  assert.match(teammate, /\.knowledge-team/);
   const unknown = await buildBrief(profileDir, { via: 'channel', user: PRIYA, text: 'what does Robin own?', noChannelInfo: true });
   assert.match(unknown, /seen by people outside Robin's company/);
   assert.doesNotMatch(unknown, /owner\/working-style\.md/);
@@ -726,4 +726,18 @@ test('round 9: the next question of a form, a thread from before Serra recorded 
   await team.bot.handle({ channel: 'CTEAM', threadTs: '13.1', messageTs: '13.1', user: PRIYA, text: '<@UMOSS> open the PR and ask for review', direct: true });
   await team.finish('Done. <review-request>Please review https://github.com/larchwood/moss/pull/2</review-request>');
   assert.equal(team.reviews[0]?.heldBack, undefined, 'a teammate\'s thread posts as before');
+});
+
+test('round 9: a teammate\'s worker reads a folder with only the pages they may hear, and a new header field lands where the template has it', async (t) => {
+  const profileDir = fixture(t);
+  createKnowledge(join(profileDir, 'knowledge')).seedApproved();
+  const brief = await buildBrief(profileDir, { via: 'channel', user: PRIYA, text: 'what does Robin own?' });
+  const view = join(profileDir, '.knowledge-team');
+  assert.match(brief, /\.knowledge-team/);
+  assert.doesNotMatch(brief, /\.knowledge-approved/);
+  assert.ok(existsSync(join(view, 'workflows/release.md')));
+  assert.ok(!existsSync(join(view, 'owner/private-notes.md')), 'owner-only pages are not in the folder');
+  assert.doesNotMatch(readFileSync(join(view, 'index.md'), 'utf8'), /private-notes/);
+  const { setHeaderField } = await import('../src/knowledge-rules.ts');
+  assert.equal(setHeaderField('---\ntype: rule\ndescription: x\nwritten: 2026-11-01\n---\nBody\n', 'audience', 'team'), '---\ntype: rule\ndescription: x\naudience: team\nwritten: 2026-11-01\n---\nBody\n');
 });

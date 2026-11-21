@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync } from 'node:fs';
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { writeFileAtomic } from './config.ts';
 import { createJournal, type KnowledgeDrift } from './knowledge-journal.ts';
@@ -74,6 +74,25 @@ export interface BriefKnowledge {
 }
 
 /** Markdown files under `dir`, relative to it, skipping dot folders. */
+/** The folder a teammate's or an outsider's worker reads: `.knowledge-team/` or `.knowledge-external/`, next to `knowledge/`. */
+export const audienceDir = (knowledgeDir: string, visibility: Exclude<Visibility, 'owner'>): string => {
+  const root = resolve(knowledgeDir);
+  return join(dirname(root), `.${basename(root)}-${visibility}`);
+};
+
+/** Makes `dir` hold exactly `files` (path → text): changed files rewritten, others removed. */
+const syncFolder = (dir: string, files: Map<string, string>): void => {
+  for (const path of existsSync(dir) ? markdownIn(dir) : []) {
+    if (!files.has(path)) rmSync(join(dir, path), { force: true });
+  }
+  for (const [path, text] of files) {
+    const file = join(dir, path);
+    if (existsSync(file) && readFileSync(file, 'utf8') === text) continue;
+    mkdirSync(dirname(file), { recursive: true, mode: 0o700 });
+    writeFileAtomic(file, text, { mode: 0o600 });
+  }
+};
+
 const markdownIn = (dir: string, relativeDir = ''): string[] => {
   if (!existsSync(join(dir, relativeDir))) return [];
   return readdirSync(join(dir, relativeDir), { withFileTypes: true }).flatMap((entry) => {
@@ -183,12 +202,18 @@ export const createKnowledge = (knowledgeDir: string, { backupDir }: KnowledgeOp
       index += `\n\nSome knowledge files changed and the owner hasn't approved them yet. Don't open pages to answer this: use only what this brief says.`;
     }
     const usable = [...audiences].filter(([, audience]) => mayUse(audience, visibility)).map(([path]) => path).sort();
-    return { index, aboutMe, visibility, pages: usable, readDir: fromApproved ? journal.approvedRoot : root };
+    if (visibility === 'owner') return { index, aboutMe, visibility, pages: usable, readDir: fromApproved ? journal.approvedRoot : root };
+    // Anyone else's worker reads a folder that holds only the pages they may hear, so an owner-only page isn't one
+    // `ls` away. It's rebuilt from the approved text on every brief.
+    const view = audienceDir(root, visibility);
+    const texts = new Map(pages.map(({ path, text }) => [path, text]));
+    syncFolder(view, new Map([['index.md', `${index}\n`], ...usable.map((path) => [path, texts.get(path)!] as const)]));
+    return { index, aboutMe, visibility, pages: usable, readDir: view };
   };
 
   /**
    * Start keeping the approved copy, from `knowledge/` as it is now, if it isn't kept yet. The daemon does this at
-   * start and the app when it shows Pages; building a brief never writes anything.
+   * start and the app when it shows Pages. Building a brief writes only the folder a non-owner's worker reads.
    */
   const seedApproved = (): boolean => journal.seed();
 
