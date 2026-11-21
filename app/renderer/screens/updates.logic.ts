@@ -184,7 +184,7 @@ export const botLine = (sync: BotSync): BotLine | null => {
       }
       : { tone: 'busy', text: `The bot still runs ${was(sync.from)}.`, detail: `It moves to ${sync.to} after the current action.`, action: null };
     case 'failed': return {
-      tone: 'down', text: `The bot couldn't move to ${sync.to}, so it still runs ${was(sync.from)}.`, detail: firstProblem(sync.message),
+      tone: 'down', text: `The bot couldn't move to ${sync.to}, so it's still on ${was(sync.from)}.`, detail: firstProblem(sync.message),
       action: { kind: 'sync', label: 'Try again' },
     };
     case 'ahead': return {

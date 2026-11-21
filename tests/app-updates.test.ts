@@ -146,7 +146,7 @@ test('the bot line: in step, waiting for jobs, updating, failed, not installed, 
   assert.equal(botLine({ state: 'waiting', from: null, to: '0.1.0-alpha.3', jobs: 1 })!.detail, 'It moves to 0.1.0-alpha.3 when the running job finishes.');
   assert.equal(botLine({ state: 'updating', from: null, to: '0.1.0-alpha.3' })!.tone, 'busy');
   const failed = botLine({ state: 'failed', from: '0.1.0-alpha.2', to: '0.1.0-alpha.3', message: 'No supported Node' })!;
-  assert.equal(failed.text, "The bot couldn't move to 0.1.0-alpha.3, so it still runs version 0.1.0-alpha.2.");
+  assert.equal(failed.text, "The bot couldn't move to 0.1.0-alpha.3, so it's still on version 0.1.0-alpha.2.");
   assert.equal(failed.detail, 'No supported Node');
   assert.equal(botLine({ state: 'failed', from: null, to: '1.0.0', message: 'Slack account: invalid_auth; GitHub account: Expected alex' })!.detail, 'Slack account: invalid_auth (and 1 more)');
   assert.deepEqual(botLine({ state: 'stopped', from: '0.1.0-alpha.2', to: '0.1.0-alpha.3' })!.action, { kind: 'sync', label: 'Update now' });
