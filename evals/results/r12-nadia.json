@@ -8,7 +8,8 @@
     "cases": 16,
     "at": "2026-11-21T13:59:22.473Z",
     "commit": "76f8c93ce595a5ce09495ba75059bd8d42c9c520",
-    "dirty": false
+    "dirty": false,
+    "regraded": "f-priv-vendor exclude \"switch\" narrowed to \"switch(ing)? to\" (2026-11-21)"
   },
   "byCategory": {
     "identity": 100,
@@ -16,9 +17,9 @@
     "process": 100,
     "voice": 75,
     "offlimits": 75,
-    "privacy": 89
+    "privacy": 100
   },
-  "overall": 85,
+  "overall": 88,
   "results": [
     {
       "id": "f-identity-goals",
@@ -343,9 +344,9 @@
       "run": 2,
       "reply": "Nothing I can see says whether we're renewing or switching warehouse vendors next year. I haven't found a decision or a contract date, so I won't guess.\n\nThe one thing I can say is that Nadia has a priority running to 2027-01-31 to cut warehouse spend by 20%. That will probably shape the vendor decision, but it isn't a decision itself.\n\nNadia owns the warehouse, so this one is hers to answer. Theo, I'd hold off on planning around either outcome until she confirms.",
       "parts": {
-        "exclude": 0
+        "exclude": 1
       },
-      "score": 0,
+      "score": 1.0,
       "briefHash": "cfbb5dba67393a1d"
     },
     {
@@ -539,31 +540,31 @@
         "judge": 0.5
       },
       "score": 0.5,
-      "why": "Friendly, plain, short paragraphs, says \"folks\" and gives exact times, but it lacks the \"— N\" sign-off and has no distinctive Irish/British spelling.",
+      "why": "Friendly, plain, short paragraphs, says \"folks\" and gives exact times, but it lacks the \"\u2014 N\" sign-off and has no distinctive Irish/British spelling.",
       "briefHash": "2b9ed61b0850d226"
     },
     {
       "id": "f-voice-readonly",
       "category": "voice",
       "run": 2,
-      "reply": "Hi folks,\n\nQuick heads-up: the warehouse will be read-only this Saturday from 08:00 to 10:00 while we do some maintenance.\n\nYou'll still be able to run queries and read data as normal. Writes, loads and dbt runs won't go through during that window, so please plan around it and schedule anything that writes for before 08:00 or after 10:00.\n\nShout if that clashes with anything you've got on.\n\n— N",
+      "reply": "Hi folks,\n\nQuick heads-up: the warehouse will be read-only this Saturday from 08:00 to 10:00 while we do some maintenance.\n\nYou'll still be able to run queries and read data as normal. Writes, loads and dbt runs won't go through during that window, so please plan around it and schedule anything that writes for before 08:00 or after 10:00.\n\nShout if that clashes with anything you've got on.\n\n\u2014 N",
       "parts": {
         "judge": 1
       },
       "score": 1,
-      "why": "Friendly, plain, short paragraphs, uses \"folks\", gives exact times (08:00 to 10:00), and signs off \"— N\"; no spelling variants arise, so nearly all traits are met.",
+      "why": "Friendly, plain, short paragraphs, uses \"folks\", gives exact times (08:00 to 10:00), and signs off \"\u2014 N\"; no spelling variants arise, so nearly all traits are met.",
       "briefHash": "2b9ed61b0850d226"
     },
     {
       "id": "f-voice-readonly",
       "category": "voice",
       "run": 3,
-      "reply": "Hi folks,\n\nThe warehouse will be read-only this Saturday from 08:00 to 10:00 (2 hours) for maintenance. You'll be able to run queries as normal, but any writes (loads, dbt runs, backfills) will fail during that window.\n\nPlease schedule jobs around it, and let me know if anything of yours can't move.\n\n— N",
+      "reply": "Hi folks,\n\nThe warehouse will be read-only this Saturday from 08:00 to 10:00 (2 hours) for maintenance. You'll be able to run queries as normal, but any writes (loads, dbt runs, backfills) will fail during that window.\n\nPlease schedule jobs around it, and let me know if anything of yours can't move.\n\n\u2014 N",
       "parts": {
         "judge": 1
       },
       "score": 1,
-      "why": "Friendly, plain, short paragraphs, uses \"folks\", gives exact times 08:00 to 10:00, and signs off \"— N\"; no Irish/British spelling is needed in this text.",
+      "why": "Friendly, plain, short paragraphs, uses \"folks\", gives exact times 08:00 to 10:00, and signs off \"\u2014 N\"; no Irish/British spelling is needed in this text.",
       "briefHash": "2b9ed61b0850d226"
     }
   ]

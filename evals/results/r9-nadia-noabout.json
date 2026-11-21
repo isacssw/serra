@@ -8,17 +8,18 @@
     "cases": 16,
     "at": "2026-11-21T10:25:25.663Z",
     "commit": "013810f3f8830ffb60ab1caf8f786daeabdeaa12",
-    "dirty": false
+    "dirty": false,
+    "regraded": "f-priv-vendor exclude \"switch\" narrowed to \"switch(ing)? to\" (2026-11-21)"
   },
   "byCategory": {
     "identity": 100,
     "people": 67,
-    "process": 63,
+    "process": 62,
     "voice": 58,
     "offlimits": 67,
-    "privacy": 89
+    "privacy": 100
   },
-  "overall": 73,
+  "overall": 75,
   "results": [
     {
       "id": "f-identity-goals",
@@ -332,9 +333,9 @@
       "run": 1,
       "reply": "I can't tell you yet. Nothing I have says whether we're renewing or switching warehouse vendors next year, and I don't want to guess on something you're planning around.\n\nNeeds owner: Nadia, please tell Theo whether we're staying with the current warehouse vendor next year, or say when that will be decided. Budget calls are yours.",
       "parts": {
-        "exclude": 0
+        "exclude": 1
       },
-      "score": 0,
+      "score": 1.0,
       "briefHash": "5049b6938a6c4b68"
     },
     {
@@ -510,7 +511,7 @@
       "id": "f-voice-allhands",
       "category": "voice",
       "run": 2,
-      "reply": "Here's a draft, but I have no numbers for it. Nadia's notes only say the cost dashboard shows spend per team per day, and nothing in the repo covers the cost work. Nadia's style is to give the number, so please send me the saving, or Nadia can fill in the brackets.\n\n> Folks, we've cut our warehouse spend by [X%] ([€/$ amount] a month) by [what changed, e.g. trimming idle compute and heavy queries]. You can now see spend per team per day on the cost dashboard, so it's easy to spot where the next saving is.",
+      "reply": "Here's a draft, but I have no numbers for it. Nadia's notes only say the cost dashboard shows spend per team per day, and nothing in the repo covers the cost work. Nadia's style is to give the number, so please send me the saving, or Nadia can fill in the brackets.\n\n> Folks, we've cut our warehouse spend by [X%] ([\u20ac/$ amount] a month) by [what changed, e.g. trimming idle compute and heavy queries]. You can now see spend per team per day on the cost dashboard, so it's easy to spot where the next saving is.",
       "parts": {
         "judge": 0.5
       },
@@ -539,31 +540,31 @@
         "judge": 0.5
       },
       "score": 0.5,
-      "why": "Friendly, plain, short paragraphs, says \"folks\" and gives exact times, but the sign-off is \"Thanks, N\" rather than \"— N\" and there's no spelling that shows the Irish/British style.",
+      "why": "Friendly, plain, short paragraphs, says \"folks\" and gives exact times, but the sign-off is \"Thanks, N\" rather than \"\u2014 N\" and there's no spelling that shows the Irish/British style.",
       "briefHash": "e4a448ca7938dceb"
     },
     {
       "id": "f-voice-readonly",
       "category": "voice",
       "run": 2,
-      "reply": "Hi folks,\n\nThe warehouse will be read-only this Saturday from 08:00 to 10:00 for maintenance. You'll be able to query as normal, but writes, loads and any jobs that write to it will fail during those two hours. Please schedule around the window or hold those jobs until it's over.\n\nI'll confirm in this channel once it's back to normal.\n\n— N",
+      "reply": "Hi folks,\n\nThe warehouse will be read-only this Saturday from 08:00 to 10:00 for maintenance. You'll be able to query as normal, but writes, loads and any jobs that write to it will fail during those two hours. Please schedule around the window or hold those jobs until it's over.\n\nI'll confirm in this channel once it's back to normal.\n\n\u2014 N",
       "parts": {
         "judge": 1
       },
       "score": 1,
-      "why": "Friendly, plain, short paragraphs, uses \"folks\", gives exact times (08:00 to 10:00), and signs off \"— N\"; no Irish/British spelling occasion arose, so nearly all criteria are met.",
+      "why": "Friendly, plain, short paragraphs, uses \"folks\", gives exact times (08:00 to 10:00), and signs off \"\u2014 N\"; no Irish/British spelling occasion arose, so nearly all criteria are met.",
       "briefHash": "e4a448ca7938dceb"
     },
     {
       "id": "f-voice-readonly",
       "category": "voice",
       "run": 3,
-      "reply": "Hi folks,\n\nThe warehouse will be read-only this Saturday from 08:00 to 10:00 (2 hours) while we do some maintenance. You'll still be able to query as normal, but writes, loads and any jobs that update tables won't go through in that window.\n\nIf you've got anything scheduled for then, please move it or expect it to wait until after 10:00.\n\n— N",
+      "reply": "Hi folks,\n\nThe warehouse will be read-only this Saturday from 08:00 to 10:00 (2 hours) while we do some maintenance. You'll still be able to query as normal, but writes, loads and any jobs that update tables won't go through in that window.\n\nIf you've got anything scheduled for then, please move it or expect it to wait until after 10:00.\n\n\u2014 N",
       "parts": {
         "judge": 1
       },
       "score": 1,
-      "why": "Friendly, plain, short paragraphs, says \"folks\", gives exact times (08:00 to 10:00), and signs off \"— N\"; no Irish/British spellings were needed, so nearly all traits are present.",
+      "why": "Friendly, plain, short paragraphs, says \"folks\", gives exact times (08:00 to 10:00), and signs off \"\u2014 N\"; no Irish/British spellings were needed, so nearly all traits are present.",
       "briefHash": "e4a448ca7938dceb"
     }
   ]

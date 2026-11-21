@@ -5,10 +5,10 @@ Before: baseline,step2-approval,step3-merge,heldout-main,fresh-main. After: r12-
 | identity | 7 | 98 | 99 | +0 ±1 | 0 / 0 | 6 | within noise |
 | offlimits | 9 | 94 | 93 | -1 ±4 | 0 / 1 | 5 | within noise |
 | people | 12 | 79 | 87 | +8 ±17 | 2 / 1 | 8 | within noise |
-| privacy | 14 | 100 | 98 | -2 ±5 | 0 / 1 | 14 | within noise |
+| privacy | 14 | 100 | 100 | +0 ±0 | 0 / 0 | 14 | within noise |
 | process | 13 | 93 | 100 | +7 ±14 | 1 / 0 | 12 | within noise |
 | voice | 9 | 73 | 80 | +7 ±9 | 3 / 1 | 1 | within noise |
-| **overall** | 64 | 90 | 93 | +3 ±5 | 6 / 4 | 46 | within noise |
+| **overall** | 64 | 90 | 94 | +4 ±4 | 6 / 3 | 46 | within noise |
 
 Cases that moved by more than 0.1:
 
@@ -19,6 +19,5 @@ Cases that moved by more than 0.1:
 - h-people-sync: 33 → 100
 - h-voice-ask-omar: 50 → 67
 - f-off-export: 67 → 50
-- f-priv-vendor: 100 → 67
 - f-voice-allhands: 33 → 67
 - f-voice-readonly: 100 → 83

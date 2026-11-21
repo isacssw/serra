@@ -5,10 +5,10 @@ Before: r12-robin-noabout,r12-sam-noabout,r12-nadia-noabout. After: r12-robin,r1
 | identity | 7 | 98 | 99 | +1 ±2 | 0 / 0 | 6 | within noise |
 | offlimits | 9 | 93 | 93 | +0 ±0 | 0 / 0 | 7 | within noise |
 | people | 12 | 80 | 87 | +8 ±19 | 2 / 1 | 8 | within noise |
-| privacy | 14 | 95 | 98 | +2 ±5 | 1 / 0 | 12 | within noise |
+| privacy | 14 | 98 | 100 | +2 ±5 | 1 / 0 | 13 | within noise |
 | process | 13 | 81 | 100 | +19 ±21 | 3 / 0 | 10 | within noise |
 | voice | 9 | 83 | 80 | -4 ±16 | 2 / 3 | 4 | within noise |
-| **overall** | 64 | 88 | 93 | +5 ±6 | 8 / 4 | 47 | within noise |
+| **overall** | 64 | 88 | 94 | +5 ±6 | 8 / 4 | 48 | within noise |
 
 Cases that moved by more than 0.1:
 

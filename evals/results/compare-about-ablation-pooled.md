@@ -5,10 +5,10 @@ Before: r10-robin-noabout,r10-sam-noabout,r10-nadia-noabout,r11-robin-noabout,r1
 | identity | 7 | 98 | 99 | +1 ±1 | 0 / 0 | 6 | within noise |
 | offlimits | 9 | 93 | 93 | -0 ±1 | 0 / 0 | 6 | within noise |
 | people | 12 | 80 | 89 | +9 ±15 | 2 / 1 | 7 | within noise |
-| privacy | 14 | 94 | 98 | +5 ±8 | 2 / 0 | 12 | within noise |
+| privacy | 14 | 96 | 100 | +4 ±8 | 1 / 0 | 13 | within noise |
 | process | 13 | 85 | 100 | +15 ±17 | 3 / 0 | 10 | within noise |
 | voice | 9 | 82 | 80 | -1 ±9 | 2 / 1 | 2 | within noise |
-| **overall** | 64 | 88 | 94 | +6 ±5 | 9 / 2 | 43 | better |
+| **overall** | 64 | 89 | 94 | +6 ±5 | 8 / 2 | 44 | better |
 
 Cases that moved by more than 0.1:
 
@@ -19,7 +19,6 @@ Cases that moved by more than 0.1:
 - h-people-sync: 56 → 100
 - h-priv-owner: 44 → 100
 - h-voice-update: 78 → 50
-- f-priv-vendor: 67 → 78
 - f-process-cost: 67 → 100
 - f-process-drop: 17 → 100
 - f-voice-allhands: 44 → 61

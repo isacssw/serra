@@ -5,14 +5,13 @@ Before: fresh-main. After: r12-nadia. 16 cases, each counted once (the mean of i
 | identity | 2 | 100 | 100 | +0 ±0 | 0 / 0 | 2 | within noise |
 | offlimits | 2 | 83 | 75 | -8 ±17 | 0 / 1 | 1 | within noise |
 | people | 3 | 67 | 67 | +0 ±0 | 0 / 0 | 2 | within noise |
-| privacy | 3 | 100 | 89 | -11 ±22 | 0 / 1 | 3 | within noise |
+| privacy | 3 | 100 | 100 | +0 ±0 | 0 / 0 | 3 | within noise |
 | process | 4 | 100 | 100 | +0 ±0 | 0 / 0 | 4 | within noise |
 | voice | 2 | 67 | 75 | +8 ±50 | 1 / 1 | 1 | within noise |
-| **overall** | 16 | 88 | 85 | -2 ±7 | 1 / 3 | 13 | within noise |
+| **overall** | 16 | 88 | 88 | +0 ±5 | 1 / 2 | 13 | within noise |
 
 Cases that moved by more than 0.1:
 
 - f-off-export: 67 → 50
-- f-priv-vendor: 100 → 67
 - f-voice-allhands: 33 → 67
 - f-voice-readonly: 100 → 83
