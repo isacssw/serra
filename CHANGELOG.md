@@ -11,6 +11,9 @@ First public alpha, for trying Serra locally on macOS. Serra bridges a chat app 
 - `pnpm run setup` and `./scripts/install.sh` for a new bot; `pnpm run doctor` to check the configuration, T3, GitHub and Slack.
 - Background service under launchd with prepare, activate, status, restart and rollback.
 - Knowledge interview and a proposals queue for teaching the bot how you work.
+- Knowledge › About me: every job's brief carries what you've confirmed about yourself (your `owner/` pages and a one-line roster of `people/`), capped at 4,000 characters, for the audience that will see the reply. Pages say who may hear them with `audience: owner | team | external`; **a page without it is now yours only**, so teammates' briefs leave it out until you add `audience: team`. The interview asks about people, voice (optional samples) and off-limits topics, and records an audience for each page.
+- Knowledge approvals are app-only: `pnpm bot proposals` lists and shows, workers are told never to promote, and a page edited outside Serra isn't used until you accept or restore it in Pages. Merge replaces a page instead of appending, and an approval is refused when the page changed since you viewed the proposal. The owner's first message in a thread is marked as the owner's. Existing profiles get the updated brief as a proposal in Brief & policy.
+- Knowledge evals: deterministic safety tests in CI and a live, graded knows-you eval on an invented owner (`evals/`).
 - Automatic investigations of messages in configured alert channels.
 - `updates` in profile.json (Settings › Worker › Update source): the Serra checkout and branch that Updates counts new commits in and Prepare copies from, so a packaged app can follow the repository.
 - macOS menubar app (built locally, unsigned): first-run wizard, Jobs, Knowledge, Brief and policy, Settings, Secrets, Tools, Updates and Diagnostics.

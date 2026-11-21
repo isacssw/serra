@@ -113,7 +113,7 @@ When the log says the bot is up, ask it something in your test channel: `@friday
 pnpm bot interview --profile "$HOME/.local/share/serra/friday"
 ```
 
-This starts a T3 thread that interviews you, one question at a time, about your role, workflows and limits. Each summary you confirm becomes a proposal under `knowledge/proposals/` for you to review (`pnpm bot proposals --profile …`). New profiles start with an empty knowledge index. See [docs/knowledge-interview.md](docs/knowledge-interview.md).
+This starts a T3 thread that interviews you, one question at a time, about your role, workflows and limits. Each summary you confirm becomes a proposal under `knowledge/proposals/` for you to review in the app's Proposals screen (`pnpm bot proposals --profile …` lists them). New profiles start with an empty knowledge index. See [docs/knowledge-interview.md](docs/knowledge-interview.md).
 
 ## How it behaves in Slack
 

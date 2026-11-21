@@ -1,6 +1,8 @@
 # Owner knowledge
 
-Store decisions, working preferences, responsibilities, and pointers to product documentation. Do not store tokens, credentials, customer data, or copied code. Every page may be quoted in Slack, so include only information suitable for the bot's audience.
+Store decisions, working preferences, responsibilities, the people the owner works with, and pointers to product documentation. Do not store tokens, credentials, customer data, or copied code.
+
+Each page says who may hear it in `audience:`. `owner`: only the owner (their DMs with the bot and app tasks). `team`: teammates too. `external`: people outside the company in shared channels too. A page without `audience` is the owner's only. Pages under `owner/` and `people/` make up the About me in every brief, for the audience that will see the reply.
 
 Keep the index at 60 lines or fewer and each page at 120 lines or fewer. Every page needs an index row and a header:
 
@@ -8,6 +10,7 @@ Keep the index at 60 lines or fewer and each page at 120 lines or fewer. Every p
 ---
 type: preference
 description: One sentence explaining the topic
+audience: team
 written: YYYY-MM-DD
 verified: no
 sources:
