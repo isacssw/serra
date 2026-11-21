@@ -10,8 +10,8 @@ export type BotSync =
   /** No bot installed for this profile yet (setup isn't finished). */
   | { state: 'not-installed' }
   | { state: 'in-step'; version: string }
-  /** The owner stopped the bot: it isn't restarted on its own, only by Update now. */
-  | { state: 'stopped'; from: string | null; to: string }
+  /** The owner stopped the bot: it isn't restarted on its own. `to` is set when Update now would move it to the app's version. */
+  | { state: 'stopped'; from: string | null; to: string | null }
   /** The bot runs an older version and waits for running jobs to finish before it restarts. */
   | { state: 'waiting'; from: string | null; to: string; jobs: number }
   | { state: 'updating'; from: string | null; to: string }
@@ -53,10 +53,11 @@ export const botSyncDecision = (input: BotSyncInput): { sync: BotSync; action: B
   const from = input.active.appVersion ?? null;
   const to = input.appVersion;
   // Same version from a checkout (developer mode earlier) isn't the app's build: it moves to the app's own code.
-  if (from === to && input.active.fromApp) return { sync: { state: 'in-step', version: to }, action: 'none' };
+  const inStep = from === to && input.active.fromApp === true;
+  if (!input.serviceLoaded && input.running !== 'sync') return { sync: { state: 'stopped', from, to: inStep ? null : to }, action: 'none' };
+  if (inStep) return { sync: { state: 'in-step', version: to }, action: 'none' };
   if (input.running === 'sync') return { sync: { state: 'updating', from, to }, action: 'none' };
   if (input.failed?.version === to) return { sync: { state: 'failed', from, to, message: input.failed.message }, action: 'none' };
-  if (!input.serviceLoaded) return { sync: { state: 'stopped', from, to }, action: 'none' };
   if (input.jobs > 0) return { sync: { state: 'waiting', from, to, jobs: input.jobs }, action: 'none' };
   // Another action (a manual prepare or rollback) is running: wait for it.
   if (input.running) return { sync: { state: 'waiting', from, to, jobs: 0 }, action: 'none' };

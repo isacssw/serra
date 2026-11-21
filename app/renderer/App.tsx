@@ -64,6 +64,12 @@ const RememberScreen = () => {
   return null;
 };
 
+/** Tells the main process the window drew its first screen: an update that just installed is confirmed by this. */
+const Rendered = () => {
+  useEffect(() => { serra()?.app.rendered().catch(() => {}); }, []);
+  return null;
+};
+
 /** Every screen (and every Jobs tab) opens at its top, not at the last screen's scroll position. */
 const ScrollToTop = () => {
   const { pathname } = useLocation();

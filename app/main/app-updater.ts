@@ -122,22 +122,26 @@ export const stageFromDmg = async (dmg: string, expected: { version: string; bun
  */
 export const SWAP_SCRIPT = `#!/bin/bash
 set -u
-pid="$1"; target="$2"; staged="$3"; log="$4"; started="$5"
-shift 5
+pid="$1"; target="$2"; staged="$3"; log="$4"; started="$5"; version="$6"
+shift 6
 # The rest are the arguments Serra was started with, so it opens again the same way.
 relaunch() { if [ "$#" -gt 0 ]; then open -n "$target" --args "$@"; else open -n "$target"; fi; }
 exec >>"$log" 2>&1
 echo "$(date) swap: waiting for $pid"
 for _ in $(seq 1 600); do kill -0 "$pid" 2>/dev/null || break; sleep 0.1; done
 if kill -0 "$pid" 2>/dev/null; then echo "Serra is still running; not replacing it"; exit 1; fi
-previous="$target.previous"
-rm -rf "$previous" "$started"
-if ! mv "$target" "$previous"; then echo "couldn't move the old app aside"; relaunch "$@"; exit 1; fi
-if ! mv "$staged" "$target"; then echo "couldn't move the new app in; restoring the old one"; mv "$previous" "$target"; relaunch "$@"; exit 1; fi
+previous="$target.previous"; incoming="$target.incoming"
+rm -rf "$previous" "$started" "$incoming"
+# Put the new app beside the old one first (a copy when the volumes differ), so the switch is two renames in a row.
+if ! mv "$staged" "$incoming"; then echo "couldn't place the new app next to the old one"; rm -rf "$incoming"; relaunch "$@"; exit 1; fi
+if ! mv "$target" "$previous"; then echo "couldn't move the old app aside"; rm -rf "$incoming"; relaunch "$@"; exit 1; fi
+if ! mv "$incoming" "$target"; then echo "couldn't move the new app in; restoring the old one"; mv "$previous" "$target"; rm -rf "$incoming"; relaunch "$@"; exit 1; fi
 echo "$(date) swap: done, opening $target"
 relaunch "$@"
-for _ in $(seq 1 1200); do [ -f "$started" ] && break; sleep 0.1; done
-if [ -f "$started" ]; then echo "$(date) swap: the new version started"; rm -rf "$previous" "$started"; exit 0; fi
+# The new version writes its version to "started" once its window drew its first screen.
+confirmed() { [ "$(cat "$started" 2>/dev/null)" = "$version" ]; }
+for _ in $(seq 1 1200); do confirmed && break; sleep 0.1; done
+if confirmed; then echo "$(date) swap: the new version started"; rm -rf "$previous" "$started"; exit 0; fi
 if [ ! -d "$previous" ]; then echo "$(date) swap: the new version didn't confirm its start, and there is no old copy to restore; keeping it"; exit 1; fi
 echo "$(date) swap: the new version didn't start; restoring the old one"
 pkill -f "$target/Contents/MacOS/" 2>/dev/null; sleep 2
@@ -149,7 +153,7 @@ relaunch "$@"
 exit 1
 `;
 
-interface Pending { from: string; to: string; target: string }
+interface Pending { from: string; to: string; target: string; release?: AppRelease }
 
 /** The app's updater. One check, download or install at a time; every change is pushed to the window. */
 export const createAppUpdater = (deps: AppUpdaterDeps) => {
@@ -170,6 +174,8 @@ export const createAppUpdater = (deps: AppUpdaterDeps) => {
   // The first launch after a swap: this version opened, and `started()` confirms it once the window is up. Opened on
   // the old version instead: the swap didn't take, or the script put the old app back.
   let pendingSwap = false;
+  /** A verified download kept for the installer after Serra couldn't replace itself. */
+  let keep: string | null = null;
   if (existsSync(pendingPath)) {
     try {
       const pending = JSON.parse(readFileSync(pendingPath, 'utf8')) as Pending;
@@ -181,7 +187,18 @@ export const createAppUpdater = (deps: AppUpdaterDeps) => {
         // The swap script's last line says why (a move refused, or the new version didn't start).
         let why = '';
         try { why = readFileSync(join(deps.dir, 'swap.log'), 'utf8').trimEnd().split('\n').pop()?.replace(/^.*swap: /, '') ?? ''; } catch { /* no log */ }
-        phase = { state: 'error', stage: 'install', message: `The update to ${pending.to} didn't finish, so Serra is still on ${deps.current}.${why ? ` (${why})` : ''} Check again to retry.` };
+        const dmg = pending.release ? join(deps.dir, pending.release.version, pending.release.dmg.name) : null;
+        if (pending.release && dmg && existsSync(dmg)) {
+          // The verified disk image is still here: offer it to install by hand instead of starting over.
+          keep = pending.release.version;
+          const folder = dirname(pending.target) === '/Applications' ? 'Applications' : dirname(pending.target);
+          phase = {
+            state: 'ready', release: pending.release,
+            install: { kind: 'installer', reason: `Serra couldn't replace itself${why ? ` (${why})` : ''}.`, folder },
+          };
+        } else {
+          phase = { state: 'error', stage: 'install', message: `The update to ${pending.to} didn't finish, so Serra is still on ${deps.current}.${why ? ` (${why})` : ''} Check again to retry.` };
+        }
       }
     } catch { /* a broken marker is dropped */ }
     if (!pendingSwap) rmSync(pendingPath, { force: true });
@@ -191,7 +208,7 @@ export const createAppUpdater = (deps: AppUpdaterDeps) => {
   try {
     if (existsSync(deps.dir)) {
       for (const entry of readdirSync(deps.dir, { withFileTypes: true })) {
-        if (!entry.isDirectory()) continue;
+        if (!entry.isDirectory() || entry.name === keep) continue;
         try { rmSync(join(deps.dir, entry.name), { recursive: true, force: true }); } catch (error) { log(`couldn't remove ${entry.name}: ${message(error)}`); }
       }
     }
@@ -228,11 +245,12 @@ export const createAppUpdater = (deps: AppUpdaterDeps) => {
     const release = phase.release!;
     const aborted = controller = new AbortController();
     const folder = join(deps.dir, release.version);
-    rmSync(folder, { recursive: true, force: true });
-    mkdirSync(folder, { recursive: true });
     const dmg = join(folder, release.dmg.name);
+    const clear = (): void => { try { rmSync(folder, { recursive: true, force: true }); } catch (error) { log(`couldn't remove ${folder}: ${message(error)}`); } };
     set({ state: 'downloading', release, received: 0, total: release.dmg.size || null });
     try {
+      rmSync(folder, { recursive: true, force: true });
+      mkdirSync(folder, { recursive: true });
       const sums = await downloadText(deps.fetch, release.sums.url);
       await download(deps.fetch, release.dmg.url, dmg, {
         signal: aborted.signal,
@@ -243,13 +261,13 @@ export const createAppUpdater = (deps: AppUpdaterDeps) => {
         await verifyChecksum(dmg, release.dmg.name, sums);
         await stage(dmg, { version: release.version, bundleId: BUNDLE_ID }, join(folder, 'Serra.app'));
       } catch (error) {
-        rmSync(folder, { recursive: true, force: true });
+        clear();
         set({ state: 'error', stage: 'verify', message: `${message(error)} The download was deleted.`, release });
         return view();
       }
       set({ state: 'ready', release, install: plan(deps.bundlePath) });
     } catch (error) {
-      rmSync(folder, { recursive: true, force: true });
+      clear();
       if (aborted.signal.aborted) set({ state: 'available', release, checkedAt: now() });
       else set({ state: 'error', stage: 'download', message: `The download stopped: ${message(error)}`, release });
     } finally { controller = null; }
@@ -284,8 +302,8 @@ export const createAppUpdater = (deps: AppUpdaterDeps) => {
       try {
         const script = join(deps.dir, 'swap.sh');
         writeFileSync(script, SWAP_SCRIPT, { mode: 0o700 });
-        writeFileSync(pendingPath, JSON.stringify({ from: deps.current, to: release.version, target: deps.bundlePath } satisfies Pending));
-        launchSwap(script, [String(process.pid), deps.bundlePath, staged, join(deps.dir, 'swap.log'), startedPath, ...(deps.relaunchArgs ?? [])]);
+        writeFileSync(pendingPath, JSON.stringify({ from: deps.current, to: release.version, target: deps.bundlePath, release } satisfies Pending));
+        launchSwap(script, [String(process.pid), deps.bundlePath, staged, join(deps.dir, 'swap.log'), startedPath, release.version, ...(deps.relaunchArgs ?? [])]);
         log(`installing ${release.version}; quitting so the swap can run`);
         deps.quit();
       } catch (error) {

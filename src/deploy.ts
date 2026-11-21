@@ -218,32 +218,38 @@ export const prepareRelease = async (directory: string, { root, install = true, 
   const release = join(directory, 'releases', id);
   log(`Copying code into ${release}`);
   mkdirSync(release, { recursive: true, mode: 0o700 });
-  for (const name of releasedPaths) {
-    // The packaged copy leaves out docs/app (screenshots) and nothing the daemon reads.
-    if (!existsSync(join(root, name))) continue;
-    cpSync(join(root, name), join(release, name), { recursive: true });
-  }
-  const source = { ...shippedBuild(root), ...await codeCommit(root) };
-  if (source.commit) log(`Code at ${source.commit.slice(0, 12)}${source.dirty ? ' with uncommitted changes' : ''}`);
-  if (source.commit && updates) await warnIfBehind(root, source.commit, updates.ref ?? DEFAULT_UPDATES_REF, log);
-  writeFileSync(join(release, 'service.plist'), servicePlist({ directory, release, label: config.serviceLabel, node }), { mode: 0o600 });
-  const releaseFiles = files(release);
-  const releaseHash = digest(release, releaseFiles);
-  if (install) {
-    log('Installing production dependencies');
-    // The release's Node folder is added after PATH: opened from Finder, the app's PATH has no Node, and an nvm or
-    // official install keeps pnpm or corepack (a `#!/usr/bin/env node` script) only next to `node`.
-    const path = [process.env.PATH, dirname(node)].filter(Boolean).join(delimiter);
-    const pnpm = pnpmCommand(path);
-    // Corepack would otherwise stop to ask before fetching the pinned pnpm, with no terminal to answer it.
-    const env = { ...process.env, PATH: path, ...(pnpm.cmd === 'corepack' ? { COREPACK_ENABLE_DOWNLOAD_PROMPT: '0' } : {}) };
-    // Run from the release: Corepack picks pnpm's version from the package.json in the working directory, not from
-    // `--dir`, and the app's working directory is `/`, where it would fetch the newest pnpm, which refuses the pin.
-    await runLines(pnpm.cmd, [...pnpm.args, '--dir', release, 'install', '--prod', '--frozen-lockfile', '--ignore-scripts'], log, 60_000, env, release);
-  }
-  mkdirSync(join(directory, 'logs'), { recursive: true, mode: 0o700 });
-  const prepared: Prepared = { version: 1, release, releaseHash, releaseFiles, node, label: config.serviceLabel, preparedAt, ...source };
-  writeJson(join(directory, 'prepared.json'), prepared);
+  // Marks the build as in progress until prepared.json names it, so pruning in another process leaves it alone.
+  const building = `${release}${BUILDING}`;
+  writeFileSync(building, String(process.pid));
+  let prepared: Prepared;
+  try {
+    for (const name of releasedPaths) {
+      // The packaged copy leaves out docs/app (screenshots) and nothing the daemon reads.
+      if (!existsSync(join(root, name))) continue;
+      cpSync(join(root, name), join(release, name), { recursive: true });
+    }
+    const source = { ...shippedBuild(root), ...await codeCommit(root) };
+    if (source.commit) log(`Code at ${source.commit.slice(0, 12)}${source.dirty ? ' with uncommitted changes' : ''}`);
+    if (source.commit && updates) await warnIfBehind(root, source.commit, updates.ref ?? DEFAULT_UPDATES_REF, log);
+    writeFileSync(join(release, 'service.plist'), servicePlist({ directory, release, label: config.serviceLabel, node }), { mode: 0o600 });
+    const releaseFiles = files(release);
+    const releaseHash = digest(release, releaseFiles);
+    if (install) {
+      log('Installing production dependencies');
+      // The release's Node folder is added after PATH: opened from Finder, the app's PATH has no Node, and an nvm or
+      // official install keeps pnpm or corepack (a `#!/usr/bin/env node` script) only next to `node`.
+      const path = [process.env.PATH, dirname(node)].filter(Boolean).join(delimiter);
+      const pnpm = pnpmCommand(path);
+      // Corepack would otherwise stop to ask before fetching the pinned pnpm, with no terminal to answer it.
+      const env = { ...process.env, PATH: path, ...(pnpm.cmd === 'corepack' ? { COREPACK_ENABLE_DOWNLOAD_PROMPT: '0' } : {}) };
+      // Run from the release: Corepack picks pnpm's version from the package.json in the working directory, not from
+      // `--dir`, and the app's working directory is `/`, where it would fetch the newest pnpm, which refuses the pin.
+      await runLines(pnpm.cmd, [...pnpm.args, '--dir', release, 'install', '--prod', '--frozen-lockfile', '--ignore-scripts'], log, 60_000, env, release);
+    }
+    mkdirSync(join(directory, 'logs'), { recursive: true, mode: 0o700 });
+    prepared = { version: 1, release, releaseHash, releaseFiles, node, label: config.serviceLabel, preparedAt, ...source };
+    writeJson(join(directory, 'prepared.json'), prepared);
+  } finally { rmSync(building, { force: true }); }
   for (const action of ['activate', 'rollback', 'status']) {
     writeFileSync(join(directory, `${action}.sh`), `#!/usr/bin/env bash\nset -euo pipefail\nexec ${shellQuote(node)} ${shellQuote(join(release, 'src/manage.ts'))} ${action} --profile ${shellQuote(directory)} "$@"\n`, { mode: 0o700 });
   }
@@ -443,6 +449,9 @@ const restore = async (directory: string, transaction: Activation, driver: Servi
   log('Previous installation restored.');
 };
 
+/** Beside a release folder while prepare is still building it: `<id>.building`, holding prepare's PID. */
+const BUILDING = '.building';
+
 /** The `releases/` folder names prepare makes: `2026-11-21T16-08-23-951Z-85116`. */
 const RELEASE_ID = /^\d{4}-\d\d-\d\dT\d\d-\d\d-\d\d-\d{3}Z-\d+$/;
 
@@ -470,6 +479,8 @@ export const pruneReleases = (directory: string): string[] => {
   for (const entry of readdirSync(root, { withFileTypes: true })) {
     const path = join(root, entry.name);
     if (!entry.isDirectory() || !RELEASE_ID.test(entry.name) || keep.has(path) || entry.name > activeId) continue;
+    // A build still in progress (its prepare's process is alive) stays.
+    try { if (processAlive(Number(readFileSync(`${path}${BUILDING}`, 'utf8')))) continue; } catch { /* no marker */ }
     rmSync(path, { recursive: true, force: true });
     removed.push(path);
   }

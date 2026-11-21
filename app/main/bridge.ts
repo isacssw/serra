@@ -85,6 +85,8 @@ export interface SerraApi {
     /** Opens an `https:` or `http:` link (Slack, T3, a PR) in the default browser. */
     openExternal(url: string): void;
     openProfileFolder(): void;
+    /** The window drew its first screen. A launch that finishes an update confirms it with this (SERRA-46). */
+    rendered(): void;
   };
   /** First-run wizard (APP-27): create the profile, the Slack app, the owner and the service. Tokens use `secrets`. */
   setup: {
@@ -314,7 +316,7 @@ const methods = <N extends Namespace>() => <const L extends readonly string[]>(l
 
 /** Every bridge method by namespace. The type check keeps it equal to `SerraApi`; the preload and main loop over it. */
 export const bridgeMethods = {
-  app: methods<'app'>()(['info', 'getPrefs', 'setPrefs', 'openExternal', 'openProfileFolder']),
+  app: methods<'app'>()(['info', 'getPrefs', 'setPrefs', 'openExternal', 'openProfileFolder', 'rendered']),
   setup: methods<'setup'>()(['progress', 'defaults', 'detectProject', 'create', 'manifest', 'confirmOwner', 'installService']),
   bot: methods<'bot'>()(['status', 'start', 'stop', 'restart']),
   jobs: methods<'jobs'>()(['list', 'cleanupWorktrees']),

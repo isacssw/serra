@@ -90,7 +90,10 @@ const start = async (): Promise<void> => {
   const bundlePath = app.isPackaged ? join(app.getPath('exe'), '../../..') : null;
   // SERRA_UPDATES_FEED (QA's fake feed) turns updates on in a copy run from source; installing then opens the disk image.
   // In a packaged app only a feed on this Mac is accepted, so an environment variable can't point updates elsewhere.
-  const feed = process.env.SERRA_UPDATES_FEED && (!app.isPackaged || /^http:\/\/(127\.0\.0\.1|localhost)[:/]/.test(process.env.SERRA_UPDATES_FEED))
+  const loopback = (value: string): boolean => {
+    try { const url = new URL(value); return url.protocol === 'http:' && ['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname); } catch { return false; }
+  };
+  const feed = process.env.SERRA_UPDATES_FEED && (!app.isPackaged || loopback(process.env.SERRA_UPDATES_FEED))
     ? process.env.SERRA_UPDATES_FEED : undefined;
   const appUpdater: AppUpdater = createAppUpdater({
     current: app.getVersion(),
@@ -218,8 +221,6 @@ const start = async (): Promise<void> => {
   // macOS keeps the app open with no window; clicking the Dock icon brings one back.
   app.on('activate', () => { if (!window) void open(); });
   const first = await open();
-  // The window is up: if this launch finishes an update, the swap script can now drop the old copy.
-  appUpdater.started();
   if (smokeUserData) {
     const ok = await runSmokeChecks(first, () => resendStatus());
     // `app.exit` skips `will-quit`, so clean up here.

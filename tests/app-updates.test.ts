@@ -150,6 +150,7 @@ test('the bot line: in step, waiting for jobs, updating, failed, not installed, 
   assert.equal(failed.detail, 'No supported Node');
   assert.equal(botLine({ state: 'failed', from: null, to: '1.0.0', message: 'Slack account: invalid_auth; GitHub account: Expected alex' })!.detail, 'Slack account: invalid_auth (and 1 more)');
   assert.deepEqual(botLine({ state: 'stopped', from: '0.1.0-alpha.2', to: '0.1.0-alpha.3' })!.action, { kind: 'sync', label: 'Update now' });
+  assert.deepEqual(botLine({ state: 'stopped', from: '0.1.0-alpha.3', to: null }), { tone: 'neutral', text: 'The bot is stopped. It has version 0.1.0-alpha.3, the same as the app.', detail: 'Start it from the menu bar.', action: null });
   assert.deepEqual(botLine({ state: 'not-installed' })!.action, { kind: 'setup', label: 'Open setup' });
   assert.deepEqual(botLine({ state: 'interrupted' })!.action, { kind: 'rollback', label: 'Undo last switch' });
   assert.equal(botLine({ state: 'manual' }), null);
@@ -179,6 +180,8 @@ test('the bot follows the app only while no job runs, and never in developer mod
   assert.deepEqual(botSyncDecision(input({ follows: false })), { sync: { state: 'manual' }, action: 'none' }, 'a copy run from source does not lead the bot');
   // A bot the owner stopped stays stopped.
   assert.deepEqual(botSyncDecision(input({ serviceLoaded: false })), { sync: { state: 'stopped', from: '0.1.0-alpha.2', to: '0.1.0-alpha.3' }, action: 'none' });
+  // Stopped on the app's own version: stopped, not "runs", and nothing to update to.
+  assert.deepEqual(botSyncDecision(input({ serviceLoaded: false, active: { appVersion: '0.1.0-alpha.3', fromApp: true } })), { sync: { state: 'stopped', from: '0.1.0-alpha.3', to: null }, action: 'none' });
   assert.deepEqual(botSyncDecision(input({ active: null })), { sync: { state: 'not-installed' }, action: 'none' });
   assert.deepEqual(botSyncDecision(input({ activation: 'switching' })), { sync: { state: 'interrupted' }, action: 'none' });
   // A failure isn't retried on its own; another action running makes it wait.

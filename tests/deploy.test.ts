@@ -449,6 +449,15 @@ test('activation removes old releases but keeps the active one, the one before i
   // Activating the 3rd removed the 1st: active 3rd, previous 2nd, prepared 4th.
   assert.deepEqual(releases.map((path) => existsSync(path)), [false, true, true, true]);
   const stray = join(f.directory, 'releases', 'notes'); mkdirSync(stray);
+  // A build another process is still making (its marker names a live PID) stays, even when older than the active one.
+  const inProgress = join(f.directory, 'releases', '2000-01-01T00-00-00-000Z-1'); mkdirSync(inProgress);
+  writeFileSync(`${inProgress}.building`, String(process.pid));
+  const abandoned = join(f.directory, 'releases', '2000-01-01T00-00-00-000Z-2'); mkdirSync(abandoned);
+  writeFileSync(`${abandoned}.building`, '999999');
+  assert.deepEqual(pruneReleases(f.directory), [abandoned], 'a marker whose process is gone does not protect it');
+  assert.ok(existsSync(inProgress));
+  rmSync(`${inProgress}.building`);
+  assert.deepEqual(pruneReleases(f.directory), [inProgress]);
   assert.deepEqual(pruneReleases(f.directory), [], 'nothing else is old, and folders not named like a release stay');
   await activate(f.directory, f.opts);
   assert.deepEqual(releases.map((path) => existsSync(path)), [false, false, true, true]);

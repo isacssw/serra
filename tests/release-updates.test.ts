@@ -201,7 +201,8 @@ test('check, download, verify and restart: the swap runs after the app quits', a
   assert.equal((await f.updater.check()).state, 'ready', 'a verified download stays ready');
   f.updater.install();
   assert.deepEqual(f.calls.slice(1), ['swap Applications/Serra.app 0.1.0-alpha.3/Serra.app', 'quit']);
-  assert.deepEqual(JSON.parse(readFileSync(join(f.dir, 'updates/pending.json'), 'utf8')), { from: '0.1.0-alpha.2', to: '0.1.0-alpha.3', target: f.bundle });
+  const pending = JSON.parse(readFileSync(join(f.dir, 'updates/pending.json'), 'utf8'));
+  assert.deepEqual({ ...pending, release: pending.release.version }, { from: '0.1.0-alpha.2', to: '0.1.0-alpha.3', target: f.bundle, release: '0.1.0-alpha.3' });
 });
 
 test('a download that fails its checksum is deleted and nothing is staged', async (t) => {
@@ -246,12 +247,36 @@ test('the first launch after a swap confirms the start for the swap script; a la
   assert.equal(existsSync(join(dir, 'updates/pending.json')), false);
   write();
   const stuck = createAppUpdater({ ...base, current: '0.1.0-alpha.2' });
+  // (No verified disk image left, so there is nothing to offer for a manual install.)
   const view = stuck.view();
   assert.ok(view.state === 'error' && view.stage === 'install');
   assert.match(view.state === 'error' ? view.message : '', /didn't finish, so Serra is still on 0\.1\.0-alpha\.2/);
   rmSync(join(dir, 'updates/started'));
   stuck.started();
   assert.equal(existsSync(join(dir, 'updates/started')), false, 'only a launch that finishes an update confirms');
+});
+
+test('when Serra could not replace itself, the verified disk image is kept and offered as the installer', async (t) => {
+  const dir = temp(t);
+  const target = join(dir, 'Applications/Serra.app');
+  const release = {
+    version: '0.1.0-alpha.3', prerelease: true, notes: '', publishedAt: null, url: 'https://example.test/r',
+    dmg: { name: 'Serra-0.1.0-alpha.3-arm64.dmg', url: 'https://example.test/dmg', size: 1 }, sums: { url: 'https://example.test/s' },
+  };
+  mkdirSync(join(dir, 'updates/0.1.0-alpha.3'), { recursive: true });
+  writeFileSync(join(dir, 'updates/0.1.0-alpha.3', release.dmg.name), 'verified');
+  writeFileSync(join(dir, 'updates/swap.log'), 'Sat swap: waiting\ncouldn\'t move the old app aside\n');
+  writeFileSync(join(dir, 'updates/pending.json'), JSON.stringify({ from: '0.1.0-alpha.2', to: '0.1.0-alpha.3', target, release }));
+  const opened: string[] = [];
+  const updater = createAppUpdater({
+    current: '0.1.0-alpha.2', arch: 'arm64', unavailable: null, dir: join(dir, 'updates'), fetch: async () => new Response('[]'), feedUrl: 'feed',
+    bundlePath: target, getChoice: () => null, setChoice: () => {}, quit: () => {}, openPath: async (path) => { opened.push(path); },
+  });
+  const view = updater.view();
+  assert.ok(view.state === 'ready' && view.install.kind === 'installer');
+  assert.match(view.state === 'ready' && view.install.kind === 'installer' ? view.install.reason : '', /^Serra couldn't replace itself \(couldn't move the old app aside\)\.$/);
+  await updater.openInstaller();
+  assert.deepEqual(opened, [join(dir, 'updates/0.1.0-alpha.3', release.dmg.name)]);
 });
 
 test('turning pre-releases off drops a downloaded pre-release and checks again', async (t) => {

@@ -309,7 +309,7 @@ export const Updates = () => {
   const app = status.app && status.app.state !== 'unavailable' ? status.app : null;
   const card = app ? appCard(app) : null;
   const bot = botLine(status.bot);
-  const syncTarget = 'to' in status.bot ? status.bot.to : status.appVersion;
+  const syncTarget = ('to' in status.bot ? status.bot.to : null) ?? status.appVersion;
   const dialog = confirm?.action === 'activate'
     ? activateDialog(releases?.prepared ?? null, confirm.jobs)
     : confirm?.action === 'rollback' ? rollbackDialog(confirm.jobs)
@@ -351,7 +351,7 @@ export const Updates = () => {
       )}
     >
       {/* One short line for screen readers when the state changes; the details stay on demand. */}
-      <p aria-live="polite" className="sr-only">{[card?.title, card?.tone === 'down' ? card.body : '', bot?.text].filter(Boolean).map((part) => part!.replace(/\.$/, '')).join('. ')}</p>
+      <p aria-live="polite" className="sr-only">{[card?.title, card?.body, bot?.text, bot?.tone === 'down' || bot?.action ? bot.detail : ''].filter(Boolean).map((part) => part!.replace(/\.$/, '')).join('. ')}</p>
       {status.app?.updatedFrom && (
         <p role="status" className="flex items-center gap-2 text-[13px] text-muted">
           <CircleCheck size={16} aria-hidden className="text-up" />
@@ -448,7 +448,6 @@ const DeveloperMode = ({ releases, running, lines, details, setDetails, notice, 
   onAsk: (action: 'activate' | 'rollback') => void;
 }) => {
   const states = actionStates({ ...releases, running });
-  const from = branch(releases.ref);
   return (
     <>
       <div className="rounded-lg border border-line bg-panel" role="group" aria-label="Bot builds">
@@ -460,12 +459,12 @@ const DeveloperMode = ({ releases, running, lines, details, setDetails, notice, 
         <Row label="Built, not running">
           {releases.prepared
             ? <><span className="font-mono text-[13px] font-semibold">{releaseLabel(releases.prepared)}</span><span className="text-xs text-muted">{preparedLabel(releases.prepared)}</span></>
-            : <span className="text-[13px] text-muted">Nothing. Build from {from} to try new commits.</span>}
+            : <span className="text-[13px] text-muted">Nothing. Build from the checkout to try new commits.</span>}
         </Row>
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
-        <Button icon={<Hammer size={16} aria-hidden />} disabled={!states.prepare.enabled} title={states.prepare.reason} onClick={onPrepare}>Build from {from}</Button>
+        <Button icon={<Hammer size={16} aria-hidden />} disabled={!states.prepare.enabled} title={states.prepare.reason} onClick={onPrepare}>Build from checkout</Button>
         <Button icon={<Play size={16} aria-hidden />} disabled={!states.activate.enabled} title={states.activate.reason} onClick={() => onAsk('activate')}>Restart bot on it</Button>
         {releases.canRollback && (
           <Button variant="ghost" icon={<Undo2 size={16} aria-hidden />} disabled={!states.rollback.enabled} title={states.rollback.reason} onClick={() => onAsk('rollback')}>Undo last switch</Button>

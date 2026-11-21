@@ -17,4 +17,5 @@ export const appHandlers = (context: HandlerContext): Handlers<'app'> => ({
     await context.openExternal(url);
   },
   openProfileFolder: async () => { await context.openPath(context.profileDir()); },
+  rendered: () => { context.appUpdater?.started(); },
 });

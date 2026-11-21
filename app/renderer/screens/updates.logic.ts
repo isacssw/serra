@@ -168,11 +168,13 @@ export const botLine = (sync: BotSync): BotLine | null => {
     case 'manual': return null;
     case 'not-installed': return { tone: 'neutral', text: "The bot isn't installed yet.", detail: 'Finish setup to install it. It then follows the app’s version.', action: { kind: 'setup', label: 'Open setup' } };
     case 'in-step': return { tone: 'up', text: `The bot runs version ${sync.version}.`, detail: '', action: null };
-    case 'stopped': return {
-      tone: 'neutral', text: `The bot is stopped and still on ${was(sync.from)}.`,
-      detail: `Serra doesn't start a bot you stopped. Update now moves it to ${sync.to} and starts it.`,
-      action: { kind: 'sync', label: 'Update now' },
-    };
+    case 'stopped': return sync.to
+      ? {
+        tone: 'neutral', text: `The bot is stopped and still on ${was(sync.from)}.`,
+        detail: `Serra doesn't start a bot you stopped. Update now moves it to ${sync.to} and starts it.`,
+        action: { kind: 'sync', label: 'Update now' },
+      }
+      : { tone: 'neutral', text: `The bot is stopped. It has ${was(sync.from)}, the same as the app.`, detail: 'Start it from the menu bar.', action: null };
     case 'updating': return { tone: 'busy', text: `Moving the bot to version ${sync.to}…`, detail: 'It restarts once the new version is installed. Running jobs continue after the restart.', action: null };
     case 'waiting': return sync.jobs > 0
       ? {

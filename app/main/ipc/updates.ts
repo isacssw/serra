@@ -120,15 +120,19 @@ export const updatesService = (context: HandlerContext, deps: UpdatesDeps = {}) 
         return { ok: true as const, waiting: true };
       }
       const jobStarted = 'A job started. The bot restarts when no job is running.';
+      const stopped = 'The bot was stopped meanwhile, so it stays stopped.';
+      const label = (await releaseStatus(profileDir)).prepared?.label;
       const outcome = await activateRelease(profileDir, {
         ...deps.deploy, log: line,
         // The health checks take a few seconds: look again right before the bot stops.
-        beforeStop: () => {
+        beforeStop: async () => {
           if (!force && runningJobs(profileDir).length > 0) throw new Error(jobStarted);
+          // The owner may have stopped the bot while this was building: don't start it again on its own.
+          if (!force && label && !await driver.loaded(label)) throw new Error(stopped);
           context.expectStop?.();
         },
       });
-      if (!outcome.ok && outcome.error === jobStarted) { line(jobStarted); return { ok: true as const, waiting: true }; }
+      if (!outcome.ok && (outcome.error === jobStarted || outcome.error === stopped)) { line(outcome.error); return { ok: true as const, waiting: true }; }
       if (!outcome.ok) {
         fail(outcome.error);
         line(`The bot couldn't start on ${target}: ${outcome.error}`);
