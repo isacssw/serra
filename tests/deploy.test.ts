@@ -190,7 +190,7 @@ test('status explains when commits cannot be counted', async (t) => {
   await activate(f.directory, f.opts);
   const active = JSON.parse(readFileSync(join(f.directory, 'active.json'), 'utf8'));
   writeFileSync(join(f.directory, 'active.json'), JSON.stringify({ ...active, commit: undefined }));
-  assert.match((await releaseStatus(f.directory, { root: code })).commitsProblem ?? '', /does not record its commit/);
+  assert.match((await releaseStatus(f.directory, { root: code })).commitsProblem ?? '', /doesn't record its commit\. Build from main and restart the bot on it/);
   assert.match((await releaseStatus(f.directory, { root: f.root })).commitsProblem ?? '', /isn't a git checkout.*updates\.source/);
   gitIn(f.root, 'init', '-q');
   assert.match((await releaseStatus(f.directory, { root: f.root })).commitsProblem ?? '', /No main branch/);
@@ -239,7 +239,7 @@ test('status says when the active release came from another repository\'s histor
   followUpdates(f.directory, { source: code, ref: 'main' });
   const status = await releaseStatus(f.directory);
   assert.equal(status.ref, 'main'); assert.equal(status.upstream, null);
-  assert.match(status.commitsProblem ?? '', /bfecea3 isn't in .*Prepare and activate a release from main/);
+  assert.match(status.commitsProblem ?? '', /bfecea3 isn't in .*Build from main and restart the bot on it/);
 });
 
 test('activation preflight lists running jobs, newest activity first, without writing state', async (t) => {

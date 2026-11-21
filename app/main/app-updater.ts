@@ -12,7 +12,7 @@ import {
 import { run } from '../../src/t3.ts';
 
 /** How a downloaded update gets installed: Serra swaps itself, or the owner drags it from the opened disk image. */
-export type InstallPlan = { kind: 'replace' } | { kind: 'installer'; reason: string };
+export type InstallPlan = { kind: 'replace' } | { kind: 'installer'; reason: string; folder: string };
 
 export type AppUpdatePhase =
   /** Updates can't run here (a copy run from source). */
@@ -59,6 +59,8 @@ export interface AppUpdaterDeps {
   /** Starts the detached script that swaps the app once this process exits, then relaunches it. */
   launchSwap?: (script: string, args: string[]) => void;
   quit: () => void;
+  /** The arguments to open the new version with: the ones this process was started with (profile, user data). */
+  relaunchArgs?: string[];
   openPath: (path: string) => Promise<void>;
   push?: (view: AppUpdateView) => void;
   log?: (line: string) => void;
@@ -74,10 +76,13 @@ const message = (error: unknown): string => (error instanceof Error ? error.mess
  * in a folder this user can write. Otherwise the owner installs from the opened disk image.
  */
 export const installPlan = (bundlePath: string | null, writable: (path: string) => boolean = canWrite): InstallPlan => {
-  if (!bundlePath || !bundlePath.endsWith('.app')) return { kind: 'installer', reason: "This copy of Serra can't replace itself." };
-  if (bundlePath.startsWith('/Volumes/')) return { kind: 'installer', reason: "Serra is running from its disk image, so it can't replace itself." };
-  if (bundlePath.includes('/AppTranslocation/')) return { kind: 'installer', reason: "macOS is running Serra from a temporary location, so it can't replace itself." };
-  if (!writable(dirname(bundlePath)) || !writable(bundlePath)) return { kind: 'installer', reason: `Serra needs an administrator to replace itself in ${dirname(bundlePath)}.` };
+  const applications = 'Applications';
+  if (!bundlePath || !bundlePath.endsWith('.app')) return { kind: 'installer', reason: "This copy of Serra can't replace itself.", folder: applications };
+  if (bundlePath.startsWith('/Volumes/')) return { kind: 'installer', reason: "Serra is running from its disk image, so it can't replace itself.", folder: applications };
+  if (bundlePath.includes('/AppTranslocation/')) return { kind: 'installer', reason: "macOS is running Serra from a temporary location, so it can't replace itself.", folder: applications };
+  const folder = dirname(bundlePath);
+  const name = folder === '/Applications' ? applications : folder;
+  if (!writable(folder) || !writable(bundlePath)) return { kind: 'installer', reason: `Serra needs an administrator to replace itself in ${name}.`, folder: name };
   return { kind: 'replace' };
 };
 
@@ -118,23 +123,29 @@ export const stageFromDmg = async (dmg: string, expected: { version: string; bun
 export const SWAP_SCRIPT = `#!/bin/bash
 set -u
 pid="$1"; target="$2"; staged="$3"; log="$4"; started="$5"
+shift 5
+# The rest are the arguments Serra was started with, so it opens again the same way.
+relaunch() { if [ "$#" -gt 0 ]; then open -n "$target" --args "$@"; else open -n "$target"; fi; }
 exec >>"$log" 2>&1
 echo "$(date) swap: waiting for $pid"
 for _ in $(seq 1 600); do kill -0 "$pid" 2>/dev/null || break; sleep 0.1; done
 if kill -0 "$pid" 2>/dev/null; then echo "Serra is still running; not replacing it"; exit 1; fi
 previous="$target.previous"
 rm -rf "$previous" "$started"
-if ! mv "$target" "$previous"; then echo "couldn't move the old app aside"; open "$target"; exit 1; fi
-if ! mv "$staged" "$target"; then echo "couldn't move the new app in; restoring the old one"; mv "$previous" "$target"; open "$target"; exit 1; fi
+if ! mv "$target" "$previous"; then echo "couldn't move the old app aside"; relaunch "$@"; exit 1; fi
+if ! mv "$staged" "$target"; then echo "couldn't move the new app in; restoring the old one"; mv "$previous" "$target"; relaunch "$@"; exit 1; fi
 echo "$(date) swap: done, opening $target"
-open "$target"
+relaunch "$@"
 for _ in $(seq 1 1200); do [ -f "$started" ] && break; sleep 0.1; done
 if [ -f "$started" ]; then echo "$(date) swap: the new version started"; rm -rf "$previous" "$started"; exit 0; fi
+if [ ! -d "$previous" ]; then echo "$(date) swap: the new version didn't confirm its start, and there is no old copy to restore; keeping it"; exit 1; fi
 echo "$(date) swap: the new version didn't start; restoring the old one"
 pkill -f "$target/Contents/MacOS/" 2>/dev/null; sleep 2
 rm -rf "$target.failed"
-mv "$target" "$target.failed" && mv "$previous" "$target" && rm -rf "$target.failed"
-open "$target"
+if mv "$target" "$target.failed"; then
+  if mv "$previous" "$target"; then rm -rf "$target.failed"; else mv "$target.failed" "$target"; fi
+fi
+relaunch "$@"
 exit 1
 `;
 
@@ -167,7 +178,10 @@ export const createAppUpdater = (deps: AppUpdaterDeps) => {
         pendingSwap = true;
         log(`updated from ${pending.from} to ${pending.to}`);
       } else if (!deps.unavailable) {
-        phase = { state: 'error', stage: 'install', message: `The update to ${pending.to} didn't finish, so Serra is still on ${deps.current}. Check again to retry.` };
+        // The swap script's last line says why (a move refused, or the new version didn't start).
+        let why = '';
+        try { why = readFileSync(join(deps.dir, 'swap.log'), 'utf8').trimEnd().split('\n').pop()?.replace(/^.*swap: /, '') ?? ''; } catch { /* no log */ }
+        phase = { state: 'error', stage: 'install', message: `The update to ${pending.to} didn't finish, so Serra is still on ${deps.current}.${why ? ` (${why})` : ''} Check again to retry.` };
       }
     } catch { /* a broken marker is dropped */ }
     if (!pendingSwap) rmSync(pendingPath, { force: true });
@@ -271,7 +285,7 @@ export const createAppUpdater = (deps: AppUpdaterDeps) => {
         const script = join(deps.dir, 'swap.sh');
         writeFileSync(script, SWAP_SCRIPT, { mode: 0o700 });
         writeFileSync(pendingPath, JSON.stringify({ from: deps.current, to: release.version, target: deps.bundlePath } satisfies Pending));
-        launchSwap(script, [String(process.pid), deps.bundlePath, staged, join(deps.dir, 'swap.log'), startedPath]);
+        launchSwap(script, [String(process.pid), deps.bundlePath, staged, join(deps.dir, 'swap.log'), startedPath, ...(deps.relaunchArgs ?? [])]);
         log(`installing ${release.version}; quitting so the swap can run`);
         deps.quit();
       } catch (error) {

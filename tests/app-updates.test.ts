@@ -32,6 +32,7 @@ test('the restart dialog names the build and the running jobs: none, one and sev
 });
 
 test('the undo dialog counts running jobs the same way', () => {
+  assert.equal(rollbackDialog(0).title, 'Undo the last switch?');
   assert.match(rollbackDialog(0).body, /^No jobs are running\. The bot restarts on the build it ran before/);
   assert.match(rollbackDialog(1).body, /^1 job is running\..*; the job continues after the restart\.$/);
   assert.match(rollbackDialog(2).body, /^2 jobs are running\..*; the jobs continue after the restart\.$/);
@@ -66,7 +67,7 @@ test('the commits heading counts commits on main, says when up to date, and when
 test('buttons: restart needs a clean build, undo needs an earlier bot, and one action runs at a time', () => {
   const idle = actionStates({ activateProblems: ['No prepared release. Run prepare first.'], canRollback: false, running: null });
   assert.deepEqual(idle.prepare, { enabled: true });
-  assert.deepEqual(idle.activate, { enabled: false, reason: 'No prepared release. Run prepare first.' });
+  assert.deepEqual(idle.activate, { enabled: false, reason: 'Nothing built yet.' });
   assert.equal(idle.rollback.enabled, false);
   const ready = actionStates({ activateProblems: [], canRollback: true, running: null });
   assert.ok(ready.activate.enabled && ready.rollback.enabled);
@@ -113,13 +114,17 @@ test('the app card in each state says one thing and offers the one next step', (
   assert.equal(progressPercent(76_000_000, 122_000_000), 62);
   assert.equal(progressPercent(5, null), null);
   assert.deepEqual(appCard(view({ state: 'ready', release, install: { kind: 'replace' } }), now).primary, { action: 'install', label: 'Restart to update' });
-  const installer = appCard(view({ state: 'ready', release, install: { kind: 'installer', reason: "Serra is running from its disk image, so it can't replace itself." } }), now);
+  const installer = appCard(view({ state: 'ready', release, install: { kind: 'installer', reason: "Serra is running from its disk image, so it can't replace itself.", folder: 'Applications' } }), now);
   assert.deepEqual(installer.primary, { action: 'openInstaller', label: 'Open installer' });
-  assert.equal(installer.body, "Serra is running from its disk image, so it can't replace itself. Open the installer and drag Serra to Applications, replacing the old copy.");
+  assert.equal(installer.body, "Serra is running from its disk image, so it can't replace itself. Open the installer, quit Serra, then drag it into Applications, replacing the old copy.");
   const failedCheck = appCard(view({ state: 'error', stage: 'check', message: "Couldn't reach GitHub." }), now);
   assert.equal(failedCheck.title, "Couldn't check for updates");
-  assert.deepEqual(failedCheck.primary, { action: 'check', label: 'Try again' });
-  assert.deepEqual(appCard(view({ state: 'error', stage: 'verify', message: 'x', release }), now).primary, { action: 'download', label: 'Try again' });
+  assert.equal(failedCheck.primary, null, 'the header has Check for updates');
+  const failedVerify = appCard(view({ state: 'error', stage: 'verify', message: 'x', release }), now);
+  assert.equal(failedVerify.title, "Serra 0.1.0-alpha.3 didn't pass its checks");
+  assert.equal(failedVerify.meta, 'You have 0.1.0-alpha.2');
+  assert.deepEqual(failedVerify.primary, { action: 'download', label: 'Try again' });
+  assert.equal(appCard(view({ state: 'idle' }), now).primary, null);
   assert.equal(appCard(view({ state: 'no-build', version: '0.2.0', url: release.url, checkedAt: now.toISOString() }), now).body, 'Serra 0.2.0 is out, but it has no build for this Mac yet.');
   for (const state of ['checking', 'downloading', 'verifying', 'installing', 'ready', 'unavailable']) assert.equal(canCheck(view({ state, release, install: { kind: 'replace' }, reason: '' })), false, state);
   assert.equal(canCheck(view({ state: 'up-to-date', checkedAt: '' })), true);
@@ -146,7 +151,7 @@ test('the bot line: in step, waiting for jobs, updating, failed, not installed, 
   assert.equal(botLine({ state: 'failed', from: null, to: '1.0.0', message: 'Slack account: invalid_auth; GitHub account: Expected alex' })!.detail, 'Slack account: invalid_auth (and 1 more)');
   assert.deepEqual(botLine({ state: 'stopped', from: '0.1.0-alpha.2', to: '0.1.0-alpha.3' })!.action, { kind: 'sync', label: 'Update now' });
   assert.deepEqual(botLine({ state: 'not-installed' })!.action, { kind: 'setup', label: 'Open setup' });
-  assert.deepEqual(botLine({ state: 'interrupted' })!.action, { kind: 'rollback', label: 'Roll back' });
+  assert.deepEqual(botLine({ state: 'interrupted' })!.action, { kind: 'rollback', label: 'Undo last switch' });
   assert.equal(botLine({ state: 'manual' }), null);
   assert.match(syncDialog('0.1.0-alpha.3', 2).body, /^2 jobs are running\./);
 });

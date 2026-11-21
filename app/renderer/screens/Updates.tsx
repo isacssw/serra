@@ -4,7 +4,7 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { useNavigate } from 'react-router';
 import {
-  ArrowDownToLine, Bot, CircleCheck, ExternalLink, GitBranch, GitCommitHorizontal, Hammer, Info, LoaderCircle, Play, RefreshCw,
+  ArrowDownToLine, CircleCheck, ExternalLink, GitBranch, GitCommitHorizontal, Hammer, Info, LoaderCircle, Play, RefreshCw,
   RotateCw, TriangleAlert, Undo2,
 } from 'lucide-react';
 import { serra } from '../bridge.ts';
@@ -342,11 +342,6 @@ export const Updates = () => {
       ) : undefined}
       actions={(
         <>
-          {developer && (
-            <Button variant="ghost" icon={<RefreshCw size={16} aria-hidden className={cx(fetching && 'animate-spin')} />} disabled={fetching} onClick={() => void fetchCommits()}>
-              Fetch commits
-            </Button>
-          )}
           {app && (
             <Button variant="ghost" icon={<RefreshCw size={16} aria-hidden className={cx(app.state === 'checking' && 'animate-spin')} />} disabled={!canCheck(app)} onClick={() => void appAction('check')}>
               Check for updates
@@ -389,19 +384,6 @@ export const Updates = () => {
           </section>
         );
       })()}
-      {!developer && noticeBox}
-
-      {developer && releases && <DeveloperMode
-        releases={releases}
-        running={running}
-        lines={lines}
-        details={details}
-        setDetails={setDetails}
-        notice={noticeBox}
-        onPrepare={() => void prepare()}
-        onAsk={(action) => void ask(action)}
-      />}
-
       {app && (
         <label className="flex w-fit cursor-pointer items-start gap-2.5 text-[13px]">
           <input
@@ -416,6 +398,21 @@ export const Updates = () => {
           </span>
         </label>
       )}
+      {!developer && noticeBox}
+
+      {developer && releases && <DeveloperMode
+        releases={releases}
+        running={running}
+        lines={lines}
+        details={details}
+        setDetails={setDetails}
+        notice={noticeBox}
+        fetching={fetching}
+        onFetch={() => void fetchCommits()}
+        onPrepare={() => void prepare()}
+        onAsk={(action) => void ask(action)}
+      />}
+
 
       <Dialog
         open={dialog !== null}
@@ -429,7 +426,7 @@ export const Updates = () => {
               variant={confirm?.action === 'rollback' ? 'danger' : 'primary'}
               onClick={() => { if (confirm) void run(confirm.action); }}
             >
-              {confirm?.action === 'rollback' ? 'Go back' : confirm?.action === 'sync' ? 'Update now' : 'Restart bot'}
+              {confirm?.action === 'rollback' ? 'Undo' : confirm?.action === 'sync' ? 'Update now' : 'Restart bot'}
             </Button>
           </>
         )}
@@ -438,7 +435,9 @@ export const Updates = () => {
   );
 };
 
-const DeveloperMode = ({ releases, running, lines, details, setDetails, notice, onPrepare, onAsk }: {
+const DeveloperMode = ({ releases, running, lines, details, setDetails, notice, fetching, onFetch, onPrepare, onAsk }: {
+  fetching: boolean;
+  onFetch: () => void;
   releases: NonNullable<UpdatesStatus['releases']>;
   running: UpdatesStatus['running'];
   lines: string[];
@@ -477,7 +476,12 @@ const DeveloperMode = ({ releases, running, lines, details, setDetails, notice, 
       {notice}
 
       <section className="flex flex-col gap-2" aria-labelledby="commits-title">
-        <h2 id="commits-title" className="text-[15px] font-semibold">{commitsHeading(releases)}</h2>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 id="commits-title" className="text-[15px] font-semibold">{commitsHeading(releases)}</h2>
+          <Button size="sm" variant="ghost" icon={<RefreshCw size={14} aria-hidden className={cx(fetching && 'animate-spin')} />} disabled={fetching} onClick={onFetch}>
+            Fetch commits
+          </Button>
+        </div>
         {releases.commitsProblem
           ? <p className="text-[13px] text-muted">{releases.commitsProblem}</p>
           : releases.newCommits.length > 0 && (

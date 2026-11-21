@@ -109,10 +109,10 @@ Promise<Pick<ReleaseOverview, 'ref' | 'newCommits' | 'commitsProblem' | 'source'
   }
   if (!ref || !await refExists(root, ref)) return none(`No ${ref ?? 'main'} branch in ${root}`);
   if (!active) return none('No active release to compare with', ref);
-  if (!active.commit) return none('The active release does not record its commit. Prepare and activate a new release to track commits.', ref);
+  if (!active.commit) return none('The running bot doesn\'t record its commit. Build from ' + (ref ?? 'main').replace(/^[^/]+\//, '') + ' and restart the bot on it to track new commits.', ref);
   if (!await refExists(root, active.commit)) {
     return none(`The active release's commit ${active.commit.slice(0, 7)} isn't in ${root} (it came from another repository or history). `
-      + `Prepare and activate a release from ${ref} to track new commits.`, ref);
+      + `Build from ${ref} and restart the bot on it to track new commits.`, ref);
   }
   try {
     const out = await git(root, ['log', '--max-count=200', '--format=%H%x1f%s', `${active.commit}..${ref}`]);

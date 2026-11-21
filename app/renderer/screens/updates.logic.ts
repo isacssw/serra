@@ -60,11 +60,14 @@ export interface AppCard {
   link: string | null;
 }
 
-const ERROR_TITLES: Record<Extract<AppUpdateView, { state: 'error' }>['stage'], string> = {
-  check: "Couldn't check for updates",
-  download: "The download didn't finish",
-  verify: "The download didn't pass its checks",
-  install: "The update didn't install",
+const errorTitle = (stage: Extract<AppUpdateView, { state: 'error' }>['stage'], version: string | null): string => {
+  const name = version ? `Serra ${version}` : 'The update';
+  switch (stage) {
+    case 'check': return "Couldn't check for updates";
+    case 'download': return `${name} didn't finish downloading`;
+    case 'verify': return `${name} didn't pass its checks`;
+    case 'install': return `${name} didn't install`;
+  }
 };
 
 /** What the app card says and offers in each state. */
@@ -73,7 +76,8 @@ export const appCard = (view: AppUpdateView, now = new Date()): AppCard => {
   const name = `Serra ${view.current}`;
   switch (view.state) {
     case 'unavailable': return { ...base, tone: 'neutral', title: name, body: view.reason };
-    case 'idle': return { ...base, tone: 'neutral', title: name, body: "Serra hasn't checked for a newer version yet.", primary: { action: 'check', label: 'Check now' } };
+    // Checking is the header's button; the card doesn't repeat it.
+    case 'idle': return { ...base, tone: 'neutral', title: name, body: "Serra hasn't checked for a newer version yet." };
     case 'checking': return { ...base, tone: 'busy', title: name, body: 'Checking for a newer version…' };
     case 'up-to-date': return { ...base, tone: 'up', title: name, body: "You're on the latest version.", meta: checkedLabel(view.checkedAt, now) };
     case 'no-build': return {
@@ -98,13 +102,15 @@ export const appCard = (view: AppUpdateView, now = new Date()): AppCard => {
       }
       : {
         ...base, tone: 'new', title: `Serra ${view.release.version} is ready`, meta: `You have ${view.current}`,
-        body: `${view.install.reason} Open the installer and drag Serra to Applications, replacing the old copy.`,
+        body: `${view.install.reason} Open the installer, quit Serra, then drag it into ${view.install.folder}, replacing the old copy.`,
         primary: { action: 'openInstaller', label: 'Open installer' },
       };
     case 'installing': return { ...base, tone: 'busy', title: `Installing Serra ${view.release.version}`, meta: `You have ${view.current}`, body: 'Serra is closing and will open again in a moment.' };
     case 'error': return {
-      ...base, tone: 'down', title: ERROR_TITLES[view.stage], meta: name, body: view.message, link: view.release?.url ?? null,
-      primary: view.release && view.stage !== 'install' ? { action: 'download', label: 'Try again' } : { action: 'check', label: 'Try again' },
+      ...base, tone: 'down', title: errorTitle(view.stage, view.release?.version ?? null), meta: `You have ${view.current}`, body: view.message,
+      link: view.release?.url ?? null,
+      // A failed download is retried here; a failed check with the header's Check for updates.
+      primary: view.release && view.stage !== 'install' ? { action: 'download', label: 'Try again' } : null,
     };
   }
 };
@@ -180,8 +186,8 @@ export const botLine = (sync: BotSync): BotLine | null => {
       action: { kind: 'sync', label: 'Try again' },
     };
     case 'interrupted': return {
-      tone: 'down', text: "The last bot restart didn't finish.", detail: 'Roll back to start the earlier version again.',
-      action: { kind: 'rollback', label: 'Roll back' },
+      tone: 'down', text: "The last bot restart didn't finish.", detail: 'Undo it to start the earlier version again.',
+      action: { kind: 'rollback', label: 'Undo last switch' },
     };
   }
 };
@@ -248,13 +254,22 @@ type DeveloperAction = 'prepare' | 'activate' | 'rollback';
 
 const BUSY: Record<UpdateAction, string> = { prepare: 'Building…', activate: 'Restarting the bot…', rollback: 'Undoing…', sync: 'Updating the bot…' };
 
+/** Why a build can't be used, in the screen's words (the release service speaks the CLI's prepare/activate). */
+export const buildProblem = (problem: string): string => problem
+  .replace('No prepared release. Run prepare first.', 'Nothing built yet.')
+  .replace('Prepared dependencies missing. Run prepare again.', "The build's dependencies are missing. Build again.")
+  .replace('Prepared release changed. Prepare a new release before activation.', 'The build changed since it was made. Build again.')
+  .replace('The service label changed. Prepare a new release before activation.', 'The bot ID changed. Build again.')
+  .replace('This release is already active', 'The bot already runs this build.')
+  .replace('An interrupted cutover needs rollback first. Run the rollback command.', "The last switch didn't finish. Undo it first.");
+
 /** Whether each developer-mode button can run now, and why not (shown as its tooltip). One action runs at a time. */
 export const actionStates = (status: Pick<ReleaseOverview, 'activateProblems' | 'canRollback'> & { running: UpdateAction | null }): Record<DeveloperAction, ActionState> => {
   if (status.running) {
     const reason = `${BUSY[status.running]} Wait for it to finish.`;
     return { prepare: { enabled: false, reason }, activate: { enabled: false, reason }, rollback: { enabled: false, reason } };
   }
-  const blocked = status.activateProblems[0];
+  const blocked = status.activateProblems[0] && buildProblem(status.activateProblems[0]);
   return {
     prepare: { enabled: true },
     activate: blocked ? { enabled: false, reason: blocked } : { enabled: true },
@@ -276,7 +291,7 @@ export const activateDialog = (prepared: Labelled | null, runningJobs: number): 
 
 /** The text of the Undo last switch dialog. It restarts the bot too, so it names the running jobs the same way. */
 export const rollbackDialog = (runningJobs: number): { title: string; body: string } => ({
-  title: 'Go back to the previous bot?',
+  title: 'Undo the last switch?',
   body: runningJobs === 0
     ? 'No jobs are running. The bot restarts on the build it ran before the last switch.'
     : `${plural(runningJobs, 'job is', 'jobs are')} running. The bot restarts on the build it ran before the last switch; ${runningJobs === 1 ? 'the job continues' : 'the jobs continue'} after the restart.`,

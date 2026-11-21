@@ -109,7 +109,7 @@ test('a download passes when it matches its SHA256SUMS line and fails when it di
   await verifyChecksum(file, 'Serra-0.1.0-alpha.3-arm64.dmg', sums);
   await verifyChecksum(file, 'Serra-0.1.0-alpha.3-arm64.dmg', sums.toUpperCase().replace('SERRA-0.1.0-ALPHA.3-ARM64.DMG', 'Serra-0.1.0-alpha.3-arm64.dmg'));
   writeFileSync(file, 'a tampered disk image');
-  await assert.rejects(verifyChecksum(file, 'Serra-0.1.0-alpha.3-arm64.dmg', sums), /doesn't match its checksum/);
+  await assert.rejects(verifyChecksum(file, 'Serra-0.1.0-alpha.3-arm64.dmg', sums), /doesn't match the checksum published/);
   await assert.rejects(verifyChecksum(file, 'Serra-9.dmg', sums), /has no line for Serra-9\.dmg/);
 });
 
@@ -146,6 +146,8 @@ test('download writes the file, reports progress, and leaves nothing behind on f
 test('the app replaces itself only from a writable .app outside a disk image or translocation', () => {
   const yes = () => true;
   assert.deepEqual(installPlan('/Applications/Serra.app', yes), { kind: 'replace' });
+  assert.deepEqual(installPlan('/Applications/Serra.app', () => false), { kind: 'installer', reason: 'Serra needs an administrator to replace itself in Applications.', folder: 'Applications' });
+  assert.equal((installPlan('/Users/you/Apps/Serra.app', () => false) as { folder: string }).folder, '/Users/you/Apps');
   assert.equal(installPlan(null, yes).kind, 'installer');
   assert.match((installPlan('/Volumes/Serra/Serra.app', yes) as { reason: string }).reason, /disk image/);
   assert.match((installPlan('/private/var/folders/x/AppTranslocation/ABC/d/Serra.app', yes) as { reason: string }).reason, /temporary location/);
@@ -209,7 +211,7 @@ test('a download that fails its checksum is deleted and nothing is staged', asyn
   await f.settle();
   const failed = f.updater.view();
   assert.ok(failed.state === 'error' && failed.stage === 'verify');
-  assert.match(failed.state === 'error' ? failed.message : '', /doesn't match its checksum.*The download was deleted\./);
+  assert.match(failed.state === 'error' ? failed.message : '', /doesn't match the checksum published with the release\. The download was deleted\./);
   assert.deepEqual(f.calls, [], 'not mounted, not staged');
   assert.equal(existsSync(join(f.dir, 'updates/0.1.0-alpha.3')), false);
   f.updater.install();
@@ -264,7 +266,7 @@ test('turning pre-releases off drops a downloaded pre-release and checks again',
 });
 
 test('the installer plan opens the verified disk image instead of swapping', async (t) => {
-  const f = await updaterFixture(t, { plan: { kind: 'installer', reason: 'Serra is running from its disk image.' } });
+  const f = await updaterFixture(t, { plan: { kind: 'installer', reason: 'Serra is running from its disk image.', folder: 'Applications' } });
   await f.updater.check();
   f.updater.download();
   await f.settle();

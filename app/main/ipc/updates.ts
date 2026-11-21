@@ -154,7 +154,8 @@ export const updatesService = (context: HandlerContext, deps: UpdatesDeps = {}) 
   /** One look by the timer: starts the bot update when it is due. Never throws. */
   const tick = async (): Promise<void> => {
     const profileDir = context.profileDirOrNull();
-    if (!profileDir || running) return;
+    // Not while Serra is quitting to install its own update.
+    if (!profileDir || running || context.appUpdater?.view().state === 'installing') return;
     try {
       const decision = await decide(profileDir, await releaseStatus(profileDir));
       if (decision && decision.action !== 'none') await syncBot(false, profileDir);

@@ -89,7 +89,9 @@ const start = async (): Promise<void> => {
   /** The running Serra.app: `.../Serra.app/Contents/MacOS/Serra`, three folders up. */
   const bundlePath = app.isPackaged ? join(app.getPath('exe'), '../../..') : null;
   // SERRA_UPDATES_FEED (QA's fake feed) turns updates on in a copy run from source; installing then opens the disk image.
-  const feed = process.env.SERRA_UPDATES_FEED;
+  // In a packaged app only a feed on this Mac is accepted, so an environment variable can't point updates elsewhere.
+  const feed = process.env.SERRA_UPDATES_FEED && (!app.isPackaged || /^http:\/\/(127\.0\.0\.1|localhost)[:/]/.test(process.env.SERRA_UPDATES_FEED))
+    ? process.env.SERRA_UPDATES_FEED : undefined;
   const appUpdater: AppUpdater = createAppUpdater({
     current: app.getVersion(),
     arch: process.arch,
@@ -97,7 +99,8 @@ const start = async (): Promise<void> => {
     dir: join(app.getPath('userData'), 'updates'),
     // Electron's net follows the system's proxy settings. Files it writes carry no quarantine flag.
     fetch: (url, init) => net.fetch(url, init),
-    feedUrl: releasesUrl(),
+    feedUrl: releasesUrl({ SERRA_UPDATES_FEED: feed }),
+    relaunchArgs: process.argv.slice(1),
     bundlePath,
     getChoice: () => stored.get().includePrereleases,
     setChoice: (choice) => stored.set({ ...stored.get(), includePrereleases: choice }),

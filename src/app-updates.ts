@@ -180,7 +180,7 @@ export const verifyChecksum = async (path: string, name: string, sumsText: strin
   const expected = parseSums(sumsText).get(name);
   if (!expected) throw new Error(`The release's SHA256SUMS has no line for ${name}.`);
   const actual = await sha256File(path);
-  if (actual !== expected) throw new Error(`The download doesn't match its checksum (expected ${expected.slice(0, 12)}…, got ${actual.slice(0, 12)}…).`);
+  if (actual !== expected) throw new Error("The download doesn't match the checksum published with the release.");
 };
 
 export interface DownloadProgress { received: number; total: number | null }
