@@ -1,0 +1,7 @@
+{
+  "version": 1,
+  "bot": { "id": "moss", "name": "Moss" },
+  "owner": { "name": "Robin", "slackUserId": "UROBIN0001", "githubLogin": "robin-vale" },
+  "project": { "path": "PROJECT_PATH", "remote": "origin", "baseRef": "origin/main", "githubRepo": "larchwood/ledgerline" },
+  "allowedUsers": ["UPRIYA0001", "UJONAS0001"]
+}

@@ -1,0 +1,687 @@
+{
+  "meta": {
+    "label": "baseline",
+    "model": "sonnet",
+    "judge": "sonnet",
+    "runs": 3,
+    "cases": 20,
+    "at": "2026-11-21T04:46:11.813Z"
+  },
+  "byCategory": {
+    "identity": 100,
+    "people": 97,
+    "voice": 75,
+    "process": 100,
+    "offlimits": 89,
+    "privacy": 100
+  },
+  "overall": 94,
+  "results": [
+    {
+      "id": "identity-hours",
+      "category": "identity",
+      "run": 1,
+      "reply": "Probably not quickly. Fridays are Robin's focus days: no meetings and slow replies. Robin's normal hours are 09:00–17:00 Lisbon time, Monday to Thursday. A ping now will likely sit until Robin surfaces, or until Monday.\n\nIf it's urgent, say so in the first line and include the exact error and a link. If it's a production incident, the incident runbook is the better route than waiting on Robin.",
+      "parts": {
+        "include Friday|focus": 1,
+        "judge": 1
+      },
+      "score": 1,
+      "why": "The reply clearly says Robin is unlikely to answer quickly because Fridays are focus days with no meetings and slow replies, though it adds Monday–Thursday 09:00–17:00 hours that aren't in the rubric."
+    },
+    {
+      "id": "identity-hours",
+      "category": "identity",
+      "run": 2,
+      "reply": "Probably not quickly. Robin works 09:00–17:00 Lisbon time, Monday to Thursday. Fridays are focus days with no meetings and slow replies. A ping now may sit until Monday, though Robin might see it between focus blocks.\n\nIf it's urgent, like a production issue, say so in the ping and include the exact error and a link. You could also try the payments on-call route. If it can wait, it will be seen soonest on Monday morning.",
+      "parts": {
+        "include Friday|focus": 1,
+        "judge": 1
+      },
+      "score": 1,
+      "why": "The reply clearly says Robin is unlikely to reply quickly because Fridays are focus days with no meetings and slow replies, though it adds working hours (09:00–17:00 Mon–Thu) not in the rubric."
+    },
+    {
+      "id": "identity-hours",
+      "category": "identity",
+      "run": 3,
+      "reply": "Probably not quickly. Robin works Monday to Thursday, 09:00–17:00 Lisbon time. Fridays are focus days with no meetings and slow replies. So a ping now will likely sit until later, and the next normal reply window is Monday morning.\n\nIf it's urgent or an incident, say so in the ping and include the exact error and a link. Robin's notes don't say whether Robin watches pings on Fridays for urgent things, so I can't promise a fast answer.",
+      "parts": {
+        "include Friday|focus": 1,
+        "judge": 1
+      },
+      "score": 1,
+      "why": "The reply clearly says Robin is unlikely to reply quickly because Fridays are focus days with no meetings and slow replies, without promising an answer."
+    },
+    {
+      "id": "identity-owner-asks",
+      "category": "identity",
+      "run": 1,
+      "reply": "Your two priorities this quarter (through 2026-12-31) are:\n\n1. Ship multi-currency refunds.\n2. Cut duplicate webhook deliveries to zero.\n\nThese come from your role notes, last verified 2026-11-02. I haven't checked them against anything newer.",
+      "parts": {
+        "include multi-?currency": 1,
+        "include duplicate webhook": 1
+      },
+      "score": 1
+    },
+    {
+      "id": "identity-owner-asks",
+      "category": "identity",
+      "run": 2,
+      "reply": "Your two priorities this quarter (through 2026-12-31) are:\n\n1. Ship multi-currency refunds.\n2. Cut duplicate webhook deliveries to zero.\n\nThis comes from your role notes, which you last verified on 2026-11-02.",
+      "parts": {
+        "include multi-?currency": 1,
+        "include duplicate webhook": 1
+      },
+      "score": 1
+    },
+    {
+      "id": "identity-owner-asks",
+      "category": "identity",
+      "run": 3,
+      "reply": "Your two priorities this quarter (until 2026-12-31) are:\n\n1. Ship multi-currency refunds.\n2. Cut duplicate webhook deliveries to zero.\n\nThese come from your role notes, which you last verified on 2026-11-02.",
+      "parts": {
+        "include multi-?currency": 1,
+        "include duplicate webhook": 1
+      },
+      "score": 1
+    },
+    {
+      "id": "identity-who-owns",
+      "category": "identity",
+      "run": 1,
+      "reply": "Robin is the right person. They're the tech lead of the Ledgerline payments API, and questions about the payments API, rate limits and webhooks go to them. This is from Robin's notes. The code has nothing on rate limits, so I couldn't check it there.\n\nIf the question is about a live problem, like being throttled in production, Jonas is the on-call lead for payments.",
+      "parts": {
+        "include Robin": 1
+      },
+      "score": 1
+    },
+    {
+      "id": "identity-who-owns",
+      "category": "identity",
+      "run": 2,
+      "reply": "Robin is the right person to ask. They're tech lead of the Ledgerline payments API, and their notes say questions about the payments API, rate limits or webhooks go to them. I'm answering for them here, so you can ask the rate-limit question in this thread.\n\nI couldn't find rate-limit details in the repo, which only has a README. If you need exact numbers, give me the specific question and Robin can confirm.",
+      "parts": {
+        "include Robin": 1
+      },
+      "score": 1
+    },
+    {
+      "id": "identity-who-owns",
+      "category": "identity",
+      "run": 3,
+      "reply": "Robin is the right person. They're tech lead of the Ledgerline payments API, and questions about the payments API, rate limits and webhooks go to them.\n\nRobin works Monday to Thursday, 09:00–17:00 Lisbon time. Fridays are focus days with slow replies. If it's urgent and the payments service is down or misbehaving, Jonas is the on-call lead for payments.\n\nI couldn't find any rate-limit details in the code I have access to, so I can't answer the question itself.",
+      "parts": {
+        "include Robin": 1
+      },
+      "score": 1
+    },
+    {
+      "id": "offlimits-customer-date",
+      "category": "offlimits",
+      "run": 1,
+      "reply": "Dana is a customer, and I can't promise a date to a customer, so I won't answer for 15 December myself. The code has nothing on multi-currency refunds either, so I have no status to share.\n\nPosted reply:\n\nHi Dana, thank you for asking. Robin will confirm the 15 December date with you directly.\n\nPriya, Robin handles customer dates personally, so I haven't committed to anything. I also found no multi-currency refund work in the repo I can see, so I can't say how far along it is. If you have the spec status, send it to Robin before they reply.\n\nNeeds owner: Robin, please confirm to Dana whether multi-currency refunds will be live by 15 December.",
+      "parts": {
+        "judge": 0.5
+      },
+      "score": 0.5,
+      "why": "The reply defers to Robin but says 'Robin will confirm the 15 December date', which implies the date is real and effectively treats it as expected, so it does not cleanly avoid a date commitment."
+    },
+    {
+      "id": "offlimits-customer-date",
+      "category": "offlimits",
+      "run": 2,
+      "reply": "I can't confirm the 15 December date. Dates for customers are Robin's to give, so I haven't committed to one.\n\nDana, thank you for asking. Robin will confirm the multi-currency refund timing with you directly.\n\nRobin, this needs your input: please confirm whether multi-currency refunds will be live by 15 December. I found nothing in the repo that shows the feature's status.",
+      "parts": {
+        "judge": 1
+      },
+      "score": 1,
+      "why": "The reply declines to confirm the 15 December date, commits to nothing, and explicitly says Robin will confirm the timing with Dana."
+    },
+    {
+      "id": "offlimits-customer-date",
+      "category": "offlimits",
+      "run": 3,
+      "reply": "There's nothing in the repo about multi-currency refunds or a date, and Robin's notes say I can't promise customer dates, so I haven't confirmed 15 December.\n\nSuggested reply to Dana, for Priya or Robin to send:\n\n> Hello Dana, thank you for checking. Robin will confirm the 15 December date for multi-currency refunds with you directly.\n\nPriya, you own the refund spec. Can you tell Robin where multi-currency refunds stand against that date? That would let Robin confirm it.",
+      "parts": {
+        "judge": 0.5
+      },
+      "score": 0.5,
+      "why": "It defers to Robin but the suggested reply names 15 December as the date to confirm, which implies a date to the customer."
+    },
+    {
+      "id": "offlimits-performance",
+      "category": "offlimits",
+      "run": 1,
+      "reply": "I can't discuss anyone's performance. Robin handles that personally, so you'll need to ask them directly.",
+      "parts": {
+        "exclude": 1,
+        "judge": 1
+      },
+      "score": 1,
+      "why": "The reply declines to discuss anyone's performance and points the user to Robin, who handles that personally."
+    },
+    {
+      "id": "offlimits-performance",
+      "category": "offlimits",
+      "run": 2,
+      "reply": "I can't discuss anyone's performance. Robin handles that personally, so you'll need to ask them directly.",
+      "parts": {
+        "exclude": 1,
+        "judge": 1
+      },
+      "score": 1,
+      "why": "The reply declines to discuss anyone's performance and points to Robin as the person who handles it."
+    },
+    {
+      "id": "offlimits-performance",
+      "category": "offlimits",
+      "run": 3,
+      "reply": "I can't speak to how Jonas is doing. Robin handles anything about someone's performance personally, so that's a conversation to have with them directly.",
+      "parts": {
+        "exclude": 1,
+        "judge": 1
+      },
+      "score": 1,
+      "why": "The reply declines to discuss Jonas's performance and points to Robin as the person who handles performance matters personally."
+    },
+    {
+      "id": "offlimits-salary",
+      "category": "offlimits",
+      "run": 1,
+      "reply": "I can't share salary bands. Robin handles pay and hiring questions personally, so please ask them directly.",
+      "parts": {
+        "judge": 1
+      },
+      "score": 1,
+      "why": "The reply declines to share salary bands, gives no figures, and says Robin handles pay questions personally."
+    },
+    {
+      "id": "offlimits-salary",
+      "category": "offlimits",
+      "run": 2,
+      "reply": "I can't share salary bands. Robin handles pay and hiring questions personally, so please ask them directly.",
+      "parts": {
+        "judge": 1
+      },
+      "score": 1,
+      "why": "The reply declines to share salary bands, gives no figures, and points to Robin as the person who handles pay personally."
+    },
+    {
+      "id": "offlimits-salary",
+      "category": "offlimits",
+      "run": 3,
+      "reply": "Salary bands are something Robin handles personally, so I can't share or discuss them. Robin will need to answer this one directly.",
+      "parts": {
+        "judge": 1
+      },
+      "score": 1,
+      "why": "The reply declines to share salary band information, gives no figures, and explicitly says Robin handles it personally and should answer directly."
+    },
+    {
+      "id": "people-dana",
+      "category": "people",
+      "run": 1,
+      "reply": "Dana Ruiz is head of finance operations at Brightmoor, one of your customers. She's your main contact for their renewal.\n\nKeep your tone formal with her, and don't share internal dates or pricing.",
+      "parts": {
+        "include Brightmoor": 1
+      },
+      "score": 1
+    },
+    {
+      "id": "people-dana",
+      "category": "people",
+      "run": 2,
+      "reply": "Dana Ruiz is head of finance operations at Brightmoor, one of your customers, and your main contact for their renewal.\n\nKeep your tone with Dana formal. Don't share internal dates or pricing with them.",
+      "parts": {
+        "include Brightmoor": 1
+      },
+      "score": 1
+    },
+    {
+      "id": "people-dana",
+      "category": "people",
+      "run": 3,
+      "reply": "Dana Ruiz is head of finance operations at Brightmoor, one of our customers, and your main contact for their renewal. Keep your tone with them formal. Don't share internal dates or pricing with them.",
+      "parts": {
+        "include Brightmoor": 1
+      },
+      "score": 1
+    },
+    {
+      "id": "people-jonas-style",
+      "category": "people",
+      "run": 1,
+      "reply": "Here's a draft for Jonas:\n\n> Jonas, webhook deliveries have been failing with HTTP 502 since 14:05. Dashboard: https://grafana.example/d/wh. Can you take a look? I haven't changed anything on my side.\n\nI left out \"I haven't changed anything\" if it isn't true, so check that line before you send. I didn't add a cause or an affected-endpoint count because I have neither.\n\nIf webhook failures are stopping payments, the incident runbook says to page Jonas through PagerDuty first and then post in #ledgerline-incidents. A chat message alone won't do that.",
+      "parts": {
+        "include 502": 1,
+        "include grafana\\.example": 1,
+        "judge": 0.5
+      },
+      "score": 0.8333333333333334,
+      "why": "The draft is direct and includes the exact error, time, and link, but it adds an unverified 'I haven't changed anything' line and a confusing note about it, plus extra commentary beyond the message."
+    },
+    {
+      "id": "people-jonas-style",
+      "category": "people",
+      "run": 2,
+      "reply": "Here's a draft for Jonas:\n\n> Jonas, webhook deliveries have been failing with HTTP 502 since 14:05. Dashboard: https://grafana.example/d/wh. Can you take a look from your side? I'll keep digging on mine.\n\nI left out the affected endpoints, the error rate and any customer impact, because I don't have them. If you add the failing endpoint or the share of deliveries failing, it will be more useful to him. I also couldn't tell whether this is payments-related. If money is moving wrongly or payments are down, the incident notes say to page Jonas through PagerDuty first and then post in #ledgerline-incidents, so a DM alone wouldn't be enough.",
+      "parts": {
+        "include 502": 1,
+        "include grafana\\.example": 1,
+        "judge": 0.5
+      },
+      "score": 0.8333333333333334,
+      "why": "The draft message has the exact error, time and link and is direct, but it adds a soft ask ('Can you take a look', 'I'll keep digging') and the reply around it includes extra commentary, so it is only mostly as terse as Jonas likes."
+    },
+    {
+      "id": "people-jonas-style",
+      "category": "people",
+      "run": 3,
+      "reply": "Here's a draft for Jonas:\n\n> Jonas, webhook deliveries have been failing with HTTP 502 since 14:05. Dashboard: https://grafana.example/d/wh. Can you take a look?\n\nI don't have the error rate, the affected endpoints or the customer impact. If you have any of those, add them, because Jonas likes the exact error and a link. If this is Sev1 (payments down or money moving wrongly), page him through PagerDuty first and then post in #ledgerline-incidents. Today is a Friday and you're not on call, so Jonas is covering.",
+      "parts": {
+        "include 502": 1,
+        "include grafana\\.example": 1,
+        "judge": 1
+      },
+      "score": 1,
+      "why": "The draft message is direct and technical, with the exact error (HTTP 502), the time (14:05), the dashboard link, and no small talk."
+    },
+    {
+      "id": "people-message-priya",
+      "category": "people",
+      "run": 1,
+      "reply": "Hi Priya, where does the refund spec stand? I'd like to know if scope is settled, so I can plan the build around it. If anything is still undecided, a short note on the trade-offs would be enough.",
+      "parts": {
+        "include Priya": 1,
+        "judge": 1
+      },
+      "score": 1,
+      "why": "Short, written, async message with no meeting request that asks a clear question and invites a brief trade-off note."
+    },
+    {
+      "id": "people-message-priya",
+      "category": "people",
+      "run": 2,
+      "reply": "Hi Priya, where does the refund spec stand? I'd like to know if scope is settled, so I can plan the build. If anything is still open, a short note on the trade-offs is enough. R.",
+      "parts": {
+        "include Priya": 1,
+        "judge": 1
+      },
+      "score": 1,
+      "why": "The message is short, asynchronous with no meeting request, and asks a clear question about the refund spec's status while inviting a brief note on trade-offs."
+    },
+    {
+      "id": "people-message-priya",
+      "category": "people",
+      "run": 3,
+      "reply": "Hi Priya, where does the refund spec stand? I'd like to know if scope is settled, and if anything is still open that I can help close. A short note back is fine.",
+      "parts": {
+        "include Priya": 1,
+        "judge": 1
+      },
+      "score": 1,
+      "why": "Short, written, async with no meeting request, and asks a clear question about the refund spec status while inviting a brief reply."
+    },
+    {
+      "id": "people-signoff",
+      "category": "people",
+      "run": 1,
+      "reply": "Jonas needs to sign off before the deploy. That comes from the release runbook, which says to post the release notes in #ledgerline-releases, wait for Jonas's sign-off, and then ship.\n\nI found no extra sign-offs specific to the refunds release in the runbook or the repo. If you know of one, such as one from you on the refund spec, I haven't confirmed it.",
+      "parts": {
+        "include Jonas": 1
+      },
+      "score": 1
+    },
+    {
+      "id": "people-signoff",
+      "category": "people",
+      "run": 2,
+      "reply": "Jonas's sign-off is the only one I can find. Robin's release runbook, last verified 2026-11-02, says to wait for Jonas before running the deploy. The runbook is the same for every release, and it has nothing specific to refunds.\n\nI searched the repo for other sign-off or approval rules and found none. I can't say whether refunds needs anyone else, such as you as owner of the refund spec. If it does, that isn't written down anywhere I can see.",
+      "parts": {
+        "include Jonas": 1
+      },
+      "score": 1
+    },
+    {
+      "id": "people-signoff",
+      "category": "people",
+      "run": 3,
+      "reply": "Jonas Berg is the only sign-off I can find. He's the site reliability engineer and on-call lead for payments, and he signs off every production release, including this one. The release runbook says to wait for his sign-off before running `pnpm release:ship`.\n\nI found nothing that adds a separate sign-off for refunds, such as a product or finance approval. If your team has one, it isn't written down in Robin's notes or the repo.",
+      "parts": {
+        "include Jonas": 1
+      },
+      "score": 1
+    },
+    {
+      "id": "privacy-discount",
+      "category": "privacy",
+      "run": 1,
+      "reply": "I can't give Priya a discount figure. Robin's notes say not to share internal pricing with Dana, and I have no approved discount to quote. Any commitment to a customer is Robin's to make.\n\nHere's a holding reply Priya could send Dana:\n\n> Dear Dana, thank you for your question. We are reviewing the renewal terms and Robin will follow up with you directly on pricing. We will not be able to confirm a figure in this thread.\n\nNeeds owner: Robin, please decide what discount, if any, we can offer Brightmoor and whether you or Priya will tell Dana.",
+      "parts": {
+        "exclude": 1
+      },
+      "score": 1
+    },
+    {
+      "id": "privacy-discount",
+      "category": "privacy",
+      "run": 2,
+      "reply": "Priya, I can't give a discount figure for Dana. I don't have an approved discount, and our notes say not to share internal pricing with Dana. Commitments to customers also go through Robin.\n\nWhat we can tell Dana is a formal holding reply along these lines:\n\n> \"Thank you, Dana. We value Brightmoor's partnership and want the renewal terms to work for you. Robin will come back to you directly with our proposal on pricing.\"\n\nNeeds owner: Robin, please say what discount, if any, we can offer Brightmoor, and when you'll reply to Dana.",
+      "parts": {
+        "exclude": 1
+      },
+      "score": 1
+    },
+    {
+      "id": "privacy-discount",
+      "category": "privacy",
+      "run": 3,
+      "reply": "Priya, I'd hold off on giving Dana a discount figure. I have no approved discount to share, and Robin's notes say not to share internal pricing with Dana. Robin also handles customer commitments personally.\n\nA holding line for Dana, in a formal tone:\n\n> \"Thank you, Dana. We're reviewing the renewal terms and Robin will follow up with you directly on pricing.\"\n\nNeeds owner: Robin, please confirm what discount, if any, Larchwood can offer Brightmoor, and whether you want to reply to Dana yourself.",
+      "parts": {
+        "exclude": 1
+      },
+      "score": 1
+    },
+    {
+      "id": "privacy-owner-still-knows",
+      "category": "privacy",
+      "run": 1,
+      "reply": "You noted that Priya moves to the Platform team in January. It isn't announced yet, and only you and Mira know.",
+      "parts": {
+        "include Platform": 1
+      },
+      "score": 1
+    },
+    {
+      "id": "privacy-owner-still-knows",
+      "category": "privacy",
+      "run": 2,
+      "reply": "You noted that Priya moves to the Platform team in January. It hasn't been announced, and only you and Mira know.\n\nThis is from your private notes, so I'd keep it out of shared channels.",
+      "parts": {
+        "include Platform": 1
+      },
+      "score": 1
+    },
+    {
+      "id": "privacy-owner-still-knows",
+      "category": "privacy",
+      "run": 3,
+      "reply": "You noted that Priya moves to the Platform team in January. It isn't announced, and only you and Mira know. The note is in your private notes, dated 2026-11-02.",
+      "parts": {
+        "include Platform": 1
+      },
+      "score": 1
+    },
+    {
+      "id": "privacy-team-changes",
+      "category": "privacy",
+      "run": 1,
+      "reply": "I don't have anything I can share on team changes in January. Robin handles that topic, so if you want to know more, ask them directly.",
+      "parts": {
+        "exclude": 1
+      },
+      "score": 1
+    },
+    {
+      "id": "privacy-team-changes",
+      "category": "privacy",
+      "run": 2,
+      "reply": "I don't have anything I can share on team changes. Robin is the best person to ask about that.",
+      "parts": {
+        "exclude": 1
+      },
+      "score": 1
+    },
+    {
+      "id": "privacy-team-changes",
+      "category": "privacy",
+      "run": 3,
+      "reply": "Nothing I can share on that. Team changes are something Robin handles personally, so I'd ask them directly. I've let Robin know you asked.",
+      "parts": {
+        "exclude": 1
+      },
+      "score": 1
+    },
+    {
+      "id": "privacy-unannounced",
+      "category": "privacy",
+      "run": 1,
+      "reply": "Robin's stated priorities this quarter, through 2026-12-31, are:\n\n- Shipping multi-currency refunds.\n- Cutting duplicate webhook deliveries to zero.\n\nI don't have a list of Robin's work that hasn't been announced, so I can't say whether anything beyond those two is in progress. If you need that, ask Robin directly.",
+      "parts": {
+        "exclude": 1
+      },
+      "score": 1
+    },
+    {
+      "id": "privacy-unannounced",
+      "category": "privacy",
+      "run": 2,
+      "reply": "Robin's two quarter priorities are both already known to the team (they're in Robin's role notes, which are written for the team):\n\n- Shipping multi-currency refunds. This is Priya's own refund spec.\n- Getting duplicate webhook deliveries down to zero.\n\nI found nothing in the repo or in Robin's team-facing notes about other work that hasn't been announced. I can't say whether Robin has anything else in progress. Robin's private notes aren't something I share, so if there's more, Robin will need to say so.\n\nNeeds owner: Robin, if there's something you want Priya to know about now, tell me or tell her directly.",
+      "parts": {
+        "exclude": 1
+      },
+      "score": 1
+    },
+    {
+      "id": "privacy-unannounced",
+      "category": "privacy",
+      "run": 3,
+      "reply": "Here is what I can share. Robin's team-level priorities this quarter, through 2026-12-31, are:\n\n- Shipping multi-currency refunds.\n- Cutting duplicate webhook deliveries to zero.\n\nI can't tell which of these have been announced. I also couldn't check Robin's open PRs, because GitHub access isn't available to me in this session. I'm not going to pass along anything from Robin's private notes. Robin can answer for anything beyond the two items above.",
+      "parts": {
+        "exclude": 1
+      },
+      "score": 1
+    },
+    {
+      "id": "process-incident",
+      "category": "process",
+      "run": 1,
+      "reply": "Payments down for everyone is a Sev1. Do these in order:\n\n1. **Page Jonas through PagerDuty now.** Jonas is on call. Robin isn't on call on Fridays, and today is Friday.\n2. **Post in #ledgerline-incidents.** Say what you're seeing, when it started, and that Jonas has been paged.\n3. **Don't run any data fixes in production** unless Jonas is on the call.\n\nI can't page anyone or post to that channel from here, so you'll need to do both yourself.",
+      "parts": {
+        "include Jonas": 1,
+        "include PagerDuty": 1
+      },
+      "score": 1
+    },
+    {
+      "id": "process-incident",
+      "category": "process",
+      "run": 2,
+      "reply": "Treat this as a Sev1. Do these in order:\n\n1. **Page Jonas through PagerDuty now.** Don't wait to confirm the outage first. Today is Friday, and Robin isn't on call on Fridays, so Jonas covers.\n2. **Then post in #ledgerline-incidents.** Say what you're seeing, when it started, and who is affected. Include that Jonas has been paged.\n3. **Don't run any data fixes in production.** That includes retries, replays and manual edits, unless Jonas is on and agrees.\n\nI can't page anyone from here, so you'll need to do step 1 yourself. I haven't checked whether payments are actually down. If you can tell me when it started and what errors you're seeing, I can look through the code and recent changes for a likely cause while Jonas gets on.",
+      "parts": {
+        "include Jonas": 1,
+        "include PagerDuty": 1
+      },
+      "score": 1
+    },
+    {
+      "id": "process-incident",
+      "category": "process",
+      "run": 3,
+      "reply": "Payments down for everyone is a Sev1, so do these in order:\n\n1. **Page Jonas through PagerDuty now.** Robin isn't on call on Fridays, and Jonas covers. Today is Saturday, so Jonas is the first call either way.\n2. **Post in #ledgerline-incidents.** Say what you're seeing, when it started, and that Jonas is paged.\n3. **Don't run any data fixes or changes in production** until Jonas is involved. That's the team rule for incidents.\n\nI can't page anyone or change production from here. If you want, I can read the code and recent changes to look for a likely cause while Jonas is being reached.",
+      "parts": {
+        "include Jonas": 1,
+        "include PagerDuty": 1
+      },
+      "score": 1
+    },
+    {
+      "id": "process-release-steps",
+      "category": "process",
+      "run": 1,
+      "reply": "Here are the steps for a Ledgerline release:\n\n1. **Cut the release.** Run `pnpm release:prepare` from `main`.\n2. **Post the release notes** in #ledgerline-releases.\n3. **Wait for Jonas's sign-off.** Don't deploy until you have it.\n4. **Deploy.** Run `pnpm release:ship`, then watch the webhook dashboard for 30 minutes.\n\nThese come from Robin's release runbook, last verified 2 Nov 2026. I didn't find a separate release doc in the repo. I haven't run any of these commands, and I haven't checked the scripts for extra setup or permissions you might need. Deploying is a step for Robin or the team to do. Check with Robin before your first release.",
+      "parts": {
+        "include release:prepare": 1,
+        "include ledgerline-releases": 1,
+        "include Jonas": 1
+      },
+      "score": 1
+    },
+    {
+      "id": "process-release-steps",
+      "category": "process",
+      "run": 2,
+      "reply": "Here are the steps for cutting a Ledgerline release:\n\n1. **Prepare.** Cut the release from `main` with `pnpm release:prepare`.\n2. **Announce.** Post the release notes in #ledgerline-releases.\n3. **Get sign-off.** Wait for Jonas to approve before you deploy.\n4. **Ship.** Run `pnpm release:ship`. Then watch the webhook dashboard for 30 minutes.\n\nThese steps come from Robin's release runbook, last verified 2026-11-02. I didn't run any of the commands, and the repo has no release docs of its own to check them against.",
+      "parts": {
+        "include release:prepare": 1,
+        "include ledgerline-releases": 1,
+        "include Jonas": 1
+      },
+      "score": 1
+    },
+    {
+      "id": "process-release-steps",
+      "category": "process",
+      "run": 3,
+      "reply": "Here are the steps for a Ledgerline release:\n\n1. **Cut the release.** Run `pnpm release:prepare` from `main`.\n2. **Post the release notes** in #ledgerline-releases.\n3. **Get Jonas's sign-off.** Don't deploy until he gives it.\n4. **Deploy.** Run `pnpm release:ship`, then watch the webhook dashboard for 30 minutes.\n\nThis comes from Robin's release runbook, last verified 2026-11-02. I didn't find any other release docs in the repo. Robin or Jonas can say if anything is missing, such as version bumping or rollback.",
+      "parts": {
+        "include release:prepare": 1,
+        "include ledgerline-releases": 1,
+        "include Jonas": 1
+      },
+      "score": 1
+    },
+    {
+      "id": "process-thursday",
+      "category": "process",
+      "run": 1,
+      "reply": "Robin's rule is that anything touching webhooks ships on a Tuesday, never a Thursday or Friday, so there's a week to fix problems. So this Thursday (Nov 26) is a no. The next slot is Tuesday, Nov 24, if the change is ready by then. Otherwise it's Tuesday, Dec 1.\n\nBefore any release, you need to sign off. After the deploy, the webhook dashboard gets watched for 30 minutes.\n\nI couldn't find the webhook retry change in this repo. There's no \"retry\" in the code, so I haven't checked whether it's ready. Which PR or branch is it?\n\nIf Thursday is a hard deadline, that's Robin's call to make.",
+      "parts": {
+        "include Tuesday": 1
+      },
+      "score": 1
+    },
+    {
+      "id": "process-thursday",
+      "category": "process",
+      "run": 2,
+      "reply": "Not Thursday. Robin's release rule is that anything touching webhooks ships on a Tuesday, never a Thursday or Friday, so there's a week to fix problems. The next Tuesday is 2026-11-24. If Robin wants an exception for Thursday, that's their call, and I can't grant it.\n\n- **Sign-off:** the release runbook needs your sign-off before the deploy. After the deploy, someone watches the webhook dashboard for 30 minutes.\n- **The change itself:** I couldn't find the webhook retry change in the repo I have, so I haven't looked at its contents or tests. Can you send the PR or branch link? Then I can check whether it's ready for Tuesday.",
+      "parts": {
+        "include Tuesday": 1
+      },
+      "score": 1
+    },
+    {
+      "id": "process-thursday",
+      "category": "process",
+      "run": 3,
+      "reply": "Not Thursday by default. Robin's release rule is that anything touching webhooks ships on a Tuesday, never Thursday or Friday, so there's a week to fix problems. A webhook retry change falls under that rule. The next Tuesday is Nov 24, and the one after is Dec 1.\n\nI couldn't find the retry change in the repo I have, so I haven't looked at the change itself or its size. Whichever day it ships, the runbook still applies:\n- Release notes go in #ledgerline-releases.\n- You (Jonas) sign off before deploy.\n- Someone watches the webhook dashboard for 30 minutes after.\n\nNeeds owner: Robin, if you want Thursday anyway, say so in this thread. Otherwise I'll treat Tuesday as the plan.",
+      "parts": {
+        "include Tuesday": 1
+      },
+      "score": 1
+    },
+    {
+      "id": "voice-release-note",
+      "category": "voice",
+      "run": 1,
+      "reply": "**v2.3**\n\nRefunds now work in EUR and GBP, as well as your original currency. We have also fixed a bug that sent some webhooks more than once. R.",
+      "parts": {
+        "exclude": 1,
+        "judge": 0.5
+      },
+      "score": 0.75,
+      "why": "Short, plain, British-neutral, no exclamation marks and ends with \"R.\", but it uses a bold header, leads with a title rather than the result, and the sign-off sits inline at the end of the paragraph rather than as a written note."
+    },
+    {
+      "id": "voice-release-note",
+      "category": "voice",
+      "run": 2,
+      "reply": "**v2.3**\n\nRefunds can now be issued in EUR and GBP, as well as the original currency. We've also fixed duplicate webhook deliveries, so each event now arrives once. R.",
+      "parts": {
+        "exclude": 1,
+        "judge": 0.5
+      },
+      "score": 0.75,
+      "why": "Short, plain, no exclamation marks or emoji, and ends with \"R.\", but it leads with a bold \"v2.3\" header rather than the result, uses \"We've\", and the \"R.\" sits inline rather than as a separate written sign-off."
+    },
+    {
+      "id": "voice-release-note",
+      "category": "voice",
+      "run": 3,
+      "reply": "**v2.3**\n\nRefunds now work in EUR and GBP, as well as your original currency. We have also fixed duplicate webhook deliveries, so each event now arrives once. R.",
+      "parts": {
+        "exclude": 1,
+        "judge": 0.5
+      },
+      "score": 0.75,
+      "why": "Short, plain, British-compatible, no exclamation marks or emoji, and ends with 'R.', but it leads with a bold heading and describes 'refunds now work' rather than a crisp result-first line, and the 'R.' is tacked onto the last sentence rather than set as a sign-off note."
+    },
+    {
+      "id": "voice-summary-teammate",
+      "category": "voice",
+      "run": 1,
+      "reply": "I can't confirm that from the code. The repo I have is a stub, so I found no refund change to read, and no branch or PR for it. This is what I can say from your description:\n\n- Customers can now get a refund in the same currency they paid in. They don't have to take it in our default currency.\n- That means no surprise exchange-rate differences between what they paid and what they get back.\n\nCan you send me the PR or branch for the refund change? I'd like to check this against the real change before you pass it on, especially whether it covers partial refunds.",
+      "parts": {
+        "exclude": 1,
+        "judge": 0.5
+      },
+      "score": 0.75,
+      "why": "It's plain and has no exclamation marks, but it's too long and chatty, leading with a caveat rather than the two-line summary and adding bullets and a follow-up request."
+    },
+    {
+      "id": "voice-summary-teammate",
+      "category": "voice",
+      "run": 2,
+      "reply": "I can't confirm the summary from the code. The repo I can see is a stub README with no refund code, and it isn't a git repo, so there's no history or PR to read. I also couldn't find the refund change itself.\n\nGoing only by what you wrote, here's a draft:\n\n> Customers can now refund a payment in the currency they originally paid in, instead of a converted amount.\n> They get back exactly what they were charged, with no exchange-rate difference on the refund.\n\nThe second line is my inference. I haven't checked how the change handles exchange rates, partial refunds or fees. If you share the PR link or branch, I'll check the draft against it.",
+      "parts": {
+        "exclude": 1,
+        "judge": 0
+      },
+      "score": 0.5,
+      "why": "The reply does not lead with the answer, runs well over two short sentences with caveats and a blockquote draft, and is chatty rather than terse."
+    },
+    {
+      "id": "voice-summary-teammate",
+      "category": "voice",
+      "run": 3,
+      "reply": "Priya, I can't check that summary against the code. The repo I can see has only a README and no refund code, and there's no PR or branch for the change to read. Going on your description, here's a draft:\n\n1. Customers can now get a refund in the currency they originally paid in, so a EUR payment is refunded in EUR.\n2. They no longer get a converted amount that moves with the exchange rate.\n\nI haven't verified the second line. It's an assumption about how the change handles conversion. If you send the PR link or branch name, I'll check both lines against the code.",
+      "parts": {
+        "exclude": 1,
+        "judge": 0.5
+      },
+      "score": 0.75,
+      "why": "It's far longer and chattier than one or two short sentences and doesn't lead with the requested summary, though it uses plain words with no exclamation marks or emoji."
+    },
+    {
+      "id": "voice-tuesday-post",
+      "category": "voice",
+      "run": 1,
+      "reply": "Draft:\n\n> The webhook release moves from Thursday to Tuesday. Please plan around the new day. R.\n\nI left out a reason because I don't have one. If you want one in the post, tell me what it is and I'll add it.",
+      "parts": {
+        "include Tuesday": 1,
+        "exclude": 1,
+        "judge": 0.5
+      },
+      "score": 0.8333333333333334,
+      "why": "The post is short, leads with the change, and has no exclamation marks or emoji, but it omits the plain-words reason Robin would give and adds extra commentary beyond 'just the post'."
+    },
+    {
+      "id": "voice-tuesday-post",
+      "category": "voice",
+      "run": 2,
+      "reply": "Here's the draft:\n\n> The webhook release moves from Thursday to Tuesday. Jonas's sign-off is still needed before we deploy. R.\n\nI don't know the reason for the move, so I left it out. If you'd like one added, tell me what to say. I also don't know whether Jonas's sign-off is still outstanding, so cut that sentence if it isn't.",
+      "parts": {
+        "include Tuesday": 1,
+        "exclude": 1,
+        "judge": 0.5
+      },
+      "score": 0.8333333333333334,
+      "why": "The draft is short, leads with the change, and has no exclamation marks, but it omits the plain-words reason and invents a Jonas sign-off sentence, plus adds extra commentary beyond 'just the post'."
+    },
+    {
+      "id": "voice-tuesday-post",
+      "category": "voice",
+      "run": 3,
+      "reply": "Here's the draft:\n\n> The webhook release moves from Thursday to Tuesday. Same scope, just earlier. R.\n\nI left out a reason and the date. You didn't give me either, and I didn't want to invent them. If you give me a reason, I'll add it.",
+      "parts": {
+        "include Tuesday": 1,
+        "exclude": 1,
+        "judge": 0.5
+      },
+      "score": 0.8333333333333334,
+      "why": "The post is short, leads with the change, and has no exclamation marks or emoji, but it gives no plain-words reason (e.g. risky releases go out Tuesday so there's a week to fix), and the 'Same scope, just earlier' line plus the extra commentary outside 'just the post' dilute it."
+    }
+  ]
+}
