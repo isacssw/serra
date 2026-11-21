@@ -35,15 +35,14 @@ const useCopy = () => {
   };
 };
 
-/** A command to copy and run yourself. */
-/** `compact`: in a narrow container only the copy button shows; its label still names the command. */
+/** A command to copy and run yourself. `compact`: in a narrow container only the copy button shows, named for the command. */
 const Command = ({ command, label, compact }: { command: string; label?: string; compact?: boolean }) => {
   const copy = useCopy();
   return (
     <div className="flex min-w-0 items-center gap-2">
       {label && <span className="w-28 shrink-0 text-xs text-muted">{label}</span>}
       <code className={cx(compact && 'hidden @2xl:block', 'min-w-0 flex-1 truncate rounded-md border border-line-subtle bg-raised px-2 py-1 font-mono text-xs')} title={command}>{command}</code>
-      <Button size="sm" variant="ghost" icon={<Copy size={13} aria-hidden />} aria-label={`Copy: ${command}`} onClick={() => copy(command)} />
+      <Button size="sm" variant="ghost" icon={<Copy size={13} aria-hidden />} aria-label={`Copy: ${command}`} title={`Copy: ${command}`} onClick={() => copy(command)} />
     </div>
   );
 };
@@ -78,7 +77,7 @@ const Row = ({ icon, title, sub, meta, status, badge, more, moreLabel }: {
             {badge}
           </span>
           {sub && <span className="truncate text-xs text-muted">{sub}</span>}
-          {meta && <span className="truncate text-xs text-muted @2xl:hidden">{meta}</span>}
+          {meta && <span className="text-xs break-all text-muted @2xl:hidden">{meta}</span>}
         </div>
         <span className="hidden truncate text-xs text-muted @2xl:block">{meta}</span>
         <span className="hidden justify-end @2xl:flex">
@@ -179,7 +178,7 @@ const ProviderGroup = ({ group, onError }: { group: DriverGroup; onError: (messa
         <div className="flex min-w-0 items-center gap-1 text-xs text-muted">
           <span className="shrink-0">Managed in {group.title}</span>
           <div className="min-w-0 max-w-[24rem]"><Command command={group.hint.command} compact /></div>
-          <Button size="sm" variant="ghost" icon={<ExternalLink size={13} aria-hidden />} onClick={() => openDocs(group.hint.docs, onError)}>Docs</Button>
+          <Button size="sm" variant="ghost" icon={<ExternalLink size={13} aria-hidden />} aria-label={`${group.title} MCP docs`} onClick={() => openDocs(group.hint.docs, onError)}>Docs</Button>
         </div>
       </div>
       {group.listingNote && <p className="flex items-center gap-2 text-xs text-warn"><TriangleAlert size={13} aria-hidden /> {group.listingNote}</p>}
@@ -200,21 +199,26 @@ export const Tools = () => {
   const [loading, setLoading] = useState(0);
   const [announce, setAnnounce] = useState('');
 
-  const load = useCallback(() => {
+  const load = useCallback((fresh = false) => {
     const bridge = serra();
-    if (!bridge) { setMcpError('The Serra bridge is not available in this window.'); return; }
+    if (!bridge) {
+      const message = 'The Serra bridge is not available in this window.';
+      setMcpError(message);
+      setCliError(message);
+      return;
+    }
     setLoading(2);
     setAnnounce('Checking tools…');
     const done = () => setLoading((count) => {
       if (count <= 1) setAnnounce('Tools checked.');
       return Math.max(0, count - 1);
     });
-    bridge.tools.overview().then((value) => { setMcp(value); setMcpError(null); }, (failure: unknown) => setMcpError(errorText(failure))).finally(done);
-    bridge.tools.clis().then((value) => { setClis(value); setCliError(null); }, (failure: unknown) => setCliError(errorText(failure))).finally(done);
+    bridge.tools.overview({ fresh }).then((value) => { setMcp(value); setMcpError(null); }, (failure: unknown) => setMcpError(errorText(failure))).finally(done);
+    bridge.tools.clis({ fresh }).then((value) => { setClis(value); setCliError(null); }, (failure: unknown) => setCliError(errorText(failure))).finally(done);
   }, []);
   useEffect(() => { load(); }, [load]);
 
-  const recommendations = clis || mcp ? recommendationRows(mcp, clis) : [];
+  const recommendations = clis || mcp ? recommendationRows(mcp, clis, undefined, undefined, !mcp && !mcpError) : [];
   const cliList = clis ? cliRows(clis, recommendedCliIds(recommendations)) : [];
   const installed = cliList.filter((row) => row.status?.path);
   const notInstalled = cliList.filter((row) => !row.status?.path);
@@ -227,7 +231,7 @@ export const Tools = () => {
       actions={(
         <Button
           icon={<RefreshCw size={14} aria-hidden className={cx(loading > 0 && 'motion-safe:animate-spin')} />}
-          onClick={load} disabled={loading > 0} aria-busy={loading > 0}
+          onClick={() => load(true)} disabled={loading > 0} aria-busy={loading > 0}
         >
           Check again
         </Button>

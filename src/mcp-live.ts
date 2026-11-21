@@ -13,12 +13,14 @@ import {
   missingToolWarnings, readClaude, readCodex, reported, requiredTools, workerDrivers,
   type McpHealth, type McpListing, type McpOptions, type McpOverview, type McpScope, type McpTransport, type ReadServer, type WorkerDriver,
 } from './mcp.ts';
-import { toolSearchPath } from './shell-path.ts';
+import { loginEnvironment } from './shell-path.ts';
 
 export interface LiveMcpOptions extends McpOptions {
   run?: Exec;
   /** The PATH to find `claude` and `codex` on. Defaults to the login shell's (src/shell-path.ts). */
   path?: string;
+  /** Ask the login shell again instead of using its cached environment. */
+  fresh?: boolean;
 }
 
 /** One line of `claude mcp list`: `name: target - ✔ Connected`. */
@@ -29,7 +31,7 @@ const hostOf = (url: string): string | null => {
 };
 
 /** Where the status starts: the first ` - ` followed by something Claude prints as a status. */
-const CLAUDE_ROW = /^(.+?): (.*?) - ((?:[✓✔✗✘!⏸⊘○•]\s|Connected|Failed|Needs|Pending|Disabled|Rejected|Connection|Not configured).*)$/u;
+const CLAUDE_ROW = /^(.+?): (.*?) - ((?:[✓✔✗✘!⏸⊘○•-]\s(?=\p{L})|Connected|Failed|Needs|Pending|Disabled|Rejected|Blocked|Connection|Not configured).*)$/u;
 
 /**
  * What a status says, from its start only: Claude can append detail (`✗ Failed to connect — timeout`,
@@ -39,7 +41,8 @@ const CLAUDE_ROW = /^(.+?): (.*?) - ((?:[✓✔✗✘!⏸⊘○•]\s|Connected|
 export const claudeStatus = (status: string): { health: McpHealth | null; disabled: boolean; unknown: boolean } => {
   const text = status.replace(/^[^\p{L}]+/u, '');
   const found = (health: McpHealth | null, disabled = false) => ({ health, disabled, unknown: false });
-  if (/^(Disabled|Rejected)\b/i.test(text)) return found(null, true);
+  if (/^(Disabled|Rejected|Blocked)\b/i.test(text)) return found(null, true);
+  if (/^Not configured\b/i.test(text)) return found('failed');
   if (/^Pending approval\b/i.test(text)) return found('pending');
   if (/^Needs auth/i.test(text)) return found('needs-auth');
   if (/^(Failed|Connection (error|failed|closed))\b/i.test(text)) return found('failed');
@@ -49,7 +52,7 @@ export const claudeStatus = (status: string): { health: McpHealth | null; disabl
 };
 
 /** A server name worth showing: letters, digits, spaces and a little punctuation, never a line of arbitrary output. */
-const SERVER_NAME = /^[\w .:@/+-]{1,100}$/;
+const SERVER_NAME = /^[\p{L}\p{N}_ .:@/+&()'-]{1,100}$/u;
 
 /**
  * The servers in `claude mcp list` output, or null when the output has neither a server row nor Claude's "no
@@ -188,8 +191,13 @@ export const liveMcpOverview = async (
 ): Promise<McpOverview> => {
   const home = options.home ?? homedir();
   const run = options.run ?? exec;
-  const path = options.path ?? await toolSearchPath({ home });
-  const env = toolEnv(path, { ...process.env, ...options.env });
+  const login = options.path !== undefined ? { path: options.path, env: null } : await loginEnvironment({ home, fresh: options.fresh });
+  // The provider CLIs get the login environment, as T3 gives its jobs: a health check needs the variables a
+  // server's config refers to (`${GITHUB_TOKEN}` in a header, a token a local server reads). Without it, the
+  // allowlist only, so a server may show Failed here and still work in a job.
+  const env: NodeJS.ProcessEnv = login.env
+    ? { ...login.env, PATH: login.path, NO_COLOR: '1' }
+    : toolEnv(login.path, { ...process.env, ...options.env });
   const worker = workerDrivers(profile.worker?.provider);
   const reads = await Promise.all(worker.drivers.map((driver: WorkerDriver) =>
     (driver === 'claude' ? listClaude : listCodex)(profile.project.path, home, options, run, env)));

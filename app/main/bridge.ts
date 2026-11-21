@@ -171,9 +171,9 @@ export interface SerraApi {
      * The MCP servers each provider gives the worker, from `claude mcp list` / `codex mcp list` (or the config
      * files when a CLI is missing), and a warning for each tool an alert trigger needs that the worker won't have.
      */
-    overview(): McpOverview;
+    overview(request?: { fresh?: boolean }): McpOverview;
     /** The command-line tools Serra knows: installed, version, signed in. And why each recommendation fits. */
-    clis(): CliOverview;
+    clis(request?: { fresh?: boolean }): CliOverview;
   };
   /** Updates (APP-19, services from APP-18). Prepare/activate/rollback stream lines on `on.releaseLog`. */
   updates: {

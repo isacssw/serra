@@ -16,7 +16,7 @@ export interface CliSpec {
   versionArgs: readonly string[];
   /**
    * A cheap read-only check: exit 0 means signed in (or, for Docker, running). Omitted when the tool has none Serra
-   * trusts, and the row says "not checked". `account`: read the signed-in account from the output.
+   * trusts not to prompt or rewrite credentials; the row then says "Installed". `account`: read the signed-in account from the output.
    */
   check?: {
     args: readonly string[];
@@ -73,7 +73,6 @@ export const CLI_CATALOG: readonly CliSpec[] = [
   },
   {
     id: 'fly', label: 'Fly.io CLI', icon: 'flydotio', bins: ['fly', 'flyctl'], versionArgs: ['version'],
-    check: { args: ['auth', 'whoami'], kind: 'signed-in', account: 'first-line', needsOutput: true },
     install: 'brew install flyctl', login: 'fly auth login', docs: 'https://fly.io/docs/flyctl/install/',
   },
 ];
@@ -118,14 +117,19 @@ export const RECOMMENDATIONS: readonly Recommendation[] = [
   },
 ];
 
-/** Where each provider documents adding an MCP server, and its command for a remote one. */
+/** A name as one shell word, quoted when it has spaces or punctuation ("claude.ai Linear"). */
+const shellWord = (name: string): string => (/^[\w.:@/+-]+$/.test(name) ? name : `'${name.replace(/'/g, `'\\''`)}'`);
+
+/** Where each provider documents adding an MCP server, and its commands to add a remote one and to sign in. */
 export const PROVIDER_MCP = {
   claude: {
     docs: 'https://code.claude.com/docs/en/mcp',
     add: (name: string, url: string) => `claude mcp add --scope user --transport http ${name} ${url}`,
+    login: (name: string) => `claude mcp login ${shellWord(name)}`,
   },
   codex: {
     docs: 'https://developers.openai.com/codex/mcp',
     add: (name: string, url: string) => `codex mcp add ${name} --url ${url}`,
+    login: (name: string) => `codex mcp login ${shellWord(name)}`,
   },
 } as const;

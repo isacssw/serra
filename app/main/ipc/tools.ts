@@ -17,9 +17,10 @@ export interface ToolsHandlerOptions extends McpOptions {
 }
 
 export const toolsHandlers = (context: HandlerContext, options: ToolsHandlerOptions = {}): Handlers<'tools'> => ({
-  overview: (): Promise<McpOverview> => liveMcpOverview(readProfileFile(context.profileDir()), options),
-  clis: (): Promise<CliOverview> => {
+  overview: (request?: { fresh?: boolean }): Promise<McpOverview> =>
+    liveMcpOverview(readProfileFile(context.profileDir()), { ...options, fresh: request?.fresh === true }),
+  clis: (request?: { fresh?: boolean }): Promise<CliOverview> => {
     const profileDir = context.profileDir();
-    return cliOverview(readProfileFile(profileDir), profileDir, options);
+    return cliOverview(readProfileFile(profileDir), profileDir, { ...options, fresh: request?.fresh === true });
   },
 });

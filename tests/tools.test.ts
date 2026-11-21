@@ -11,7 +11,7 @@ import type { Exec, ExecResult } from '../src/exec.ts';
 import { exec, findExecutable, toolEnv } from '../src/exec.ts';
 import { liveMcpOverview, parseClaudeMcpList, parseCodexMcpList } from '../src/mcp-live.ts';
 import { formatMcpOverview, mcpOverview, parseCodexServers, tomlScalar, type McpOverview } from '../src/mcp.ts';
-import { loginShellPath, mergePaths } from '../src/shell-path.ts';
+import { loginShellEnv, loginShellPath, mergePaths } from '../src/shell-path.ts';
 import { CLI_CATALOG, type CliSpec } from '../src/tool-catalog.ts';
 import {
   cliRows, cliStatus, driverGroups, providerLine, recommendationRows, recommendedCliIds, serverBrand, serverLabel, serverOrigin, serverStatus,
@@ -115,10 +115,13 @@ test('parseClaudeMcpList reads Claude\'s real statuses, with appended detail, an
     'half: https://h.example/mcp (HTTP) - ! Connected · tools fetch failed',
     'fine: https://f.example/mcp (HTTP) - ✓ Connected',
     'later: https://l.example/mcp (HTTP) - ✓ Something new',
+    'policy: https://p.example/mcp (HTTP) - Blocked by enterprise managed policy',
+    'empty: npx thing - - Not configured',
   ].join('\n'))!;
   assert.deepEqual(entries.map((entry) => [entry.name, entry.health, entry.disabled, entry.unknown]), [
     ['team', 'pending', false, false], ['old', null, true, false], ['blocked', null, true, false], ['slow', 'failed', false, false],
     ['half', 'failed', false, false], ['fine', 'connected', false, false], ['later', null, false, true],
+    ['policy', null, true, false], ['empty', 'failed', false, false],
   ]);
   assert.equal(entries[3]!.target, 'npx -y slow - fast', 'the status starts at the first " - " that begins a status');
 });
@@ -261,8 +264,11 @@ test('detectCli: a check that times out is unknown; empty output with needsOutpu
   assert.equal(slow.check!.state, 'unknown');
   const empty = await detectCli(spec('gcloud'), { path: f.bin, home: f.home, run: fakeRun({ 'gcloud --version': {}, 'gcloud auth': { stdout: '' } }) });
   assert.equal(empty.check!.state, 'no');
-  const fly = await detectCli(spec('fly'), { path: f.bin, home: f.home, run: fakeRun({ 'flyctl version': { stdout: 'flyctl v0.5.14 darwin/arm64' }, 'flyctl auth whoami': { stdout: 'two words here' } }) });
-  assert.deepEqual([fly.version, fly.check!.state, fly.check!.account], ['0.5.14', 'yes', null]);
+  f.install('az');
+  const az = await detectCli(spec('az'), { path: f.bin, home: f.home, run: fakeRun({ 'az --version': { stdout: 'azure-cli 2.93.0' }, 'az account': { stdout: 'two words here' } }) });
+  assert.deepEqual([az.version, az.check!.state, az.check!.account], ['2.93.0', 'yes', null]);
+  const fly = await detectCli(spec('fly'), { path: f.bin, home: f.home, run: fakeRun({ 'flyctl version': { stdout: 'flyctl v0.5.14 darwin/arm64' } }) });
+  assert.deepEqual([fly.version, fly.check], ['0.5.14', null], 'fly auth whoami can refresh tokens, so it is not checked');
 });
 
 test('a tool without a trusted sign-in check reports none', async (t) => {
@@ -317,10 +323,12 @@ test('toolEnv passes only the allowlist, the PATH and the quiet switches', () =>
   assert.equal(env.PATH, '/bin');
   assert.equal(env.VERCEL_TELEMETRY_DISABLED, '1');
   assert.ok(!JSON.stringify(env).includes(TOKEN));
+  assert.equal(env.AZURE_LOGGING_ENABLE_LOG_FILE, 'false');
+  assert.equal(env.CLOUDSDK_CORE_DISABLE_FILE_LOGGING, 'true');
 });
 
 test('loginShellPath reads PATH between markers; mergePaths keeps order without repeats', async () => {
-  const run: Exec = async () => result({ stdout: 'motd noise\n__SERRA_PATH__/a:/b__SERRA_PATH__' });
+  const run: Exec = async () => result({ stdout: 'motd noise\n__SERRA_ENV__PATH=/a:/b\0HOME=/h\0' });
   assert.equal(await loginShellPath({ run }), '/a:/b');
   assert.equal(await loginShellPath({ run: async () => result({ code: null, timedOut: true }) }), null);
   assert.equal(mergePaths('/a:/b', null, '/b:/c', ''), '/a:/b:/c');
@@ -409,8 +417,10 @@ test('recommendations: GitHub always, others only with a signal or a server; rea
   ]);
 
   const linear = { name: 'linear', driver: 'claude' as const, scope: 'user' as const, source: '~/.claude.json', transport: 'http' as const, host: 'mcp.linear.app', load: 'loads' as const, note: null, health: 'needs-auth' as const };
-  rows = recommendationRows(emptyMcp({ servers: [linear] }), clis);
-  assert.equal(rows.find((row) => row.rec.id === 'linear')!.state.text, 'Needs sign-in');
+  rows = recommendationRows(emptyMcp({ servers: [{ ...linear, name: 'claude.ai Linear' }] }), clis);
+  const signIn = rows.find((row) => row.rec.id === 'linear')!;
+  assert.equal(signIn.state.text, 'Needs sign-in');
+  assert.deepEqual(signIn.setup.map((step) => step.command), ["claude mcp login 'claude.ai Linear'"], 'sign in, never re-add an existing server');
   assert.deepEqual([...recommendedCliIds(rows)], ['gh']);
 
   // A Codex server nobody health-checked is only Configured; a GitHub MCP server never makes GitHub ready without gh.
@@ -427,6 +437,20 @@ test('recommendations: GitHub always, others only with a signal or a server; rea
   assert.deepEqual(sentry.state, { tone: 'neutral', text: 'Installed' });
   assert.equal(sentry.setup[0]!.command, 'sentry-cli login');
   assert.deepEqual(github.setup.map((step) => step.command), ['brew install gh']);
+});
+
+test('while the MCP list loads, an MCP-backed recommendation says Checking, with no commands; GitHub waits for nothing', () => {
+  const clis = { clis: [], signals: { sentry: 'The repo uses a Sentry SDK' } };
+  const rows = recommendationRows(null, clis, undefined, undefined, true);
+  const sentry = rows.find((row) => row.rec.id === 'sentry')!;
+  assert.deepEqual([sentry.state.text, sentry.setup], ['Checking…', []]);
+  assert.equal(rows.find((row) => row.rec.id === 'github')!.state.text, 'Not set up');
+});
+
+test('loginShellEnv reads the environment after the marker, NUL-separated', async () => {
+  const env = await loginShellEnv({ run: async () => result({ stdout: `motd\n__SERRA_ENV__PATH=/a:/b\0GITHUB_TOKEN=x=y\0` }) });
+  assert.deepEqual(env, { PATH: '/a:/b', GITHUB_TOKEN: 'x=y' });
+  assert.equal(await loginShellEnv({ run: async () => result({ stdout: 'no marker' }) }), null);
 });
 
 test('cliRows: installed first, recommended next, and the one command each needs', () => {

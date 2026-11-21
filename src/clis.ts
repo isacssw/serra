@@ -1,5 +1,5 @@
 // Command-line tools on this Mac (SERRA-39): installed or not, version, and signed in where the tool has a cheap
-// read-only check (`gh auth status`, `vercel whoami`). Also the signals that make a recommended service relevant
+// read-only check (`gh auth status`, `az account show`). Also the signals that make a recommended service relevant
 // (a Sentry SDK in the repo, vercel.json, Jira links in the knowledge). Read-only: nothing is installed, signed in
 // or changed. Only a version, an account name and yes/no leave this module, never a command's raw output.
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
@@ -137,9 +137,9 @@ export const recommendationSignals = (
 export const cliOverview = async (
   profile: Pick<Profile, 'project' | 'messageTriggers'>,
   profileDir: string | null,
-  options: { run?: Exec; path?: string; home?: string; catalog?: readonly CliSpec[] } = {},
+  options: { run?: Exec; path?: string; home?: string; catalog?: readonly CliSpec[]; fresh?: boolean } = {},
 ): Promise<CliOverview> => {
-  const path = options.path ?? await toolSearchPath({ home: options.home });
+  const path = options.path ?? await toolSearchPath({ home: options.home, fresh: options.fresh });
   const clis = await Promise.all((options.catalog ?? CLI_CATALOG).map((spec) => detectCli(spec, { path, run: options.run, home: options.home })));
   return { clis, signals: recommendationSignals(profile, profileDir) };
 };

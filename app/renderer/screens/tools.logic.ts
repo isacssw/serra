@@ -141,6 +141,8 @@ export const recommendationRows = (
   clis: CliOverview | null,
   catalog: readonly CliSpec[] = CLI_CATALOG,
   recommendations: readonly Recommendation[] = RECOMMENDATIONS,
+  /** True while the MCP list is still loading: an MCP-backed row waits instead of saying "Not set up". */
+  mcpPending = false,
 ): RecommendationRow[] => {
   const rows: RecommendationRow[] = [];
   for (const rec of recommendations) {
@@ -159,22 +161,26 @@ export const recommendationRows = (
     const configured = !rec.needsCli && servers.some((server) => server.health === null && server.load === 'loads');
     let state: Status;
     if (cliReady || connected) state = { tone: 'up', text: 'Ready' };
+    else if (mcpPending && !rec.needsCli) state = { tone: 'neutral', text: 'Checking…' };
     else if (!rec.needsCli && servers.some((server) => server.health === 'needs-auth')) state = { tone: 'warn', text: 'Needs sign-in' };
     else if (cliState?.text === 'Not signed in') state = { tone: 'warn', text: 'Not signed in' };
     else if (configured) state = { tone: 'neutral', text: 'Configured' };
     else if (cliUnchecked) state = { tone: 'neutral', text: 'Installed' };
     else state = { tone: 'off', text: 'Not set up' };
     const setup: RecommendationRow['setup'] = [];
-    if (state.text !== 'Ready') {
+    if (state.text !== 'Ready' && state.text !== 'Checking…') {
       if (spec && !cli?.path) setup.push({ label: `Install ${spec.label}`, command: spec.install });
       else if (spec?.login && (cliState?.text === 'Not signed in' || cliUnchecked)) setup.push({ label: 'Sign in', command: spec.login });
-      if (rec.mcp) {
-        for (const driver of mcp?.worker.drivers ?? ['claude']) {
-          setup.push({ label: `Add to ${DRIVER_NAMES[driver]}`, command: PROVIDER_MCP[driver].add(rec.mcp.name, rec.mcp.url) });
-        }
+      // Per provider: sign in to a server it already has (never re-add it: that would replace its settings), or add
+      // the vendor's server where it has none.
+      for (const driver of mcp?.worker.drivers ?? ['claude']) {
+        const existing = servers.filter((server) => server.driver === driver);
+        const signIn = existing.find((server) => server.health === 'needs-auth');
+        if (signIn) setup.push({ label: `Sign in (${DRIVER_NAMES[driver]})`, command: PROVIDER_MCP[driver].login(signIn.name) });
+        else if (!existing.length && rec.mcp) setup.push({ label: `Add to ${DRIVER_NAMES[driver]}`, command: PROVIDER_MCP[driver].add(rec.mcp.name, rec.mcp.url) });
       }
     }
-    rows.push({ rec, reason: rec.reason ?? signal ?? 'Already set up', state, setup });
+    rows.push({ rec, reason: rec.reason ?? signal ?? 'An MCP server for it is set up', state, setup });
   }
   return rows;
 };

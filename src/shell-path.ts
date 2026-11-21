@@ -1,22 +1,44 @@
-// The PATH to look for tools on (Tools, SERRA-39). T3 runs the worker with the owner's login environment, while a
-// packaged app opened from Finder gets launchd's short PATH and the daemon gets the PATH it was installed with. So
-// Serra asks the login shell for its PATH once, and adds the usual install folders (app/main/tool-path.ts).
+// The environment to look for and run tools in (Tools, SERRA-39). T3 runs the worker with the owner's login
+// environment, while a packaged app opened from Finder gets launchd's short PATH and the daemon gets the PATH it
+// was installed with. So Serra asks the login shell once for its environment, and adds the usual install folders
+// (as app/main/tool-path.ts does) to its PATH.
+//
+// The whole login environment goes only to the provider CLIs (`claude mcp list`, `codex mcp list`): they're the
+// programs T3 runs jobs with, and their health checks need the variables a server's config refers to. Third-party
+// CLIs get the allowlist in exec.ts (`toolEnv`) instead.
 import { homedir } from 'node:os';
 import { delimiter, isAbsolute, join } from 'node:path';
 import { exec, toolEnv, type Exec } from './exec.ts';
 
-const MARKER = '__SERRA_PATH__';
+const MARKER = '__SERRA_ENV__';
 
-/** `PATH` as the login shell sets it, or null when the shell can't say within the timeout. */
-export const loginShellPath = async (
+export interface LoginEnvironment {
+  /** PATH to search: the login shell's, then this process's, then the usual install folders. */
+  path: string;
+  /** The login shell's environment, or null when it couldn't be read (then only `toolEnv` is used). */
+  env: Record<string, string> | null;
+}
+
+/** The login shell's environment (from `env -0`), or null when the shell can't say within the timeout. */
+export const loginShellEnv = async (
   { shell = process.env.SHELL || '/bin/zsh', run = exec, timeoutMs = 5_000 }: { shell?: string; run?: Exec; timeoutMs?: number } = {},
-): Promise<string | null> => {
-  // Interactive and login, so version managers set up in .zshrc (nvm, asdf, mise) are on it too.
-  // Only the allowlisted environment: the rc files run, but never see a token Serra resolved.
-  const result = await run(shell, ['-ilc', `printf '${MARKER}%s${MARKER}' "$PATH"`], { timeoutMs, env: toolEnv(process.env.PATH ?? '/usr/bin:/bin') });
-  const match = new RegExp(`${MARKER}(.*?)${MARKER}`, 's').exec(result.stdout);
-  return match?.[1]?.trim() || null;
+): Promise<Record<string, string> | null> => {
+  // Interactive and login, so version managers set up in .zshrc (nvm, asdf, mise) are on it too. It starts from the
+  // allowlisted environment: the rc files run, but never see a token Serra itself resolved.
+  const result = await run(shell, ['-ilc', `printf '${MARKER}'; env -0`], { timeoutMs, env: toolEnv(process.env.PATH ?? '/usr/bin:/bin') });
+  const start = result.stdout.indexOf(MARKER);
+  if (start < 0 || result.timedOut) return null;
+  const env: Record<string, string> = {};
+  for (const entry of result.stdout.slice(start + MARKER.length).split('\0')) {
+    const equals = entry.indexOf('=');
+    if (equals > 0) env[entry.slice(0, equals)] = entry.slice(equals + 1);
+  }
+  return env.PATH ? env : null;
 };
+
+/** `PATH` as the login shell sets it, or null. */
+export const loginShellPath = async (options: Parameters<typeof loginShellEnv>[0] = {}): Promise<string | null> =>
+  (await loginShellEnv(options))?.PATH ?? null;
 
 /** Joins PATH lists in order, without repeats, empty parts or relative entries (they'd depend on the folder). */
 export const mergePaths = (...paths: (string | null | undefined)[]): string => {
@@ -27,20 +49,24 @@ export const mergePaths = (...paths: (string | null | undefined)[]): string => {
 
 const INSTALL_DIRS = (home: string) => ['/opt/homebrew/bin', '/usr/local/bin', join(home, '.local/bin')].join(delimiter);
 
-let cached: { path: Promise<string>; at: number } | null = null;
+let cached: { value: Promise<LoginEnvironment>; at: number } | null = null;
 const CACHE_MS = 5 * 60_000;
 
 /**
- * The login shell's PATH, then this process's, then the usual install folders. Cached for five minutes.
- * `SERRA_TOOLS_PATH` replaces all of it.
+ * The login environment, cached for five minutes; `fresh` asks the shell again (Check again on the Tools screen).
+ * `SERRA_TOOLS_PATH` replaces the search path and skips the shell: tests use it so they never find the real
+ * `claude` or `gh`.
  */
-export const toolSearchPath = async (options: { run?: Exec; home?: string; fresh?: boolean } = {}): Promise<string> => {
-  // An explicit PATH wins: tests use it so they never find the real `claude` or `gh`.
-  if (process.env.SERRA_TOOLS_PATH !== undefined) return mergePaths(process.env.SERRA_TOOLS_PATH);
-  if (!options.fresh && cached && Date.now() - cached.at < CACHE_MS) return cached.path;
+export const loginEnvironment = (options: { run?: Exec; home?: string; fresh?: boolean } = {}): Promise<LoginEnvironment> => {
+  if (process.env.SERRA_TOOLS_PATH !== undefined) return Promise.resolve({ path: mergePaths(process.env.SERRA_TOOLS_PATH), env: null });
+  if (!options.fresh && cached && Date.now() - cached.at < CACHE_MS) return cached.value;
   // The promise is cached, so the MCP and CLI checks that start together share one login shell.
-  const path = loginShellPath({ run: options.run }).catch(() => null)
-    .then((shell) => mergePaths(shell, process.env.PATH, INSTALL_DIRS(options.home ?? homedir())));
-  cached = { path, at: Date.now() };
-  return path;
+  const value = loginShellEnv({ run: options.run }).catch(() => null)
+    .then((env) => ({ env, path: mergePaths(env?.PATH, process.env.PATH, INSTALL_DIRS(options.home ?? homedir())) }));
+  cached = { value, at: Date.now() };
+  return value;
 };
+
+/** Just the search path. */
+export const toolSearchPath = async (options: { run?: Exec; home?: string; fresh?: boolean } = {}): Promise<string> =>
+  (await loginEnvironment(options)).path;
