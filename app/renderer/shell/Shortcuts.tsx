@@ -6,18 +6,19 @@ import { CLOSE_COMMAND_PALETTE } from './events.ts';
 import { isMac } from './keys.ts';
 import { NEW_TASK_PATH, shortcutPath } from './shortcuts.logic.ts';
 
-
-/** Focuses the screen's composer, or its heading, once the route has rendered (a few frames at most). */
-/** The screen's heading now, so focusScreen can wait for the next screen's instead of taking the outgoing one. */
-export const currentHeading = (): Element | null => document.querySelector('[data-serra-main] h1');
-
-export const focusScreen = (path: string, before: Element | null = null, tries = 20): void => {
-  const found = path === NEW_TASK_PATH
-    ? document.getElementById('new-task-request')
-    : document.querySelector<HTMLElement>('[data-serra-main] h1');
-  // The outgoing screen's heading is only right when the route didn't change (already there); give the new one time.
-  const target = found && (found !== before || tries === 0) && found.isConnected ? found : null;
-  if (!target) { if (tries > 0) requestAnimationFrame(() => focusScreen(path, before, tries - 1)); return; }
+/**
+ * Moves focus to a screen once React has committed it: the composer for New task, else the screen's heading. `main`
+ * carries the rendered path (App.tsx), so this waits for that, never for timing. If focus moves on its own first
+ * (the owner pressed Tab, clicked) away from `from`, the request is dropped rather than pulling focus back. `from` is
+ * null when focus is expected to move meanwhile (the command palette closing hands it back).
+ */
+export const focusScreen = (path: string, from: Element | null, tries = 30): void => {
+  if (from && document.activeElement !== from) return;
+  const main = document.querySelector<HTMLElement>('[data-serra-main]');
+  const target = main?.dataset.path === path
+    ? (path === NEW_TASK_PATH ? document.getElementById('new-task-request') : main.querySelector<HTMLElement>('h1'))
+    : null;
+  if (!target) { if (tries > 0) requestAnimationFrame(() => focusScreen(path, from, tries - 1)); return; }
   if (target.tagName === 'H1') target.tabIndex = -1;
   target.focus();
 };
@@ -29,11 +30,11 @@ export const Shortcuts = () => {
       const path = shortcutPath(event, isMac);
       if (!path || event.defaultPrevented) return;
       event.preventDefault();
-      const before = currentHeading();
+      const palette = document.querySelector('dialog[data-command-palette][open]');
       window.dispatchEvent(new Event(CLOSE_COMMAND_PALETTE));
       navigate(path);
-      // The palette gives focus back as it closes; take it after that, on the new screen.
-      requestAnimationFrame(() => requestAnimationFrame(() => focusScreen(path, before)));
+      // With the palette open, focus moves as it closes, so don't treat that as the owner moving on.
+      focusScreen(path, palette ? null : document.activeElement);
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);

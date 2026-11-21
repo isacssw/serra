@@ -70,14 +70,15 @@ const ScrollToTop = () => {
 };
 
 const Shell = () => {
+  const { pathname } = useLocation();
   const status = useBotStatus();
   const counts = useBadgeCounts(status);
   return (
     <div className="flex h-full">
       <button
         type="button"
-        onClick={() => focusScreen(location.hash.replace(/^#/, ''), null, 0)}
-        className="sr-only z-50 rounded-md bg-accent px-3 py-1.5 text-[13px] font-medium text-accent-ink focus:not-sr-only focus:fixed focus:top-3 focus:left-[84px] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
+        onClick={(event) => focusScreen(pathname, event.currentTarget)}
+        className="fixed top-2 left-[252px] z-50 -translate-y-20 rounded-md bg-accent px-3 py-1.5 text-[13px] font-medium text-accent-ink focus:translate-y-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
       >
         Skip to content
       </button>
@@ -85,7 +86,7 @@ const Shell = () => {
       <div className="flex min-w-0 flex-1 flex-col bg-canvas">
         {/* The title bar's height across the content side: it moves the window, and screens start below it. */}
         <div className="drag h-10 shrink-0" aria-hidden />
-        <main className="min-h-0 flex-1 overflow-y-auto [scrollbar-gutter:stable]" data-serra-main>
+        <main className="min-h-0 flex-1 overflow-y-auto [scrollbar-gutter:stable]" data-serra-main data-path={pathname}>
           <Routes>
             {routes.map((route) => <Route key={route.id} path={route.path} element={screens[route.id]} />)}
             {/* The first-run wizard (APP-27) isn't a sidebar item: the window opens on it until a profile exists. */}

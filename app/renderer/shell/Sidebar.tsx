@@ -13,7 +13,7 @@ import { statusView, type StatusTone } from '../status.logic.ts';
 import { cx } from '../ui/index.ts';
 import { OPEN_COMMAND_PALETTE } from './events.ts';
 import { ariaMod, isMac, mod } from './keys.ts';
-import { currentHeading, focusScreen } from './Shortcuts.tsx';
+import { focusScreen } from './Shortcuts.tsx';
 import downIcon from '../../../assets/brand/serra-status-down.png';
 import needsYouIcon from '../../../assets/brand/serra-status-needs-you.png';
 import upIcon from '../../../assets/brand/serra-status-up.png';
@@ -87,8 +87,7 @@ const onNavKey = (event: KeyboardEvent<HTMLElement>): void => {
   const link = (event.target as HTMLElement).closest<HTMLAnchorElement>('a[data-route]');
   if (event.key === 'Enter' && link) {
     const path = link.getAttribute('href')?.replace(/^#/, '') ?? '';
-    const before = currentHeading();
-    requestAnimationFrame(() => requestAnimationFrame(() => focusScreen(path, before)));
+    focusScreen(path, link);
     return;
   }
   if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;
