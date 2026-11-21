@@ -1120,5 +1120,8 @@ export const createBot = ({
     }
   };
 
-  return { handle, poll, handleQuestionAction, ownsThread, reloadProfile, drain: () => followUps.drain() };
+  /** A job in this thread is running now (its worker is being followed). Its messages still reach it while new work is paused. */
+  const runningIn = (channel: string, threadTs: string): boolean => getJob(slackKey(channel, threadTs))?.watching === true;
+
+  return { handle, poll, handleQuestionAction, ownsThread, runningIn, reloadProfile, drain: () => followUps.drain() };
 };

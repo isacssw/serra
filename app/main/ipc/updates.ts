@@ -6,12 +6,14 @@
 // Bot actions run one at a time; their log lines go to the window and are kept so the screen shows them again after
 // navigating away. Everything reads and writes the profile's files and launchd directly, so it works while the
 // daemon is stopped.
-import { delimiter, dirname } from 'node:path';
+import { existsSync } from 'node:fs';
+import { delimiter, dirname, join } from 'node:path';
 import {
   activateRelease, findNode, prepareNextRelease, releaseStatus, rollbackRelease, runningJobs,
   type StatusOptions,
 } from '../../../src/releases.ts';
 import { launchd, preparedProblems, type DeployOptions, type PrepareOptions } from '../../../src/deploy.ts';
+import { pauseIntake, readPause, resumeIntake } from '../../../src/intake.ts';
 import type { Handlers } from '../bridge.ts';
 import { botSyncDecision, type BotSync } from '../bot-sync.ts';
 import type { HandlerContext } from './context.ts';
@@ -29,6 +31,8 @@ export interface UpdatesDeps {
   status?: Omit<StatusOptions, 'fetch'>;
   /** Where the log lines go besides the window (default: the main process's console). */
   echo?: (line: string) => void;
+  /** The clock (tests). */
+  now?: () => number;
 }
 
 /** The most lines kept for the screen; `pnpm install` can be chatty. */
@@ -36,6 +40,8 @@ const MAX_LOG_LINES = 500;
 /** How often the bot's version is compared with the app's, after a first look shortly after launch. */
 const SYNC_EVERY_MS = 60_000;
 const SYNC_FIRST_MS = 20_000;
+/** After a pause lapsed with jobs still running, new requests flow again for this long; the update waits for a quiet moment. */
+const PAUSE_COOLDOWN_MS = 60 * 60_000;
 
 /** Puts the Node binary's folder first on PATH, as the service plist does, so `pnpm` beside it is found from Finder. */
 const nodeOnPath = (node: string): void => {
@@ -57,6 +63,10 @@ export const updatesService = (context: HandlerContext, deps: UpdatesDeps = {}) 
   let cutover: Promise<unknown> | null = null;
   context.guardQuit?.(() => cutover);
   const driver = deps.deploy?.driver ?? launchd;
+  /** Pauses this app started, per profile, and when one lapsed with jobs still running (no new pause for a while). */
+  const ourPauses = new Set<string>();
+  const lapsed = new Map<string, number>();
+  const now = deps.now ?? (() => Date.now());
 
   const line = (text: string): void => {
     for (const part of text.split('\n')) {
@@ -90,6 +100,10 @@ export const updatesService = (context: HandlerContext, deps: UpdatesDeps = {}) 
   /** Where the bot stands against the app, and what the timer should do. Null without a profile. */
   const decide = async (profileDir: string | null, status?: Awaited<ReturnType<typeof releaseStatus>>) => {
     if (!profileDir || !status) return null;
+    const paused = readPause(profileDir, now()) !== null;
+    // Our pause ran out while jobs still ran: let requests flow and wait for a natural quiet moment for a while.
+    if (ourPauses.has(profileDir) && !paused) { ourPauses.delete(profileDir); lapsed.set(profileDir, now()); }
+    const mayPause = now() - (lapsed.get(profileDir) ?? -Infinity) > PAUSE_COOLDOWN_MS;
     let serviceLoaded = false;
     try { serviceLoaded = status.active ? await driver.loaded(status.active.label) : false; } catch { /* launchd didn't answer: treat as stopped */ }
     let jobs = 0;
@@ -99,8 +113,19 @@ export const updatesService = (context: HandlerContext, deps: UpdatesDeps = {}) 
     return botSyncDecision({
       mode: status.mode, follows: context.botFollowsApp === true, serviceLoaded, appVersion: context.runtime.version,
       active: status.active, prepared: status.prepared, preparedReady,
-      activation: status.activation, jobs, running, failed: failures.get(profileDir) ?? null,
+      activation: status.activation, jobs, running, failed: failures.get(profileDir) ?? null, paused, mayPause,
     });
+  };
+
+  const pause = (profileDir: string): void => {
+    if (!readPause(profileDir, now())) line('New requests wait until the bot has restarted; running jobs finish first.');
+    pauseIntake(profileDir, 'bot-update', { now: now() });
+    ourPauses.add(profileDir);
+  };
+  const resume = (profileDir: string): void => {
+    if (readPause(profileDir, now())) line('New requests start again.');
+    resumeIntake(profileDir);
+    ourPauses.delete(profileDir);
   };
 
   /** Brings the bot to the app's version: prepare (unless done already), then activate if still no job is running. */
@@ -114,11 +139,15 @@ export const updatesService = (context: HandlerContext, deps: UpdatesDeps = {}) 
         line(`Updating the bot to ${target}`);
         await prepareWithNode(profileDir);
       }
-      // Preparing can take a minute; a job may have started meanwhile. Then the activation waits for the next tick.
+      // Preparing can take a minute; a job may have started meanwhile. Then the activation waits for the next tick,
+      // with new requests held so it finishes.
       if (!force && runningJobs(profileDir).length > 0) {
-        line('A job started while preparing. The bot restarts when no job is running.');
+        line('A job started while preparing. New requests wait, and the bot restarts when the job finishes.');
+        pause(profileDir);
         return { ok: true as const, waiting: true };
       }
+      // No new job may start during the switch itself; held requests start on the new bot.
+      pause(profileDir);
       const jobStarted = 'A job started. The bot restarts when no job is running.';
       const stopped = 'The bot was stopped meanwhile, so it stays stopped.';
       const label = (await releaseStatus(profileDir)).prepared?.label;
@@ -137,7 +166,10 @@ export const updatesService = (context: HandlerContext, deps: UpdatesDeps = {}) 
           context.expectStop?.();
         },
       });
-      if (!outcome.ok && (outcome.error === jobStarted || outcome.error === stopped)) { line(outcome.error); return { ok: true as const, waiting: true }; }
+      if (!outcome.ok && outcome.error === jobStarted) { line(outcome.error); return { ok: true as const, waiting: true }; }
+      if (!outcome.ok && outcome.error === stopped) { line(outcome.error); resume(profileDir); return { ok: true as const, waiting: true }; }
+      // Switched, or failed with the old bot back: either way new requests flow again (the bot starts the held ones).
+      resume(profileDir);
       if (!outcome.ok) {
         fail(outcome.error);
         line(`The bot couldn't start on ${target}: ${outcome.error}`);
@@ -154,6 +186,7 @@ export const updatesService = (context: HandlerContext, deps: UpdatesDeps = {}) 
       failures.delete(profileDir);
       return { ok: true as const, waiting: false };
     } catch (error) {
+      resume(profileDir);
       fail(errorText(error));
       line(`The bot update failed: ${errorText(error)}`);
       return { ok: false as const, error: errorText(error) };
@@ -167,7 +200,12 @@ export const updatesService = (context: HandlerContext, deps: UpdatesDeps = {}) 
     if (!profileDir || running || context.appUpdater?.view().state === 'installing') return;
     try {
       const decision = await decide(profileDir, await releaseStatus(profileDir));
-      if (decision && decision.action !== 'none') await syncBot(false, profileDir);
+      if (!decision) return;
+      if (decision.action === 'pause') { pause(profileDir); return; }
+      if (decision.action !== 'none') { await syncBot(false, profileDir); return; }
+      // A pause nothing is waiting on any more (the app update was called off, the bot is in step or stopped): lift it.
+      const draining = decision.sync.state === 'waiting' || decision.sync.state === 'updating';
+      if (!draining && readPause(profileDir, now())) resume(profileDir);
     } catch (error) { echo(`bot update check failed: ${errorText(error)}`); }
   };
   context.every?.(SYNC_FIRST_MS, SYNC_EVERY_MS, () => { void tick(); });
@@ -215,7 +253,14 @@ export const updatesService = (context: HandlerContext, deps: UpdatesDeps = {}) 
     // Quitting now would cut a bot switch short; the owner waits for it.
     install: () => {
       if (running && running !== 'prepare') throw new Error('The bot is restarting. Restart Serra once it has finished.');
-      return app().install();
+      // The bot follows the new version next: from now on new requests wait, so the running jobs are the last ones on
+      // the old bot. The pause lapses on its own if the new version never gets to it.
+      const profileDir = context.profileDirOrNull();
+      const view = app().install();
+      if (view.state === 'installing' && profileDir && context.botFollowsApp && existsSync(join(profileDir, 'active.json'))) {
+        try { pauseIntake(profileDir, 'app-update', { now: now() }); } catch (error) { echo(`couldn't pause new requests: ${errorText(error)}`); }
+      }
+      return view;
     },
     openInstaller: () => app().openInstaller(),
     setPrereleases: (choice) => {

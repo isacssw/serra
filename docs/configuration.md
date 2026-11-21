@@ -21,6 +21,8 @@ Use one private profile per bot, outside the code checkout. `pnpm run setup` cre
 | tasks.json | Tasks started from the app, `pnpm bot task` or `pnpm bot interview` without Slack: their T3 threads, so they show in Jobs. Written only by the app and the CLI, never by the daemon |
 | releases/ | Prepared code snapshots and installed production dependencies |
 | prepared.json | The next prepared release and its content hash |
+| intake-paused.json | Present while the app has paused new work for an update; lapses on its own after 30 minutes |
+| held-requests.jsonl | Requests that arrived during that pause, started by the bot once it is over |
 | active.json | Current activated release |
 | activation.json | Latest cutover transaction and rollback information |
 | backups/ | Previous plist and settings at cutover; `backups/brief/` keeps the brief and policy replaced by an applied rewrite |

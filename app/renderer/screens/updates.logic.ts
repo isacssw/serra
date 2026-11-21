@@ -184,7 +184,7 @@ export const botLine = (sync: BotSync): BotLine | null => {
     case 'waiting': return sync.jobs > 0
       ? {
         tone: 'neutral', text: `The bot still runs ${was(sync.from)}.`,
-        detail: `It moves to ${sync.to} when ${sync.jobs === 1 ? 'the running job finishes' : `the ${sync.jobs} running jobs finish`}.`,
+        detail: `It moves to ${sync.to} when ${sync.jobs === 1 ? 'the running job finishes' : `the ${sync.jobs} running jobs finish`}.${sync.paused ? ' New requests wait until then and start right after.' : ''}`,
         action: { kind: 'sync', label: 'Update now' },
       }
       : { tone: 'busy', text: `The bot still runs ${was(sync.from)}.`, detail: `It moves to ${sync.to} after the current action.`, action: null };

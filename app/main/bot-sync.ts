@@ -13,8 +13,11 @@ export type BotSync =
   | { state: 'in-step'; version: string }
   /** The owner stopped the bot: it isn't restarted on its own. `to` is set when Update now would move it to the app's version. */
   | { state: 'stopped'; from: string | null; to: string | null; downgrade: boolean }
-  /** The bot runs an older version and waits for running jobs to finish before it restarts. */
-  | { state: 'waiting'; from: string | null; to: string; jobs: number }
+  /**
+   * The bot runs an older version and waits for running jobs to finish before it restarts. `paused`: new requests are
+   * held meanwhile (they start after the restart), so the running jobs are the last ones.
+   */
+  | { state: 'waiting'; from: string | null; to: string; jobs: number; paused: boolean }
   | { state: 'updating'; from: string | null; to: string }
   | { state: 'failed'; from: string | null; to: string; message: string; stopped: boolean; downgrade: boolean }
   /** The bot runs a newer version than the app (an older Serra was reinstalled). It never moves back on its own. */
@@ -22,7 +25,8 @@ export type BotSync =
   /** The last switch stopped halfway; rollback puts the earlier bot back. */
   | { state: 'interrupted' };
 
-export type BotSyncAction = 'none' | 'prepare' | 'activate';
+/** `pause`: hold new requests so the running jobs can finish before the restart (intake.ts). */
+export type BotSyncAction = 'none' | 'pause' | 'prepare' | 'activate';
 
 export interface BotSyncInput {
   mode: 'release' | 'developer';
@@ -42,6 +46,10 @@ export interface BotSyncInput {
   running: string | null;
   /** The version the last automatic attempt failed for (in this profile), so it isn't retried in a loop. */
   failed: { version: string; message: string } | null;
+  /** New requests are held for an update now (the profile's intake pause is in force). */
+  paused: boolean;
+  /** A pause may start now: not right after one lapsed with jobs still running (then the update waits for a quiet moment). */
+  mayPause: boolean;
 }
 
 /**
@@ -67,9 +75,13 @@ export const botSyncDecision = (input: BotSyncInput): { sync: BotSync; action: B
   if (inStep) return { sync: { state: 'in-step', version: to }, action: 'none' };
   // Its state files may already be in the newer format: moving back is the owner's call.
   if (downgrade && from) return { sync: { state: 'ahead', from, to }, action: 'none' };
-  if (input.jobs > 0) return { sync: { state: 'waiting', from, to, jobs: input.jobs }, action: 'none' };
+  // Running jobs finish first. New requests are held meanwhile, so the wait has an end.
+  if (input.jobs > 0) {
+    const pause = !input.paused && input.mayPause && !input.running;
+    return { sync: { state: 'waiting', from, to, jobs: input.jobs, paused: input.paused || pause }, action: pause ? 'pause' : 'none' };
+  }
   // Another action (a manual prepare or rollback) is running: wait for it.
-  if (input.running) return { sync: { state: 'waiting', from, to, jobs: 0 }, action: 'none' };
+  if (input.running) return { sync: { state: 'waiting', from, to, jobs: 0, paused: input.paused }, action: 'none' };
   const preparedForApp = input.prepared?.appVersion === to && input.prepared.fromApp === true && input.preparedReady;
   return { sync: { state: 'updating', from, to }, action: preparedForApp ? 'activate' : 'prepare' };
 };

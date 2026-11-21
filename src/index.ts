@@ -13,6 +13,8 @@ import { QUESTION_ACTION, questionInteraction } from './questions.ts';
 import { jobCounts, startStatusServer, type StatusServer } from './status-socket.ts';
 import { watchProfile } from './profile-reload.ts';
 import { checkProjectAccess } from './project-access.ts';
+import { admit, holdRequest, readPause, takeHeld } from './intake.ts';
+import type { IncomingMessage } from './types.ts';
 
 const POLL_MS = 15_000;
 
@@ -53,10 +55,38 @@ const track = async (work: Promise<unknown>): Promise<void> => {
   try { await work; } finally { pending.delete(work); }
 };
 
+const HELD_REACTION = 'hourglass_flowing_sand';
+
+/**
+ * Handles a message now, or holds it while the app has paused new work for an update (intake.ts): a request that
+ * would start a job waits, with an hourglass on it, for the restarted bot. Messages for running jobs go through.
+ */
+const receive = async (msg: IncomingMessage): Promise<void> => {
+  const paused = config.profileDir ? readPause(config.profileDir) : null;
+  if (config.profileDir && admit(paused !== null, bot.runningIn(msg.channel, msg.threadTs)) === 'hold') {
+    holdRequest(config.profileDir, msg);
+    await app.client.reactions.add({ channel: msg.channel, timestamp: msg.messageTs, name: HELD_REACTION }).catch(() => {});
+    app.logger.info(`Holding a new request in ${msg.channel} until Serra finishes updating (${paused?.reason}).`);
+    return;
+  }
+  await track(bot.handle(msg));
+};
+
+/** Starts the requests held during a pause, once it is over (at start, or when the update was called off). */
+const releaseHeld = async (): Promise<void> => {
+  if (!config.profileDir || stopping || readPause(config.profileDir)) return;
+  const held = takeHeld(config.profileDir);
+  if (held.length) app.logger.info(`Starting ${held.length} request(s) held during the update.`);
+  for (const msg of held) {
+    await app.client.reactions.remove({ channel: msg.channel, timestamp: msg.messageTs, name: HELD_REACTION }).catch(() => {});
+    await track(bot.handle(msg)).catch((error: unknown) => app.logger.error(`Held request failed: ${errorMessage(error)}`));
+  }
+};
+
 app.event('app_mention', async ({ event }) => {
   if (stopping) return;
   const msg = incomingMessage(event, 'app_mention', botUserId, bot.ownsThread, { messageTriggers: config.messageTriggers, botId });
-  if (msg) await track(bot.handle(msg));
+  if (msg) await receive(msg);
 });
 
 // Agent view emits this when someone opens the app. Wait for their message before starting work.
@@ -72,7 +102,7 @@ app.action(QUESTION_ACTION, async ({ ack, body }) => {
 app.message(async ({ message }) => {
   if (stopping) return;
   const msg = incomingMessage(message, 'message', botUserId, bot.ownsThread, { messageTriggers: config.messageTriggers, botId });
-  if (msg) await track(bot.handle(msg));
+  if (msg) await receive(msg);
 });
 
 // A missing index stops the daemon here instead of failing the first request. An index over its cap and page problems only warn.
@@ -125,8 +155,11 @@ app.logger.info(
 const profileWatcher = watchProfile(config.profileDir, bot.reloadProfile, {
   onError: (error) => app.logger.warn(`Not watching profile.json, changes apply after a restart: ${errorMessage(error)}`),
 });
+// Requests held while the previous bot was paused for an update start now.
+void releaseHeld();
 const timer = setInterval(() => {
   if (stopping) return;
+  void releaseHeld();
   void track(bot.poll()).catch((error: unknown) => {
     app.logger.error(`Poll failed: ${errorMessage(error)}`);
   }).finally(() => status?.refresh());

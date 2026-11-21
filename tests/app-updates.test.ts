@@ -18,6 +18,7 @@ import { botSyncDecision, type BotSyncInput } from '../app/main/bot-sync.ts';
 import { updatesService } from '../app/main/ipc/updates.ts';
 import { type ServiceDriver } from '../src/deploy.ts';
 import { createProfile } from '../src/setup.ts';
+import { pauseIntake, readPause } from '../src/intake.ts';
 
 // ---------------------------------------------------------------------------------------------------------------
 // Developer-mode logic
@@ -144,11 +145,11 @@ test('release notes become plain lines without Markdown syntax', () => {
 
 test('the bot line: in step, waiting for jobs, updating, failed, not installed, and nothing in developer mode', () => {
   assert.equal(botLine({ state: 'in-step', version: '0.1.0-alpha.3' })?.text, 'The bot runs version 0.1.0-alpha.3.');
-  const waiting = botLine({ state: 'waiting', from: '0.1.0-alpha.2', to: '0.1.0-alpha.3', jobs: 2 })!;
+  const waiting = botLine({ state: 'waiting', from: '0.1.0-alpha.2', to: '0.1.0-alpha.3', jobs: 2, paused: false })!;
   assert.equal(waiting.text, 'The bot still runs version 0.1.0-alpha.2.');
   assert.equal(waiting.detail, 'It moves to 0.1.0-alpha.3 when the 2 running jobs finish.');
   assert.deepEqual(waiting.action, { kind: 'sync', label: 'Update now' });
-  assert.equal(botLine({ state: 'waiting', from: null, to: '0.1.0-alpha.3', jobs: 1 })!.detail, 'It moves to 0.1.0-alpha.3 when the running job finishes.');
+  assert.equal(botLine({ state: 'waiting', from: null, to: '0.1.0-alpha.3', jobs: 1, paused: false })!.detail, 'It moves to 0.1.0-alpha.3 when the running job finishes.');
   assert.equal(botLine({ state: 'updating', from: null, to: '0.1.0-alpha.3' })!.tone, 'busy');
   const failed = botLine({ state: 'failed', from: '0.1.0-alpha.2', to: '0.1.0-alpha.3', message: 'No supported Node', stopped: false, downgrade: false })!;
   assert.equal(failed.text, "The bot couldn't move to 0.1.0-alpha.3, so it's still on version 0.1.0-alpha.2.");
@@ -174,13 +175,15 @@ test('the bot line: in step, waiting for jobs, updating, failed, not installed, 
 
 const input = (patch: Partial<BotSyncInput> = {}): BotSyncInput => ({
   mode: 'release', follows: true, serviceLoaded: true, appVersion: '0.1.0-alpha.3', active: { appVersion: '0.1.0-alpha.2', fromApp: true }, prepared: null, preparedReady: false,
-  activation: 'active', jobs: 0, running: null, failed: null, ...patch,
+  activation: 'active', jobs: 0, running: null, failed: null, paused: false, mayPause: true, ...patch,
 });
 
 test('the bot follows the app only while no job runs, and never in developer mode', () => {
   assert.deepEqual(botSyncDecision(input()), { sync: { state: 'updating', from: '0.1.0-alpha.2', to: '0.1.0-alpha.3' }, action: 'prepare' });
-  // A running job defers the restart: nothing is done, the screen says it waits.
-  assert.deepEqual(botSyncDecision(input({ jobs: 1 })), { sync: { state: 'waiting', from: '0.1.0-alpha.2', to: '0.1.0-alpha.3', jobs: 1 }, action: 'none' });
+  // A running job defers the restart, and new requests are paused so it is the last one before the restart.
+  assert.deepEqual(botSyncDecision(input({ jobs: 1 })), { sync: { state: 'waiting', from: '0.1.0-alpha.2', to: '0.1.0-alpha.3', jobs: 1, paused: true }, action: 'pause' });
+  assert.deepEqual(botSyncDecision(input({ jobs: 1, paused: true })), { sync: { state: 'waiting', from: '0.1.0-alpha.2', to: '0.1.0-alpha.3', jobs: 1, paused: true }, action: 'none' }, 'already paused: just wait');
+  assert.deepEqual(botSyncDecision(input({ jobs: 1, mayPause: false })), { sync: { state: 'waiting', from: '0.1.0-alpha.2', to: '0.1.0-alpha.3', jobs: 1, paused: false }, action: 'none' }, 'after a pause lapsed: wait for a quiet moment');
   // A build already prepared for this version (a job started while preparing) is only activated.
   assert.equal(botSyncDecision(input({ prepared: { appVersion: '0.1.0-alpha.3', fromApp: true }, preparedReady: true })).action, 'activate');
   assert.equal(botSyncDecision(input({ prepared: { appVersion: '0.1.0-alpha.3', fromApp: true }, preparedReady: false })).action, 'prepare');
@@ -392,9 +395,12 @@ test('after an app update the bot moves to the new version, but waits while a jo
   f.driver.loaded = async () => true;
 
   followJob(f.directory);
-  assert.deepEqual((await handlers.status()).bot, { state: 'waiting', from: '0.1.0-alpha.2', to: '0.1.0-alpha.3', jobs: 1 });
+  assert.deepEqual((await handlers.status()).bot, { state: 'waiting', from: '0.1.0-alpha.2', to: '0.1.0-alpha.3', jobs: 1, paused: true });
+  assert.equal(readPause(f.directory), null, 'reading the status pauses nothing');
   await tick();
   assert.deepEqual(f.events, [], 'a running job is never interrupted: nothing stopped or started');
+  // The tick paused new requests, so the running job is the last one before the restart.
+  assert.equal(readPause(f.directory)?.reason, 'bot-update');
 
   // The new app's build was prepared earlier (a job started while preparing): once jobs finish, it is activated.
   const fresh = await handlers.prepare();
@@ -415,6 +421,7 @@ test('after an app update the bot moves to the new version, but waits while a jo
   await tick();
   const after = await handlers.status();
   assert.equal(after.releases?.active?.release, fresh.release);
+  assert.equal(readPause(f.directory), null, 'new requests flow again after the switch; the new bot starts the held ones');
   assert.deepEqual(after.bot, { state: 'in-step', version: '0.1.0-alpha.3' });
   const events: string[] = f.events;
   assert.ok(events.includes('stop') && events.includes('start'), 'the bot restarted on the new build');
@@ -426,4 +433,48 @@ test('the window confirms its first screen, which an update that just installed 
   const app = readFileSync(join(import.meta.dirname, '../app/renderer/App.tsx'), 'utf8');
   assert.match(app, /const Rendered = [\s\S]*app\.rendered\(\)/);
   assert.match(app, /<Rendered \/>/, 'Rendered is mounted in the shell');
+});
+
+test('a pause the update no longer needs is lifted, and one that lapsed with jobs still running is not renewed for a while', async (t) => {
+  const f = await profileFixture(t);
+  let clock = Date.parse('2026-11-21T22:00:00Z');
+  const context: HandlerContext = { ...contextFor(f.directory, []), runtime: { version: '0.1.0-alpha.3', electron: '45.0.0', node: '22.20.0', platform: 'darwin' }, botFollowsApp: true };
+  const deps = { findNode: async () => '/opt/homebrew/bin/node', prepare: { install: false }, deploy: { driver: f.driver, launchAgentsDir: f.agents, preflight: async () => {} }, echo: () => {}, now: () => clock };
+  const { handlers, tick } = updatesService(context, deps);
+  // The bot is already on the app's version (the app update was called off and the old app came back).
+  const plan = await handlers.prepare();
+  mkdirSync(join(plan.release, 'node_modules/@slack/bolt'), { recursive: true });
+  writeFileSync(join(f.directory, 'prepared.json'), JSON.stringify({ ...plan, appVersion: '0.1.0-alpha.3', fromApp: true }));
+  assert.equal((await handlers.activate()).ok, true);
+  f.driver.loaded = async () => true;
+  pauseIntake(f.directory, 'app-update', { now: clock });
+  await tick();
+  assert.equal(readPause(f.directory, clock), null, 'nothing waits on it: lifted');
+
+  // Behind, with a job that outlasts the pause: once it lapses, no new pause for an hour; requests flow meanwhile.
+  writeFileSync(join(f.directory, 'active.json'), JSON.stringify({ ...JSON.parse(readFileSync(join(f.directory, 'active.json'), 'utf8')), appVersion: '0.1.0-alpha.2' }));
+  followJob(f.directory);
+  await tick();
+  assert.ok(readPause(f.directory, clock), 'paused for the job to finish');
+  clock += 31 * 60_000;
+  assert.equal(readPause(f.directory, clock), null, 'the pause lapses on its own');
+  await tick();
+  assert.equal(readPause(f.directory, clock), null, 'not renewed right away');
+  assert.deepEqual((await handlers.status()).bot, { state: 'waiting', from: '0.1.0-alpha.2', to: '0.1.0-alpha.3', jobs: 1, paused: false });
+  clock += 61 * 60_000;
+  await tick();
+  assert.ok(readPause(f.directory, clock), 'after the cool-down it pauses again');
+});
+
+test('Restart to update pauses new requests first, so the bot can move to the new version as soon as its jobs finish', async (t) => {
+  const f = await profileFixture(t);
+  writeFileSync(join(f.directory, 'active.json'), JSON.stringify({ release: join(f.directory, 'releases/x'), appVersion: '0.1.0-alpha.2' }));
+  const installing = { state: 'installing' } as unknown as AppUpdateView;
+  const appUpdater = { install: () => installing } as unknown as NonNullable<HandlerContext['appUpdater']>;
+  const quiet = updatesHandlers({ ...contextFor(f.directory, []), appUpdater, botFollowsApp: false }, { echo: () => {} });
+  quiet.install();
+  assert.equal(readPause(f.directory), null, 'a copy run from source leads no bot: nothing paused');
+  const handlers = updatesHandlers({ ...contextFor(f.directory, []), appUpdater, botFollowsApp: true }, { echo: () => {} });
+  assert.equal((await handlers.install()).state, 'installing');
+  assert.equal(readPause(f.directory)?.reason, 'app-update');
 });
