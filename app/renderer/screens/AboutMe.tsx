@@ -134,7 +134,7 @@ export const AboutMe = () => {
               <p className="text-sm text-muted">
                 Nothing for this audience yet. Confirm pages under owner/ (your role, how you work, your voice, what&rsquo;s off-limits)
                 and they show here.{' '}
-                <button type="button" onClick={() => navigate('/knowledge/proposals')} className="text-ink underline underline-offset-2 hover:no-underline focus-visible:outline-2 focus-visible:outline-focus">
+                <button type="button" onClick={() => navigate('/knowledge/proposals?interview=1')} className="text-ink underline underline-offset-2 hover:no-underline focus-visible:outline-2 focus-visible:outline-focus">
                   Start the interview
                 </button>
               </p>

@@ -239,7 +239,7 @@ export const Proposals = () => {
     <Page
       title="Proposals"
       subtitle={proposals ? pendingLabel(proposals.length) : loadError ? undefined : 'Loading…'}
-      actions={<InterviewButton />}
+      actions={<InterviewButton autoOpen={search.get('interview') === '1'} onOpened={() => setSearch((params) => { params.delete('interview'); return params; }, { replace: true })} />}
     >
       {loadError && <p role="alert" className="text-sm text-down">{loadError}</p>}
       {proposals && proposals.length === 0 && (
@@ -415,7 +415,7 @@ const MergeStats = ({ before, after }: { before: string; after: string }) => {
 type Interview = { state: 'closed' } | { state: 'loading' } | { state: 'ready'; preview: InterviewPreview } | { state: 'error'; message: string };
 
 /** The header's Start interview button and its confirm dialog, which shows the brief the thread will get. */
-const InterviewButton = () => {
+const InterviewButton = ({ autoOpen = false, onOpened }: { autoOpen?: boolean; onOpened?: () => void }) => {
   const toast = useToast();
   const [dialog, setDialog] = useState<Interview>({ state: 'closed' });
   const [starting, setStarting] = useState(false);
@@ -430,7 +430,13 @@ const InterviewButton = () => {
       (preview) => setDialog({ state: 'ready', preview }),
       (error: unknown) => setDialog({ state: 'error', message: message(error) }),
     );
-  };
+  };  // Arriving from About me's "Start the interview" opens the confirm dialog straight away, once.
+  useEffect(() => {
+    if (!autoOpen) return;
+    onOpened?.();
+    open();
+  }, [autoOpen]); // eslint-disable-line react-hooks/exhaustive-deps
+
 
   const start = (): void => {
     const bridge = serra();
