@@ -73,10 +73,10 @@ const message = (error: unknown): string => (error instanceof Error ? error.mess
  * in a folder this user can write. Otherwise the owner installs from the opened disk image.
  */
 export const installPlan = (bundlePath: string | null, writable: (path: string) => boolean = canWrite): InstallPlan => {
-  if (!bundlePath || !bundlePath.endsWith('.app')) return { kind: 'installer', reason: "This copy of Serra doesn't run from an app bundle." };
-  if (bundlePath.startsWith('/Volumes/')) return { kind: 'installer', reason: 'Serra is running from its disk image. Drag it to Applications first.' };
-  if (bundlePath.includes('/AppTranslocation/')) return { kind: 'installer', reason: 'macOS is running Serra from a temporary location. Move it to Applications and open it from there.' };
-  if (!writable(dirname(bundlePath)) || !writable(bundlePath)) return { kind: 'installer', reason: `Serra can't replace itself in ${dirname(bundlePath)} without an administrator.` };
+  if (!bundlePath || !bundlePath.endsWith('.app')) return { kind: 'installer', reason: "This copy of Serra can't replace itself." };
+  if (bundlePath.startsWith('/Volumes/')) return { kind: 'installer', reason: "Serra is running from its disk image, so it can't replace itself." };
+  if (bundlePath.includes('/AppTranslocation/')) return { kind: 'installer', reason: "macOS is running Serra from a temporary location, so it can't replace itself." };
+  if (!writable(dirname(bundlePath)) || !writable(bundlePath)) return { kind: 'installer', reason: `Serra needs an administrator to replace itself in ${dirname(bundlePath)}.` };
   return { kind: 'replace' };
 };
 

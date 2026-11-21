@@ -113,9 +113,9 @@ test('the app card in each state says one thing and offers the one next step', (
   assert.equal(progressPercent(76_000_000, 122_000_000), 62);
   assert.equal(progressPercent(5, null), null);
   assert.deepEqual(appCard(view({ state: 'ready', release, install: { kind: 'replace' } }), now).primary, { action: 'install', label: 'Restart to update' });
-  const installer = appCard(view({ state: 'ready', release, install: { kind: 'installer', reason: 'Serra is running from its disk image.' } }), now);
+  const installer = appCard(view({ state: 'ready', release, install: { kind: 'installer', reason: "Serra is running from its disk image, so it can't replace itself." } }), now);
   assert.deepEqual(installer.primary, { action: 'openInstaller', label: 'Open installer' });
-  assert.match(installer.body, /^Serra is running from its disk image\. Open the installer/);
+  assert.equal(installer.body, "Serra is running from its disk image, so it can't replace itself. Open the installer and drag Serra to Applications, replacing the old copy.");
   const failedCheck = appCard(view({ state: 'error', stage: 'check', message: "Couldn't reach GitHub." }), now);
   assert.equal(failedCheck.title, "Couldn't check for updates");
   assert.deepEqual(failedCheck.primary, { action: 'check', label: 'Try again' });
@@ -143,6 +143,7 @@ test('the bot line: in step, waiting for jobs, updating, failed, not installed, 
   const failed = botLine({ state: 'failed', from: '0.1.0-alpha.2', to: '0.1.0-alpha.3', message: 'No supported Node' })!;
   assert.equal(failed.text, "The bot couldn't move to 0.1.0-alpha.3, so it still runs version 0.1.0-alpha.2.");
   assert.equal(failed.detail, 'No supported Node');
+  assert.equal(botLine({ state: 'failed', from: null, to: '1.0.0', message: 'Slack account: invalid_auth; GitHub account: Expected alex' })!.detail, 'Slack account: invalid_auth (and 1 more)');
   assert.deepEqual(botLine({ state: 'not-installed' })!.action, { kind: 'setup', label: 'Open setup' });
   assert.deepEqual(botLine({ state: 'interrupted' })!.action, { kind: 'rollback', label: 'Roll back' });
   assert.equal(botLine({ state: 'manual' }), null);

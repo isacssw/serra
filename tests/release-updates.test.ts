@@ -149,7 +149,7 @@ test('the app replaces itself only from a writable .app outside a disk image or 
   assert.equal(installPlan(null, yes).kind, 'installer');
   assert.match((installPlan('/Volumes/Serra/Serra.app', yes) as { reason: string }).reason, /disk image/);
   assert.match((installPlan('/private/var/folders/x/AppTranslocation/ABC/d/Serra.app', yes) as { reason: string }).reason, /temporary location/);
-  assert.match((installPlan('/Applications/Serra.app', () => false) as { reason: string }).reason, /without an administrator/);
+  assert.match((installPlan('/Applications/Serra.app', () => false) as { reason: string }).reason, /needs an administrator/);
 });
 
 const updaterFixture = async (t: TestContext, { dmgBody = 'disk image bytes', sumsBody, plan = { kind: 'replace' } }: { dmgBody?: string; sumsBody?: string; plan?: InstallPlan } = {}) => {

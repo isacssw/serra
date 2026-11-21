@@ -98,7 +98,7 @@ export const appCard = (view: AppUpdateView, now = new Date()): AppCard => {
       }
       : {
         ...base, tone: 'new', title: `Serra ${view.release.version} is ready`, meta: `You have ${view.current}`,
-        body: `${view.install.reason} Open the installer, then drag Serra to Applications and replace the old copy.`,
+        body: `${view.install.reason} Open the installer and drag Serra to Applications, replacing the old copy.`,
         primary: { action: 'openInstaller', label: 'Open installer' },
       };
     case 'installing': return { ...base, tone: 'busy', title: `Installing Serra ${view.release.version}`, meta: `You have ${view.current}`, body: 'Serra is closing and will open again in a moment.' };
@@ -150,6 +150,12 @@ export interface BotLine {
 
 const was = (from: string | null): string => from ? `version ${from}` : 'an earlier version';
 
+/** The first of several problems (health checks are joined with `; `); the rest are in Show details. */
+export const firstProblem = (message: string): string => {
+  const parts = message.split('; ').filter(Boolean);
+  return parts.length > 1 ? `${parts[0]} (and ${parts.length - 1} more)` : message;
+};
+
 /** What the Updates screen says about the bot in release mode. */
 export const botLine = (sync: BotSync): BotLine | null => {
   switch (sync.state) {
@@ -165,7 +171,7 @@ export const botLine = (sync: BotSync): BotLine | null => {
       }
       : { tone: 'busy', text: `The bot still runs ${was(sync.from)}.`, detail: `It moves to ${sync.to} after the current action.`, action: null };
     case 'failed': return {
-      tone: 'down', text: `The bot couldn't move to ${sync.to}, so it still runs ${was(sync.from)}.`, detail: sync.message,
+      tone: 'down', text: `The bot couldn't move to ${sync.to}, so it still runs ${was(sync.from)}.`, detail: firstProblem(sync.message),
       action: { kind: 'sync', label: 'Try again' },
     };
     case 'interrupted': return {

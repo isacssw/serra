@@ -67,8 +67,8 @@ const CARD_ICONS: Record<CardAction, ReactNode> = {
   openInstaller: <ExternalLink size={16} aria-hidden />,
 };
 
-const AppUpdateCard = ({ status, card, onAction, onLink }: {
-  status: NonNullable<UpdatesStatus['app']>; card: AppCard; onAction: (action: CardAction) => void; onLink: (url: string) => void;
+const AppUpdateCard = ({ status, card, onAction, onLink, children }: {
+  status: NonNullable<UpdatesStatus['app']>; card: AppCard; onAction: (action: CardAction) => void; onLink: (url: string) => void; children?: ReactNode;
 }) => {
   const notes = status.state === 'available' || status.state === 'ready' ? status.release.notes : '';
   return (
@@ -96,9 +96,33 @@ const AppUpdateCard = ({ status, card, onAction, onLink }: {
           )}
         </div>
       )}
+      {children}
     </section>
   );
 };
+
+/** The bot's line under the app: whether it runs the app's version, and what happens next. */
+const BotSection = ({ bot, onAction, log }: { bot: NonNullable<ReturnType<typeof botLine>>; onAction: () => void; log: ReactNode }) => (
+  <div className="flex flex-col gap-2 border-t border-line pt-3">
+    <div className="flex items-start gap-3">
+      <span className="mt-px"><ToneIcon tone={bot.tone} size={16} /></span>
+      <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+        <h3 className="text-[13px] font-medium">{bot.text}</h3>
+        {bot.detail && <p className={cx('text-[13px] break-words', bot.tone === 'down' ? 'text-ink' : 'text-muted')}>{bot.detail}</p>}
+      </div>
+      {bot.action && (
+        <Button
+          size="sm"
+          icon={bot.action.kind === 'rollback' ? <Undo2 size={14} aria-hidden /> : bot.action.kind === 'sync' ? <RefreshCw size={14} aria-hidden /> : undefined}
+          onClick={onAction}
+        >
+          {bot.action.label}
+        </Button>
+      )}
+    </div>
+    {log}
+  </div>
+);
 
 const LogPanel = ({ lines, running, open, onToggle }: { lines: string[]; running: UpdatesStatus['running']; open: boolean; onToggle: (open: boolean) => void }) => {
   const ref = useRef<HTMLPreElement>(null);
@@ -311,9 +335,9 @@ export const Updates = () => {
       subtitle={developer && releases ? (
         <span className="inline-flex flex-wrap items-center gap-x-1.5">
           <GitBranch size={13} aria-hidden className="self-center" />
-          Developer mode: the bot is built from {sourceLabel(releases, home)}.
+          Developer mode · bot built from {sourceLabel(releases, home)} ·
           <button type="button" className="rounded underline-offset-2 hover:text-ink hover:underline focus-visible:outline-2 focus-visible:outline-focus" onClick={() => void navigate('/settings/worker')}>
-            Change in Settings
+            Change
           </button>
         </span>
       ) : undefined}
@@ -339,48 +363,44 @@ export const Updates = () => {
         </p>
       )}
 
-      {app && card
-        ? <AppUpdateCard status={app} card={card} onAction={(action) => void appAction(action)} onLink={openLink} />
-        : !developer && (
-          <section className="flex items-start gap-3 rounded-lg border border-line bg-panel p-4">
-            <span className="mt-0.5"><Info size={18} aria-hidden className="text-muted" /></span>
-            <div className="flex flex-col gap-1">
-              <h2 className="text-[15px] font-semibold">Serra {status.appVersion}</h2>
-              <p className="text-[13px] text-muted">{status.app?.state === 'unavailable' ? status.app.reason : 'Updates are available in the Serra app.'}</p>
+      {(() => {
+        const botAction = () => {
+          if (!bot?.action) return;
+          if (bot.action.kind === 'setup') void navigate(WELCOME_PATH);
+          else if (bot.action.kind === 'rollback') void ask('rollback');
+          else if (status.bot.state === 'failed') void run('sync');
+          else void ask('sync');
+        };
+        const botSection = !developer && bot
+          ? <BotSection bot={bot} onAction={botAction} log={<LogPanel lines={lines} running={running} open={details} onToggle={setDetails} />} />
+          : null;
+        if (app && card) return <AppUpdateCard status={app} card={card} onAction={(action) => void appAction(action)} onLink={openLink}>{botSection}</AppUpdateCard>;
+        if (developer) return null;
+        return (
+          <section className="flex flex-col gap-3 rounded-lg border border-line bg-panel p-4">
+            <div className="flex items-start gap-3">
+              <span className="mt-0.5"><Info size={18} aria-hidden className="text-muted" /></span>
+              <div className="flex flex-col gap-1">
+                <h2 className="text-[15px] font-semibold">Serra {status.appVersion}</h2>
+                <p className="text-[13px] text-muted">{status.app?.state === 'unavailable' ? status.app.reason : 'Updates are available in the Serra app.'}</p>
+              </div>
             </div>
+            {botSection}
           </section>
-        )}
-
-      {!developer && bot && (
-        <section aria-labelledby="bot-title" className="flex flex-col gap-3 rounded-lg border border-line bg-panel p-4">
-          <div className="flex items-start gap-3">
-            <span className="mt-0.5"><Bot size={18} aria-hidden className="text-muted" /></span>
-            <div className="flex min-w-0 flex-1 flex-col gap-1">
-              <h2 id="bot-title" className="flex items-center gap-2 text-[13px] font-medium">
-                <ToneIcon tone={bot.tone} size={14} />
-                {bot.text}
-              </h2>
-              {bot.detail && <p className={cx('text-[13px]', bot.tone === 'down' ? 'text-ink' : 'text-muted')}>{bot.detail}</p>}
-            </div>
-            {bot.action && (
-              <Button
-                size="sm"
-                icon={bot.action.kind === 'rollback' ? <Undo2 size={14} aria-hidden /> : bot.action.kind === 'sync' ? <RefreshCw size={14} aria-hidden /> : undefined}
-                onClick={() => {
-                  if (bot.action!.kind === 'setup') void navigate(WELCOME_PATH);
-                  else if (bot.action!.kind === 'rollback') void ask('rollback');
-                  else if (status.bot.state === 'failed') void run('sync');
-                  else void ask('sync');
-                }}
-              >
-                {bot.action.label}
-              </Button>
-            )}
-          </div>
-          <LogPanel lines={lines} running={running} open={details} onToggle={setDetails} />
-        </section>
-      )}
+        );
+      })()}
       {!developer && noticeBox}
+
+      {developer && releases && <DeveloperMode
+        releases={releases}
+        running={running}
+        lines={lines}
+        details={details}
+        setDetails={setDetails}
+        notice={noticeBox}
+        onPrepare={() => void prepare()}
+        onAsk={(action) => void ask(action)}
+      />}
 
       {app && (
         <label className="flex w-fit cursor-pointer items-start gap-2.5 text-[13px]">
@@ -396,17 +416,6 @@ export const Updates = () => {
           </span>
         </label>
       )}
-
-      {developer && releases && <DeveloperMode
-        releases={releases}
-        running={running}
-        lines={lines}
-        details={details}
-        setDetails={setDetails}
-        notice={noticeBox}
-        onPrepare={() => void prepare()}
-        onAsk={(action) => void ask(action)}
-      />}
 
       <Dialog
         open={dialog !== null}
