@@ -6,7 +6,7 @@ import { accessSync, constants, existsSync, mkdirSync, mkdtempSync, readFileSync
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import {
-  download, downloadText, fetchReleases, includePrereleases, pickUpdate, verifyChecksum,
+  compareVersions, download, downloadText, fetchReleases, includePrereleases, pickUpdate, verifyChecksum,
   type AppRelease, type Fetch,
 } from '../../src/app-updates.ts';
 import { run } from '../../src/t3.ts';
@@ -133,7 +133,7 @@ relaunch() { if [ "$#" -gt 0 ]; then open -n "$target" --args "$@"; else open -n
 exec >>"$log" 2>&1
 # One swap at a time: the app refuses to start another while this lock names a live helper.
 lock="$(dirname "$log")/swap.lock"
-echo $$ > "$lock"
+echo "$$ $pid" > "$lock"
 trap 'rm -f "$lock"' EXIT
 echo "$(date) swap: waiting for $pid"
 # Quitting can wait for a bot restart to finish, so allow it ten minutes.
@@ -184,6 +184,17 @@ export const createAppUpdater = (deps: AppUpdaterDeps) => {
   // The first launch after a swap: this version opened, and `started()` confirms it once the window is up. Opened on
   // the old version instead: the swap didn't take, or the script put the old app back.
   let pendingSwap = false;
+  /** A version that was installed but didn't start here: not offered again until a newer one is out. */
+  const failedStartPath = join(deps.dir, 'failed-start.json');
+  let failedStart: { version: string; from: string } | null = null;
+  try { failedStart = JSON.parse(readFileSync(failedStartPath, 'utf8')) as { version: string; from: string }; } catch { /* none */ }
+  const didNotStart = (failed: { version: string; from: string }): string =>
+    `Serra ${failed.version} didn't start on this Mac, so Serra put ${failed.from} back. It isn't offered again; a newer version will be.`;
+  // A helper whose process is gone (killed, or the Mac restarted) leaves its lock behind.
+  try {
+    const [helper] = readFileSync(join(deps.dir, 'swap.lock'), 'utf8').trim().split(' ').map(Number);
+    if (!helper || !helperAlive(helper)) rmSync(join(deps.dir, 'swap.lock'), { force: true });
+  } catch { /* no lock */ }
   /** A verified download kept for the installer after Serra couldn't replace itself. */
   let keep: string | null = null;
   if (existsSync(pendingPath)) {
@@ -198,9 +209,12 @@ export const createAppUpdater = (deps: AppUpdaterDeps) => {
         let why = '';
         try { why = readFileSync(join(deps.dir, 'swap.log'), 'utf8').trimEnd().split('\n').pop()?.replace(/^.*swap: /, '') ?? ''; } catch { /* no log */ }
         const dmg = pending.release ? join(deps.dir, pending.release.version, pending.release.dmg.name) : null;
-        if (/didn't start|didn't confirm/.test(why)) {
+        if (/didn't start; restoring/.test(why)) {
           // Serra did replace itself, but the new version didn't start: offering it again would only repeat that.
-          phase = { state: 'error', stage: 'install', message: `Serra ${pending.to} didn't start, so Serra put ${deps.current} back.`, ...(pending.release ? { release: pending.release } : {}) };
+          // Remembered (a file, so the launch cleanup keeps it) until a newer release comes out.
+          failedStart = { version: pending.to, from: deps.current };
+          try { writeFileSync(failedStartPath, JSON.stringify(failedStart)); } catch { /* shown for this launch only */ }
+          phase = { state: 'error', stage: 'install', message: didNotStart(failedStart), ...(pending.release ? { release: pending.release } : {}) };
         } else if (pending.release && dmg && existsSync(dmg)) {
           // The verified disk image is still here: offer it to install by hand instead of starting over.
           keep = pending.release.version;
@@ -244,7 +258,12 @@ export const createAppUpdater = (deps: AppUpdaterDeps) => {
       const releases = await fetchReleases(deps.fetch, deps.feedUrl);
       const result = pickUpdate(releases, { current: deps.current, arch: deps.arch, prereleases: includePrereleases(deps.getChoice(), deps.current) });
       const checkedAt = now();
-      if (result.kind === 'available') set({ state: 'available', release: result.release, checkedAt });
+      if (result.kind === 'available' && failedStart && compareVersions(result.release.version, failedStart.version) <= 0) {
+        set({ state: 'error', stage: 'install', message: didNotStart(failedStart), release: result.release });
+      } else if (result.kind === 'available') {
+        if (failedStart) { failedStart = null; rmSync(failedStartPath, { force: true }); }
+        set({ state: 'available', release: result.release, checkedAt });
+      }
       else if (result.kind === 'no-build') set({ state: 'no-build', version: result.version, url: result.url, checkedAt });
       else set({ state: 'up-to-date', checkedAt });
     } catch (error) {
@@ -313,8 +332,10 @@ export const createAppUpdater = (deps: AppUpdaterDeps) => {
       if (!existsSync(staged)) { set({ state: 'error', stage: 'install', message: 'The downloaded update is gone. Check again to download it.', release }); return view(); }
       // A helper from an earlier click may still be waiting for Serra to quit: never start a second one.
       try {
-        const helper = Number(readFileSync(join(deps.dir, 'swap.lock'), 'utf8'));
-        if (helper > 0 && helperAlive(helper)) { log('a swap is already waiting for Serra to quit'); deps.quit(); return view(); }
+        const [helper, waitsFor] = readFileSync(join(deps.dir, 'swap.lock'), 'utf8').trim().split(' ').map(Number);
+        if (helper && helperAlive(helper) && waitsFor === process.pid) { log('a swap is already waiting for Serra to quit'); deps.quit(); return view(); }
+        // A lock from another process (a stale one, or a reused PID): not ours to wait on.
+        rmSync(join(deps.dir, 'swap.lock'), { force: true });
       } catch { /* no helper */ }
       set({ state: 'installing', release });
       try {

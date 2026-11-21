@@ -31,6 +31,9 @@ export const checkedLabel = (iso: string, now = new Date()): string => {
   return `Checked ${shortDate(iso, now)}`;
 };
 
+/** `0.1.0-alpha.3` never breaks across lines at its hyphen: shown with a non-breaking hyphen (U+2011). */
+export const keepVersions = (text: string): string => text.replace(/(\d+\.\d+\.\d+)-(?=[0-9A-Za-z])/g, '$1\u2011');
+
 /** `76 of 122 MB` while downloading; `76 MB` when the size is unknown. */
 export const progressLabel = (received: number, total: number | null): string => {
   const mb = (bytes: number): string => String(Math.round(bytes / 1_000_000));

@@ -199,6 +199,8 @@ test('check, download, verify and restart: the swap runs after the app quits', a
   assert.deepEqual(f.calls, ['stage 0.1.0-alpha.3 dev.serra.app']);
   assert.ok(f.pushed.some((view) => view.state === 'downloading'), 'progress is pushed to the window');
   assert.equal((await f.updater.check()).state, 'ready', 'a verified download stays ready');
+  // A lock left by a helper that died (or a reused PID waiting on another process) doesn't block the install.
+  writeFileSync(join(f.dir, 'updates/swap.lock'), `${process.pid} 999999`);
   f.updater.install();
   assert.deepEqual(f.calls.slice(1), ['swap Applications/Serra.app 0.1.0-alpha.3/Serra.app', 'quit']);
   const pending = JSON.parse(readFileSync(join(f.dir, 'updates/pending.json'), 'utf8'));
@@ -292,12 +294,23 @@ test('when the new version did not start, the screen says so instead of offering
   writeFileSync(join(dir, 'updates/0.1.0-alpha.3', release.dmg.name), 'verified');
   writeFileSync(join(dir, 'updates/swap.log'), "Sat swap: the new version didn't start; restoring the old one\n");
   writeFileSync(join(dir, 'updates/pending.json'), JSON.stringify({ from: '0.1.0-alpha.2', to: '0.1.0-alpha.3', target: join(dir, 'Serra.app'), release }));
-  const view = createAppUpdater({
-    current: '0.1.0-alpha.2', arch: 'arm64', unavailable: null, dir: join(dir, 'updates'), fetch: async () => new Response('[]'), feedUrl: 'feed',
+  let feed = [gh('v0.1.0-alpha.3')];
+  const options = {
+    current: '0.1.0-alpha.2', arch: 'arm64', unavailable: null, dir: join(dir, 'updates'), fetch: async () => new Response(JSON.stringify(feed)), feedUrl: 'feed',
     bundlePath: join(dir, 'Serra.app'), getChoice: () => null, setChoice: () => {}, quit: () => {}, openPath: async () => {},
-  }).view();
+  };
+  const updater = createAppUpdater(options);
+  const view = updater.view();
   assert.ok(view.state === 'error' && view.stage === 'install');
-  assert.equal(view.state === 'error' ? view.message : '', "Serra 0.1.0-alpha.3 didn't start, so Serra put 0.1.0-alpha.2 back.");
+  assert.equal(view.state === 'error' ? view.message : '', "Serra 0.1.0-alpha.3 didn't start on this Mac, so Serra put 0.1.0-alpha.2 back. It isn't offered again; a newer version will be.");
+  // The automatic check doesn't offer the same version again, even after the next launch.
+  assert.equal((await updater.check()).state, 'error');
+  assert.equal((await createAppUpdater(options).check()).state, 'error');
+  // A newer release is offered, and the note is forgotten.
+  feed = [gh('v0.1.0-alpha.4'), gh('v0.1.0-alpha.3')];
+  const newer = await updater.check();
+  assert.ok(newer.state === 'available' && newer.release.version === '0.1.0-alpha.4');
+  assert.equal(existsSync(join(dir, 'updates/failed-start.json')), false);
 });
 
 test('turning pre-releases off drops a downloaded pre-release and checks again', async (t) => {

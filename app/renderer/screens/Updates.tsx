@@ -11,7 +11,7 @@ import { serra } from '../bridge.ts';
 import { WELCOME_PATH } from './Welcome/welcome.logic.ts';
 import { Button, cx, Dialog, Page, useToast } from '../ui/index.ts';
 import {
-  actionStates, activateDialog, activationNotice, appCard, botLine, branch, busyLabel, canCheck, commitsHeading, homeOf, noteLines,
+  actionStates, activateDialog, keepVersions, activationNotice, appCard, botLine, branch, busyLabel, canCheck, commitsHeading, homeOf, noteLines,
   preparedLabel, progressPercent, releaseLabel, rollbackDialog, rollbackNotice, sourceLabel, syncDialog,
   type AppCard, type CardAction, type CardTone, type Notice, type UpdatesStatus,
 } from './updates.logic.ts';
@@ -77,10 +77,10 @@ const AppUpdateCard = ({ status, card, onAction, onLink, children }: {
         <span className="mt-0.5"><ToneIcon tone={card.tone} /></span>
         <div className="flex min-w-0 flex-1 flex-col gap-1">
           <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-0.5">
-            <h2 id="app-update-title" className="text-[15px] font-semibold">{card.title}</h2>
-            {card.meta && <span className="text-xs text-muted">{card.meta}</span>}
+            <h2 id="app-update-title" className="text-[15px] font-semibold">{keepVersions(card.title)}</h2>
+            {card.meta && <span className="text-xs text-muted">{keepVersions(card.meta)}</span>}
           </div>
-          {card.body && <p className={cx('text-[13px]', card.tone === 'down' ? 'text-ink' : 'text-muted')}>{card.body}</p>}
+          {card.body && <p className={cx('text-[13px]', card.tone === 'down' ? 'text-ink' : 'text-muted')}>{keepVersions(card.body)}</p>}
         </div>
       </div>
       {status.state === 'downloading' && <Progress percent={progressPercent(status.received, status.total)} />}
@@ -107,8 +107,8 @@ const BotSection = ({ bot, onAction, log }: { bot: NonNullable<ReturnType<typeof
     <div className="flex items-start gap-3">
       <span className="mt-px"><ToneIcon tone={bot.tone} size={16} /></span>
       <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-        <h3 className="text-[13px] font-medium">{bot.text}</h3>
-        {bot.detail && <p className={cx('text-[13px] break-words', bot.tone === 'down' ? 'text-ink' : 'text-muted')}>{bot.detail}</p>}
+        <h3 className="text-[13px] font-medium">{keepVersions(bot.text)}</h3>
+        {bot.detail && <p className={cx('text-[13px] break-words', bot.tone === 'down' ? 'text-ink' : 'text-muted')}>{keepVersions(bot.detail)}</p>}
       </div>
       {bot.action && (
         <Button
@@ -194,11 +194,17 @@ export const Updates = () => {
     const offLog = bridge.on.releaseLog((line) => setLines((seen) => [...seen, line]));
     const offApp = bridge.on.appUpdate((app) => setStatus((current) => (current ? { ...current, app } : current)));
     // The bot started or stopped (menu bar, launchd): reread, at most every two seconds.
+    // The last change in a burst (stopping → stopped) is read too, once the two seconds are over.
     let last = 0;
-    const offStatus = bridge.on.status(() => { const now = Date.now(); if (now - last > 2000) { last = now; void reload(); } });
+    let trailing: ReturnType<typeof setTimeout> | null = null;
+    const offStatus = bridge.on.status(() => {
+      const now = Date.now();
+      if (now - last > 2000) { last = now; void reload(); return; }
+      trailing ??= setTimeout(() => { trailing = null; last = Date.now(); void reload(); }, 2000 - (now - last));
+    });
     const refresh = () => { void reload(); };
     window.addEventListener('focus', refresh);
-    return () => { offLog(); offApp(); offStatus(); window.removeEventListener('focus', refresh); };
+    return () => { offLog(); offApp(); offStatus(); if (trailing) clearTimeout(trailing); window.removeEventListener('focus', refresh); };
   }, [reload]);
 
   // While the bot is updating or waiting for jobs, follow it.
@@ -361,7 +367,7 @@ export const Updates = () => {
       {status.app?.updatedFrom && (
         <p role="status" className="flex items-center gap-2 text-[13px] text-muted">
           <CircleCheck size={16} aria-hidden className="text-up" />
-          Updated from {status.app.updatedFrom} to {status.app.current}.
+          {keepVersions(`Updated from ${status.app.updatedFrom} to ${status.app.current}.`)}
         </p>
       )}
 

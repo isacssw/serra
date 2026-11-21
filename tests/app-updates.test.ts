@@ -10,7 +10,7 @@ import { updatesHandlers } from '../app/main/ipc/updates.ts';
 import { memoryPrefs } from '../app/main/prefs.ts';
 import { stoppedStatusSource } from '../app/main/status.ts';
 import {
-  actionStates, activateDialog, activationNotice, appCard, botLine, canCheck, commitsHeading, homeOf, noteLines, preparedLabel, progressPercent,
+  actionStates, activateDialog, activationNotice, keepVersions, appCard, botLine, canCheck, commitsHeading, homeOf, noteLines, preparedLabel, progressPercent,
   releaseLabel, rollbackDialog, rollbackNotice, sourceLabel, syncDialog, tildePath,
 } from '../app/renderer/screens/updates.logic.ts';
 import type { AppUpdateView } from '../app/main/app-updater.ts';
@@ -128,6 +128,11 @@ test('the app card in each state says one thing and offers the one next step', (
   assert.equal(appCard(view({ state: 'no-build', version: '0.2.0', url: release.url, checkedAt: now.toISOString() }), now).body, 'Serra 0.2.0 is out, but it has no build for this Mac yet.');
   for (const state of ['checking', 'downloading', 'verifying', 'installing', 'ready', 'unavailable']) assert.equal(canCheck(view({ state, release, install: { kind: 'replace' }, reason: '' })), false, state);
   assert.equal(canCheck(view({ state: 'up-to-date', checkedAt: '' })), true);
+});
+
+test('versions keep together on one line', () => {
+  assert.equal(keepVersions('The bot runs version 0.1.0-alpha.3.'), 'The bot runs version 0.1.0\u2011alpha.3.');
+  assert.equal(keepVersions('a well-known 1.0.0 release'), 'a well-known 1.0.0 release');
 });
 
 test('release notes become plain lines without Markdown syntax', () => {
