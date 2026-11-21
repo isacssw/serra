@@ -18,7 +18,14 @@ export interface CliSpec {
    * A cheap read-only check: exit 0 means signed in (or, for Docker, running). Omitted when the tool has none Serra
    * trusts, and the row says "not checked". `account`: read the signed-in account from the output.
    */
-  check?: { args: readonly string[]; kind: 'signed-in' | 'running'; account?: 'first-line' | 'gh'; needsOutput?: boolean };
+  check?: {
+    args: readonly string[];
+    kind: 'signed-in' | 'running';
+    account?: 'first-line' | 'gh';
+    needsOutput?: boolean;
+    /** A flag added only when the tool's own help lists it (`gh auth status --no-refresh`, in newer gh). */
+    ifSupported?: string;
+  };
   /** The vendor's install command, for people to copy. Serra never runs it. */
   install: string;
   /** The tool's own sign-in command, for people to copy, when it has one. */
@@ -29,12 +36,11 @@ export interface CliSpec {
 export const CLI_CATALOG: readonly CliSpec[] = [
   {
     id: 'gh', label: 'GitHub CLI', icon: 'github', bins: ['gh'], versionArgs: ['--version'],
-    check: { args: ['auth', 'status', '--active', '--hostname', 'github.com'], kind: 'signed-in', account: 'gh' },
+    check: { args: ['auth', 'status', '--active', '--hostname', 'github.com'], kind: 'signed-in', account: 'gh', ifSupported: '--no-refresh' },
     install: 'brew install gh', login: 'gh auth login', docs: 'https://cli.github.com',
   },
   {
     id: 'vercel', label: 'Vercel CLI', icon: 'vercel', bins: ['vercel'], versionArgs: ['--version'],
-    check: { args: ['whoami'], kind: 'signed-in', account: 'first-line', needsOutput: true },
     install: 'npm i -g vercel', login: 'vercel login', docs: 'https://vercel.com/docs/cli',
   },
   {
@@ -117,11 +123,9 @@ export const PROVIDER_MCP = {
   claude: {
     docs: 'https://code.claude.com/docs/en/mcp',
     add: (name: string, url: string) => `claude mcp add --scope user --transport http ${name} ${url}`,
-    example: 'claude mcp add --scope user <name> <url>',
   },
   codex: {
     docs: 'https://developers.openai.com/codex/mcp',
     add: (name: string, url: string) => `codex mcp add ${name} --url ${url}`,
-    example: 'codex mcp add <name> --url <url>',
   },
 } as const;

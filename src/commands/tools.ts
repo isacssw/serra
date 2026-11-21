@@ -10,7 +10,8 @@ const command: Command = {
   async run({ flag, profileDir, log }) {
     const profile = readProfileFile(profileDir);
     const [mcp, clis] = await Promise.all([liveMcpOverview(profile), cliOverview(profile, profileDir)]);
-    log(flag('--json') ? JSON.stringify({ mcp, clis }, null, 2) : `${formatMcpOverview(mcp)}\n\n${formatCliOverview(clis)}`);
+    // --json keeps the MCP overview's keys where they were (worker, servers, warnings, files) and adds `clis`.
+    log(flag('--json') ? JSON.stringify({ ...mcp, clis }, null, 2) : `${formatMcpOverview(mcp)}\n\n${formatCliOverview(clis)}`);
   },
 };
 export default command;

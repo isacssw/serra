@@ -1,7 +1,7 @@
 // Runs a command and captures what it printed, without a shell and without throwing for a failed command (Tools,
 // SERRA-39). Used for read-only checks: `claude mcp list`, `gh --version`, `gh auth status` and the like.
 import { spawn } from 'node:child_process';
-import { delimiter, join } from 'node:path';
+import { delimiter, isAbsolute, join } from 'node:path';
 import { accessSync, constants, statSync } from 'node:fs';
 
 export interface ExecResult {
@@ -22,6 +22,18 @@ export interface ExecOptions {
 
 export type Exec = (command: string, args: readonly string[], options?: ExecOptions) => Promise<ExecResult>;
 
+/** Process groups still running, so the app can end them when it quits (`stopAll`). */
+const running = new Set<number>();
+
+const killGroup = (pid: number | undefined) => {
+  if (!pid) return;
+  try { process.kill(-pid, 'SIGKILL'); } catch { /* already gone */ }
+  running.delete(pid);
+};
+
+/** Ends every check still running. The app calls it on quit, so a slow `claude mcp list` doesn't outlive Serra. */
+export const stopAll = (): void => { for (const pid of [...running]) killGroup(pid); };
+
 /** Output past this is dropped: these checks print a few lines. */
 const MAX_OUTPUT = 512 * 1024;
 
@@ -34,13 +46,15 @@ export const exec: Exec = (command, args, { cwd, env, timeoutMs = 10_000 } = {})
       if (settled) return;
       settled = true;
       clearTimeout(timer);
+      if (child.pid) running.delete(child.pid);
       resolve({ ...result, stdout, stderr });
     };
     // Its own process group, so a timeout ends anything it started too. stdin is closed: nothing can wait on a prompt.
     const child = spawn(command, [...args], { cwd, env, stdio: ['ignore', 'pipe', 'pipe'], detached: true });
+    if (child.pid) running.add(child.pid);
     const timer = setTimeout(() => {
       // Settle at the deadline: a grandchild holding the pipes open must not keep the caller waiting.
-      try { if (child.pid) process.kill(-child.pid, 'SIGKILL'); } catch { child.kill('SIGKILL'); }
+      killGroup(child.pid);
       child.stdout.destroy();
       child.stderr.destroy();
       done({ code: null, missing: false, timedOut: true });
@@ -76,7 +90,8 @@ export const toolEnv = (path: string, source: NodeJS.ProcessEnv = process.env): 
 /** The first executable called `name` in `path`, or null. Looks only; runs nothing. */
 export const findExecutable = (name: string, path: string): string | null => {
   for (const dir of path.split(delimiter)) {
-    if (!dir) continue;
+    // A relative entry would resolve against Serra's folder here and the project's when spawned: never trust it.
+    if (!isAbsolute(dir)) continue;
     const candidate = join(dir, name);
     try {
       if (!statSync(candidate).isFile()) continue;

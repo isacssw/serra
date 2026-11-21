@@ -71,7 +71,7 @@ export const driverGroups = (overview: McpOverview): DriverGroup[] => overview.w
     summary: servers.length ? `${servers.length} ${servers.length === 1 ? 'server' : 'servers'}` : 'No servers',
     listingNote: overview.listing.find((listing) => listing.driver === driver)?.note ?? null,
     unreadable: overview.files.filter((file) => file.driver === driver && file.state === 'unreadable').map((file) => file.path),
-    hint: { command: PROVIDER_MCP[driver].example, docs: PROVIDER_MCP[driver].docs },
+    hint: { command: PROVIDER_MCP[driver].add('<name>', '<url>'), docs: PROVIDER_MCP[driver].docs },
   };
 });
 
@@ -97,12 +97,13 @@ export const serverOrigin = (server: Pick<McpServer, 'scope' | 'source' | 'drive
 export const cliStatus = (status: CliStatus | undefined): Status => {
   if (!status?.path) return { tone: 'off', text: 'Not installed' };
   const check = status.check;
-  if (!check) return { tone: 'up', text: 'Installed' };
+  // Installed, but nothing checked it's signed in: a hollow dot, not a green one.
+  if (!check) return { tone: 'neutral', text: 'Installed' };
   if (check.kind === 'running') {
-    return check.state === 'yes' ? { tone: 'up', text: 'Running' } : check.state === 'no' ? { tone: 'warn', text: 'Not running' } : { tone: 'off', text: 'Unknown' };
+    return check.state === 'yes' ? { tone: 'up', text: 'Running' } : check.state === 'no' ? { tone: 'warn', text: 'Not running' } : { tone: 'neutral', text: 'Unknown' };
   }
   if (check.state === 'yes') return { tone: 'up', text: 'Signed in' };
-  return check.state === 'no' ? { tone: 'warn', text: 'Not signed in' } : { tone: 'off', text: 'Unknown' };
+  return check.state === 'no' ? { tone: 'warn', text: 'Not signed in' } : { tone: 'neutral', text: 'Unknown' };
 };
 
 export interface CliRow { spec: CliSpec; status: CliStatus | undefined; state: Status; recommended: boolean; command: string | null }
@@ -151,7 +152,9 @@ export const recommendationRows = (
     const cliState = spec && clis ? cliStatus(cli) : null;
     // Ready means checked: a CLI that's signed in (or has no sign-in check), or an MCP server that answered Claude's
     // health check. A server nobody checked (Codex lists without connecting) is only Configured.
-    const cliReady = cliState?.tone === 'up';
+    // Only a check that passed counts: an installed CLI nobody could check (sentry-cli, vercel) isn't Ready.
+    const cliReady = cli?.check?.state === 'yes';
+    const cliUnchecked = Boolean(cli?.path) && !cliReady && cli?.check?.state !== 'no';
     const connected = !rec.needsCli && servers.some((server) => server.health === 'connected' && server.load === 'loads');
     const configured = !rec.needsCli && servers.some((server) => server.health === null && server.load === 'loads');
     let state: Status;
@@ -159,11 +162,12 @@ export const recommendationRows = (
     else if (!rec.needsCli && servers.some((server) => server.health === 'needs-auth')) state = { tone: 'warn', text: 'Needs sign-in' };
     else if (cliState?.text === 'Not signed in') state = { tone: 'warn', text: 'Not signed in' };
     else if (configured) state = { tone: 'neutral', text: 'Configured' };
+    else if (cliUnchecked) state = { tone: 'neutral', text: 'Installed' };
     else state = { tone: 'off', text: 'Not set up' };
     const setup: RecommendationRow['setup'] = [];
     if (state.text !== 'Ready') {
       if (spec && !cli?.path) setup.push({ label: `Install ${spec.label}`, command: spec.install });
-      else if (spec?.login && cliState?.text === 'Not signed in') setup.push({ label: 'Sign in', command: spec.login });
+      else if (spec?.login && (cliState?.text === 'Not signed in' || cliUnchecked)) setup.push({ label: 'Sign in', command: spec.login });
       if (rec.mcp) {
         for (const driver of mcp?.worker.drivers ?? ['claude']) {
           setup.push({ label: `Add to ${DRIVER_NAMES[driver]}`, command: PROVIDER_MCP[driver].add(rec.mcp.name, rec.mcp.url) });

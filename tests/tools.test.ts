@@ -106,9 +106,26 @@ test('parseClaudeMcpList reads names, transports and health, and skips the heade
   ]);
 });
 
-test('parseClaudeMcpList trusts only known statuses and names; unknown output is null, "no servers" is empty', () => {
-  assert.deepEqual(parseClaudeMcpList('weird: thing - Disconnected\nWarning: x - y'), null);
-  assert.deepEqual(parseClaudeMcpList('ok: https://a.example/mcp - ✔ Connected\nfoo: bar - Disconnected')!.map((entry) => entry.name), ['ok']);
+test('parseClaudeMcpList reads Claude\'s real statuses, with appended detail, and keeps unknown ones as unknown', () => {
+  const entries = parseClaudeMcpList([
+    'team: https://team.example/mcp (HTTP) - ⏸ Pending approval (run `claude` to approve)',
+    'old: npx old-server - ⊘ Disabled for this project (re-enable via /mcp)',
+    'blocked: https://b.example/mcp (HTTP) - Rejected (see disabledMcpjsonServers in settings)',
+    `slow: npx -y slow - fast - ✗ Failed to connect — timed out after 30s ${TOKEN}`,
+    'half: https://h.example/mcp (HTTP) - ! Connected · tools fetch failed',
+    'fine: https://f.example/mcp (HTTP) - ✓ Connected',
+    'later: https://l.example/mcp (HTTP) - ✓ Something new',
+  ].join('\n'))!;
+  assert.deepEqual(entries.map((entry) => [entry.name, entry.health, entry.disabled, entry.unknown]), [
+    ['team', 'pending', false, false], ['old', null, true, false], ['blocked', null, true, false], ['slow', 'failed', false, false],
+    ['half', 'failed', false, false], ['fine', 'connected', false, false], ['later', null, false, true],
+  ]);
+  assert.equal(entries[3]!.target, 'npx -y slow - fast', 'the status starts at the first " - " that begins a status');
+});
+
+test('parseClaudeMcpList trusts only server rows and names; unknown output is null, "no servers" is empty', () => {
+  assert.deepEqual(parseClaudeMcpList('weird: thing - stuff\nWarning: x - y'), null);
+  assert.deepEqual(parseClaudeMcpList('ok: https://a.example/mcp - ✔ Connected\nfoo: bar - baz')!.map((entry) => entry.name), ['ok']);
   assert.deepEqual(parseClaudeMcpList('<script>: https://a.example - ✔ Connected'), null);
   assert.deepEqual(parseClaudeMcpList('No MCP servers configured. Use `claude mcp add` to add a server.'), []);
 });
@@ -238,11 +255,11 @@ test('detectCli: not installed, installed and signed in, installed and signed ou
 
 test('detectCli: a check that times out is unknown; empty output with needsOutput is no; odd account text is dropped', async (t) => {
   const f = fixture(t);
-  f.install('vercel');
+  f.install('gcloud');
   f.install('flyctl');
-  const slow = await detectCli(spec('vercel'), { path: f.bin, home: f.home, run: fakeRun({ 'vercel --version': { stdout: 'Vercel CLI 48.1.0' }, 'vercel whoami': { code: null, timedOut: true } }) });
+  const slow = await detectCli(spec('gcloud'), { path: f.bin, home: f.home, run: fakeRun({ 'gcloud --version': { stdout: 'Google Cloud SDK 594.0.0' }, 'gcloud auth': { code: null, timedOut: true } }) });
   assert.equal(slow.check!.state, 'unknown');
-  const empty = await detectCli(spec('vercel'), { path: f.bin, home: f.home, run: fakeRun({ 'vercel --version': {}, 'vercel whoami': { stdout: '' } }) });
+  const empty = await detectCli(spec('gcloud'), { path: f.bin, home: f.home, run: fakeRun({ 'gcloud --version': {}, 'gcloud auth': { stdout: '' } }) });
   assert.equal(empty.check!.state, 'no');
   const fly = await detectCli(spec('fly'), { path: f.bin, home: f.home, run: fakeRun({ 'flyctl version': { stdout: 'flyctl v0.5.14 darwin/arm64' }, 'flyctl auth whoami': { stdout: 'two words here' } }) });
   assert.deepEqual([fly.version, fly.check!.state, fly.check!.account], ['0.5.14', 'yes', null]);
@@ -254,6 +271,20 @@ test('a tool without a trusted sign-in check reports none', async (t) => {
   const sentry = await detectCli(spec('sentry-cli'), { path: f.bin, home: f.home, run: fakeRun({ 'sentry-cli --version': { stdout: 'sentry-cli 2.58.1' } }) });
   assert.deepEqual([sentry.version, sentry.check], ['2.58.1', null]);
   assert.equal(spec('aws').check, undefined, 'aws sts can run credential helpers, so it is not checked');
+  assert.equal(spec('vercel').check, undefined, 'vercel whoami can refresh saved credentials, so it is not checked');
+});
+
+test('gh gets --no-refresh only when its help lists it', async (t) => {
+  const f = fixture(t);
+  f.install('gh');
+  const answers = (help: string) => fakeRun({ 'gh auth status --help': { stdout: help }, 'gh --version': { stdout: 'gh version 2.99.0' }, 'gh auth status': { stdout: 'account alex' } });
+  const newer = answers('  --no-refresh   Don\'t refresh tokens');
+  await detectCli(spec('gh'), { path: f.bin, home: f.home, run: newer });
+  assert.ok(newer.calls.includes('gh auth status --active --hostname github.com --no-refresh'), newer.calls.join('\n'));
+  const older = answers('  --active');
+  await detectCli(spec('gh'), { path: f.bin, home: f.home, run: older });
+  assert.ok(older.calls.includes('gh auth status --active --hostname github.com'));
+  assert.ok(!older.calls.some((call) => call.endsWith('--no-refresh')));
 });
 
 test('findExecutable needs an executable file', (t) => {
@@ -264,6 +295,7 @@ test('findExecutable needs an executable file', (t) => {
   assert.equal(findExecutable('plain', f.bin), null);
   assert.equal(findExecutable('folder', f.bin), null);
   assert.equal(findExecutable('real', `/nowhere:${f.bin}`), join(f.bin, 'real'));
+  assert.equal(findExecutable('real', 'relative/bin:.'), null, 'relative PATH entries are never searched');
 });
 
 test('cliOverview checks the whole catalogue and formats it for the command line', async (t) => {
@@ -292,6 +324,7 @@ test('loginShellPath reads PATH between markers; mergePaths keeps order without 
   assert.equal(await loginShellPath({ run }), '/a:/b');
   assert.equal(await loginShellPath({ run: async () => result({ code: null, timedOut: true }) }), null);
   assert.equal(mergePaths('/a:/b', null, '/b:/c', ''), '/a:/b:/c');
+  assert.equal(mergePaths('.:bin:/a'), '/a');
 });
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -387,6 +420,12 @@ test('recommendations: GitHub always, others only with a signal or a server; rea
   assert.equal(rows.find((row) => row.rec.id === 'linear')!.state.text, 'Not set up', 'a local-scope server is not Ready');
   const github = rows.find((row) => row.rec.id === 'github')!;
   assert.equal(github.state.text, 'Not set up');
+
+  // An installed CLI nobody could check isn't Ready: Sentry with sentry-cli and no server shows Installed, with sign-in.
+  rows = recommendationRows(emptyMcp(), { clis: [{ id: 'sentry-cli', path: '/bin/sentry-cli', version: '2.58.1', check: null }], signals: { sentry: 'The repo uses a Sentry SDK' } });
+  const sentry = rows.find((row) => row.rec.id === 'sentry')!;
+  assert.deepEqual(sentry.state, { tone: 'neutral', text: 'Installed' });
+  assert.equal(sentry.setup[0]!.command, 'sentry-cli login');
   assert.deepEqual(github.setup.map((step) => step.command), ['brew install gh']);
 });
 

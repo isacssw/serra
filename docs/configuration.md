@@ -140,13 +140,13 @@ The worker gets MCP servers (Sentry, Datadog and the like) from its T3 provider,
 The app's **Tools** screen and `pnpm bot tools --profile /absolute/profile` are read-only. They show:
 
 - **MCP servers**, for the provider in `worker.provider`, or for both when it isn't set:
-  - Claude's come from `claude mcp list`, run in the project's checkout. That covers claude.ai connectors and plugin servers, with Claude's own health check (Connected, Needs sign-in, Failed, Needs approval).
+  - Claude's come from `claude mcp list`, run in the project's checkout (or your home folder when the checkout is missing). That covers claude.ai connectors and plugin servers, with Claude's own health check (Connected, Needs sign-in, Failed, Needs approval).
   - Codex's come from `codex mcp list --json`, including servers Codex adds itself.
   - When a CLI is missing or fails, the list falls back to the config files: `~/.claude.json`, the checkout's `.mcp.json`, and `~/.codex/config.toml`. The screen says so.
   - A server is shown by name, origin, transport and host. Its command, arguments, environment, headers and full URL never leave the main process.
   - T3 also gives every job its own `t3-code` server, which isn't in these lists.
 - **Command-line tools:** GitHub, Vercel, Atlassian (`acli`), Sentry, Docker, AWS, Google Cloud, Azure and Fly.io.
-  - Each shows whether it's installed, its version, and whether it's signed in (or, for Docker, running), where the tool has a cheap read-only check: `gh auth status`, `vercel whoami`, `acli jira auth status`, `gcloud auth list`, `az account show`, `fly auth whoami` and `docker info`. AWS isn't checked, because its check can run credential helpers.
+  - Each shows whether it's installed, its version, and whether it's signed in (or, for Docker, running), where the tool has a cheap read-only check: `gh auth status` (plus `--no-refresh` when the installed gh's help lists it), `acli jira auth status`, `gcloud auth list`, `az account show`, `fly auth whoami` and `docker info`. AWS and Vercel aren't checked: their checks can run credential helpers or refresh saved credentials.
   - Serra looks on your login shell's `PATH`, plus `/opt/homebrew/bin`, `/usr/local/bin` and `~/.local/bin`. Set `SERRA_TOOLS_PATH` to replace that search path.
   - Serra never installs or signs in to anything. It shows the vendor's install or sign-in command to copy.
 - **Recommended** (on the screen only):

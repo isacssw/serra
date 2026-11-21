@@ -51,9 +51,17 @@ export const detectCli = async (spec: CliSpec, { path, run = exec, home = homedi
   const bin = spec.bins.map((name) => findExecutable(name, path)).find(Boolean) ?? null;
   if (!bin) return { id: spec.id, path: null, version: null, check: null };
   const env = toolEnv(path);
+  const checkArgs = async (): Promise<readonly string[] | null> => {
+    if (!spec.check) return null;
+    const flag = spec.check.ifSupported;
+    if (!flag) return spec.check.args;
+    // Only a flag the installed version knows: older gh has no --no-refresh and would fail on it.
+    const help = await run(bin, [...spec.check.args.slice(0, 2), '--help'], { env, timeoutMs: 5_000 });
+    return `${help.stdout}${help.stderr}`.includes(flag) ? [...spec.check.args, flag] : spec.check.args;
+  };
   const [version, check] = await Promise.all([
     run(bin, spec.versionArgs, { env, timeoutMs: 8_000 }),
-    spec.check ? run(bin, spec.check.args, { env, timeoutMs: 10_000 }) : Promise.resolve(null),
+    checkArgs().then((args) => (args ? run(bin, args, { env, timeoutMs: 10_000 }) : null)),
   ]);
   const versionText = `${version.stdout}\n${version.stderr}`.slice(0, 2_000);
   let checkStatus: CliStatus['check'] = null;

@@ -21,6 +21,7 @@ import { isAppUrl } from './window-options.ts';
 import { runSmokeChecks } from './smoke.ts';
 import { followProposals, type ProposalsFollower } from './proposals-watch.ts';
 import { toolPath } from './tool-path.ts';
+import { stopAll as stopToolChecks } from '../../src/exec.ts';
 
 // The build rewrites `import.meta.url` to this source file, so this is `app/` in the checkout (see app/build.ts).
 const appDir = fileURLToPath(new URL('..', import.meta.url));
@@ -140,6 +141,7 @@ const start = async (): Promise<void> => {
   };
   app.on('second-instance', show);
   app.on('will-quit', () => {
+    stopToolChecks();
     notifications?.stop(); notifications = null; tray?.destroy(); tray = null; proposals?.close(); proposals = null; status.close();
   });
   try {

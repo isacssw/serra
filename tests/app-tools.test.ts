@@ -90,6 +90,11 @@ test('pnpm bot tools prints the servers, the warning and the command-line tools'
   assert.match(text, /Claude: `claude` isn't installed/);
   assert.match(text, /! The alert trigger for channel C0123456789 mentions Sentry, but Claude has no Sentry MCP server/);
   assert.match(text, /GitHub CLI {2}not installed {2}\(brew install gh\)/);
+
+  out.length = 0;
+  assert.equal(await runCli(['tools', '--profile', f.profileDir, '--json'], { log: (line) => out.push(line), error: (line) => out.push(line) }), 0);
+  const json = JSON.parse(out.join('\n')) as Record<string, unknown>;
+  for (const key of ['worker', 'servers', 'warnings', 'files', 'listing', 'clis']) assert.ok(key in json, `--json keeps ${key} at the top level`);
 });
 
 test('transport labels', () => {

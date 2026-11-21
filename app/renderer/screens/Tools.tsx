@@ -36,12 +36,13 @@ const useCopy = () => {
 };
 
 /** A command to copy and run yourself. */
-const Command = ({ command, label }: { command: string; label?: string }) => {
+/** `compact`: in a narrow container only the copy button shows; its label still names the command. */
+const Command = ({ command, label, compact }: { command: string; label?: string; compact?: boolean }) => {
   const copy = useCopy();
   return (
     <div className="flex min-w-0 items-center gap-2">
       {label && <span className="w-28 shrink-0 text-xs text-muted">{label}</span>}
-      <code className="min-w-0 flex-1 truncate rounded-md border border-line-subtle bg-raised px-2 py-1 font-mono text-xs" title={command}>{command}</code>
+      <code className={cx(compact && 'hidden @2xl:block', 'min-w-0 flex-1 truncate rounded-md border border-line-subtle bg-raised px-2 py-1 font-mono text-xs')} title={command}>{command}</code>
       <Button size="sm" variant="ghost" icon={<Copy size={13} aria-hidden />} aria-label={`Copy: ${command}`} onClick={() => copy(command)} />
     </div>
   );
@@ -77,6 +78,7 @@ const Row = ({ icon, title, sub, meta, status, badge, more, moreLabel }: {
             {badge}
           </span>
           {sub && <span className="truncate text-xs text-muted">{sub}</span>}
+          {meta && <span className="truncate text-xs text-muted @2xl:hidden">{meta}</span>}
         </div>
         <span className="hidden truncate text-xs text-muted @2xl:block">{meta}</span>
         <span className="hidden justify-end @2xl:flex">
@@ -107,7 +109,7 @@ const Section = ({ title, aside, children }: { title: string; aside?: ReactNode;
   return (
     <section aria-labelledby={id} className="flex flex-col gap-3">
       <div className="flex items-baseline justify-between gap-3">
-        <h2 id={id} className="text-sm font-semibold">{title}</h2>
+        <h2 id={id} className="shrink-0 text-sm font-semibold whitespace-nowrap">{title}</h2>
         {aside && <span className="text-xs text-muted">{aside}</span>}
       </div>
       {children}
@@ -169,14 +171,14 @@ const ServerItem = ({ server }: { server: McpServer }) => (
 const ProviderGroup = ({ group, onError }: { group: DriverGroup; onError: (message: string) => void }) => {
   const id = useId();
   return (
-    <div className="flex flex-col gap-2" data-driver={group.driver}>
+    <div className="@container flex flex-col gap-2" data-driver={group.driver}>
       <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
         <h3 id={id} className="text-[13px] font-medium">
           {group.title} <span className="font-normal text-muted">· {group.summary}</span>
         </h3>
         <div className="flex min-w-0 items-center gap-1 text-xs text-muted">
-          <span className="shrink-0">Managed in {group.title}:</span>
-          <div className="min-w-0 max-w-[22rem]"><Command command={group.hint.command} /></div>
+          <span className="shrink-0">Managed in {group.title}</span>
+          <div className="min-w-0 max-w-[24rem]"><Command command={group.hint.command} compact /></div>
           <Button size="sm" variant="ghost" icon={<ExternalLink size={13} aria-hidden />} onClick={() => openDocs(group.hint.docs, onError)}>Docs</Button>
         </div>
       </div>

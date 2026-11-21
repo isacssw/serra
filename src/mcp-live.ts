@@ -22,20 +22,31 @@ export interface LiveMcpOptions extends McpOptions {
 }
 
 /** One line of `claude mcp list`: `name: target - ✔ Connected`. */
-export interface ClaudeListEntry { name: string; target: string; transport: McpTransport; health: McpHealth | null; disabled: boolean }
+export interface ClaudeListEntry { name: string; target: string; transport: McpTransport; health: McpHealth | null; disabled: boolean; unknown: boolean }
 
 const hostOf = (url: string): string | null => {
   try { return new URL(url).host || null; } catch { return null; }
 };
 
-/** The statuses `claude mcp list` prints after ` - `. A line ending in anything else isn't a server row. */
-const CLAUDE_STATUSES: readonly [RegExp, { health: McpHealth | null; disabled: boolean }][] = [
-  [/^[✔✓] Connected$/, { health: 'connected', disabled: false }],
-  [/^[✘✗] Failed to connect$/, { health: 'failed', disabled: false }],
-  [/^! Needs authentication$/, { health: 'needs-auth', disabled: false }],
-  [/^⏸ Pending approval$/, { health: 'pending', disabled: false }],
-  [/^⏸ Disabled$|^○ Disabled$|^Disabled$/, { health: null, disabled: true }],
-];
+/** Where the status starts: the first ` - ` followed by something Claude prints as a status. */
+const CLAUDE_ROW = /^(.+?): (.*?) - ((?:[✓✔✗✘!⏸⊘○•]\s|Connected|Failed|Needs|Pending|Disabled|Rejected|Connection|Not configured).*)$/u;
+
+/**
+ * What a status says, from its start only: Claude can append detail (`✗ Failed to connect — timeout`,
+ * `⏸ Pending approval (run \`claude\` to approve)`), which is never kept. A status Serra doesn't know is `unknown`:
+ * the row is kept, marked uncertain, rather than dropped.
+ */
+export const claudeStatus = (status: string): { health: McpHealth | null; disabled: boolean; unknown: boolean } => {
+  const text = status.replace(/^[^\p{L}]+/u, '');
+  const found = (health: McpHealth | null, disabled = false) => ({ health, disabled, unknown: false });
+  if (/^(Disabled|Rejected)\b/i.test(text)) return found(null, true);
+  if (/^Pending approval\b/i.test(text)) return found('pending');
+  if (/^Needs auth/i.test(text)) return found('needs-auth');
+  if (/^(Failed|Connection (error|failed|closed))\b/i.test(text)) return found('failed');
+  // `! Connected · tools fetch failed` connected but can't list tools: not healthy.
+  if (/^Connected\b/i.test(text)) return /fail|error/i.test(text) ? found('failed') : found('connected');
+  return { health: null, disabled: false, unknown: true };
+};
 
 /** A server name worth showing: letters, digits, spaces and a little punctuation, never a line of arbitrary output. */
 const SERVER_NAME = /^[\w .:@/+-]{1,100}$/;
@@ -47,19 +58,16 @@ const SERVER_NAME = /^[\w .:@/+-]{1,100}$/;
 export const parseClaudeMcpList = (text: string): ClaudeListEntry[] | null => {
   const entries: ClaudeListEntry[] = [];
   for (const raw of text.split(/\r?\n/)) {
-    const line = raw.trim();
-    const colon = line.indexOf(': ');
-    const dash = line.lastIndexOf(' - ');
-    if (colon <= 0 || dash <= colon) continue;
-    const status = CLAUDE_STATUSES.find(([pattern]) => pattern.test(line.slice(dash + 3).trim()))?.[1];
-    const name = line.slice(0, colon).trim();
-    if (!status || !SERVER_NAME.test(name)) continue;
-    let target = line.slice(colon + 2, dash).trim();
+    const match = CLAUDE_ROW.exec(raw.trim());
+    if (!match) continue;
+    const name = match[1]!.trim();
+    if (!SERVER_NAME.test(name)) continue;
+    let target = match[2]!.trim();
     const kind = /\s\((HTTP|SSE)\)$/i.exec(target);
     if (kind) target = target.slice(0, kind.index).trim();
     const remote = /^https?:\/\//i.test(target);
     const transport: McpTransport = remote ? (kind?.[1]?.toUpperCase() === 'SSE' ? 'sse' : 'http') : 'stdio';
-    entries.push({ name, target, transport, ...status });
+    entries.push({ name, target, transport, ...claudeStatus(match[3]!) });
   }
   return entries.length || /no mcp servers configured/i.test(text) ? entries : null;
 };
@@ -141,7 +149,8 @@ const listClaude = async (projectPath: string, home: string, options: LiveMcpOpt
     return {
       name: entry.name, driver: 'claude', ...origin,
       transport: entry.transport, host: entry.transport === 'stdio' ? null : hostOf(entry.target),
-      health: entry.health, ...loadFor(entry.health, file, entry.disabled),
+      health: entry.health,
+      ...(entry.unknown ? { load: 'unsure' as const, note: "Claude reported a status Serra doesn't recognise." } : loadFor(entry.health, file, entry.disabled)),
       fingerprint: [entry.name, entry.target, file?.fingerprint ?? ''].join(' '),
     };
   });
