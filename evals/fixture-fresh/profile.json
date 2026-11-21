@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "bot": {
+    "id": "juniper",
+    "name": "Juniper"
+  },
+  "owner": {
+    "name": "Nadia",
+    "slackUserId": "UNADIA0001",
+    "githubLogin": "nadia-brennan"
+  },
+  "project": {
+    "path": "PROJECT_PATH",
+    "remote": "origin",
+    "baseRef": "origin/main",
+    "githubRepo": "corvid/data-platform"
+  },
+  "allowedUsers": [
+    "UTHEO00001",
+    "UINES00001",
+    "URAJ000001"
+  ]
+}

@@ -215,7 +215,7 @@ export const createProposals = ({ knowledgeDir, backupDir, now = () => new Date(
    * replaces or merges into, as they are now. A worker or an editor that changes either in between makes the owner
    * look again. Approving also never writes over a file that changed outside Serra: that is reviewed in Pages first.
    */
-  const checkReviewed = (source: string, reviewed: Reviewed | undefined, page: string | null, current: string | null): void => {
+  const checkReviewed: (source: string, reviewed: Reviewed | undefined, page: string | null, current: string | null) => asserts reviewed is Reviewed = (source, reviewed, page, current) => {
     if (!reviewed) throw new Error('Review the proposal in the app before approving it.');
     if (readText(source) !== reviewed.proposal) throw new Error('The proposal changed since you reviewed it. Look at it again, then approve it.');
     // The page the screen showed is the one this approval writes, and it still reads (or is still missing) as shown.
@@ -307,9 +307,14 @@ export const createProposals = ({ knowledgeDir, backupDir, now = () => new Date(
       throw new Error(`${destination} already exists. Merge the proposal into it instead.`);
     }
     checkReviewed(source, reviewed, destination, current);
+    // Reviewed as a change to a page that is gone now: never fall back to creating some other page instead.
+    if (reviewed.path !== null && destination !== reviewed.path && readText(reviewed.path) === null) {
+      throw new Error(`You reviewed this proposal as a change to ${reviewed.path}, which is gone now. Look at it again.`);
+    }
 
     const at = today(now());
-    const proposed = readFileSync(join(root, source), 'utf8');
+    // The text the owner reviewed, which checkReviewed found unchanged: not a second read that could differ.
+    const proposed = reviewed.proposal;
     const page = removeHeaderField(setHeaderField(proposed, 'verified', at), 'target');
     const fields = frontmatter(page);
     const problems = pageProblems(destination, page, fields);
@@ -347,12 +352,12 @@ export const createProposals = ({ knowledgeDir, backupDir, now = () => new Date(
     if (current === null) throw new Error(`${target} doesn't exist. Promote the proposal to create it.`);
 
     const at = today(now());
-    const proposed = readFileSync(join(root, source), 'utf8');
     const { target: named } = describe(id);
     if (text === undefined && named !== target) {
       throw new Error(`The proposal isn't a whole page for ${target}. Edit the page as it should read, then merge.`);
     }
     checkReviewed(source, reviewed, target, current);
+    const proposed = reviewed.proposal;
     const page = text ?? removeHeaderField(proposed, 'target');
     // The page keeps where every rule came from: the old page's sources, then the new text's and the proposal's.
     const sources = [...new Set([...sourceItems(current), ...sourceItems(page), ...sourceItems(proposed)])];

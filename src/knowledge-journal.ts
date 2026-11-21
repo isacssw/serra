@@ -110,7 +110,14 @@ export const createJournal = (knowledgeDir: string) => {
     const entry = details().find((item) => item.path === path);
     if (!entry) throw new Error(`${path} hasn't changed outside Serra.`);
     if (entry.current !== current) throw new Error(`${path} changed again since you reviewed it. Look at it again.`);
-    record([path]);
+    if (path === 'index.md' && current === null) throw new Error('index.md is required. Restore it instead.');
+    // The text the owner reviewed becomes approved, not a fresh read: a save in between stays a change to review.
+    const target = join(approved, path);
+    if (current === null) rmSync(target, { force: true });
+    else {
+      mkdirSync(dirname(target), { recursive: true });
+      writeFileAtomic(target, current);
+    }
   };
 
   /** Put the approved copy back over drifted files (all of them, or `only`). Returns what each held before, for undo. */

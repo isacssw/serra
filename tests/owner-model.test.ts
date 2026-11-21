@@ -59,12 +59,16 @@ test('the index keeps only rows whose page this audience may open, and fails clo
   assert.equal(filterIndex(index, (path) => audiences[path] ?? null, 'owner'), index, 'the owner gets the whole index');
 });
 
-test('off-limits rules reach every reply, outsiders\' included, as rules not to repeat', () => {
+test('outsiders get a rule that names no internal topic, and off-limits pages only when marked for them', () => {
   const pages = [
-    page('owner/offlimits.md', { audience: 'team' }, '- Never confirm a launch date to a partner.'),
+    page('owner/offlimits.md', { audience: 'team' }, '- Don\'t comment on the reorg.'),
     page('owner/role.md', { type: 'responsibility', audience: 'team' }, '- Engineering manager.'),
   ];
   const outside = compileAboutMe(pages, 'external', NOW);
-  assert.deepEqual(outside.included, ['owner/offlimits.md']);
-  assert.match(outside.text, /Never list or describe them\.\n- Never confirm a launch date/);
+  assert.deepEqual(outside.included, ['outsiders']);
+  assert.match(outside.text, /Never promise or confirm a date/);
+  assert.doesNotMatch(outside.text, /reorg/);
+  const marked = compileAboutMe([page('owner/offlimits.md', { audience: 'external' }, '- Never confirm a launch date to a partner.')], 'external', NOW);
+  assert.deepEqual(marked.included, ['outsiders', 'owner/offlimits.md']);
+  assert.match(compileAboutMe(pages, 'team', NOW).text, /^From owner\/offlimits\.md[\s\S]*reorg/, 'teammates get the page itself, first');
 });

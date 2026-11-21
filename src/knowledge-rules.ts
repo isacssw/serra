@@ -7,6 +7,8 @@ import type { PageBadge } from './contracts.ts';
 export const INDEX_MAX_LINES = 60;
 export const PAGE_MAX_LINES = 120;
 export const PROPOSALS_DIR = 'proposals';
+/** An off-limits page rides in every brief whole, so it has its own cap. */
+export const OFFLIMITS_MAX_CHARS = 1500;
 /** Files in `knowledge/` that are not pages. */
 export const NOT_PAGES = new Set(['README.md', 'index.md', 'log.md']);
 export const REQUIRED_KEYS = ['type', 'description', 'written', 'verified', 'sources'];
@@ -41,6 +43,11 @@ export const pageProblems = (page: string, text: string, fields: Map<string, str
   }
   const lines = lineCount(text);
   if (lines > PAGE_MAX_LINES) problems.push(`${page}: ${lines} lines. The cap is ${PAGE_MAX_LINES}; split the page.`);
+  // Off-limits rules ride in every brief, so they're never cut for size: a page of them has its own, smaller cap.
+  if (fields.get('type')?.trim() === 'offlimits' || /off-?limits/.test(page.split('/').pop() ?? '')) {
+    const body = text.replace(/^---\n[\s\S]*?\n---\n/, '').trim();
+    if (body.length > OFFLIMITS_MAX_CHARS) problems.push(`${page}: ${body.length} characters. Off-limits rules go into every brief, so keep them under ${OFFLIMITS_MAX_CHARS}.`);
+  }
   return problems;
 };
 

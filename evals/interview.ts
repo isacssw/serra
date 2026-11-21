@@ -21,7 +21,7 @@ import { basename, join } from 'node:path';
 import { parseArgs } from 'node:util';
 import { loadConfig } from '../src/config.ts';
 import { frontmatter } from '../src/knowledge-rules.ts';
-import { compileAboutMe, pageAudience } from '../src/owner-model.ts';
+import { gradeInterview } from './interview-grade.ts';
 import { interviewBrief } from '../src/tasks.ts';
 
 const root = new URL('..', import.meta.url).pathname;
@@ -94,45 +94,13 @@ const runOne = async (run: number): Promise<Graded> => {
       ? readdirSync(proposalsDir, { recursive: true }).map(String).filter((file) => file.endsWith('.md') && !['README.md', 'onboarding-progress.md'].includes(basename(file)))
       : [];
     const proposals = files.map((file) => ({ file, text: readFileSync(join(proposalsDir, file), 'utf8') }));
-    const all = proposals.map((p) => p.text).join('\n');
-    const targetOf = (text: string): string => frontmatter(text)?.get('target')?.trim() ?? '';
-
-    const person = (name: string, fact: RegExp): number => {
-      const own = proposals.some((p) => /^people\//.test(targetOf(p.text)) && new RegExp(name, 'i').test(p.text) && fact.test(p.text));
-      return own ? 1 : new RegExp(`${name}[\\s\\S]{0,200}`, 'i').test(all) && fact.test(all) ? 0.5 : 0;
-    };
-    const voicePage = proposals.find((p) => /voice/i.test(targetOf(p.text)) || /voice/i.test(p.file))?.text ?? '';
-    const styleRules = [/exclamation/i, /British/i, /lead with|answer first|answer up front/i, /emoji/i, /hope this helps/i].filter((rule) => rule.test(voicePage)).length;
-    const sampleGiven = /EUR and GBP are live|Webhook retries are fixed/.test(voicePage);
-    const offlimits = (/(pay|salar|hiring|performance)/i.test(all) ? 0.5 : 0) + (/customer[\s\S]{0,80}date|date[\s\S]{0,80}customer|promise[\s\S]{0,40}date/i.test(all) ? 0.5 : 0);
-    const audienceOf = (p: { text: string }): string => /^audience:\s*(owner|team|external)\s*$/m.exec(p.text)?.[1] ?? 'none';
-    const expected = proposals.flatMap((p) => {
-      if (/Platform team/i.test(p.text)) return [{ p, want: ['owner'] }];
-      const target = targetOf(p.text);
-      if (/^owner\/(role|working-style|voice|offlimits|decisions|priorities|goals)/.test(target)) return [{ p, want: ['team', 'external'] }];
-      if (/^people\//.test(target) && /Priya|Jonas/i.test(p.text)) return [{ p, want: ['team', 'external'] }];
-      return [];
-    });
-    const asPages = proposals.map((p) => ({ path: targetOf(p.text) || `owner/${p.file.replace(/^\d{4}-\d{2}-\d{2}-/, '')}`, text: p.text.replace(/^verified: no$/m, 'verified: 2026-11-21') }));
-    const teamAbout = compileAboutMe(asPages, 'team', new Date('2026-11-21T10:00:00Z')).text;
-    const teamFacts = [/staff engineer|tech lead/i, /Tuesday/, /exclamation/i, /Priya/].filter((fact) => fact.test(teamAbout)).length;
-    const privateCaptured = proposals.filter((p) => /Platform team/i.test(p.text));
-
     mkdirSync(join(root, 'evals/results/interviews'), { recursive: true });
     writeFileSync(join(root, 'evals/results/interviews', `${args.label}-${run}.md`), [
       `# ${args.label}, run ${run}`, '', ...transcript, '', '## Proposals', '', ...proposals.map((p) => `### ${p.file}\n\n${p.text}`),
     ].join('\n'));
     return {
-      run, turns, proposals: proposals.map((p) => `${p.file} → ${targetOf(p.text) || '(no target)'}`),
-      scores: {
-        people: (person('Priya', /product manager|scope/i) + person('Jonas', /reliability|SRE|on-?call|sign/i) + person('Dana', /Brightmoor|finance/i)) / 3,
-        voice: Math.min(styleRules, 3) / 3,
-        samples: offersSamples ? (sampleGiven ? 1 : 0) : (sampleGiven ? 0 : 1),
-        offlimits,
-        audience: expected.length ? expected.filter(({ p, want }) => want.includes(audienceOf(p))).length / expected.length : 0,
-        team: teamFacts / 4,
-        private: privateCaptured.length ? (privateCaptured.every((p) => pageAudience(frontmatter(p.text)) === 'owner') ? 1 : 0) : null,
-      },
+      run, turns, proposals: proposals.map((p) => `${p.file} → ${frontmatter(p.text)?.get('target')?.trim() || '(no target)'}`),
+      scores: gradeInterview(proposals, offersSamples),
     };
   } finally {
     rmSync(dir, { recursive: true, force: true });

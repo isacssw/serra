@@ -27,6 +27,7 @@ export interface EvalCase {
 const BOT_USER = 'UMOSS00001';
 const NAMES: Record<string, string> = {
   UROBIN0001: 'Robin Vale', UPRIYA0001: 'Priya Nair', UJONAS0001: 'Jonas Berg', UDANA0001: 'Dana Ruiz (Brightmoor)',
+  UNADIA0001: 'Nadia Brennan', UTHEO00001: 'Theo Marsh', UINES00001: 'Ines Okoro', URAJ000001: 'Raj Patel', UMOCHEN001: 'Mo Chen (Larkspur)',
   USAM000001: 'Sam Okafor', UKENJI0001: 'Kenji Sato', ULENA00001: 'Lena Fischer', UOMAR00001: 'Omar Haddad', UHOLLIS001: 'Priscilla Hollis (Hollis Freight)',
 };
 const CHANNELS = { dm: 'DMOSS00001', channel: 'CTEAM00001', shared: 'CSHARED001' } as const;

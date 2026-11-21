@@ -291,7 +291,8 @@ export const createKnowledge = (knowledgeDir: string, { backupDir }: KnowledgeOp
     const pages = pageFiles();
     const proposals = files.filter((file) => file.startsWith(`${PROPOSALS_DIR}/`) && file !== `${PROPOSALS_DIR}/README.md`);
 
-    const index = read('index.md');
+    // A missing index is a problem to report, not a crash: jobs use the approved one meanwhile.
+    const index = existsSync(join(root, 'index.md')) ? read('index.md') : '';
     const indexed = indexedPages(index);
 
     const [indexOverCap = null] = indexProblems(index);
