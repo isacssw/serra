@@ -147,14 +147,13 @@ export const compileAboutMe = (pages: { path: string; text: string }[], visibili
  */
 export const filterIndex = (index: string, audienceOf: (page: string) => Audience | null, visibility: Visibility): string => {
   if (visibility === 'owner') return index;
-  // Rebuilt rather than filtered, so no heading or note the owner wrote around the table can carry anything unchecked.
-  const lines = index.split('\n');
-  const separator = (line: string | undefined): boolean => line !== undefined && /^\|[\s:|-]+\|?\s*$/.test(line.trim());
-  const at = lines.findIndex((line, i) => line.trim().startsWith('|') && separator(lines[i + 1]));
-  const rows = lines.filter((line) => {
+  // Rebuilt rather than filtered: fixed heading, intro and column labels, so nothing the owner wrote around the rows
+  // (a heading, a note, the table header) can carry anything unchecked.
+  const rows = index.split('\n').filter((line) => {
     const pages = [...line.matchAll(/`([^`\s]+\.md)`/g)].map((match) => match[1]!);
     return line.trim().startsWith('|') && pages.length > 0 && pages.every((page) => mayUse(audienceOf(page) ?? 'owner', visibility));
   });
   return ['# Knowledge index', '', 'Open the pages whose row matches the request, and only those. Paths are relative to this folder.', '',
-    ...(at === -1 ? [] : [lines[at]!, lines[at + 1]!]), ...rows].join('\n');
+    '| When the request | Open | What it gives you |', '|---|---|---|', ...rows].join('\n');
 };
+

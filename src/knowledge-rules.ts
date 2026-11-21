@@ -31,6 +31,24 @@ export const frontmatter = (text: string): Map<string, string> | null => {
   return fields;
 };
 
+/** Whether a page holds off-limits rules: its `type`, or its file name. */
+export const isOfflimits = (page: string, fields: Map<string, string> | null): boolean =>
+  fields?.get('type')?.trim() === 'offlimits' || /off-?limits/.test(page.split('/').pop() ?? '');
+
+/** The text of a page without its header, as About me uses it. */
+export const pageBody = (text: string): string => text.replace(/^---\n[\s\S]*?\n---\n/, '').trim();
+
+/**
+ * Why a change would take all off-limits pages together over their budget, or null. `pages` is every page's text
+ * after the change. They ride in every brief, first and never cut, so the budget is for all of them, not each.
+ */
+export const offlimitsBudgetProblem = (pages: { path: string; text: string }[]): string | null => {
+  const total = pages.filter(({ path, text }) => isOfflimits(path, frontmatter(text))).reduce((sum, { text }) => sum + pageBody(text).length, 0);
+  return total > OFFLIMITS_MAX_CHARS
+    ? `Off-limits pages come to ${total} characters together. They go into every brief, so keep them under ${OFFLIMITS_MAX_CHARS} in all.`
+    : null;
+};
+
 /** Header and line-cap problems of one page, the rules `pnpm knowledge` fails on. */
 export const pageProblems = (page: string, text: string, fields: Map<string, string> | null): string[] => {
   if (!fields) return [`${page}: no header. See README.md for the page format.`];
@@ -44,7 +62,7 @@ export const pageProblems = (page: string, text: string, fields: Map<string, str
   const lines = lineCount(text);
   if (lines > PAGE_MAX_LINES) problems.push(`${page}: ${lines} lines. The cap is ${PAGE_MAX_LINES}; split the page.`);
   // Off-limits rules ride in every brief, so they're never cut for size: a page of them has its own, smaller cap.
-  if (fields.get('type')?.trim() === 'offlimits' || /off-?limits/.test(page.split('/').pop() ?? '')) {
+  if (isOfflimits(page, fields)) {
     const body = text.replace(/^---\n[\s\S]*?\n---\n/, '').trim();
     if (body.length > OFFLIMITS_MAX_CHARS) problems.push(`${page}: ${body.length} characters. Off-limits rules go into every brief, so keep them under ${OFFLIMITS_MAX_CHARS}.`);
   }

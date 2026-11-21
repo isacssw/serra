@@ -7,7 +7,8 @@ import { useSearchParams } from 'react-router';
 import type { KnowledgePage } from '../../../src/contracts.ts';
 import { serra } from '../bridge.ts';
 import { frontmatter, setHeaderField } from '../../../src/knowledge-rules.ts';
-import { pageAudience, type Audience } from '../../../src/owner-model.ts';
+import { pageAudience } from '../../../src/owner-model.ts';
+import { AudienceChoice } from './AudienceChoice.tsx';
 import { DiffView } from './proposals/DiffView.tsx';
 import { Badge, Button, cx, Dialog, Page, useToast } from '../ui/index.ts';
 import {
@@ -17,37 +18,15 @@ import {
 
 const message = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
-const AUDIENCE_OPTIONS: { value: Audience; label: string }[] = [
-  { value: 'owner', label: 'Only you' }, { value: 'team', label: 'Your team' }, { value: 'external', label: 'Outside too' },
-];
-
 /** Who may hear the page, set in its header as the owner types. A page without one is the owner's only. Save to keep it. */
-const AudiencePicker = ({ text, disabled, onChange }: { text: string; disabled: boolean; onChange: (text: string) => void }) => {
-  const current = pageAudience(frontmatter(text));
-  return (
-    <div className="flex flex-wrap items-center gap-2">
-      <span id="audience-label" className="text-xs text-muted">Who may hear it</span>
-      <div role="radiogroup" aria-labelledby="audience-label" className="flex gap-1">
-        {AUDIENCE_OPTIONS.map((option) => (
-          <button
-            key={option.value}
-            type="button"
-            role="radio"
-            aria-checked={current === option.value}
-            disabled={disabled || frontmatter(text) === null}
-            onClick={() => onChange(setHeaderField(text, 'audience', option.value))}
-            className={cx(
-              'h-7 rounded-md border px-2 text-xs focus-visible:outline-2 focus-visible:outline-focus disabled:opacity-50',
-              current === option.value ? 'border-line-strong bg-selected text-ink' : 'border-line text-muted hover:bg-raised hover:text-ink',
-            )}
-          >
-            {option.label}
-          </button>
-        ))}
-      </div>
-    </div>
-  );
-};
+const AudiencePicker = ({ text, disabled, onChange }: { text: string; disabled: boolean; onChange: (text: string) => void }) => (
+  <AudienceChoice
+    id="page-audience"
+    value={pageAudience(frontmatter(text))}
+    disabled={disabled || frontmatter(text) === null}
+    onChange={(audience) => onChange(setHeaderField(text, 'audience', audience))}
+  />
+);
 
 type Drifted = { path: string; approved: string | null; current: string | null };
 

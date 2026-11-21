@@ -12,6 +12,9 @@ import { serra } from '../bridge.ts';
 import { REFRESH_COUNTS } from '../shell/events.ts';
 import { Button, cx, Dialog, Page, useToast } from '../ui/index.ts';
 import { DiffView } from './proposals/DiffView.tsx';
+import { AudienceChoice } from './AudienceChoice.tsx';
+import { frontmatter } from '../../../src/knowledge-rules.ts';
+import { pageAudience, type Audience } from '../../../src/owner-model.ts';
 import { useSearchParams } from 'react-router';
 import { registerActions } from '../commands/registry.ts';
 import {
@@ -98,6 +101,8 @@ export const Proposals = () => {
   const [busy, setBusy] = useState(false);
   const [mergeOpen, setMergeOpen] = useState(false);
   const [mergeTarget, setMergeTarget] = useState('');
+  /** Who may hear the page this approval creates or replaces: the proposal's own audience until the owner changes it. */
+  const [audience, setAudience] = useState<Audience>('owner');
   /** The page as it will read after the merge, which the owner edits in the dialog. Null while it loads. */
   const [mergeText, setMergeText] = useState<string | null>(null);
   /** The page as the merge dialog loaded it: what the owner reviewed, so a change while the dialog is open refuses the merge. */
@@ -183,6 +188,9 @@ export const Proposals = () => {
 
   useEffect(() => {
     if (!diff) return;
+    // The proposal's audience, else the page it replaces keeps its own: a correction never quietly un-shares a page.
+    const named = frontmatter(diff.proposed)?.get('audience')?.trim();
+    setAudience(named ? pageAudience(frontmatter(diff.proposed)) : diff.current !== null ? pageAudience(frontmatter(diff.current)) : 'owner');
     setFolder(defaultFolder(diff.proposal, targets.folders) ?? '');
     setMergeTarget(diff.proposal.target ?? targets.pages[0] ?? '');
   }, [diff, targets]);
@@ -260,13 +268,17 @@ export const Proposals = () => {
                 ) : (
                   <p className="text-sm text-muted">knowledge/ has no folders yet. Create one to promote into.</p>
                 )}
+                <AudienceChoice id="proposal-audience" value={audience} disabled={busy} onChange={setAudience} />
                 <div className="flex flex-wrap gap-2">
                   <Button
                     variant="primary"
                     disabled={busy || !folder}
-                    onClick={() => void act((path) => bridge.proposals.promote(path, folder, { proposal: diff.proposed, path: diff.proposal.target, page: diff.current }), `Promoted ${title} to ${folderLabel(folder)}.`)}
+                    onClick={() => void act(
+                      (path) => bridge.proposals.promote(path, folder, { proposal: diff.proposed, path: diff.proposal.target, page: diff.current }, audience),
+                      replaces(diff, folder) ? `Replaced ${diff.proposal.target}.` : `Promoted ${title} to ${folderLabel(folder)}.`,
+                    )}
                   >
-                    Promote
+                    {replaces(diff, folder) ? 'Replace page' : 'Add page'}
                   </Button>
                   <Button disabled={busy || targets.pages.length === 0} onClick={() => setMergeOpen(true)}>Merge into…</Button>
                   <Button disabled={busy} onClick={() => void act((path) => bridge.proposals.discard(path), `Discarded ${title}.`)}>Discard</Button>
@@ -292,7 +304,7 @@ export const Proposals = () => {
                 const into = mergeTarget;
                 const text = mergeText ?? undefined;
                 const reviewed = { proposal: diff!.proposed, path: into, page: mergeBase };
-                void act((path) => bridge!.proposals.mergeInto(path, into, text, reviewed), `Merged ${title} into ${into}.`);
+                void act((path) => bridge!.proposals.mergeInto(path, into, text, reviewed, audience), `Merged ${title} into ${into}.`);
               }}
             >
               Merge
@@ -319,6 +331,10 @@ export const Proposals = () => {
     </Page>
   );
 };
+
+/** Whether approving into `folder` replaces the page the proposal names, rather than adding a new one. */
+const replaces = (diff: ProposalDiff, folder: string): boolean =>
+  diff.current !== null && diff.proposal.target !== null && diff.proposal.target.split('/').slice(0, -1).join('/') === folder;
 
 /** How the merged page differs from the page now, and a warning when nothing of the old page goes. */
 const MergeStats = ({ before, after }: { before: string; after: string }) => {

@@ -372,10 +372,11 @@ export const createBot = ({
     ]);
 
     await fetchBase();
+    const knowledge = loadKnowledge ? loadKnowledge(visibility) : null;
     const t3ThreadId = await t3.startThread(jobThreadInput(config, {
       // The branch and title come from what the person wrote, not the request with its attachment notes.
       summary,
-      brief: fillBrief(config, loadKnowledge ? loadKnowledge(visibility) : loadIndex(), { request, requester, permalink: permalink?.permalink ?? 'link unavailable', thread,
+      brief: fillBrief(config, knowledge ?? loadIndex(), { request, requester, permalink: permalink?.permalink ?? 'link unavailable', thread,
         ...(trigger ? { triggerInstructions: trigger.instructions } : {}) }),
       now: new Date(now()),
     }), config.t3Bin);
@@ -391,6 +392,7 @@ export const createBot = ({
       lastPostedRunId: null,
       watching: true,
       ownerFollows: msg.user === config.owner,
+      ...(knowledge ? { visibility, knowledgePages: knowledge.pages } : {}),
       createdAt: new Date(now()).toISOString(),
       lastActivityAt: new Date(now()).toISOString(),
     });
@@ -705,6 +707,30 @@ export const createBot = ({
    * What people say in a thread the bot owns, waiting for the worker's next turn. Messages sent close together,
    * or while the worker is busy, become one turn and one reply.
    */
+  /**
+   * When a page this thread's brief allowed has since been restricted, retired or removed, the old T3 thread still has
+   * its text in context. The next turn then starts a fresh thread, briefed from the knowledge as it is now, with the
+   * chat thread so far as context. Returns true when it did.
+   */
+  const restartIfRevoked = async (key: string, job: Job, lines: Heard[]): Promise<boolean> => {
+    if (!loadKnowledge || !job.visibility || !job.knowledgePages) return false;
+    const knowledge = loadKnowledge(job.visibility);
+    const revoked = job.knowledgePages.filter((page) => !knowledge.pages.includes(page));
+    if (revoked.length === 0) return false;
+    const first = lines[0]!;
+    const thread = await threadContext({ channel: job.channel, threadTs: job.threadTs, messageTs: first.ts, user: job.requester, text: '', direct: false });
+    await fetchBase();
+    const t3ThreadId = await t3.startThread(jobThreadInput(config, {
+      summary: 'continued with updated knowledge',
+      brief: fillBrief(config, knowledge, { request: followUpMessage(lines), requester: 'People in the thread', permalink: 'link unavailable', thread }),
+      now: new Date(now()),
+    }), config.t3Bin);
+    updateJob(key, () => ({ t3ThreadId, knowledgePages: knowledge.pages, lastPostedRunId: null, watching: true }));
+    logger.info(`Knowledge this thread used was taken back (${revoked.length} page(s)); continued ${key} in a fresh T3 thread ${t3ThreadId}`);
+    events('knowledge_revoked', { key, t3ThreadId });
+    return true;
+  };
+
   const followUps = createBatcher<Heard>({
     quietMs: timing.quietMs,
     retryMs: timing.retryMs,
@@ -721,12 +747,12 @@ export const createBot = ({
       if (!job) return;
       const loadingRequested = lines.some((line) => line.audience === 'bot');
       if (loadingRequested) await setLoading(job.channel, job.threadTs, true);
-      await t3.sendToThread(job.t3ThreadId, followUpMessage(lines), config.t3Bin);
+      if (!(await restartIfRevoked(key, job, lines))) await t3.sendToThread(job.t3ThreadId, followUpMessage(lines), config.t3Bin);
       // The reply just posted took every 👀 with it. These messages are only now with the worker, so they get theirs back.
       const waiting = lines.filter((line) => line.audience !== 'others').map((line) => line.ts);
       for (const ts of waiting) await setEyes(job.channel, ts, true);
       updateJob(key, (latest) => ({ watching: true, loadingRequested, lastActivityAt: new Date(now()).toISOString(), pendingReactionTs: null, pendingReactions: [...new Set([...pendingReactions(latest), ...waiting])] }));
-      logger.info(`Forwarded ${lines.length} thread message(s) to T3 thread ${job.t3ThreadId}`);
+      logger.info(`Forwarded ${lines.length} thread message(s) to T3 thread ${getJob(key)?.t3ThreadId ?? job.t3ThreadId}`);
     }),
     onError: async (key, error) => {
       const job = getJob(key);

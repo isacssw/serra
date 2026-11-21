@@ -62,6 +62,10 @@ export interface Job {
   progress?: { ts: string; runId: string; text: string };
   /** The run the bot last saw running, and when it first saw it: how long a run has been going. */
   runSeen?: { runId: string; at: string };
+  /** Who sees this thread's replies, as its brief was built for. Absent on jobs from before audiences. */
+  visibility?: 'owner' | 'team' | 'external';
+  /** Knowledge pages the thread's brief allowed. A follow-up after one is taken back starts a fresh T3 thread. */
+  knowledgePages?: string[];
 }
 
 export interface StartThreadInput {

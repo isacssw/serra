@@ -35,7 +35,8 @@ export const AboutMe = () => {
   const [visibility, setVisibility] = useState<Visibility>('team');
   const [about, setAbout] = useState<AboutMeData | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [untagged, setUntagged] = useState<{ path: string; description: string }[]>([]);
+  const [untagged, setUntagged] = useState<{ path: string; description: string; offlimits: boolean; preview: string }[]>([]);
+  const [peek, setPeek] = useState<string | null>(null);
   const [sharing, setSharing] = useState<Set<string> | null>(null);
   const [busy, setBusy] = useState(false);
   const toast = useToast();
@@ -84,7 +85,7 @@ export const AboutMe = () => {
   const hint = AUDIENCES.find((option) => option.value === visibility)?.hint;
 
   return (
-    <Page title="About me" subtitle="What every job knows about you, built from your confirmed pages in owner/.">
+    <Page title="About me" subtitle="Always in every job's brief. Other pages are read when a request needs them.">
       {error && <p role="alert" className="text-sm text-down">{error}</p>}
       {untagged.length > 0 && (
         <section aria-labelledby="untagged-title" className="flex gap-3 rounded-lg border border-line bg-panel p-4">
@@ -129,7 +130,10 @@ export const AboutMe = () => {
             {about.sections.length === 0 && (
               <p className="text-sm text-muted">
                 Nothing for this audience yet. Confirm pages under owner/ (your role, how you work, your voice, what&rsquo;s off-limits)
-                and they show here. The interview in Proposals writes them for you.
+                and they show here.{' '}
+                <button type="button" onClick={() => navigate('/knowledge/proposals')} className="text-ink underline underline-offset-2 hover:no-underline focus-visible:outline-2 focus-visible:outline-focus">
+                  Start the interview
+                </button>
               </p>
             )}
             {about.sections.map((section) => (
@@ -208,7 +212,7 @@ export const AboutMe = () => {
           </button>
         </div>
         <ul className="flex max-h-80 flex-col gap-1 overflow-y-auto">
-          {untagged.map(({ path, description }) => (
+          {untagged.map(({ path, description, offlimits, preview }) => (
             <li key={path}>
               <label className="flex items-start gap-2 rounded-md px-1 py-1 text-sm hover:bg-hover">
                 <input
@@ -224,8 +228,18 @@ export const AboutMe = () => {
                 <span className="flex min-w-0 flex-col">
                   <span className="font-mono text-xs">{path}</span>
                   {description && <span className="text-xs text-muted">{description}</span>}
+                  {offlimits && <span className="text-xs text-warn">Off-limits rules: sharing puts their topics in teammates&rsquo; briefs.</span>}
                 </span>
+                <button
+                  type="button"
+                  aria-expanded={peek === path}
+                  onClick={(event) => { event.preventDefault(); setPeek(peek === path ? null : path); }}
+                  className="ml-auto shrink-0 rounded-md px-1.5 py-0.5 text-xs text-muted hover:bg-hover hover:text-ink focus-visible:outline-2 focus-visible:outline-focus"
+                >
+                  {peek === path ? 'Hide' : 'Preview'}
+                </button>
               </label>
+              {peek === path && <pre className="ml-7 mt-1 whitespace-pre-wrap rounded-md bg-raised px-2 py-1.5 font-mono text-[11px] leading-5 text-ink">{preview}</pre>}
             </li>
           ))}
         </ul>

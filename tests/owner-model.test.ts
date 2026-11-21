@@ -52,7 +52,8 @@ test('the index keeps only rows whose page this audience may open, and fails clo
   const audiences: Record<string, 'owner' | 'team'> = { 'owner/role.md': 'team', 'owner/private.md': 'owner' };
   const team = filterIndex(index, (path) => audiences[path] ?? null, 'team');
   assert.match(team, /owner\/role\.md/);
-  assert.match(team, /\| When \| Open \| Gives \|\n\|---\|---\|---\|/, 'the table header stays');
+  assert.match(team, /\| When the request \| Open \| What it gives you \|\n\|---\|---\|---\|/, 'a fixed table header');
+  assert.doesNotMatch(team, /\| When \| Open \| Gives \|/, 'the owner\'s own header text isn\'t copied');
   assert.doesNotMatch(team, /owner\/private\.md/);
   assert.doesNotMatch(team, /gone\.md/, 'a page with no known audience counts as the owner\'s');
   assert.doesNotMatch(team, /no backticks/, 'a row that names no page can\'t be checked, so it goes');

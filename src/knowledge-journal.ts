@@ -72,11 +72,13 @@ export const createJournal = (knowledgeDir: string) => {
     return true;
   };
 
-  /** Record that `paths` (relative to `knowledge/`) now read as approved, as they are on disk. */
-  const record = (paths: string[]): void => {
+  /**
+   * Record what the owner just approved: each file's exact text as Serra wrote it (null: removed). Never a fresh read,
+   * so an editor saving between Serra's write and this record can't slip its text in as approved.
+   */
+  const record = (files: { path: string; text: string | null }[]): void => {
     seed();
-    for (const path of paths.filter(isTracked)) {
-      const text = read(root, path);
+    for (const { path, text } of files.filter(({ path }) => isTracked(path))) {
       const target = join(approved, path);
       if (text === null) rmSync(target, { force: true });
       else {

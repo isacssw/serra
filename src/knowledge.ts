@@ -3,11 +3,11 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync } from '
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { writeFileAtomic } from './config.ts';
 import { createJournal, type KnowledgeDrift } from './knowledge-journal.ts';
-import { AUDIENCES, compileAboutMe, filterIndex, pageAudience, type AboutMe, type Audience, type Visibility } from './owner-model.ts';
+import { AUDIENCES, compileAboutMe, filterIndex, mayUse, pageAudience, type AboutMe, type Audience, type Visibility } from './owner-model.ts';
 import type { KnowledgePage, Profile } from './contracts.ts';
 import {
   DATE, daysSince, frontmatter, INDEX_MAX_LINES, lineCount, normalizePageText, NOT_PAGES, pageBadge, pageProblems, PROPOSALS_DIR,
-  saveProblems, saveRefusal, setHeaderField, STALE_DAYS,
+  isOfflimits, offlimitsBudgetProblem, pageBody, saveProblems, saveRefusal, setHeaderField, STALE_DAYS,
 } from './knowledge-rules.ts';
 
 // The page rules live in knowledge-rules.ts (no Node imports, so the app's editor can use them); re-exported here so
@@ -67,6 +67,8 @@ export interface BriefKnowledge {
   index: string;
   aboutMe: AboutMe;
   visibility: Visibility;
+  /** Every page this brief let the worker use or open, so a later restriction can be noticed. */
+  pages: string[];
 }
 
 /** Markdown files under `dir`, relative to it, skipping dot folders. */
@@ -78,6 +80,14 @@ const markdownIn = (dir: string, relativeDir = ''): string[] => {
     if (entry.isDirectory()) return markdownIn(dir, path);
     return entry.name.endsWith('.md') && !NOT_PAGES.has(path) && !path.startsWith(`${PROPOSALS_DIR}/`) ? [path] : [];
   });
+};
+
+/** The off-limits budget problem if `page` read `text` (null: removed), with every other page as it is now. */
+export const offlimitsBudgetAfter = (knowledgeDir: string, page: string, text: string | null): string | null => {
+  const root = resolve(knowledgeDir);
+  const others = markdownIn(root).filter((path) => path !== page && path !== 'index.md')
+    .map((path) => ({ path, text: readFileSync(join(root, path), 'utf8') }));
+  return offlimitsBudgetProblem(text === null ? others : [...others, { path: page, text }]);
 };
 
 export interface KnowledgeOptions {
@@ -151,14 +161,16 @@ export const createKnowledge = (knowledgeDir: string, { backupDir }: KnowledgeOp
   const briefKnowledge = (visibility: Visibility, now: Date = new Date()): BriefKnowledge => {
     const { changed, removed } = journal.drift();
     const drifted = changed.length > 0 || removed.length > 0;
-    // A missing index.md still stops jobs, unless there is an approved one to use instead.
-    const current = drifted && journal.approvedText('index.md') !== null ? '' : read('index.md');
-    const approved = (path: string): string | null => (drifted ? journal.approvedText(path) : existsSync(join(root, path)) ? read(path) : null);
-    const pages = (drifted ? markdownIn(journal.approvedRoot) : pageFiles()).filter((path) => path !== 'index.md')
+    // Once the approved copy exists, briefs read only from it: whatever is on disk, even a save landing a moment after
+    // the drift check, waits for the owner. Before it exists (a profile no daemon or Pages has opened yet), disk.
+    const fromApproved = journal.seeded() && journal.approvedText('index.md') !== null;
+    const indexText = fromApproved ? journal.approvedText('index.md')! : read('index.md');
+    const approved = (path: string): string | null => (fromApproved ? journal.approvedText(path) : existsSync(join(root, path)) ? read(path) : null);
+    const pages = (fromApproved ? markdownIn(journal.approvedRoot) : pageFiles()).filter((path) => path !== 'index.md')
       .flatMap((path) => { const text = approved(path); return text === null ? [] : [{ path, text }]; });
     const audiences = new Map(pages.map(({ path, text }) => [path, pageAudience(frontmatter(text))]));
     const aboutMe = compileAboutMe(pages, visibility, now);
-    let index = filterIndex((drifted ? journal.approvedText('index.md') ?? current : current).trim(), (page) => audiences.get(page) ?? null, visibility);
+    let index = filterIndex(indexText.trim(), (page) => audiences.get(page) ?? null, visibility);
     if (drifted) {
       // Only the owner hears which files: a page's name can say more than a teammate may know.
       const files = visibility === 'owner' ? `: ${[...changed, ...removed].map((path) => `\`${path}\``).join(', ')}` : '';
@@ -168,7 +180,8 @@ export const createKnowledge = (knowledgeDir: string, { backupDir }: KnowledgeOp
           ? `Don't use what they say now. Read the approved copy of any page from ${journal.approvedRoot} instead.`
           : `Don't open pages to answer this: use only what this brief says.`);
     }
-    return { index, aboutMe, visibility };
+    const usable = [...audiences].filter(([, audience]) => mayUse(audience, visibility)).map(([path]) => path).sort();
+    return { index, aboutMe, visibility, pages: usable };
   };
 
   /**
@@ -308,6 +321,8 @@ export const createKnowledge = (knowledgeDir: string, { backupDir }: KnowledgeOp
     for (const entry of indexed) {
       if (!pages.includes(entry)) problems.push(`index.md: points at \`${entry}\`, which doesn't exist.`);
     }
+    const budget = offlimitsBudgetProblem(pages.map((path) => ({ path, text: read(path) })));
+    if (budget) warnings.push(budget);
     return { problems, pages, unverified, proposals, warnings, indexOverCap };
   };
 
@@ -346,7 +361,8 @@ export const createKnowledge = (knowledgeDir: string, { backupDir }: KnowledgeOp
       throw new Error(`${page} changed outside Serra. Review it at the top of Pages (accept or restore it) before editing.`);
     }
     const after = normalizePageText(text);
-    const problems = saveProblems(page, after);
+    const budget = offlimitsBudgetAfter(root, page, after);
+    const problems = [...saveProblems(page, after), ...(budget && isOfflimits(page, frontmatter(after)) ? [budget] : [])];
     if (problems.length > 0) throw new Error(saveRefusal(problems));
 
     const before = read(page);
@@ -359,7 +375,7 @@ export const createKnowledge = (knowledgeDir: string, { backupDir }: KnowledgeOp
       writeFileAtomic(join(backups, backupId, 'change.json'), JSON.stringify(backup, null, 2) + '\n');
       journal.seed();
       writeFileAtomic(join(root, page), after, { mode: 0o644 });
-      journal.record([page]);
+      journal.record([{ path: page, text: after }]);
     }
     return { page: describePage(page, after, readIndexed(), { now, roots }), backupId };
   };
@@ -368,8 +384,12 @@ export const createKnowledge = (knowledgeDir: string, { backupDir }: KnowledgeOp
   const untaggedPages = (): string[] => pageFiles().sort().filter((page) => !frontmatter(read(page))?.has('audience'));
 
   /** The same, with each page's description, for the app's list. */
-  const untaggedDetails = (): { path: string; description: string }[] =>
-    untaggedPages().map((path) => ({ path, description: frontmatter(read(path))?.get('description')?.trim() ?? '' }));
+  const untaggedDetails = (): { path: string; description: string; offlimits: boolean; preview: string }[] =>
+    untaggedPages().map((path) => {
+      const text = read(path);
+      const fields = frontmatter(text);
+      return { path, description: fields?.get('description')?.trim() ?? '', offlimits: isOfflimits(path, fields), preview: pageBody(text).split('\n').slice(0, 8).join('\n') };
+    });
 
   /**
    * Set who may hear each page, as the owner chose in the app. Each page is saved like an edit, with a backup.
@@ -378,14 +398,18 @@ export const createKnowledge = (knowledgeDir: string, { backupDir }: KnowledgeOp
   const shareWith = (pages: string[], audience: Audience, options: CheckOptions = {}): { shared: string[]; skipped: string[] } => {
     if (!AUDIENCES.includes(audience)) throw new Error(`Pick who may hear the pages: ${AUDIENCES.join(', ')}.`);
     const { changed, removed } = journal.drift();
-    const shared: string[] = []; const skipped: string[] = [];
-    for (const path of pages) {
+    const skipped: string[] = [];
+    // Every page is checked before any is saved, so sharing is all or nothing and a refusal names the page.
+    const ready = pages.flatMap((path) => {
       const page = existingPage(path);
-      if (changed.includes(page) || removed.includes(page)) { skipped.push(page); continue; }
-      savePage(page, setHeaderField(read(page), 'audience', audience), options);
-      shared.push(page);
-    }
-    return { shared, skipped };
+      if (changed.includes(page) || removed.includes(page)) { skipped.push(page); return []; }
+      const text = setHeaderField(read(page), 'audience', audience);
+      const problems = saveProblems(page, normalizePageText(text));
+      if (problems.length > 0) throw new Error(`Nothing was shared. ${page} needs fixing first:\n${problems.join('\n')}`);
+      return [{ page, text }];
+    });
+    for (const { page, text } of ready) savePage(page, text, options);
+    return { shared: ready.map(({ page }) => page), skipped };
   };
 
   return { untaggedPages, untaggedDetails, shareWith, loadIndex, briefKnowledge, checkKnowledge, listPages, readPage, savePage, seedApproved, drift, driftDetails, acceptDrift, restoreDrift };

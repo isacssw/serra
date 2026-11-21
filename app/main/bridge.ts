@@ -121,9 +121,9 @@ export interface SerraApi {
     targets(): ProposalTargets;
     /** Moves the proposal into `folder` (relative to `knowledge/`; defaults to its target page's folder) and indexes it. */
     /** `reviewed`: the proposal and page text the screen showed; refused when either changed since. */
-    promote(path: string, folder: string | undefined, reviewed: Reviewed): UndoHandle;
+    promote(path: string, folder: string | undefined, reviewed: Reviewed, audience?: Visibility): UndoHandle;
     /** Replaces `target` with `text` (the page as the owner edited it), or with the proposal when it is the whole page for `target`. */
-    mergeInto(path: string, target: string, text: string | undefined, reviewed: Reviewed): UndoHandle;
+    mergeInto(path: string, target: string, text: string | undefined, reviewed: Reviewed, audience?: Visibility): UndoHandle;
     discard(path: string): UndoHandle;
     undo(undoId: string): void;
   };
@@ -141,7 +141,7 @@ export interface SerraApi {
     /** What every brief carries about the owner for a reply this audience sees, and the owner pages left out. */
     aboutMe(visibility: Visibility): AboutMe;
     /** Pages without an `audience:`, which only the owner's own replies use. */
-    untagged(): { path: string; description: string }[];
+    untagged(): { path: string; description: string; offlimits: boolean; preview: string }[];
     /** Set who may hear these pages (saved like edits). Pages changed outside Serra are skipped and returned. */
     share(paths: string[], audience: Visibility): { shared: string[]; skipped: string[] };
   };

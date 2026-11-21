@@ -3,9 +3,10 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync } from 'node:f
 import { basename, dirname, join, relative, resolve, sep } from 'node:path';
 import { writeFileAtomic } from './config.ts';
 import type { Proposal, ProposalDiff } from './contracts.ts';
-import { insideKnowledge, knowledgePagePath } from './knowledge.ts';
+import type { Audience } from './owner-model.ts';
+import { insideKnowledge, knowledgePagePath, offlimitsBudgetAfter } from './knowledge.ts';
 import { createJournal } from './knowledge-journal.ts';
-import { DATE, frontmatter, INDEX_MAX_LINES, lineCount, NOT_PAGES, pageProblems, PROPOSALS_DIR, removeHeaderField, setHeaderField } from './knowledge-rules.ts';
+import { DATE, frontmatter, INDEX_MAX_LINES, isOfflimits, lineCount, NOT_PAGES, pageProblems, PROPOSALS_DIR, removeHeaderField, setHeaderField } from './knowledge-rules.ts';
 
 /**
  * The owner's review queue for `knowledge/proposals/`: list, read, promote, merge, discard and undo.
@@ -59,6 +60,8 @@ export interface Reviewed {
 export interface PromoteOptions {
   /** What the owner reviewed. Required: an approval nobody looked at, or one whose files changed since, is refused. */
   reviewed: Reviewed;
+  /** Who may hear the page, as the owner chose when approving. Without it, the proposal's own `audience:` stays. */
+  audience?: Audience;
   /** Folder under `knowledge/` the page moves into, like `owner` or `product/billing`. */
   folder: string;
   /** File name in that folder. Defaults to the proposal's name without its date, like `deploys.md`. */
@@ -72,6 +75,8 @@ export interface PromoteOptions {
 export interface MergeOptions {
   /** What the owner reviewed: the proposal, and the page `into` as the merge dialog showed it. */
   reviewed: Reviewed;
+  /** Who may hear the merged page, as the owner chose. Without it, the page keeps what the merged text says. */
+  audience?: Audience;
   /** Existing page under `knowledge/` the proposal goes into, like `owner/role.md`. */
   into: string;
   /**
@@ -280,7 +285,7 @@ export const createProposals = ({ knowledgeDir, backupDir, now = () => new Date(
         writeFileAtomic(absolute, text, { mode: 0o644 });
       }
     }
-    journal.record(files.map(({ path }) => path));
+    journal.record(files.map(({ path, text }) => ({ path, text })));
   };
 
   const logLine = (date: string, line: string): FileChange => {
@@ -296,7 +301,7 @@ export const createProposals = ({ knowledgeDir, backupDir, now = () => new Date(
    * Refuses a destination outside `knowledge/`, any other existing page (merge into it instead), a page that would
    * fail `pnpm knowledge`, and an index that would go over its cap. The `target:` line is dropped from the page.
    */
-  const promoteProposal = (id: string, { folder, name, when, gives, reviewed }: PromoteOptions): ProposalChange => {
+  const promoteProposal = (id: string, { folder, name, when, gives, reviewed, audience }: PromoteOptions): ProposalChange => {
     const source = proposalPath(id);
     const cleanFolder = folder.trim().replace(/\/+$/, '');
     if (!cleanFolder) throw new Error('Pick a folder under knowledge/ to promote into, like owner.');
@@ -318,9 +323,13 @@ export const createProposals = ({ knowledgeDir, backupDir, now = () => new Date(
     const at = today(now());
     // The text the owner reviewed, which checkReviewed found unchanged: not a second read that could differ.
     const proposed = reviewed.proposal;
-    const page = removeHeaderField(setHeaderField(proposed, 'verified', at), 'target');
+    const verifiedPage = removeHeaderField(setHeaderField(proposed, 'verified', at), 'target');
+    // Replacing a page never quietly changes who may hear it: the owner's pick, else the proposal's, else the page's.
+    const kept = audience ?? (frontmatter(proposed)?.get('audience')?.trim() || (current !== null ? frontmatter(current)?.get('audience')?.trim() : undefined));
+    const page = kept ? setHeaderField(verifiedPage, 'audience', kept) : verifiedPage;
     const fields = frontmatter(page);
-    const problems = pageProblems(destination, page, fields);
+    const budget = isOfflimits(destination, fields) ? offlimitsBudgetAfter(root, destination, page) : null;
+    const problems = [...pageProblems(destination, page, fields), ...(budget ? [budget] : [])];
     if (problems.length > 0) throw new Error(`Fix the proposal before promoting it:\n${problems.join('\n')}`);
 
     const description = fields?.get('description')?.trim() ?? '';
@@ -348,7 +357,7 @@ export const createProposals = ({ knowledgeDir, backupDir, now = () => new Date(
    * Fold a proposal into an existing page and remove it from `proposals/`. Refuses a page outside `knowledge/`,
    * a page that doesn't exist (promote instead), and a result that would fail `pnpm knowledge`.
    */
-  const mergeProposal = (id: string, { into, text, reviewed }: MergeOptions): ProposalChange => {
+  const mergeProposal = (id: string, { into, text, reviewed, audience }: MergeOptions): ProposalChange => {
     const source = proposalPath(id);
     const target = pagePath(into, 'Target');
     const current = readText(target);
@@ -368,8 +377,12 @@ export const createProposals = ({ knowledgeDir, backupDir, now = () => new Date(
     const page = text ?? removeHeaderField(proposed, 'target');
     // The page keeps where every rule came from: the old page's sources, then the new text's and the proposal's.
     const sources = [...new Set([...sourceItems(current), ...sourceItems(page), ...sourceItems(proposed)])];
-    const merged = setHeaderField(addSources(withoutSources(page.endsWith('\n') ? page : `${page}\n`), sources), 'verified', at);
-    const problems = pageProblems(target, merged, frontmatter(merged));
+    const withSources = setHeaderField(addSources(withoutSources(page.endsWith('\n') ? page : `${page}\n`), sources), 'verified', at);
+    // A merge never quietly changes who may hear the page: the owner's pick, else the merged text's, else the page's.
+    const kept = audience ?? (frontmatter(withSources)?.get('audience')?.trim() || frontmatter(current)?.get('audience')?.trim());
+    const merged = kept ? setHeaderField(withSources, 'audience', kept) : withSources;
+    const budget = isOfflimits(target, frontmatter(merged)) ? offlimitsBudgetAfter(root, target, merged) : null;
+    const problems = [...pageProblems(target, merged, frontmatter(merged)), ...(budget ? [budget] : [])];
     if (problems.length > 0) throw new Error(`The merged page would fail the knowledge check:\n${problems.join('\n')}`);
 
     checkNoDrift([target]);

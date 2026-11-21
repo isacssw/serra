@@ -73,6 +73,7 @@ const countLabels: Record<BadgeKey, (n: string) => string> = {
   running: (n) => `${n} running`,
   proposals: (n) => `${n} to review`,
   untagged: (n) => `${n} only for you`,
+  drift: (n) => `${n} changed outside Serra`,
 };
 
 const itemClass = (active: boolean): string => cx(

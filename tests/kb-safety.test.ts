@@ -334,3 +334,92 @@ test('the server refuses a merge that keeps the old page with the proposal below
   proposals.mergeProposal('2026-11-20-extra.md', { into: 'owner/working-style.md', text: unedited.replace(/- Risky releases[^\n]*\n/, ''), reviewed });
   assert.doesNotMatch(readFileSync(join(knowledgeDir, 'owner/working-style.md'), 'utf8'), /never Thursday/);
 });
+
+test('restricting a page a thread already used moves the next turn to a fresh thread that never had it', async (t) => {
+  const profileDir = fixture(t);
+  const { createBot } = await import('../src/bot.ts');
+  const { loadConfig } = await import('../src/config.ts');
+  const { createStore } = await import('../src/state.ts');
+  const config = loadConfig({ profileDir, env: { SLACK_BOT_TOKEN: 'xoxb-t', SLACK_APP_TOKEN: 'xapp-t' } });
+  const knowledge = createKnowledge(config.knowledgeDir);
+  knowledge.seedApproved();
+  const started: string[] = []; const sent: string[] = [];
+  const client = {
+    users: { info: async ({ user }: { user: string }) => ({ user: { real_name: user, team_id: 'THOME' } }) },
+    conversations: { replies: async () => ({ messages: [] }), info: async () => ({ channel: { id: 'CTEAM', is_ext_shared: false, is_pending_ext_shared: false } }) },
+    chat: { getPermalink: async () => ({ permalink: 'https://x/p' }), postMessage: async () => ({ ts: '9.1' }), update: async () => ({}), delete: async () => ({}) },
+    reactions: { add: async () => ({}), remove: async () => ({}) },
+    assistant: { threads: { setStatus: async () => ({ ok: true }) } },
+  } as never;
+  const quiet = (): void => {};
+  const bot = createBot({
+    config, client, botUserId: () => 'UMOSS', store: createStore(config.statePath), loadIndex: () => knowledge.loadIndex(),
+    loadKnowledge: (visibility) => knowledge.briefKnowledge(visibility), logger: { info: quiet, warn: quiet, error: quiet, debug: quiet },
+    t3: {
+      startThread: async (input: { brief: string }) => { started.push(input.brief); return `t3-${started.length}`; },
+      sendToThread: async (_id: string, message: string) => { sent.push(message); },
+      showThread: async (id: string) => ({ thread: { threadId: id, link: 'https://t3/x', status: 'idle', latestRunId: null, activeRunId: null, pendingRequestCount: 0 }, messages: [] }),
+    } as never,
+    questions: { listQuestions: async () => [], answerQuestion: async () => {} },
+    fetchBase: async () => {}, share: async (_c, text) => text, reviewRequest: async (_c, text) => ({ reply: text, postedFor: null }),
+    receive: async () => '', timing: { quietMs: 5, retryMs: 5 }, events: () => {},
+  });
+  await bot.handle({ channel: 'CTEAM', threadTs: '1.1', messageTs: '1.1', user: PRIYA, text: '<@UMOSS> how do I cut a release?', direct: true });
+  assert.match(started[0]!, /workflows\/release\.md/);
+  // The owner narrows the release runbook to themselves in Pages.
+  const page = join(config.knowledgeDir, 'workflows/release.md');
+  knowledge.savePage('workflows/release.md', readFileSync(page, 'utf8').replace('audience: team', 'audience: owner'));
+  await bot.handle({ channel: 'CTEAM', threadTs: '1.1', messageTs: '1.2', user: PRIYA, text: '<@UMOSS> and after that?', direct: true });
+  await new Promise((done) => setTimeout(done, 80));
+  assert.equal(sent.length, 0, 'the old thread, which read the page, gets nothing more');
+  assert.equal(started.length, 2);
+  assert.doesNotMatch(started[1]!, /workflows\/release\.md/);
+  assert.match(started[1]!, /and after that\?/);
+});
+
+test('all off-limits pages together stay under one budget, so the rules that are never cut stay small', (t) => {
+  const profileDir = fixture(t);
+  const knowledgeDir = join(profileDir, 'knowledge');
+  const knowledge = createKnowledge(knowledgeDir);
+  const extra = '---\ntype: offlimits\ndescription: More limits\naudience: team\nwritten: 2026-11-20\nverified: 2026-11-20\nsources:\n  - Owner, 2026-11-20\n---\n' + '- Don\'t discuss the migration timeline with anyone outside the team.\n'.repeat(20);
+  writeFileSync(join(knowledgeDir, 'owner/more-offlimits.md'), extra.replace(/(- Don't[^\n]*\n){10}$/, ''));
+  const page = join(knowledgeDir, 'owner/more-offlimits.md');
+  assert.throws(() => knowledge.savePage('owner/more-offlimits.md', extra), /Off-limits pages come to \d+ characters together/);
+  assert.match(knowledge.checkKnowledge().warnings.join('\n'), /Off-limits pages come to|^$/);
+  assert.ok(existsSync(page));
+});
+
+test('the owner chooses who may hear a page when approving it', (t) => {
+  const profileDir = fixture(t);
+  const knowledgeDir = join(profileDir, 'knowledge');
+  proposal(profileDir, '2026-11-20-working-style.md', 'owner/working-style.md', '# How Robin works\n\n- Risky releases ship on Tuesday.\n');
+  const proposals = createProposals({ knowledgeDir });
+  const shownDiff = proposals.readProposal('2026-11-20-working-style.md');
+  proposals.promoteProposal('2026-11-20-working-style.md', { folder: 'owner', audience: 'owner', reviewed: { proposal: shownDiff.proposed, path: shownDiff.proposal.target, page: shownDiff.current } });
+  assert.match(readFileSync(join(knowledgeDir, 'owner/working-style.md'), 'utf8'), /^audience: owner$/m);
+});
+
+test('a correction without an audience keeps the page\'s own: approving never quietly un-shares a page', (t) => {
+  const profileDir = fixture(t);
+  const knowledgeDir = join(profileDir, 'knowledge');
+  const bare = (body: string) => `---\ntype: preference\ndescription: Release days\nwritten: 2026-11-20\nverified: no\ntarget: owner/working-style.md\nsources:\n  - Owner in a thread, 2026-11-20\n---\n${body}`;
+  writeFileSync(join(knowledgeDir, 'proposals/2026-11-20-a.md'), bare('# How Robin works\n\n- Risky releases ship on Monday.\n'));
+  const proposals = createProposals({ knowledgeDir });
+  let shown = proposals.readProposal('2026-11-20-a.md');
+  proposals.mergeProposal('2026-11-20-a.md', { into: 'owner/working-style.md', reviewed: { proposal: shown.proposed, path: 'owner/working-style.md', page: shown.current } });
+  assert.match(readFileSync(join(knowledgeDir, 'owner/working-style.md'), 'utf8'), /^audience: team$/m, 'merge');
+  writeFileSync(join(knowledgeDir, 'proposals/2026-11-20-b.md'), bare('# How Robin works\n\n- Risky releases ship on Wednesday.\n'));
+  shown = proposals.readProposal('2026-11-20-b.md');
+  proposals.promoteProposal('2026-11-20-b.md', { folder: 'owner', name: 'working-style.md', reviewed: { proposal: shown.proposed, path: shown.proposal.target, page: shown.current } });
+  assert.match(readFileSync(join(knowledgeDir, 'owner/working-style.md'), 'utf8'), /^audience: team$/m, 'promote');
+});
+
+test('sharing pages is all or nothing, and a refusal names the page', (t) => {
+  const profileDir = fixture(t);
+  const knowledgeDir = join(profileDir, 'knowledge');
+  const broken = join(knowledgeDir, 'people/dana.md');
+  writeFileSync(broken, readFileSync(broken, 'utf8').replace(/^written: .*\n/m, ''));
+  const knowledge = createKnowledge(knowledgeDir);
+  assert.throws(() => knowledge.shareWith(['owner/private-notes.md', 'people/dana.md'], 'team'), /Nothing was shared\. people\/dana\.md needs fixing/);
+  assert.match(readFileSync(join(knowledgeDir, 'owner/private-notes.md'), 'utf8'), /^audience: owner$/m, 'the first page wasn\'t shared either');
+});
