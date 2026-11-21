@@ -7,6 +7,7 @@
 // second model. Scores are per category, 0–100.
 //
 //   node evals/live.ts --label baseline [--runs 2] [--model sonnet] [--judge sonnet] [--only id,id] [--concurrency 6]
+//   [--fixture dir] [--cases file] [--untagged] [--no-about]
 //
 // Results go to evals/results/<label>.json (every reply, for audit) and <label>.md (the table).
 import { execFileSync, spawn } from 'node:child_process';
@@ -40,6 +41,7 @@ const { values: args } = parseArgs({
     fixture: { type: 'string', default: 'evals/fixture' },
     cases: { type: 'string', default: 'evals/cases.json' },
     untagged: { type: 'boolean', default: false },
+    'no-about': { type: 'boolean', default: false },
   },
 });
 
@@ -123,7 +125,7 @@ const scratch = (): { dir: string; profileDir: string; project: string } => {
 const runOne = async (item: Case, run: number): Promise<Graded> => {
   const { dir, profileDir, project } = scratch();
   try {
-    const brief = await buildBrief(profileDir, item);
+    const brief = await buildBrief(profileDir, item, { noAbout: args['no-about'] });
     // The brief with the scratch folder's path taken out, so the same code always gives the same hash.
     const briefHash = createHash('sha256').update(brief.replaceAll(dir, '<scratch>')).digest('hex').slice(0, 16);
     const reply = await claude(brief, { cwd: project, tools: 'Read,Grep,Glob', model: args.model!, addDirs: [profileDir] });
@@ -161,11 +163,11 @@ const overall = Math.round(100 * mean(graded.map((r) => r.score)));
 
 const outDir = join(root, 'evals/results');
 mkdirSync(outDir, { recursive: true });
-const meta = { label: args.label, model: args.model, judge: args.judge, runs: Number(args.runs), cases: cases.length, at: new Date().toISOString(), ...startedFrom };
+const meta = { label: args.label, noAbout: args['no-about'], model: args.model, judge: args.judge, runs: Number(args.runs), cases: cases.length, at: new Date().toISOString(), ...startedFrom };
 writeFileSync(join(outDir, `${args.label}.json`), JSON.stringify({ meta, byCategory, overall, results }, null, 2) + '\n');
 const lines = [
   `# Live eval: ${args.label}`, '',
-  `Worker ${args.model}, judge ${args.judge}, ${args.runs} runs of ${cases.length} cases (${args.cases}, ${args.fixture}${args.untagged ? ', audiences removed' : ''}), ${meta.at.slice(0, 10)}.${results.length > graded.length ? ` ${results.length - graded.length} runs failed in the harness and are left out.` : ''}`, '',
+  `Worker ${args.model}, judge ${args.judge}, ${args.runs} runs of ${cases.length} cases (${args.cases}, ${args.fixture}${args.untagged ? ', audiences removed' : ''}${args['no-about'] ? ', About me left out' : ''}), ${meta.at.slice(0, 10)}.${results.length > graded.length ? ` ${results.length - graded.length} runs failed in the harness and are left out.` : ''}`, '',
   '| Category | Score |', '|---|---|',
   ...categories.map((category) => `| ${category} | ${byCategory[category]} |`),
   `| **overall** | **${overall}** |`, '',

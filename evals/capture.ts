@@ -35,7 +35,8 @@ const NAMES: Record<string, string> = {
 const CHANNELS = { dm: 'DMOSS00001', channel: 'CTEAM00001', shared: 'CSHARED001' } as const;
 let calls = 0;
 
-export const buildBrief = async (profileDir: string, item: EvalCase): Promise<string> => {
+/** `noAbout`: the ablation that leaves About me out of the brief, to measure what it adds over audiences alone. */
+export const buildBrief = async (profileDir: string, item: EvalCase, { noAbout = false }: { noAbout?: boolean } = {}): Promise<string> => {
   const config = loadConfig({ profileDir, env: { SLACK_BOT_TOKEN: 'xoxb-eval', SLACK_APP_TOKEN: 'xapp-eval' } });
   if (item.via === 'app') return taskBrief(config, item.text);
 
@@ -67,7 +68,10 @@ export const buildBrief = async (profileDir: string, item: EvalCase): Promise<st
   // As the daemon does at start: from here on, briefs and the worker read the approved copy.
   knowledge.seedApproved();
   const bot = createBot({
-    config, client, botUserId: () => BOT_USER, store: createStore(config.statePath), loadIndex: () => knowledge.loadIndex(), loadKnowledge: (visibility) => knowledge.briefKnowledge(visibility),
+    config, client, botUserId: () => BOT_USER, store: createStore(config.statePath), loadIndex: () => knowledge.loadIndex(), loadKnowledge: (visibility) => {
+      const known = knowledge.briefKnowledge(visibility);
+      return noAbout ? { ...known, aboutMe: { ...known.aboutMe, text: '' } } : known;
+    },
     logger: { info: quiet, warn: (m: string) => process.stderr.write(`warn: ${m}\n`), error: (m: string) => process.stderr.write(`error: ${m}\n`), debug: quiet },
     t3: {
       startThread: async (input: { brief: string }) => { brief = input.brief; return 't3-eval'; },
