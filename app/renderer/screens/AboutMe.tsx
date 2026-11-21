@@ -68,11 +68,11 @@ export const AboutMe = () => {
     if (!bridge || !sharing || busy) return;
     setBusy(true);
     try {
-      const { shared, skipped } = await bridge.pages.share(untagged.filter((page) => sharing.has(page.path)).map(({ path, text }) => ({ path, text })), 'team');
+      const { shared } = await bridge.pages.share(untagged.filter((page) => sharing.has(page.path)).map(({ path, text }) => ({ path, text })), 'team');
       setSharing(null);
       toast({
-        message: `Shared ${shared.length} page${shared.length === 1 ? '' : 's'} with your team.${skipped.length ? ` Skipped ${skipped.join(', ')}: review it in Pages first.` : ''}`,
-        tone: skipped.length ? 'info' : 'success',
+        message: `Shared ${shared.length} page${shared.length === 1 ? '' : 's'} with your team.`,
+        tone: 'success',
       });
       await load(visibility);
     } catch (failure) {
@@ -140,10 +140,10 @@ export const AboutMe = () => {
               <section key={section.path} aria-label={section.path} className="rounded-lg border border-line bg-panel">
                 <header className="flex items-center justify-between gap-3 border-b border-line-subtle px-4 py-2.5">
                   <div className="flex min-w-0 items-baseline gap-2">
-                    <h2 className="truncate font-mono text-[13px] font-semibold">{section.path === 'people/' ? 'people/ (one line each)' : section.path === 'outsiders' ? 'Rules for outsiders (built in)' : section.path}</h2>
+                    <h2 className="truncate font-mono text-[13px] font-semibold">{section.path === 'people/' ? 'people/ (one line each)' : section.path === 'outsiders' ? 'Rules for outsiders (built in)' : section.path === 'private topics' ? 'Private topics (built in)' : section.path}</h2>
                     <span className="shrink-0 text-xs text-muted">confirmed {section.verified}</span>
                   </div>
-                  {section.path !== 'people/' && section.path !== 'outsiders' && <button
+                  {section.path !== 'people/' && section.path !== 'outsiders' && section.path !== 'private topics' && <button
                     type="button"
                     onClick={() => edit(section.path)}
                     className="inline-flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-xs text-muted hover:bg-hover hover:text-ink focus-visible:outline-2 focus-visible:outline-focus"

@@ -174,14 +174,13 @@ export const createKnowledge = (knowledgeDir: string, { backupDir }: KnowledgeOp
     const descriptions = new Map(pages.map(({ path, text }) => [path, frontmatter(text)?.get('description')?.trim() ?? '']));
     const aboutMe = compileAboutMe(pages, visibility, now);
     let index = filterIndex(indexText.trim(), (page) => (audiences.has(page) ? { audience: audiences.get(page)!, description: descriptions.get(page) ?? '' } : null), visibility);
-    if (drifted) {
-      // Only the owner hears which files: a page's name can say more than a teammate may know.
-      const files = visibility === 'owner' ? `: ${[...changed, ...removed].map((path) => `\`${path}\``).join(', ')}` : '';
-      // Only the owner's brief says where the approved copy is: nobody else's worker needs to know.
-      index += `\n\nSome knowledge files changed outside Serra and the owner hasn't approved them yet (unreviewed changes)${files}. `
-        + (visibility === 'owner'
-          ? `Don't use what they say now. Read the approved copy of any page from ${journal.approvedRoot} instead.`
-          : `Don't open pages to answer this: use only what this brief says.`);
+    // Once briefs read the approved copy, a teammate's worker opens only approved pages, so an edit waiting for review
+    // needs no note there. The owner hears which files are waiting. Before the copy exists, nobody opens pages.
+    if (drifted && visibility === 'owner') {
+      index += `\n\nSome knowledge files changed outside Serra and the owner hasn't approved them yet (unreviewed changes): ${[...changed, ...removed].map((path) => `\`${path}\``).join(', ')}. `
+        + `Don't use what they say now. Read the approved copy of any page from ${journal.approvedRoot} instead.`;
+    } else if (drifted && !fromApproved) {
+      index += `\n\nSome knowledge files changed and the owner hasn't approved them yet. Don't open pages to answer this: use only what this brief says.`;
     }
     const usable = [...audiences].filter(([, audience]) => mayUse(audience, visibility)).map(([path]) => path).sort();
     return { index, aboutMe, visibility, pages: usable, readDir: fromApproved ? journal.approvedRoot : root };
@@ -201,7 +200,11 @@ export const createKnowledge = (knowledgeDir: string, { backupDir }: KnowledgeOp
 
   /** The owner accepts one file's change as theirs, as they reviewed it. */
   const acceptDrift = (path: string, current: string | null): void => {
-    // Accepting is approving: the same off-limits budget applies as for a save or a proposal.
+    // Accepting is approving: the same page checks and off-limits budget apply as for a save or a proposal.
+    if (current !== null && path !== 'index.md') {
+      const problems = saveProblems(path, current);
+      if (problems.length > 0) throw new Error(`Not accepted. ${saveRefusal(problems)}`);
+    }
     const budget = current !== null && isOfflimits(path, frontmatter(current)) ? offlimitsBudgetAfter(root, path, current) : null;
     if (budget) throw new Error(`Not accepted. ${budget}`);
     journal.accept(path, current);
@@ -406,12 +409,11 @@ export const createKnowledge = (knowledgeDir: string, { backupDir }: KnowledgeOp
 
   /**
    * Set who may hear each page, as the owner chose in the app. Each page is saved like an edit, with a backup.
-   * A page that changed outside Serra is skipped and returned: the owner reviews it in Pages first.
+   * All or nothing: a page that changed outside Serra, or since the owner looked, refuses the whole share.
    */
-  const shareWith = (pages: string[], audience: Audience, options: CheckOptions & { seen?: Record<string, string> } = {}): { shared: string[]; skipped: string[] } => {
+  const shareWith = (pages: string[], audience: Audience, options: CheckOptions & { seen?: Record<string, string> } = {}): { shared: string[] } => {
     if (!AUDIENCES.includes(audience)) throw new Error(`Pick who may hear the pages: ${AUDIENCES.join(', ')}.`);
     const { changed, removed } = journal.drift();
-    const skipped: string[] = [];
     // Every page is checked before any is saved, so sharing is all or nothing and a refusal names the page.
     const ready = pages.flatMap((path) => {
       const page = existingPage(path);
@@ -425,7 +427,7 @@ export const createKnowledge = (knowledgeDir: string, { backupDir }: KnowledgeOp
       return [{ page, text }];
     });
     for (const { page, text } of ready) savePage(page, text, options);
-    return { shared: ready.map(({ page }) => page), skipped };
+    return { shared: ready.map(({ page }) => page) };
   };
 
   return { untaggedPages, untaggedDetails, shareWith, loadIndex, briefKnowledge, checkKnowledge, listPages, readPage, savePage, seedApproved, drift, driftDetails, acceptDrift, restoreDrift };

@@ -1,7 +1,7 @@
-// Side-by-side current/proposed view of one proposal, from the rows in proposals.logic.ts.
+// Side-by-side current/proposed view, lines wrapped and kept level, of one proposal, from the rows in proposals.logic.ts.
 import { useMemo } from 'react';
 import { cx } from '../../ui/index.ts';
-import { diffRows, diffStats, type DiffCell, type DiffRow } from '../proposals.logic.ts';
+import { diffRows, diffStats, type DiffCell } from '../proposals.logic.ts';
 
 const cellTone: Record<DiffCell['kind'], string> = {
   same: '',
@@ -11,28 +11,15 @@ const cellTone: Record<DiffCell['kind'], string> = {
 
 const marker: Record<DiffCell['kind'], string> = { same: ' ', removed: '-', added: '+' };
 
-const Side = ({ title, rows, side, empty }: { title: string; rows: DiffRow[]; side: keyof DiffRow; empty?: string }) => (
-  <section className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-lg border border-line bg-panel" aria-label={title}>
-    <h3 className="border-b border-line bg-raised px-3 py-2 text-sm font-semibold">{title}</h3>
-    {empty ? (
-      <p className="px-3 py-3 text-sm text-muted">{empty}</p>
-    ) : (
-      <div className="overflow-x-auto py-1.5 font-mono text-xs leading-6">
-        {rows.map((row, index) => {
-          const cell = row[side];
-          return (
-            <div key={index} className={cx('flex min-h-6 min-w-max', cell && cellTone[cell.kind])} data-kind={cell?.kind ?? 'gap'}>
-              <span className="w-10 shrink-0 pr-2 text-right text-muted select-none">{cell?.number ?? ''}</span>
-              <span className={cx('w-4 shrink-0 select-none', cell?.kind === 'removed' && 'text-down', cell?.kind === 'added' && 'text-up')}>
-                {cell ? marker[cell.kind] : ''}
-              </span>
-              <span className="pr-3 whitespace-pre">{cell?.text ?? ''}</span>
-            </div>
-          );
-        })}
-      </div>
-    )}
-  </section>
+/** One side of one row: its line number, marker and text, which wraps instead of scrolling. */
+const Cell = ({ cell }: { cell: DiffCell | null }) => (
+  <div className={cx('flex min-h-6 min-w-0', cell && cellTone[cell.kind])} data-kind={cell?.kind ?? 'gap'}>
+    <span className="w-10 shrink-0 pr-2 text-right text-muted select-none">{cell?.number ?? ''}</span>
+    <span className={cx('w-4 shrink-0 select-none', cell?.kind === 'removed' && 'text-down', cell?.kind === 'added' && 'text-up')}>
+      {cell ? marker[cell.kind] : ''}
+    </span>
+    <span className="min-w-0 flex-1 pr-3 break-words whitespace-pre-wrap">{cell?.text ?? ''}</span>
+  </div>
 );
 
 /** `current` is null when the proposal is a new page. */
@@ -46,9 +33,27 @@ export const DiffView = ({ current, proposed, labels = ['Current', 'Proposed'], 
       <p className="text-xs text-muted">
         {current === null ? `New page, ${stats.added} lines.` : `${stats.removed} lines removed, ${stats.added} added.`}
       </p>
-      <div className="flex gap-2">
-        <Side title={labels[0]} rows={rows} side="current" empty={current === null ? emptyCurrent : undefined} />
-        <Side title={labels[1]} rows={rows} side="proposed" />
+      {/* One grid, so a wrapped line on one side keeps its row level with the other side. */}
+      <div className="grid grid-cols-2 overflow-hidden rounded-lg border border-line bg-panel" role="group" aria-label={`${labels[0]} and ${labels[1]}`}>
+        <h3 className="border-r border-b border-line bg-raised px-3 py-2 text-sm font-semibold">{labels[0]}</h3>
+        <h3 className="border-b border-line bg-raised px-3 py-2 text-sm font-semibold">{labels[1]}</h3>
+        {current === null ? (
+          <>
+            <p className="border-r border-line px-3 py-3 text-sm text-muted">{emptyCurrent}</p>
+            <div className="py-1.5 font-mono text-xs leading-6" aria-label={labels[1]}>
+              {rows.map((row, index) => <Cell key={index} cell={row.proposed} />)}
+            </div>
+          </>
+        ) : (
+          <div className="col-span-2 grid grid-cols-2 py-1.5 font-mono text-xs leading-6">
+            {rows.map((row, index) => (
+              <div key={index} className="contents">
+                <div className="min-w-0 border-r border-line"><Cell cell={row.current} /></div>
+                <div className="min-w-0"><Cell cell={row.proposed} /></div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );

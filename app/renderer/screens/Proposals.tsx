@@ -102,8 +102,8 @@ export const Proposals = () => {
   const [busy, setBusy] = useState(false);
   const [mergeOpen, setMergeOpen] = useState(false);
   const [mergeTarget, setMergeTarget] = useState('');
-  /** Who may hear the page this approval creates or replaces: the proposal's own audience until the owner changes it. */
-  const [audience, setAudience] = useState<Audience>('owner');
+  /** The owner's own pick, or null to take the default for wherever the page lands. Only a pick is sent. */
+  const [picked, setPicked] = useState<Audience | null>(null);
   /** The page as it will read after the merge, which the owner edits in the dialog. Null while it loads. */
   const [mergeText, setMergeText] = useState<string | null>(null);
   /** The page as the merge dialog loaded it: what the owner reviewed, so a change while the dialog is open refuses the merge. */
@@ -194,8 +194,8 @@ export const Proposals = () => {
 
   useEffect(() => {
     if (!diff) return;
-    // The page it replaces keeps its own audience; a new page starts from the proposal's. Only the owner widens it.
-    setAudience(approvalAudience(diff.proposed, diff.current).audience);
+    // The default follows where the page lands (approvalAudience); only the owner's own pick is sent.
+    setPicked(null);
     setFolder(defaultFolder(diff.proposal, targets.folders) ?? '');
     setMergeTarget(diff.proposal.target ?? targets.pages[0] ?? '');
   }, [diff, targets]);
@@ -261,7 +261,7 @@ export const Proposals = () => {
                   {diff.proposal.description && <p className="text-sm text-muted">{diff.proposal.description}</p>}
                   {diff.proposal.target && <p className="text-xs text-muted">Changes <code>{diff.proposal.target}</code></p>}
                 </div>
-                <DiffView current={diff.current} proposed={asWritten(diff, audience)} />
+                <DiffView current={landing(diff, folder)} proposed={asWritten(diff, folder, picked)} />
                 {folders.length > 0 ? (
                   <Select
                     label="Target folder"
@@ -274,15 +274,15 @@ export const Proposals = () => {
                   <p className="text-sm text-muted">knowledge/ has no folders yet. Create one to promote into.</p>
                 )}
                 <div className="flex flex-col gap-1">
-                  <AudienceChoice id="proposal-audience" value={audience} disabled={busy} onChange={setAudience} />
-                  {asks(diff) && <span className="text-xs text-muted">{asks(diff)}</span>}
+                  <AudienceChoice id="proposal-audience" value={picked ?? approvalAudience(diff.proposed, landing(diff, folder)).audience} disabled={busy} onChange={setPicked} />
+                  {picked === null && asks(diff, folder) && <span className="text-xs text-muted">{asks(diff, folder)}</span>}
                 </div>
                 <div className="flex flex-wrap gap-2">
                   <Button
                     variant="primary"
                     disabled={busy || !folder}
                     onClick={() => void act(
-                      (path) => bridge.proposals.promote(path, folder, { proposal: diff.proposed, path: diff.proposal.target, page: diff.current }, audience),
+                      (path) => bridge.proposals.promote(path, folder, { proposal: diff.proposed, path: diff.proposal.target, page: diff.current }, picked ?? undefined),
                       replaces(diff, folder) ? `Replaced ${diff.proposal.target}.` : `Promoted ${title} to ${folderLabel(folder)}.`,
                     )}
                   >
@@ -350,21 +350,26 @@ const AUDIENCE_RANK: Record<Audience, number> = { owner: 0, team: 1, external: 2
 /** Whether `to` lets more people hear a page than `from`. */
 const widens = (from: Audience, to: Audience): boolean => AUDIENCE_RANK[to] > AUDIENCE_RANK[from];
 
-/** What the proposal asks for, when it differs from the default the screen starts with. */
-const asks = (diff: ProposalDiff): string | null => {
-  const { asks: direction } = approvalAudience(diff.proposed, diff.current);
+/** The page approving into `folder` writes over: the proposal's target when it lands there, else none (a new page). */
+const landing = (diff: ProposalDiff, folder: string): string | null => (replaces(diff, folder) ? diff.current : null);
+
+/** What the proposal asks for, when it differs from the default for where the page lands. */
+const asks = (diff: ProposalDiff, folder: string): string | null => {
+  const current = landing(diff, folder);
+  const { asks: direction } = approvalAudience(diff.proposed, current);
   if (direction === 'narrower') return 'This proposal asks to share the page less. That\u2019s the default.';
-  if (direction === 'wider') return diff.current === null
+  if (direction === 'wider') return current === null
     ? 'This proposal asks to share the page with people outside your company. It starts with your team unless you choose.'
     : 'This proposal asks to share the page more widely. It stays as it is unless you choose.';
   return null;
 };
 
-/** The page as approving writes it: no `target:`, verified today, and the audience as chosen. */
-const asWritten = (diff: ProposalDiff, audience: Audience): string => {
+/** The page as approving into `folder` writes it: no `target:`, verified today, and the audience it will have. */
+const asWritten = (diff: ProposalDiff, folder: string, picked: Audience | null): string => {
   const page = setHeaderField(withoutTarget(diff.proposed), 'verified', localDate(new Date()));
-  const { audience: fallback, untagged } = approvalAudience(diff.proposed, diff.current);
-  return untagged && audience === fallback ? removeHeaderField(page, 'audience') : setHeaderField(page, 'audience', audience);
+  const { audience, untagged } = approvalAudience(diff.proposed, landing(diff, folder));
+  if (picked) return setHeaderField(page, 'audience', picked);
+  return untagged ? removeHeaderField(page, 'audience') : setHeaderField(page, 'audience', audience);
 };
 
 /** Whether approving into `folder` replaces the page the proposal names, rather than adding a new one. */

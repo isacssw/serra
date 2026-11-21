@@ -427,7 +427,7 @@ export const createBot = ({
    */
   const postRunResult = async (key: string, job: Job, thread: T3Thread, reply: string, byWorker: boolean, runId: string): Promise<void> => {
     // A reply the worker wrote with knowledge the owner has since taken back isn't posted: it may repeat that text.
-    const text = !QUIET.test(reply) && revokedFor(job).length > 0 ? WITHHELD : reply;
+    const text = !QUIET.test(reply) && (await revokedFor(job)).length > 0 ? WITHHELD : reply;
     const runMs = job.runSeen?.runId === runId ? now() - Date.parse(job.runSeen.at) : undefined;
     const measured = { key, runId, byWorker, runMs, jobAgeMs: now() - Date.parse(job.createdAt) };
     await clearProgress(key, job);
@@ -538,6 +538,8 @@ export const createBot = ({
     if (now() - Date.parse(job.runSeen.at) < PROGRESS_AFTER_MS || !someoneWaits(runId, messages)) return;
     const note = latestNote(runId, messages);
     if (!note) return;
+    // A progress note is the worker's own words: none from a thread whose knowledge was taken back.
+    if ((await revokedFor(job)).length > 0) return;
     const text = `⏳ Still on it: ${oneParagraph(localLinksToText(note, pathRoots))}`;
     if (job.progress?.runId === runId && job.progress.text === text) return;
     const message = { channel: job.channel, text, blocks: [{ type: 'markdown', text }], unfurl_links: false };
@@ -565,6 +567,14 @@ export const createBot = ({
   };
 
   const showQuestion = async (key: string, job: Job, thread: T3Thread, request: T3QuestionRequest): Promise<void> => {
+    // A question card is the worker's own words too: a thread whose knowledge was taken back gets a stop instead.
+    if ((await revokedFor(job)).length > 0) {
+      await questions.answerQuestion(job.t3ThreadId, request.requestId, Object.fromEntries(request.questions.map((item) => [item.id, 'Stop here: some knowledge you used has been made private. Do nothing more.'])), config.t3Bin)
+        .catch((error: unknown) => logger.warn(`Could not stop the question in ${job.t3ThreadId}: ${errorMessage(error)}`));
+      await reply(job.channel, job.threadTs, WITHHELD);
+      updateJob(key, () => ({ lastActivityAt: new Date(now()).toISOString() }));
+      return;
+    }
     if (job.question?.requestId === request.requestId) return;
     if (job.question) await clearQuestion(key, job);
     const state: SlackQuestion = { ...request, ts: '', index: 0, answers: {}, nonce: randomBytes(16).toString('hex'), runId: thread.activeRunId ?? thread.latestRunId };
@@ -720,12 +730,13 @@ export const createBot = ({
   };
 
   /** Pages this thread's brief allowed that the owner has since restricted, retired or removed. */
-  // A thread from before audiences has no record of its pages; its next turn restarts (restartIfRevoked), but a reply
-  // already under way when Serra was upgraded is posted.
-  const revokedFor = (job: Job): string[] => {
-    if (!loadKnowledge || !job.visibility || !job.knowledgePages) return [];
-    const now = loadKnowledge(job.visibility).pages;
-    return job.knowledgePages.filter((page) => !now.includes(page));
+  // A thread from before audiences has no record of its pages: it was briefed with every page, so it counts as revoked
+  // whenever anything is now off-limits to it. Every path that shows worker text checks this first.
+  const revokedFor = async (job: Job): Promise<string[]> => {
+    if (!loadKnowledge) return [];
+    const visibility = job.visibility ?? await replyVisibility({ channel: job.channel, threadTs: job.threadTs, messageTs: job.threadTs, user: job.requester, text: '', direct: false });
+    const now = loadKnowledge(visibility).pages;
+    return (job.knowledgePages ?? loadKnowledge('owner').pages).filter((page) => !now.includes(page));
   };
 
   /**

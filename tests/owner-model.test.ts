@@ -53,9 +53,20 @@ test('a non-owner index is rebuilt from approved page descriptions, fails closed
     'owner/role.md': { audience: 'team', description: "Robin's role" }, 'owner/private.md': { audience: 'owner', description: 'Private notes' },
   };
   const team = filterIndex(index, (path) => pages[path] ?? null, 'team');
-  assert.match(team, /\| Robin's role \| `owner\/role\.md` \| Robin's role \|/);
+  assert.match(team, /\| `owner\/role\.md` \| Robin's role \|/);
   assert.doesNotMatch(team, /reorg|Private note|owner\/private\.md|gone\.md|no backticks|\| When \| Open \| Gives \|/);
   assert.equal(filterIndex(index, (path) => pages[path] ?? null, 'owner'), index, 'the owner gets the whole index');
+});
+
+test('a teammate gets a private-topics rule that names nothing when an off-limits page is the owner\'s only', () => {
+  const role = page('owner/role.md', { type: 'responsibility', audience: 'team' }, '- Engineering manager.');
+  const ownerOnly = compileAboutMe([page('owner/offlimits.md', {}, '- Never discuss Priya\'s salary band.'), role], 'team', NOW);
+  assert.equal(ownerOnly.included[0], 'private topics');
+  assert.match(ownerOnly.text, /pay, promotion, hiring/);
+  assert.doesNotMatch(ownerOnly.text, /Priya|salary band/);
+  const shared = compileAboutMe([page('owner/offlimits.md', { audience: 'team' }, '- Never discuss pay.'), role], 'team', NOW);
+  assert.ok(!shared.included.includes('private topics'), 'a shared off-limits page speaks for itself');
+  assert.ok(!compileAboutMe([page('owner/offlimits.md', {}, '- x'), role], 'owner', NOW).included.includes('private topics'));
 });
 
 test('outsiders get a rule that names no internal topic, and off-limits pages only when marked for them', () => {

@@ -208,8 +208,11 @@ test('a teammate\'s brief never names the files that changed outside Serra, and 
   createKnowledge(join(profileDir, 'knowledge')).seedApproved();
   writeFileSync(join(profileDir, 'knowledge/owner/private-notes.md'), `${readFileSync(join(profileDir, 'knowledge/owner/private-notes.md'), 'utf8')}- More.\n`);
   const teammate = await buildBrief(profileDir, { via: 'channel', user: PRIYA, text: 'what does Robin own?' });
-  assert.match(teammate, /unreviewed changes/);
+  // The worker reads the approved copy, so an edit waiting for review doesn't take shared pages away from teammates.
+  assert.doesNotMatch(teammate, /unreviewed changes|Don't open pages/);
   assert.doesNotMatch(teammate, /private-notes/);
+  assert.match(teammate, /workflows\/release\.md/);
+  assert.match(teammate, /\.knowledge-approved/);
   const unknown = await buildBrief(profileDir, { via: 'channel', user: PRIYA, text: 'what does Robin own?', noChannelInfo: true });
   assert.match(unknown, /seen by people outside Robin's company/);
   assert.doesNotMatch(unknown, /owner\/working-style\.md/);
@@ -226,7 +229,7 @@ test('an older profile\'s pages are the owner\'s until shared, and sharing bring
   assert.deepEqual(knowledge.untaggedPages(), ['owner/role.md', 'owner/working-style.md', 'people/priya.md', 'workflows/release.md']);
   const before = await buildBrief(profileDir, { via: 'channel', user: PRIYA, text: 'how do I cut a release?' });
   assert.doesNotMatch(before, /workflows\/release\.md|never Thursday/);
-  assert.deepEqual(knowledge.shareWith(['owner/working-style.md', 'workflows/release.md'], 'team'), { shared: ['owner/working-style.md', 'workflows/release.md'], skipped: [] });
+  assert.deepEqual(knowledge.shareWith(['owner/working-style.md', 'workflows/release.md'], 'team'), { shared: ['owner/working-style.md', 'workflows/release.md'] });
   const after = await buildBrief(profileDir, { via: 'channel', user: PRIYA, text: 'how do I cut a release?' });
   assert.match(after, /workflows\/release\.md/);
   assert.match(after, /never Thursday/);
@@ -435,6 +438,7 @@ const botOn = async (profileDir: string) => {
   const started: string[] = []; const sent: string[] = []; const answered: unknown[] = []; const bases: string[] = []; const posted: string[] = [];
   let pendingQuestions: { requestId: string; questions: unknown[] }[] = [];
   let transcript: { role: string; runId: string; text: string }[] = [];
+  let activeRunId: string | null = null;
   const store = createStore(config.statePath);
   const client = {
     users: { info: async ({ user }: { user: string }) => ({ user: { real_name: user, team_id: 'THOME' } }) },
@@ -450,7 +454,7 @@ const botOn = async (profileDir: string) => {
     t3: {
       startThread: async (input: { brief: string; baseRef: string }) => { started.push(input.brief); bases.push(input.baseRef); return `t3-${started.length}`; },
       sendToThread: async (_id: string, message: string) => { sent.push(message); },
-      showThread: async (id: string, _bin?: string, count = 1) => ({ thread: { threadId: id, link: 'https://t3/x', status: 'idle', latestRunId: transcript.length ? 'run-1' : null, activeRunId: null, pendingRequestCount: 0 }, messages: transcript.slice(-count) }),
+      showThread: async (id: string, _bin?: string, count = 1) => ({ thread: { threadId: id, link: 'https://t3/x', status: activeRunId ? 'running' : 'idle', latestRunId: activeRunId ?? (transcript.length ? 'run-1' : null), activeRunId, pendingRequestCount: pendingQuestions.length }, messages: transcript.slice(-count) }),
     } as never,
     questions: { listQuestions: async () => pendingQuestions as never, answerQuestion: async (...args: unknown[]) => { answered.push(args); } },
     fetchBase: async () => {}, share: async (_c, text) => text, reviewRequest: async (_c, text) => ({ reply: text, postedFor: null }),
@@ -464,7 +468,12 @@ const botOn = async (profileDir: string) => {
     transcript = [{ role: 'user', runId: 'run-1', text: 'brief' }, { role: 'assistant', runId: 'run-1', text }];
     await bot.poll();
   };
-  return { bot, store, config, knowledge, started, sent, answered, bases, posted, restrict, finish, setQuestions: (list: typeof pendingQuestions) => { pendingQuestions = list; } };
+  /** The worker is mid-run and has written `note` so far. */
+  const working = (note: string): void => {
+    activeRunId = 'run-2';
+    transcript = [{ role: 'user', runId: 'run-2', text: 'brief' }, { role: 'assistant', runId: 'run-2', text: note }];
+  };
+  return { bot, store, config, knowledge, started, sent, answered, bases, posted, restrict, finish, working, setQuestions: (list: typeof pendingQuestions) => { pendingQuestions = list; } };
 };
 
 test('the worker opens pages from the approved copy, and writes proposals to knowledge/proposals', async (t) => {
@@ -519,7 +528,7 @@ test('saves, shares and accepts apply only to what the owner saw, and accepting 
   const offlimits = join(knowledgeDir, 'owner/offlimits.md');
   const huge = `${readFileSync(offlimits, 'utf8')}${'- Never discuss the internal roadmap with anyone outside the payments team.\n'.repeat(19)}`;
   writeFileSync(offlimits, huge);
-  assert.throws(() => knowledge.acceptDrift('owner/offlimits.md', huge), /Not accepted\. Off-limits/);
+  assert.throws(() => knowledge.acceptDrift('owner/offlimits.md', huge), /Not accepted\.[\s\S]*(Off-limits|1500)/);
 });
 
 test('a fresh session after knowledge is taken back starts from the old branch, and says so in the thread', async (t) => {
@@ -618,4 +627,53 @@ test('approval defaults fail closed both ways: a proposal can narrow a page, nev
   const shown = proposals.readProposal('2026-11-20-style.md');
   proposals.promoteProposal('2026-11-20-style.md', { folder: 'owner', reviewed: { proposal: shown.proposed, path: shown.proposal.target, page: shown.current } });
   assert.match(readFileSync(join(knowledgeDir, 'owner/working-style.md'), 'utf8'), /^audience: owner$/m);
+});
+
+test('round 8: a thread whose knowledge was taken back posts no question card, no progress note, and no reply, older threads included', async (t) => {
+  const question = { id: 'q1', header: 'Day', question: 'Release on Thursday?', options: [{ label: 'Yes', description: '' }, { label: 'No', description: '' }] };
+  const asking = await botOn(fixture(t));
+  await asking.bot.handle({ channel: 'CTEAM', threadTs: '6.1', messageTs: '6.1', user: PRIYA, text: '<@UMOSS> how do I cut a release?', direct: true });
+  asking.restrict('workflows/release.md');
+  asking.setQuestions([{ requestId: 'r6', questions: [question] }]);
+  await asking.bot.poll();
+  assert.ok(!asking.posted.some((text) => /Thursday/.test(text)), 'the question card is not shown');
+  assert.match(JSON.stringify(asking.answered[0]), /Stop here: some knowledge you used has been made private/);
+
+  const progress = async (revoke: boolean): Promise<string[]> => {
+    const run = await botOn(fixture(t));
+    await run.bot.handle({ channel: 'CTEAM', threadTs: '7.1', messageTs: '7.1', user: PRIYA, text: '<@UMOSS> how do I cut a release?', direct: true });
+    if (revoke) run.restrict('workflows/release.md');
+    run.working('Reading the release runbook: never Thursday.');
+    const job = run.store.getJob('CTEAM:7.1')!;
+    run.store.putJob('CTEAM:7.1', { ...job, loadingRequested: true, runSeen: { runId: 'run-2', at: '2020-01-01T00:00:00.000Z' } });
+    await run.bot.poll();
+    return run.posted;
+  };
+  assert.ok((await progress(false)).some((text) => /Still on it: Reading the release runbook/.test(text)), 'control: a note is shown when nothing changed');
+  assert.ok(!(await progress(true)).some((text) => /Still on it/.test(text)), 'no note from a thread whose knowledge was taken back');
+
+  const older = await botOn(fixture(t));
+  await older.bot.handle({ channel: 'CTEAM', threadTs: '8.1', messageTs: '8.1', user: PRIYA, text: '<@UMOSS> how do I cut a release?', direct: true });
+  const job = older.store.getJob('CTEAM:8.1')!;
+  delete job.visibility; delete job.knowledgePages;
+  older.store.putJob('CTEAM:8.1', job);
+  older.restrict('workflows/release.md');
+  await older.finish('Run pnpm release:prepare, never on Thursday.');
+  assert.ok(!older.posted.some((text) => /release:prepare/.test(text)), 'a thread from before audiences had every page: its reply is withheld');
+});
+
+test('round 8: accepting a hand edit validates it, and a custom brief without the proposals placeholder still reads the approved copy', async (t) => {
+  const profileDir = fixture(t);
+  const knowledgeDir = join(profileDir, 'knowledge');
+  const knowledge = createKnowledge(knowledgeDir);
+  knowledge.seedApproved();
+  const role = join(knowledgeDir, 'owner/role.md');
+  const doubled = readFileSync(role, 'utf8').replace(/^audience:.*$/m, (line) => `${line}\naudience: external`);
+  writeFileSync(role, doubled);
+  assert.throws(() => knowledge.acceptDrift('owner/role.md', doubled), /Not accepted\./);
+  knowledge.restoreDrift('owner/role.md');
+
+  writeFileSync(join(profileDir, 'brief.md'), 'You help {{OWNER_NAME}}. Notes are in {{KNOWLEDGE_DIR}}.\n\n{{KNOWLEDGE_INDEX}}\n\n{{THREAD_CONTEXT}}\n\n{{REQUEST}}\n');
+  const brief = await buildBrief(profileDir, { via: 'dm', user: ROBIN, text: 'what are my rules?' });
+  assert.match(brief, /Notes are in [^\n]*\.knowledge-approved\./);
 });

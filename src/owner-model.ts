@@ -37,6 +37,12 @@ const ROSTER_MAX_CHARS = 900;
 /** What every reply people outside the company may see follows, whatever the owner's pages say. */
 export const OUTSIDER_RULES = `People outside the company can see this reply. Don't share internal plans, people's details, prices, discounts or anything about pay, hiring or performance. Never promise or confirm a date or a commitment: say the owner will confirm.`;
 
+/**
+ * What a teammate's reply follows when an off-limits page is the owner's only: the page's topics can be the very facts
+ * it protects, so this names none of them.
+ */
+export const TEAM_RULES = `The owner keeps some topics private from the team. Don't share, guess at or offer help with anything about anyone's pay, promotion, hiring, performance, health or personal life: say the owner will answer it.`;
+
 /** One line for a person card: its title and its first bullet, like "Priya Nair: Product manager. Decides scope." */
 const rosterLine = (text: string): string | null => {
   const body = text.replace(/^---\n[\s\S]*?\n---\n/, '');
@@ -84,6 +90,7 @@ export interface AboutMe {
 export const compileAboutMe = (pages: { path: string; text: string }[], visibility: Visibility, now: Date = new Date()): AboutMe => {
   const today = now.toISOString().slice(0, 10);
   const left: Required<AboutMePage>[] = [];
+  let withheldLimits = false;
   const candidates = pages.filter((page) => page.path.startsWith(`${OWNER_FOLDER}/`)).flatMap((page) => {
     const fields = frontmatter(page.text);
     const verified = fields?.get('verified')?.trim() ?? '';
@@ -95,7 +102,7 @@ export const compileAboutMe = (pages: { path: string; text: string }[], visibili
     // Off-limits pages follow the audience rule like any page: their topics can be the very facts they protect.
     // Replies outsiders may see get the generic rule below instead, unless a page is marked for them.
     const offlimits = pageRank === 1;
-    if (!mayUse(audience, visibility)) { left.push({ path: page.path, reason: audience === 'owner' ? 'only for you' : 'only for your team' }); return []; }
+    if (!mayUse(audience, visibility)) { if (offlimits) withheldLimits = true; left.push({ path: page.path, reason: audience === 'owner' ? 'only for you' : 'only for your team' }); return []; }
     const body = currentBody(page.text);
     // A page from before the off-limits cap may be longer: it's shortened here and listed, so the owner fixes it.
     if (offlimits && body.length > OFFLIMITS_MAX_CHARS) left.push({ path: page.path, reason: `over ${OFFLIMITS_MAX_CHARS} characters: only the start is used. Shorten it in Pages` });
@@ -121,9 +128,11 @@ export const compileAboutMe = (pages: { path: string; text: string }[], visibili
     candidates.splice(rosterAt, 0, { path: `${PEOPLE_FOLDER}/`, verified: latest, rank: 2, body: `People the owner works with (open a person's page for more):\n${rosterBody}` });
   }
 
-  // Outsiders' replies always carry a rule that names no internal topic.
+  // Outsiders' replies always carry a rule that names no internal topic; teammates' do when an off-limits page is withheld.
   if (visibility === 'external') {
     candidates.unshift({ path: 'outsiders', verified: today, rank: -1, body: OUTSIDER_RULES });
+  } else if (visibility === 'team' && withheldLimits) {
+    candidates.unshift({ path: 'private topics', verified: today, rank: -1, body: TEAM_RULES });
   }
 
   const sections: string[] = [];
@@ -157,10 +166,10 @@ export const filterIndex = (index: string, pageOf: (page: string) => { audience:
     const page = pageOf(pages[0]!);
     if (!page || !mayUse(page.audience, visibility)) return [];
     seen.add(pages[0]!);
-    return [`| ${cell(page.description || pages[0]!)} | \`${pages[0]}\` | ${cell(page.description || pages[0]!)} |`];
+    return [`| \`${pages[0]}\` | ${cell(page.description || pages[0]!)} |`];
   });
-  return ['# Knowledge index', '', 'Open the pages whose row matches the request, and only those. Paths are relative to this folder.', '',
-    '| When the request is about | Open | What it gives you |', '|---|---|---|', ...rows].join('\n');
+  return ['# Knowledge index', '', 'Open the pages whose description matches the request, and only those. Paths are relative to this folder.', '',
+    '| Open | What it gives you |', '|---|---|', ...rows].join('\n');
 };
 
 

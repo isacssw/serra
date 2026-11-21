@@ -66,7 +66,8 @@ export const fillBriefText = (template: string, config: Config, knowledge: strin
       `- ${repo.name}: ${repo.path}, base ${repo.baseRef}${repo.githubRepo ? `, GitHub ${repo.githubRepo}` : ''}. Create a separate worktree before editing.`).join('\n') : 'No additional repositories configured.',
     REQUESTER: input.requester, PERMALINK: input.permalink,
     // A brief that names where proposals go reads pages from the approved copy; an older one, from knowledge/ itself.
-    KNOWLEDGE_DIR: readDir && text.includes('{{PROPOSALS_DIR}}') ? readDir : config.knowledgeDir,
+    // Workers read pages from the approved copy whatever the brief says; proposals have their own path above.
+    KNOWLEDGE_DIR: readDir ?? config.knowledgeDir,
     PROPOSALS_DIR: join(config.knowledgeDir, 'proposals'),
     KNOWLEDGE_INDEX: index,
     OWNER_PROFILE: about.replaceAll('</about-owner>', '&lt;/about-owner&gt;') || `(${config.ownerName} hasn't confirmed anything about themselves for this audience yet.)`,
