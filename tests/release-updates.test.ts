@@ -282,6 +282,24 @@ test('when Serra could not replace itself, the verified disk image is kept and o
   assert.deepEqual(opened, [join(dir, 'updates/0.1.0-alpha.3', release.dmg.name)]);
 });
 
+test('when the new version did not start, the screen says so instead of offering to install it again', async (t) => {
+  const dir = temp(t);
+  const release = {
+    version: '0.1.0-alpha.3', prerelease: true, notes: '', publishedAt: null, url: 'https://example.test/r',
+    dmg: { name: 'Serra-0.1.0-alpha.3-arm64.dmg', url: 'https://example.test/dmg', size: 1 }, sums: { url: 'https://example.test/s' },
+  };
+  mkdirSync(join(dir, 'updates/0.1.0-alpha.3'), { recursive: true });
+  writeFileSync(join(dir, 'updates/0.1.0-alpha.3', release.dmg.name), 'verified');
+  writeFileSync(join(dir, 'updates/swap.log'), "Sat swap: the new version didn't start; restoring the old one\n");
+  writeFileSync(join(dir, 'updates/pending.json'), JSON.stringify({ from: '0.1.0-alpha.2', to: '0.1.0-alpha.3', target: join(dir, 'Serra.app'), release }));
+  const view = createAppUpdater({
+    current: '0.1.0-alpha.2', arch: 'arm64', unavailable: null, dir: join(dir, 'updates'), fetch: async () => new Response('[]'), feedUrl: 'feed',
+    bundlePath: join(dir, 'Serra.app'), getChoice: () => null, setChoice: () => {}, quit: () => {}, openPath: async () => {},
+  }).view();
+  assert.ok(view.state === 'error' && view.stage === 'install');
+  assert.equal(view.state === 'error' ? view.message : '', "Serra 0.1.0-alpha.3 didn't start, so Serra put 0.1.0-alpha.2 back.");
+});
+
 test('turning pre-releases off drops a downloaded pre-release and checks again', async (t) => {
   const f = await updaterFixture(t);
   await f.updater.check();

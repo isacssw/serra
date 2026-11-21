@@ -174,7 +174,7 @@ export const botLine = (sync: BotSync): BotLine | null => {
         detail: `Serra doesn't start a bot you stopped. Update now moves it to ${sync.to} and starts it.`,
         action: { kind: 'sync', label: 'Update now' },
       }
-      : { tone: 'neutral', text: `The bot is stopped. It has ${was(sync.from)}, the same as the app.`, detail: 'Start it from the menu bar.', action: null };
+      : { tone: 'neutral', text: `The bot is stopped. It's on ${was(sync.from)}, the same as the app.`, detail: 'Start it from the menu bar.', action: null };
     case 'updating': return { tone: 'busy', text: `Moving the bot to version ${sync.to}…`, detail: 'It restarts once the new version is installed. Running jobs continue after the restart.', action: null };
     case 'waiting': return sync.jobs > 0
       ? {
@@ -200,9 +200,11 @@ export const botLine = (sync: BotSync): BotLine | null => {
 };
 
 /** The confirm dialog for updating the bot now, while jobs run. */
-export const syncDialog = (to: string, runningJobs: number, stopped = false): { title: string; body: string } => ({
-  title: `Move the bot to ${to} now?`,
-  body: stopped
+export const syncDialog = (to: string, runningJobs: number, { stopped = false, older = null }: { stopped?: boolean; older?: string | null } = {}): { title: string; body: string } => ({
+  title: older ? `Move the bot back to ${to}?` : `Move the bot to ${to} now?`,
+  body: older
+    ? `Version ${to} is older than the bot's ${older}, so Serra doesn't do this on its own. ${runningJobs === 0 ? 'No jobs are running.' : `${plural(runningJobs, 'job is', 'jobs are')} running; ${runningJobs === 1 ? 'it continues' : 'they continue'} after the restart.`}`
+    : stopped
     ? `The bot starts on version ${to}.`
     : runningJobs === 0
       ? `No jobs are running. The bot restarts on version ${to}.`

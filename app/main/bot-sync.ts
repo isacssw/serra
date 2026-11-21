@@ -16,7 +16,7 @@ export type BotSync =
   /** The bot runs an older version and waits for running jobs to finish before it restarts. */
   | { state: 'waiting'; from: string | null; to: string; jobs: number }
   | { state: 'updating'; from: string | null; to: string }
-  | { state: 'failed'; from: string | null; to: string; message: string }
+  | { state: 'failed'; from: string | null; to: string; message: string; stopped: boolean }
   /** The bot runs a newer version than the app (an older Serra was reinstalled). It never moves back on its own. */
   | { state: 'ahead'; from: string; to: string }
   /** The last switch stopped halfway; rollback puts the earlier bot back. */
@@ -60,7 +60,7 @@ export const botSyncDecision = (input: BotSyncInput): { sync: BotSync; action: B
   const inStep = from === to && input.active.fromApp === true;
   if (input.running === 'sync' && !inStep) return { sync: { state: 'updating', from, to }, action: 'none' };
   // A failed attempt is shown (with Try again) even for a stopped bot, so the owner sees why Update now didn't work.
-  if (input.failed?.version === to && !inStep) return { sync: { state: 'failed', from, to, message: input.failed.message }, action: 'none' };
+  if (input.failed?.version === to && !inStep) return { sync: { state: 'failed', from, to, message: input.failed.message, stopped: !input.serviceLoaded }, action: 'none' };
   if (!input.serviceLoaded) return { sync: { state: 'stopped', from, to: inStep ? null : to }, action: 'none' };
   if (inStep) return { sync: { state: 'in-step', version: to }, action: 'none' };
   // Its state files may already be in the newer format: moving back is the owner's call.

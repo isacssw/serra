@@ -198,7 +198,10 @@ export const createAppUpdater = (deps: AppUpdaterDeps) => {
         let why = '';
         try { why = readFileSync(join(deps.dir, 'swap.log'), 'utf8').trimEnd().split('\n').pop()?.replace(/^.*swap: /, '') ?? ''; } catch { /* no log */ }
         const dmg = pending.release ? join(deps.dir, pending.release.version, pending.release.dmg.name) : null;
-        if (pending.release && dmg && existsSync(dmg)) {
+        if (/didn't start|didn't confirm/.test(why)) {
+          // Serra did replace itself, but the new version didn't start: offering it again would only repeat that.
+          phase = { state: 'error', stage: 'install', message: `Serra ${pending.to} didn't start, so Serra put ${deps.current} back.`, ...(pending.release ? { release: pending.release } : {}) };
+        } else if (pending.release && dmg && existsSync(dmg)) {
           // The verified disk image is still here: offer it to install by hand instead of starting over.
           keep = pending.release.version;
           const folder = dirname(pending.target) === '/Applications' ? 'Applications' : dirname(pending.target);

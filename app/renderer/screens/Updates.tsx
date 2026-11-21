@@ -316,7 +316,10 @@ export const Updates = () => {
   const dialog = confirm?.action === 'activate'
     ? activateDialog(releases?.prepared ?? null, confirm.jobs)
     : confirm?.action === 'rollback' ? rollbackDialog(confirm.jobs, developer ? 'build' : 'version')
-    : confirm ? syncDialog(syncTarget, confirm.jobs, status.bot.state === 'stopped') : null;
+    : confirm ? syncDialog(syncTarget, confirm.jobs, {
+      stopped: status.bot.state === 'stopped' || (status.bot.state === 'failed' && status.bot.stopped),
+      older: status.bot.state === 'ahead' ? status.bot.from : null,
+    }) : null;
 
   const noticeBox = notice && (
     <div

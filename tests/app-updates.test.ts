@@ -145,17 +145,18 @@ test('the bot line: in step, waiting for jobs, updating, failed, not installed, 
   assert.deepEqual(waiting.action, { kind: 'sync', label: 'Update now' });
   assert.equal(botLine({ state: 'waiting', from: null, to: '0.1.0-alpha.3', jobs: 1 })!.detail, 'It moves to 0.1.0-alpha.3 when the running job finishes.');
   assert.equal(botLine({ state: 'updating', from: null, to: '0.1.0-alpha.3' })!.tone, 'busy');
-  const failed = botLine({ state: 'failed', from: '0.1.0-alpha.2', to: '0.1.0-alpha.3', message: 'No supported Node' })!;
+  const failed = botLine({ state: 'failed', from: '0.1.0-alpha.2', to: '0.1.0-alpha.3', message: 'No supported Node', stopped: false })!;
   assert.equal(failed.text, "The bot couldn't move to 0.1.0-alpha.3, so it's still on version 0.1.0-alpha.2.");
   assert.equal(failed.detail, 'No supported Node');
-  assert.equal(botLine({ state: 'failed', from: null, to: '1.0.0', message: 'Slack account: invalid_auth; GitHub account: Expected alex' })!.detail, 'Slack account: invalid_auth (and 1 more)');
+  assert.equal(botLine({ state: 'failed', from: null, to: '1.0.0', message: 'Slack account: invalid_auth; GitHub account: Expected alex', stopped: false })!.detail, 'Slack account: invalid_auth (and 1 more)');
   assert.deepEqual(botLine({ state: 'stopped', from: '0.1.0-alpha.2', to: '0.1.0-alpha.3' })!.action, { kind: 'sync', label: 'Update now' });
-  assert.deepEqual(botLine({ state: 'stopped', from: '0.1.0-alpha.3', to: null }), { tone: 'neutral', text: 'The bot is stopped. It has version 0.1.0-alpha.3, the same as the app.', detail: 'Start it from the menu bar.', action: null });
+  assert.deepEqual(botLine({ state: 'stopped', from: '0.1.0-alpha.3', to: null }), { tone: 'neutral', text: "The bot is stopped. It's on version 0.1.0-alpha.3, the same as the app.", detail: 'Start it from the menu bar.', action: null });
   assert.deepEqual(botLine({ state: 'not-installed' })!.action, { kind: 'setup', label: 'Open setup' });
   assert.deepEqual(botLine({ state: 'interrupted' })!.action, { kind: 'rollback', label: 'Undo last switch' });
   assert.equal(botLine({ state: 'manual' }), null);
   assert.match(syncDialog('0.1.0-alpha.3', 2).body, /^2 jobs are running\. The bot restarts on version 0\.1\.0-alpha\.3/);
-  assert.equal(syncDialog('0.1.0-alpha.3', 0, true).body, 'The bot starts on version 0.1.0-alpha.3.');
+  assert.equal(syncDialog('0.1.0-alpha.3', 0, { stopped: true }).body, 'The bot starts on version 0.1.0-alpha.3.');
+  assert.deepEqual(syncDialog('0.1.0', 0, { older: '0.2.0' }), { title: 'Move the bot back to 0.1.0?', body: "Version 0.1.0 is older than the bot's 0.2.0, so Serra doesn't do this on its own. No jobs are running." });
   assert.match(rollbackDialog(0, 'version').body, /on the version it ran before/);
   const ahead = botLine({ state: 'ahead', from: '0.2.0', to: '0.1.0' })!;
   assert.equal(ahead.text, 'The bot runs version 0.2.0, newer than this app.');
@@ -412,4 +413,11 @@ test('after an app update the bot moves to the new version, but waits while a jo
   const events: string[] = f.events;
   assert.ok(events.includes('stop') && events.includes('start'), 'the bot restarted on the new build');
   assert.ok(pushes.includes('expect-stop'), 'notifications are told the stop is expected');
+});
+
+test('the window confirms its first screen, which an update that just installed waits for', () => {
+  // The swap script rolls the update back unless the new version confirms it started (app.rendered → started()).
+  const app = readFileSync(join(import.meta.dirname, '../app/renderer/App.tsx'), 'utf8');
+  assert.match(app, /const Rendered = [\s\S]*app\.rendered\(\)/);
+  assert.match(app, /<Rendered \/>/, 'Rendered is mounted in the shell');
 });

@@ -462,6 +462,7 @@ test('activation removes old releases but keeps the active one, the one before i
   const abandoned = join(f.directory, 'releases', '2000-01-01T00-00-00-000Z-2'); mkdirSync(abandoned);
   writeFileSync(`${abandoned}.building`, '999999');
   assert.deepEqual(pruneReleases(f.directory), [abandoned], 'a marker whose process is gone does not protect it');
+  assert.equal(existsSync(`${abandoned}.building`), false, 'and the stale marker is swept');
   assert.ok(existsSync(inProgress));
   rmSync(`${inProgress}.building`);
   assert.deepEqual(pruneReleases(f.directory), [inProgress]);

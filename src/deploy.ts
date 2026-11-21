@@ -479,6 +479,12 @@ export const pruneReleases = (directory: string): string[] => {
   // writes prepared.json only when it finishes), so only older ones go.
   const activeId = read<Prepared>('active.json')?.release.split('/').pop() ?? '';
   const removed: string[] = [];
+  // Markers left by a prepare that crashed (its process is gone) are swept.
+  for (const entry of readdirSync(root, { withFileTypes: true })) {
+    if (!entry.isFile() || !entry.name.endsWith(BUILDING)) continue;
+    const marker = join(root, entry.name);
+    try { if (!processAlive(Number(readFileSync(marker, 'utf8')))) rmSync(marker, { force: true }); } catch { /* gone already */ }
+  }
   for (const entry of readdirSync(root, { withFileTypes: true })) {
     const path = join(root, entry.name);
     if (!entry.isDirectory() || !RELEASE_ID.test(entry.name) || keep.has(path) || entry.name > activeId) continue;
