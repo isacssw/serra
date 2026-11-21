@@ -1,0 +1,43 @@
+[
+  {
+    "run": 1,
+    "turns": 14,
+    "proposals": [
+      "2026-11-21-access.md → owner/access.md",
+      "2026-11-21-development.md → workflows/development.md",
+      "2026-11-21-goals.md → owner/goals.md",
+      "2026-11-21-ledgerline.md → product/ledgerline.md",
+      "2026-11-21-team.md → owner/team.md",
+      "2026-11-21-voice.md → owner/voice.md"
+    ],
+    "scores": {
+      "people": 0.3333333333333333,
+      "voice": 0.3333333333333333,
+      "samples": 0,
+      "offlimits": 1,
+      "audience": 0,
+      "team": 0,
+      "private": null
+    }
+  },
+  {
+    "run": 2,
+    "turns": 14,
+    "proposals": [
+      "2026-11-21-access.md → owner/access.md",
+      "2026-11-21-development.md → workflows/development.md",
+      "2026-11-21-goals.md → owner/goals.md",
+      "2026-11-21-role.md → owner/role.md",
+      "2026-11-21-voice.md → owner/voice.md"
+    ],
+    "scores": {
+      "people": 0.16666666666666666,
+      "voice": 0.3333333333333333,
+      "samples": 0,
+      "offlimits": 1,
+      "audience": 0,
+      "team": 0,
+      "private": null
+    }
+  }
+]
