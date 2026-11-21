@@ -1,27 +1,16 @@
 import { join } from 'node:path';
 import type { Command } from '../manage.ts';
-import { createProposals, type ProposalChange } from '../proposals.ts';
+import { createProposals } from '../proposals.ts';
 
 const USAGE = [
   'pnpm bot proposals --profile /absolute/profile                          list proposals waiting for the owner',
   'pnpm bot proposals show <proposal> --profile /absolute/profile           print the target page and the proposal',
-  'pnpm bot proposals promote <proposal> --folder owner [--name page.md] [--when "..."] [--gives "..."] --profile ...',
-  'pnpm bot proposals merge <proposal> --into owner/role.md --profile ...',
-  'pnpm bot proposals discard <proposal> --profile ...',
-  'pnpm bot proposals undo <backup-id> --profile ...',
 ];
 
-const done = (change: ProposalChange): string => {
-  const what = change.action === 'promote' ? `Promoted to knowledge/${change.page}`
-    : change.action === 'merge' ? `Merged into knowledge/${change.page}`
-    : `Discarded ${change.proposal}`;
-  return `${what}.\nUndo with: pnpm bot proposals undo ${change.id} --profile ...`;
-};
-
 const command: Command = {
-  summary: 'Review knowledge proposals: list, show, promote, merge, discard, undo.',
+  summary: 'List and show knowledge proposals. Approve, merge, discard and undo them in the Serra app.',
   usage: USAGE,
-  async run({ args, option, profileDir, log }) {
+  async run({ args, profileDir, log }) {
     const service = createProposals({ knowledgeDir: join(profileDir, 'knowledge') });
     // Positional arguments are the words after `proposals` that aren't flags or flag values.
     const positional = args.slice(1).filter((arg, index, rest) => !arg.startsWith('--') && !rest[index - 1]?.startsWith('--'));
@@ -48,29 +37,10 @@ const command: Command = {
         log(`--- proposed: knowledge/proposals/${diff.proposal.path}\n${diff.proposed}`);
         return;
       }
-      case 'promote': {
-        const folder = option('--folder');
-        if (!folder) throw new Error('--folder is required, like --folder owner');
-        const name = option('--name'); const when = option('--when'); const gives = option('--gives');
-        log(done(service.promoteProposal(needTarget('proposal'), {
-          folder, ...(name ? { name } : {}), ...(when ? { when } : {}), ...(gives ? { gives } : {}),
-        })));
-        return;
-      }
-      case 'merge': {
-        const into = option('--into');
-        if (!into) throw new Error('--into is required, like --into owner/role.md');
-        log(done(service.mergeProposal(needTarget('proposal'), { into })));
-        return;
-      }
-      case 'discard':
-        log(done(service.discardProposal(needTarget('proposal'))));
-        return;
-      case 'undo': {
-        const change = service.undoProposalChange(needTarget('backup ID'));
-        log(`Undid the ${change.action} of ${change.proposal}.`);
-        return;
-      }
+      case 'promote': case 'merge': case 'discard': case 'undo':
+        // A worker runs with the owner's shell, so a command here can't tell the owner from a worker that was talked
+        // into it. Approving knowledge is the owner's, in the app.
+        throw new Error(`Proposals are approved in the Serra app (Knowledge › Proposals), not from the command line. Here you can list and show them.`);
       default:
         throw new Error(`Unknown proposals action: ${action}. Usage:\n${USAGE.join('\n')}`);
     }

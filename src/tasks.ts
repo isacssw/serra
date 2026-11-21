@@ -89,7 +89,7 @@ export const taskRequest = (value: unknown): string => {
 
 /** What `fillBrief` gets for a task: the owner asked, outside Slack, in no earlier thread. */
 export const taskBriefInput = (config: Pick<Config, 'ownerName'>, request: string): BriefInput =>
-  ({ request, requester: config.ownerName, permalink: APP_TASK_PERMALINK, thread: appTaskThread(config.ownerName) });
+  ({ request, requester: `${config.ownerName} (your owner)`, permalink: APP_TASK_PERMALINK, thread: appTaskThread(config.ownerName) });
 
 /** The brief a task's worker gets: the daemon's `fillBrief` with the profile's brief and knowledge index. */
 export const taskBrief = (config: Config, request: string): string =>

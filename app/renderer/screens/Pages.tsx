@@ -13,6 +13,29 @@ import {
 
 const message = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
+/**
+ * Files under knowledge/ that changed outside Serra (by hand, or a worker in a thread). Workers keep getting the
+ * approved version until the owner accepts the change as theirs or puts the approved text back.
+ */
+const DriftNotice = ({ files, busy, onAccept, onRestore }: { files: string[]; busy: boolean; onAccept: () => void; onRestore: () => void }) => (
+  <section aria-labelledby="drift-title" className="flex flex-col gap-3 rounded-lg border border-warn/40 bg-panel p-4 sm:flex-row sm:items-start">
+    <AlertTriangle size={16} aria-hidden className="mt-0.5 shrink-0 text-warn" />
+    <div className="flex min-w-0 flex-1 flex-col gap-1">
+      <h2 id="drift-title" className="text-sm font-semibold">
+        {files.length === 1 ? '1 file changed outside Serra' : `${files.length} files changed outside Serra`}
+      </h2>
+      <p className="text-sm text-muted">The bot keeps using the version you approved until you review these.</p>
+      <ul className="mt-1 flex flex-wrap gap-x-3 gap-y-1">
+        {files.map((file) => <li key={file} className="font-mono text-xs text-ink">{file}</li>)}
+      </ul>
+    </div>
+    <div className="flex shrink-0 gap-2">
+      <Button disabled={busy} onClick={onRestore}>Restore approved</Button>
+      <Button variant="primary" disabled={busy} onClick={onAccept}>Accept as mine</Button>
+    </div>
+  </section>
+);
+
 const FILTERS: { value: PageFilter; label: string }[] = [
   { value: 'all', label: 'All' },
   { value: 'verified', label: 'Verified' },
@@ -67,13 +90,16 @@ export const Pages = () => {
   const [saving, setSaving] = useState(false);
   /** A page the owner clicked while the draft had unsaved changes; the discard dialog asks first. */
   const [pendingSelect, setPendingSelect] = useState<string | null>(null);
+  const [drifted, setDrifted] = useState<string[]>([]);
+  const [resolving, setResolving] = useState(false);
 
   const reload = useCallback(async () => {
     const bridge = serra();
     if (!bridge) { setLoadError('The Serra bridge is missing: open this screen in the Serra app.'); return; }
     try {
-      const list = await bridge.pages.list();
+      const [list, drift] = await Promise.all([bridge.pages.list(), bridge.pages.drift()]);
       setPages(list);
+      setDrifted([...drift.changed, ...drift.removed]);
       setLoadError(null);
       setSelected((current) => keepSelection(list, current));
     } catch (error) {
@@ -107,6 +133,23 @@ export const Pages = () => {
   const state = useMemo(() => (selected && saved !== null ? editorState(selected, saved, draft) : null), [selected, saved, draft]);
   const visible = useMemo(() => filterPages(pages ?? [], filter, query), [pages, filter, query]);
   const counts = useMemo(() => badgeCounts(pages ?? []), [pages]);
+
+  const resolveDrift = async (accept: boolean) => {
+    const bridge = serra();
+    if (!bridge || resolving) return;
+    setResolving(true);
+    try {
+      if (accept) await bridge.pages.acceptDrift();
+      else await bridge.pages.restoreDrift();
+      toast({ message: accept ? 'Accepted. The bot uses these files now.' : 'Restored the approved version. The replaced text is in backups/knowledge/.', tone: 'success' });
+      await reload();
+      if (!accept && selected) setSelected(null);
+    } catch (error) {
+      toast({ message: message(error), tone: 'error' });
+    } finally {
+      setResolving(false);
+    }
+  };
 
   const select = (path: string) => {
     if (path === selected) return;
@@ -149,6 +192,9 @@ export const Pages = () => {
   return (
     <Page title="Pages" subtitle={pages ? pagesSummary(pages) : loadError ? undefined : 'Loading…'}>
       {loadError && <p role="alert" className="text-sm text-down">{loadError}</p>}
+      {drifted.length > 0 && (
+        <DriftNotice files={drifted} busy={resolving} onAccept={() => void resolveDrift(true)} onRestore={() => void resolveDrift(false)} />
+      )}
       {pages && pages.length === 0 && (
         <p className="text-sm text-muted">No pages yet. Pages come in through Proposals: promote one and it shows up here.</p>
       )}

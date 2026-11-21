@@ -2,6 +2,7 @@ import { randomBytes } from 'node:crypto';
 import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync } from 'node:fs';
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { writeFileAtomic } from './config.ts';
+import { createJournal, type KnowledgeDrift } from './knowledge-journal.ts';
 import type { KnowledgePage, Profile } from './contracts.ts';
 import {
   DATE, daysSince, frontmatter, INDEX_MAX_LINES, lineCount, normalizePageText, NOT_PAGES, pageBadge, pageProblems, PROPOSALS_DIR,
@@ -110,13 +111,45 @@ export const createKnowledge = (knowledgeDir: string, { backupDir }: KnowledgeOp
       : [];
   };
 
+  const journal = createJournal(root);
+
   /**
    * Reads the whole index for a brief. Throws only when it is missing. An index over the cap is still loaded whole:
-   * it can get there outside the app (a hand edit, or a worker adding a row in Slack), and a bot that stops taking
-   * jobs or won't start is worse than a slightly longer brief, while cutting rows would hide pages without a word.
-   * `checkKnowledge` still reports it, `pnpm knowledge` fails on it, and the daemon logs it at startup.
+   * it can get there outside the app (a hand edit), and a bot that stops taking jobs or won't start is worse than a
+   * slightly longer brief, while cutting rows would hide pages without a word. `checkKnowledge` still reports it,
+   * `pnpm knowledge` fails on it, and the daemon logs it at startup.
+   *
+   * The index comes from the owner's approved copy (knowledge-journal.ts). When files changed outside Serra since,
+   * the brief gets the approved index and says which pages changed and where their approved text is.
    */
-  const loadIndex = (): string => read('index.md').trim();
+  const loadIndex = (): string => {
+    const current = read('index.md');
+    journal.seed();
+    const { changed, removed } = journal.drift();
+    if (changed.length === 0 && removed.length === 0) return current.trim();
+    const index = (journal.approvedText('index.md') ?? current).trim();
+    const files = [...changed, ...removed].map((path) => `\`${path}\``).join(', ');
+    return `${index}\n\nThese files changed outside Serra and the owner hasn't approved them yet (unreviewed changes): ${files}. `
+      + `Don't use what they say now. Read the approved copy of any page from ${journal.approvedRoot} instead.`;
+  };
+
+  /** Files that changed outside Serra since the owner last approved the knowledge. */
+  const drift = (): KnowledgeDrift => journal.drift();
+
+  /** The owner accepts what changed outside Serra as theirs: the files on disk become the approved copy. */
+  const acceptDrift = (): KnowledgeDrift => journal.accept();
+
+  /** Put back the approved text of every file that changed outside Serra, keeping a backup of what was there. */
+  const restoreDrift = ({ now = new Date() }: { now?: Date } = {}): string | null => {
+    const { changed, removed } = journal.drift();
+    if (changed.length === 0 && removed.length === 0) return null;
+    const backupId = `${now.toISOString().replace(/[-:]/g, '').replace(/\.\d+Z$/, 'Z')}-restore-${randomBytes(3).toString('hex')}`;
+    const files = [...changed, ...removed].map((path) => ({ path, before: existsSync(join(root, path)) ? read(path) : null, after: journal.approvedText(path) }));
+    mkdirSync(join(backups, backupId), { recursive: true, mode: 0o700 });
+    writeFileAtomic(join(backups, backupId, 'change.json'), JSON.stringify({ id: backupId, action: 'restore', at: now.toISOString(), files }, null, 2) + '\n');
+    journal.restore();
+    return backupId;
+  };
 
   /**
    * The backticked tokens of a page that are repository paths: relative, with a `/`, no spaces, URLs, globs,
@@ -270,10 +303,12 @@ export const createKnowledge = (knowledgeDir: string, { backupDir }: KnowledgeOp
       const backup = { id: backupId, action: 'edit', at: now.toISOString(), page, files: [{ path: page, before, after }] };
       mkdirSync(join(backups, backupId), { recursive: true, mode: 0o700 });
       writeFileAtomic(join(backups, backupId, 'change.json'), JSON.stringify(backup, null, 2) + '\n');
+      journal.seed();
       writeFileAtomic(join(root, page), after, { mode: 0o644 });
+      journal.record([page]);
     }
     return { page: describePage(page, after, readIndexed(), { now, roots }), backupId };
   };
 
-  return { loadIndex, checkKnowledge, listPages, readPage, savePage };
+  return { loadIndex, checkKnowledge, listPages, readPage, savePage, drift, acceptDrift, restoreDrift };
 };

@@ -1,9 +1,10 @@
-import { randomBytes } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { basename, dirname, join, relative, resolve, sep } from 'node:path';
 import { writeFileAtomic } from './config.ts';
 import type { Proposal, ProposalDiff } from './contracts.ts';
 import { insideKnowledge, knowledgePagePath } from './knowledge.ts';
+import { createJournal } from './knowledge-journal.ts';
 import { DATE, frontmatter, INDEX_MAX_LINES, lineCount, NOT_PAGES, pageProblems, PROPOSALS_DIR, removeHeaderField, setHeaderField } from './knowledge-rules.ts';
 
 /**
@@ -61,8 +62,10 @@ export interface MergeOptions {
   /** Existing page under `knowledge/` the proposal goes into, like `owner/role.md`. */
   into: string;
   /**
-   * The merged page as the owner edited it. Without it, the proposal's body is appended to the page, its sources
-   * are added to the page's `sources`, and `verified` is set to today.
+   * The page as it should read after the merge, as the owner edited it. Without it, the proposal must be the whole
+   * page for `into` (its `target:` names it), and replaces the page. Either way the proposal's sources are added to
+   * the page's `sources` and `verified` is set to today. Nothing is appended: a merge never leaves an old rule
+   * beside the one that replaced it.
    */
   text?: string;
 }
@@ -89,8 +92,6 @@ const today = (date: Date): string => date.toISOString().slice(0, 10);
 /** A table cell: one line, with `|` escaped so it can't add a column. */
 const cell = (text: string): string => text.replace(/\s+/g, ' ').trim().replace(/\|/g, '\\|');
 
-/** The page without its `---` header. */
-const body = (text: string): string => text.replace(/^---\n[\s\S]*?\n---\n/, '');
 
 /** The `- item` lines under a header's `sources:` key. */
 const sourceItems = (text: string): string[] => {
@@ -106,6 +107,19 @@ const sourceItems = (text: string): string[] => {
     items.push(item[1] ?? '');
   }
   return items.filter(Boolean);
+};
+
+/** The page with its header's `sources` list taken out. */
+const withoutSources = (text: string): string => {
+  const match = /^---\n([\s\S]*?)\n---\n/.exec(text);
+  if (!match?.[1]) return text;
+  const lines = match[1].split('\n');
+  const start = lines.findIndex((line) => line.startsWith('sources:'));
+  if (start === -1) return text;
+  let end = start + 1;
+  while (end < lines.length && /^\s+-/.test(lines[end]!)) end += 1;
+  lines.splice(start, end - start);
+  return `---\n${lines.join('\n')}\n---\n${text.slice(match[0].length)}`;
 };
 
 /** Add `items` to the header's `sources` list, skipping ones already there. */
@@ -131,6 +145,11 @@ export const createProposals = ({ knowledgeDir, backupDir, now = () => new Date(
   const root = resolve(knowledgeDir);
   const proposalsRoot = join(root, PROPOSALS_DIR);
   const backups = resolve(backupDir ?? join(dirname(root), 'backups', 'knowledge'));
+  /**
+   * The text of each proposal's target page when the owner last looked at the proposal. An approval applies only
+   * while the page still reads that way, so the owner never approves a replacement for a page that changed since.
+   */
+  const basesFile = join(dirname(root), '.proposal-bases.json');
 
   const inside = (relativePath: string, what: string): string => insideKnowledge(root, relativePath, what);
 
@@ -183,15 +202,47 @@ export const createProposals = ({ knowledgeDir, backupDir, now = () => new Date(
     });
   };
 
+  const hash = (text: string | null): string => (text === null ? 'none' : createHash('sha256').update(text).digest('hex'));
+  const readBases = (): Record<string, { target: string; hash: string }> => {
+    try { return JSON.parse(readFileSync(basesFile, 'utf8')) as Record<string, { target: string; hash: string }>; } catch { return {}; }
+  };
+  const writeBases = (bases: Record<string, { target: string; hash: string }>): void => writeFileAtomic(basesFile, JSON.stringify(bases, null, 2) + '\n');
+  /** Remember the target page as the owner sees it now. `onlyNew`: keep what was remembered when the proposal was first seen. */
+  const rememberBase = (proposal: Proposal, onlyNew = false): void => {
+    if (!proposal.target) return;
+    const bases = readBases();
+    if (onlyNew && bases[proposal.path]?.target === proposal.target) return;
+    bases[proposal.path] = { target: proposal.target, hash: hash(readText(proposal.target)) };
+    writeBases(bases);
+  };
+  /** Refuse to change `page` for proposal `id` when it no longer reads as it did when the owner last saw the proposal. */
+  const checkBase = (id: string, page: string): void => {
+    const base = readBases()[id];
+    if (!base || base.target !== page) return;
+    if (base.hash !== hash(readText(page))) {
+      throw new Error(`${page} changed since you reviewed this proposal. Look at the refreshed diff, then approve it again.`);
+    }
+  };
+  const forgetBase = (id: string): void => {
+    const bases = readBases();
+    if (!(id in bases)) return;
+    delete bases[id];
+    writeBases(bases);
+  };
+
   /** Every proposal waiting for the owner, newest date first, undated ones last. */
-  const listProposals = (): Proposal[] =>
-    proposalIds().map(describe).sort((a, b) =>
+  const listProposals = (): Proposal[] => {
+    const proposals = proposalIds().map(describe).sort((a, b) =>
       (b.date ?? '').localeCompare(a.date ?? '') || a.path.localeCompare(b.path));
+    for (const proposal of proposals) rememberBase(proposal, true);
+    return proposals;
+  };
 
   /** The proposal's text next to the page it would change (its `target`), or null when it is a new page. */
   const readProposal = (id: string): ProposalDiff => {
     const path = proposalPath(id);
     const proposal = describe(id);
+    rememberBase(proposal);
     return {
       proposal,
       current: proposal.target ? readText(proposal.target) : null,
@@ -214,7 +265,11 @@ export const createProposals = ({ knowledgeDir, backupDir, now = () => new Date(
     return change;
   };
 
+  const journal = createJournal(root);
+
+  /** Every change here is the owner's, from the app: what it writes becomes the approved copy briefs are built from. */
   const writeFiles = (files: { path: string; text: string | null }[]): void => {
+    journal.seed();
     for (const { path, text } of files) {
       const absolute = inside(path, 'File');
       if (text === null) {
@@ -224,6 +279,7 @@ export const createProposals = ({ knowledgeDir, backupDir, now = () => new Date(
         writeFileAtomic(absolute, text, { mode: 0o644 });
       }
     }
+    journal.record(files.map(({ path }) => path));
   };
 
   const logLine = (date: string, line: string): FileChange => {
@@ -252,6 +308,7 @@ export const createProposals = ({ knowledgeDir, backupDir, now = () => new Date(
     if (current !== null && destination !== target) {
       throw new Error(`${destination} already exists. Merge the proposal into it instead.`);
     }
+    if (current !== null) checkBase(id, destination);
 
     const at = today(now());
     const proposed = readFileSync(join(root, source), 'utf8');
@@ -270,6 +327,7 @@ export const createProposals = ({ knowledgeDir, backupDir, now = () => new Date(
       throw new Error(`index.md would be ${lineCount(indexAfter)} lines; the cap is ${INDEX_MAX_LINES}. Merge into an existing page instead.`);
     }
 
+    forgetBase(id);
     return apply('promote', id, destination, [
       { path: destination, before: current, after: page },
       ...(indexed ? [] : [{ path: 'index.md', before: indexBefore, after: indexAfter }]),
@@ -292,13 +350,19 @@ export const createProposals = ({ knowledgeDir, backupDir, now = () => new Date(
 
     const at = today(now());
     const proposed = readFileSync(join(root, source), 'utf8');
-    const merged = text ?? setHeaderField(
-      addSources(`${current.trimEnd()}\n\n${body(proposed).trim()}\n`, sourceItems(proposed)),
-      'verified', at,
-    );
+    const { target: named } = describe(id);
+    if (text === undefined && named !== target) {
+      throw new Error(`The proposal isn't a whole page for ${target}. Edit the page as it should read, then merge.`);
+    }
+    checkBase(id, target);
+    const page = text ?? removeHeaderField(proposed, 'target');
+    // The page keeps where every rule came from: the old page's sources, then the new text's and the proposal's.
+    const sources = [...new Set([...sourceItems(current), ...sourceItems(page), ...sourceItems(proposed)])];
+    const merged = setHeaderField(addSources(withoutSources(page.endsWith('\n') ? page : `${page}\n`), sources), 'verified', at);
     const problems = pageProblems(target, merged, frontmatter(merged));
     if (problems.length > 0) throw new Error(`The merged page would fail the knowledge check:\n${problems.join('\n')}`);
 
+    forgetBase(id);
     return apply('merge', id, target, [
       { path: target, before: current, after: merged },
       logLine(at, `merged \`${source}\` into \`${target}\`, confirmed by the owner in the app.`),

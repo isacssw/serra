@@ -311,7 +311,7 @@ test('R13: an app task reads "<owner> asked:", with the configured owner name an
   const config = loadConfig({ profileDir: dir, env: {} });
   const template = readFileSync(join(codeRoot, 'templates/brief.md'), 'utf8');
   const brief = fillBriefText(template, config, 'index', taskBriefInput(config, 'Fix the invoice total'));
-  assert.match(brief, /^Sam Rivera asked:$/m);
+  assert.match(brief, /^Sam Rivera \(your owner\) asked:$/m);
   assert.ok(!brief.includes('(None. The owner') && !brief.includes('asked ()'), brief.split('\n')[2]);
   assert.match(brief, /Sam Rivera started this task in the Serra app, not in Slack/);
   // A Slack job keeps its link.

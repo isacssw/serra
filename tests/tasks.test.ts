@@ -80,7 +80,7 @@ test('startTask starts the T3 thread through the real startThread, with the brie
     '--json', '/Users/you/project', '-',
   ]);
   assert.match(start!.input, /Update the onboarding page for the new pricing\nand open a PR\./);
-  assert.ok(start!.input.includes('\nAlex asked:\n'), 'R13: no Slack link, so the brief says just who asked');
+  assert.ok(start!.input.includes('\nAlex (your owner) asked:\n'), 'R13: no Slack link, so the brief says just who asked');
   assert.ok(!start!.input.includes('None. The owner') && !start!.input.includes('()'));
   assert.ok(start!.input.includes(appTaskThread('Alex')));
   assert.deepEqual(show!.args, ['thread', 'show', '--messages', '1', '--json', 'task-thread']);
@@ -125,7 +125,7 @@ test('the brief a task sends is the one the daemon sends for the same request, b
   await startTask(profileDir, REQUEST, { fetchBase: noFetch, now: () => NOW });
   const [start] = recorded();
   assert.equal(start!.input, daemon.brief
-    .replace('Alex asked (https://acme.slack.com/archives/D0123456789/p100):', 'Alex asked:')
+    .replace('Alex (your owner) asked (https://acme.slack.com/archives/D0123456789/p100):', 'Alex (your owner) asked:')
     .replace('(None. The request started a new thread.)', appTaskThread('Alex')));
   assert.deepEqual(
     [start!.args[5], start!.args[7], start!.args[9], start!.args[11], start!.args.at(-2)],
@@ -220,7 +220,7 @@ test('IPC: start returns the task without any token, refuses a double start, and
   await assert.rejects(Promise.resolve().then(() => handlers.start('')), /Write what/);
 
   const preview = await handlers.preview(REQUEST);
-  assert.ok(preview.includes(REQUEST) && preview.includes('Alex asked:') && !preview.includes('None. The owner'));
+  assert.ok(preview.includes(REQUEST) && preview.includes('Alex (your owner) asked:') && !preview.includes('None. The owner'));
   assert.ok(!preview.includes('xoxb-fixture'));
 });
 

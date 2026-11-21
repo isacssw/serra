@@ -120,7 +120,8 @@ export interface SerraApi {
     targets(): ProposalTargets;
     /** Moves the proposal into `folder` (relative to `knowledge/`; defaults to its target page's folder) and indexes it. */
     promote(path: string, folder?: string): UndoHandle;
-    mergeInto(path: string, target: string): UndoHandle;
+    /** Replaces `target` with `text` (the page as the owner edited it), or with the proposal when it is the whole page for `target`. */
+    mergeInto(path: string, target: string, text?: string): UndoHandle;
     discard(path: string): UndoHandle;
     undo(undoId: string): void;
   };
@@ -129,6 +130,12 @@ export interface SerraApi {
     list(): KnowledgePage[];
     read(path: string): string;
     save(path: string, text: string): KnowledgePage;
+    /** Files under `knowledge/` that changed outside Serra since the owner last approved them. Workers don't use them. */
+    drift(): { changed: string[]; removed: string[] };
+    /** The owner made those changes: they become the approved knowledge. */
+    acceptDrift(): void;
+    /** Put back the approved text, keeping a backup of what was there. */
+    restoreDrift(): void;
   };
   /** Brief and policy (APP-21). */
   brief: {
@@ -269,7 +276,7 @@ export const bridgeMethods = {
   bot: methods<'bot'>()(['status', 'start', 'stop', 'restart']),
   jobs: methods<'jobs'>()(['list', 'cleanupWorktrees']),
   proposals: methods<'proposals'>()(['list', 'diff', 'targets', 'promote', 'mergeInto', 'discard', 'undo']),
-  pages: methods<'pages'>()(['list', 'read', 'save']),
+  pages: methods<'pages'>()(['list', 'read', 'save', 'drift', 'acceptDrift', 'restoreDrift']),
   brief: methods<'brief'>()(['read', 'save', 'check', 'preview', 'listProposed', 'readProposed', 'applyProposed']),
   settings: methods<'settings'>()(['read', 'sections', 'saveSection', 'addPerson', 'removePerson']),
   secrets: methods<'secrets'>()(['list', 'setSource', 'check']),

@@ -15,7 +15,8 @@ import { DiffView } from './proposals/DiffView.tsx';
 import { useSearchParams } from 'react-router';
 import { registerActions } from '../commands/registry.ts';
 import {
-  defaultFolder, folderChoices, folderLabel, groupByDate, interviewStartedText, nextSelection, pendingLabel, PROPOSAL_PARAM, promoteProposalAction, proposalTitle,
+  defaultFolder, folderChoices, folderLabel, groupByDate, interviewStartedText, nextSelection, pendingLabel, PROPOSAL_PARAM, promoteProposalAction, proposalBody,
+  proposalTitle, withoutTarget,
 } from './proposals.logic.ts';
 
 const unregister = registerActions([promoteProposalAction]);
@@ -97,6 +98,10 @@ export const Proposals = () => {
   const [busy, setBusy] = useState(false);
   const [mergeOpen, setMergeOpen] = useState(false);
   const [mergeTarget, setMergeTarget] = useState('');
+  /** The page as it will read after the merge, which the owner edits in the dialog. Null while it loads. */
+  const [mergeText, setMergeText] = useState<string | null>(null);
+  /** Bumped to reread the selected proposal's diff, after an approval found its page had changed. */
+  const [diffVersion, setDiffVersion] = useState(0);
 
   const reload = useCallback(async (select?: string | null) => {
     const bridge = serra();
@@ -149,7 +154,22 @@ export const Proposals = () => {
       (error) => { if (live) setDiffError(message(error)); },
     );
     return () => { live = false; };
-  }, [selected]);
+  }, [selected, diffVersion]);
+
+  // The merge dialog starts from the proposal when it is the whole page for the chosen page, and otherwise from the
+  // page as it is now with the proposal's text below it, for the owner to edit into one page.
+  useEffect(() => {
+    const bridge = serra();
+    setMergeText(null);
+    if (!mergeOpen || !bridge || !diff || !mergeTarget) return;
+    if (diff.proposal.target === mergeTarget) { setMergeText(withoutTarget(diff.proposed)); return; }
+    let live = true;
+    bridge.pages.read(mergeTarget).then(
+      (current) => { if (live) setMergeText(`${current.trimEnd()}\n\n${proposalBody(diff.proposed)}\n`); },
+      (error) => { if (live) { setMergeOpen(false); toast({ message: message(error), tone: 'error' }); } },
+    );
+    return () => { live = false; };
+  }, [mergeOpen, mergeTarget, diff, toast]);
 
   useEffect(() => {
     if (!diff) return;
@@ -181,6 +201,8 @@ export const Proposals = () => {
       });
     } catch (error) {
       toast({ message: message(error), tone: 'error' });
+      // An approval refused because the page changed shows the refreshed diff to look at again.
+      setDiffVersion((version) => version + 1);
     } finally {
       setBusy(false);
     }
@@ -248,17 +270,18 @@ export const Proposals = () => {
         open={mergeOpen}
         onClose={() => setMergeOpen(false)}
         title="Merge into an existing page"
-        description="The proposal's text is added to the end of the page and its sources are kept. The page is marked verified today."
+        description="Edit the page as it should read. This text replaces the page, so remove any rule it replaces. Sources are kept and the page is marked verified today."
         actions={(
           <>
             <Button onClick={() => setMergeOpen(false)}>Cancel</Button>
             <Button
               variant="primary"
-              disabled={busy || !mergeTarget}
+              disabled={busy || !mergeTarget || mergeText === null}
               onClick={() => {
                 setMergeOpen(false);
                 const into = mergeTarget;
-                void act((path) => bridge!.proposals.mergeInto(path, into), `Merged ${title} into ${into}.`);
+                const text = mergeText ?? undefined;
+                void act((path) => bridge!.proposals.mergeInto(path, into, text), `Merged ${title} into ${into}.`);
               }}
             >
               Merge
@@ -267,6 +290,18 @@ export const Proposals = () => {
         )}
       >
         <Select label="Page" value={mergeTarget} onChange={setMergeTarget} options={targets.pages.map((value) => ({ value, label: value }))} />
+        <label className="mt-3 flex flex-col gap-1.5 text-sm">
+          <span className="font-medium">Page after the merge</span>
+          <textarea
+            value={mergeText ?? ''}
+            onChange={(event) => setMergeText(event.target.value)}
+            disabled={mergeText === null}
+            spellCheck={false}
+            rows={14}
+            aria-label="Page after the merge"
+            className="w-full resize-y rounded-md border border-line bg-panel p-2 font-mono text-xs leading-5 text-ink focus:outline-2 focus:outline-offset-1 focus:outline-focus disabled:opacity-60"
+          />
+        </label>
       </Dialog>
     </Page>
   );

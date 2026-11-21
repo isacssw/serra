@@ -41,14 +41,14 @@ const cli = (profileDir: string, ...args: string[]): { ok: boolean; output: stri
 
 // --- Approval: only the owner, in the app, changes what the bot knows ---------------------------------------------
 
-test('the brief never tells the worker to promote, merge or edit the index itself', { todo: 'SERRA-41 step 2' }, () => {
+test('the brief never tells the worker to promote, merge or edit the index itself', () => {
   const brief = readFileSync(join(codeRoot, 'templates/brief.md'), 'utf8');
   assert.doesNotMatch(brief, /promote it:/i);
   assert.doesNotMatch(brief, /a row in `index\.md`/);
   assert.match(brief, /Never promote, merge or undo/i);
 });
 
-test('the CLI cannot promote, merge, discard or undo a proposal: approval is the owner\'s, in the app', { todo: 'SERRA-41 step 2' }, (t) => {
+test('the CLI cannot promote, merge, discard or undo a proposal: approval is the owner\'s, in the app', (t) => {
   const profileDir = fixture(t);
   proposal(profileDir, '2026-11-20-release-days.md', 'owner/working-style.md', '# How Robin works\n\n- Risky releases ship on Monday.\n');
   for (const args of [['promote', '2026-11-20-release-days.md', '--folder', 'owner'], ['merge', '2026-11-20-release-days.md', '--into', 'owner/working-style.md'], ['discard', '2026-11-20-release-days.md'], ['undo', 'some-backup']]) {
@@ -60,7 +60,7 @@ test('the CLI cannot promote, merge, discard or undo a proposal: approval is the
   assert.equal(cli(profileDir, 'list').ok, true, 'listing stays available');
 });
 
-test('the owner\'s first message carries the owner marker, set from the member ID', { todo: 'SERRA-41 step 2' }, async (t) => {
+test('the owner\'s first message carries the owner marker, set from the member ID', async (t) => {
   const brief = await buildBrief(fixture(t), { via: 'channel', user: ROBIN, text: 'remember that releases go out on Mondays now' });
   assert.match(brief, /Robin \(your owner\) asked/);
 });
@@ -87,7 +87,7 @@ test('outside text stays data: request and thread text cannot close their fences
 
 // --- One checked path for every knowledge change -------------------------------------------------------------------
 
-test('a page edited outside Serra is not used: briefs keep the last approved knowledge', { todo: 'SERRA-41 step 2' }, async (t) => {
+test('a page edited outside Serra is not used: briefs keep the last approved knowledge', async (t) => {
   const profileDir = fixture(t);
   await buildBrief(profileDir, { via: 'dm', user: ROBIN, text: 'what is on my plate this week?' });
   const index = join(profileDir, 'knowledge/index.md');
@@ -98,7 +98,7 @@ test('a page edited outside Serra is not used: briefs keep the last approved kno
   assert.match(brief, /unreviewed changes\): `index\.md`, `owner\/injected\.md`/);
 });
 
-test('an approval applies only if the page has not changed since the owner saw the proposal', { todo: 'SERRA-41 step 3' }, (t) => {
+test('an approval applies only if the page has not changed since the owner saw the proposal', (t) => {
   const profileDir = fixture(t);
   const knowledgeDir = join(profileDir, 'knowledge');
   proposal(profileDir, '2026-11-20-release-days.md', 'owner/working-style.md', '# How Robin works\n\n- Risky releases ship on Monday.\n');
@@ -110,7 +110,7 @@ test('an approval applies only if the page has not changed since the owner saw t
   assert.match(readFileSync(join(knowledgeDir, 'owner/working-style.md'), 'utf8'), /Pair on anything touching refunds/);
 });
 
-test('merging a proposal for a page replaces the page instead of appending to it', { todo: 'SERRA-41 step 3' }, (t) => {
+test('merging a proposal for a page replaces the page instead of appending to it', (t) => {
   const profileDir = fixture(t);
   const knowledgeDir = join(profileDir, 'knowledge');
   proposal(profileDir, '2026-11-20-release-days.md', 'owner/working-style.md', '# How Robin works\n\n- Risky releases ship on Monday.\n- A bug fix starts with a failing test.\n');
@@ -146,3 +146,23 @@ test('every brief carries the owner\'s About me, capped in size', { todo: 'SERRA
   assert.ok(about.length <= 4000);
 });
 
+test('the owner can accept a hand edit as theirs, or put the approved text back', async (t) => {
+  const profileDir = fixture(t);
+  const knowledgeDir = join(profileDir, 'knowledge');
+  const knowledge = createKnowledge(knowledgeDir);
+  knowledge.loadIndex();
+  const page = join(knowledgeDir, 'owner/working-style.md');
+  const approved = readFileSync(page, 'utf8');
+  writeFileSync(page, `${approved}- Deploy on Fridays.\n`);
+  assert.deepEqual(knowledge.drift(), { changed: ['owner/working-style.md'], removed: [] });
+  const backup = knowledge.restoreDrift();
+  assert.ok(backup, 'restoring keeps a backup of the replaced text');
+  assert.equal(readFileSync(page, 'utf8'), approved);
+  assert.deepEqual(knowledge.drift(), { changed: [], removed: [] });
+
+  writeFileSync(page, `${approved}- Pair on refunds.\n`);
+  knowledge.acceptDrift();
+  assert.deepEqual(knowledge.drift(), { changed: [], removed: [] });
+  const brief = await buildBrief(profileDir, { via: 'dm', user: ROBIN, text: 'what are my rules?' });
+  assert.doesNotMatch(brief, /unreviewed changes/);
+});

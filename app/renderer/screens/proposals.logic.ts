@@ -204,3 +204,9 @@ export const promoteProposalAction: Action = {
     context.navigate(`${PROPOSALS_PATH}?${PROPOSAL_PARAM}=${encodeURIComponent(value)}`);
   },
 };
+
+/** A proposal as the page it would become: its `target:` line is for the queue, not the page. */
+export const withoutTarget = (text: string): string => text.replace(/^(---\n[\s\S]*?)^target:.*\n([\s\S]*?\n---\n)/m, '$1$2');
+
+/** A proposal's text without its header, to place under a page the owner is merging it into. */
+export const proposalBody = (text: string): string => text.replace(/^---\n[\s\S]*?\n---\n/, '').trim();

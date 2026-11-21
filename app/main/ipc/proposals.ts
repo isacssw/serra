@@ -28,8 +28,10 @@ export const proposalsHandlers = (context: HandlerContext): Handlers<'proposals'
       }
       return { undoId: proposals.promoteProposal(id, { folder: into }).id };
     },
-    mergeInto: (path, target) =>
-      ({ undoId: service().mergeProposal(text(path, 'Proposal'), { into: text(target, 'Page to merge into') }).id }),
+    mergeInto: (path, target, page) => {
+      if (page !== undefined && typeof page !== 'string') throw new Error('The merged page is text.');
+      return { undoId: service().mergeProposal(text(path, 'Proposal'), { into: text(target, 'Page to merge into'), ...(page === undefined ? {} : { text: page }) }).id };
+    },
     discard: (path) => ({ undoId: service().discardProposal(text(path, 'Proposal')).id }),
     undo: (undoId) => { service().undoProposalChange(text(undoId, 'Undo ID')); },
   };

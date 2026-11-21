@@ -167,12 +167,14 @@ test('promote refuses a proposal that would fail the knowledge check or overflow
   assert.throws(() => service.promoteProposal('../index.md', { folder: 'ops' }), /inside knowledge\//);
 });
 
-test('merge appends the body, adds the sources, verifies the page and can be undone', (t) => {
+test('merge replaces the page with the proposal, adds the sources, verifies the page and can be undone', (t) => {
   const { read, snapshot, service } = profile(t);
   const before = snapshot();
   const change = service.mergeProposal('2026-11-18-reviews.md', { into: 'owner/role.md' });
   const merged = read('owner/role.md')!;
-  assert.match(merged, /Owns the API\.\n\nAlso reviews every PR\.\n$/);
+  assert.match(merged, /\nAlso reviews every PR\.\n$/);
+  assert.doesNotMatch(merged, /Owns the API/, 'the proposal is the whole page: nothing is appended beside the old text');
+  assert.doesNotMatch(merged, /^target:/m);
   assert.match(merged, /^verified: 2026-11-19$/m);
   assert.match(merged, /sources:\n {2}- Owner interview, 2026-11-16\n {2}- https:\/\/slack\.test\/archives\/C1\/p2\n---/);
   assert.equal(merged.match(/^---$/gm)?.length, 2, 'one header only');
@@ -191,7 +193,13 @@ test('merge takes the owner\'s edited text, and refuses missing, outside or inva
   assert.throws(() => service.mergeProposal('2026-11-18-reviews.md', { into: 'owner/role.md', text: 'no header' }), /no header/);
   const edited = page({ description: 'The owner\'s role', verified: '2026-11-19' }, 'Owns the API and reviews every PR.');
   service.mergeProposal('2026-11-18-reviews.md', { into: 'owner/role.md', text: edited });
-  assert.equal(read('owner/role.md'), edited);
+  assert.match(read('owner/role.md')!, /\nOwns the API and reviews every PR\.\n$/);
+  assert.match(read('owner/role.md')!, /https:\/\/slack\.test\/archives\/C1\/p2/, 'the proposal\'s sources are kept');
+});
+
+test('merging a proposal that is not a whole page for the target needs the owner\'s edited page', (t) => {
+  const { service } = profile(t);
+  assert.throws(() => service.mergeProposal('2026-11-16-deploys.md', { into: 'owner/role.md' }), /isn't a whole page for owner\/role\.md/);
 });
 
 test('discard removes the proposal and undo brings it back', (t) => {
@@ -204,7 +212,7 @@ test('discard removes the proposal and undo brings it back', (t) => {
   assert.equal(read('proposals/notes.md'), text);
 });
 
-test('pnpm bot proposals lists, promotes and undoes through the same service', async (t) => {
+test('pnpm bot proposals lists and shows, and refuses to approve: that is the owner\'s, in the app', async (t) => {
   const { dir, read } = profile(t);
   const run = async (...args: string[]) => {
     const out: string[] = []; const err: string[] = [];
@@ -214,17 +222,12 @@ test('pnpm bot proposals lists, promotes and undoes through the same service', a
   const list = await run();
   assert.equal(list.code, 0);
   assert.match(list.out, /^3 proposals waiting:\n {2}2026-11-18-reviews\.md \(changes owner\/role\.md\) - Review style/);
-
-  const promoted = await run('promote', '2026-11-16-deploys.md', '--folder', 'ops');
-  assert.equal(promoted.code, 0, promoted.err);
-  assert.notEqual(read('ops/deploys.md'), null);
-  const id = /proposals undo (\S+)/.exec(promoted.out)?.[1];
-  assert.ok(id);
-  assert.equal((await run('undo', id)).code, 0);
-  assert.equal(read('ops/deploys.md'), null);
-
-  const refused = await run('promote', '2026-11-16-deploys.md', '--folder', '../..');
-  assert.equal(refused.code, 1);
-  assert.match(refused.err, /inside knowledge\//);
   assert.match((await run('show', '2026-11-18-reviews.md')).out, /--- current: knowledge\/owner\/role\.md/);
+  for (const action of [['promote', '2026-11-16-deploys.md', '--folder', 'ops'], ['merge', '2026-11-16-deploys.md', '--into', 'owner/role.md'], ['discard', '2026-11-16-deploys.md'], ['undo', 'x']]) {
+    const refused = await run(...action);
+    assert.equal(refused.code, 1, action[0]);
+    assert.match(refused.err, /approved in the Serra app/);
+  }
+  assert.equal(read('ops/deploys.md'), null);
+  assert.notEqual(read('proposals/2026-11-16-deploys.md'), null);
 });

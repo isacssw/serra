@@ -318,7 +318,7 @@ export const createBot = ({
 
   const startJob = async (msg: IncomingMessage, request: string, summary: string, trigger?: MessageTrigger): Promise<void> => {
     const [requester, permalink, thread] = await Promise.all([
-      trigger ? Promise.resolve(msg.botId ? `Automated alert from bot ${msg.botId}` : `Automatically triggered message from user ${msg.user}`) : displayName(msg.user),
+      trigger ? Promise.resolve(msg.botId ? `Automated alert from bot ${msg.botId}` : `Automatically triggered message from user ${msg.user}`) : speaker(msg.user),
       client.chat.getPermalink({ channel: msg.channel, message_ts: msg.messageTs }).catch(() => null),
       threadContext(msg),
     ]);

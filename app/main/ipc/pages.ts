@@ -28,5 +28,8 @@ export const pagesHandlers = (context: HandlerContext): Handlers<'pages'> => {
       if (typeof text !== 'string') throw new Error('A page is text.');
       return service().savePage(pagePath(path), text, { roots: roots() }).page;
     },
+    drift: () => service().drift(),
+    acceptDrift: () => { service().acceptDrift(); },
+    restoreDrift: () => { service().restoreDrift(); },
   };
 };
