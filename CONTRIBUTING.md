@@ -19,7 +19,7 @@ Serra has a clear direction, and these change it. Open an issue to discuss them 
 - New coding providers or ways of talking to T3 Code
 - UI overhauls of the app
 - Architecture rewrites, plugin systems, or support for platforms other than macOS
-- Wide refactors, formatting passes or dependency bumps (Dependabot handles those)
+- Wide refactors, formatting passes or dependency bumps (Dependabot opens security updates; other bumps are the maintainer's call)
 
 ## Reporting a problem
 
@@ -92,14 +92,47 @@ To try a change against a real bot, use a separate Slack app and profile from th
 
 `main` is protected: nobody pushes to it directly, the maintainer included.
 
-1. Fork the repository and branch off `main`.
-2. Open a PR and fill in the template.
-3. CI (`check`) runs `pnpm check`, `pnpm test`, `pnpm knowledge` and the installer's `--help` on macOS. A first-time contributor's run waits for the maintainer to approve it.
+1. Fork the repository and branch off `main`, with a branch name that follows [Naming](#naming).
+2. Open a PR with a [valid title](#naming) and fill in the template.
+3. CI (`check`) runs `pnpm check`, `pnpm test`, `pnpm knowledge` and the installer's `--help` on macOS. `PR title` checks the title. A first-time contributor's run waits for the maintainer to approve it.
 4. The PR needs the code owner's approval, every review conversation resolved, and a branch that is up to date with `main` (use **Update branch**). A new push dismisses earlier approvals.
-5. It lands as one squash commit, and the branch is deleted.
+5. It lands as one squash commit whose message is the PR title and description, and the branch is deleted.
+
+## Naming
+
+Squash merging makes the PR title the commit on `main`, so the title is what matters most.
 
 ### PR titles
 
-The PR title and description become the commit on `main`. Use a conventional commit title in plain language that says what changes for a user, for example `fix(daemon): the bot keeps working when the knowledge index runs over its cap` or `docs: explain how to rotate the Slack tokens`. Types: `fix`, `feat`, `docs`, `test`, `chore`. Scopes: `daemon`, `app`, `setup`, `knowledge`, `ci`, or none. Commits inside the PR can be as messy as you like.
+A [Conventional Commit](https://www.conventionalcommits.org) header: `type(scope): subject`.
+
+- **Type:** `feat`, `fix`, `perf`, `refactor`, `docs`, `test`, `build`, `ci`, `chore` or `revert`.
+- **Scope:** optional, the part it touches: `daemon`, `app`, `palette`, `setup`, `knowledge`, `ci`, `deps`, `release`, …
+- **Subject:** starts lowercase, no trailing period, 72 characters at most. Say what changes, in plain language.
+
+```text
+fix(palette): ignore late close events
+feat(knowledge): show pending proposals in the app
+docs: explain how to rotate the Slack tokens
+chore(release): v0.1.0
+```
+
+The `PR title` check fails until the title follows these rules. Fix it by editing the title; no push is needed.
+
+### Branch names
+
+`type/short-kebab-description`, with the same types as the title: lowercase, words joined by `-`, a few words at most.
+
+```text
+fix/palette-late-close
+docs/rotate-slack-tokens
+chore/release-v0.1.0
+```
+
+Branches that tools make, such as Dependabot's `dependabot/…`, keep their own names.
+
+### Commits
+
+Write commits on your branch in the same format, for example `fix(palette): ignore late close events`. Only the PR title is checked, because the commits are squashed into it.
 
 By contributing, you agree that your contributions are licensed under the [MIT License](LICENSE).

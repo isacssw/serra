@@ -1,0 +1,39 @@
+name: PR title
+
+# The PR title becomes the squash commit on main, so it must be a Conventional Commit (CONTRIBUTING.md › Naming).
+# pull_request_target so it also runs on fork PRs and when only the title is edited. It never checks out PR code.
+# A PR the workflow token opens (the release PR) gets no run here; its title is fixed in release-prepare.yml.
+
+on:
+  pull_request_target:
+    types: [opened, edited, reopened, synchronize]
+
+permissions:
+  pull-requests: read
+
+jobs:
+  title:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - uses: amannn/action-semantic-pull-request@2252a14e810aa9b85c2d560bd7070c802206ecf6 # v6.1.2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          types: |
+            feat
+            fix
+            perf
+            refactor
+            docs
+            test
+            build
+            ci
+            chore
+            revert
+          requireScope: false
+          # Lowercase first letter, no trailing period, at most 72 characters.
+          subjectPattern: ^(?![A-Z])(?!.*\.$).{1,72}$
+          subjectPatternError: |
+            The subject "{subject}" in the title "{title}" must start with a lowercase letter, not end with a
+            period, and stay under 72 characters. Example: fix(palette): ignore late close events

@@ -1,17 +1,22 @@
+# Security updates only. Dependabot alerts and security-update PRs are switched on in the repository's settings
+# (Settings › Advanced Security); this file only shapes those PRs. `open-pull-requests-limit: 0` turns off routine
+# version-bump PRs for each ecosystem without turning off security updates, which ignore that limit.
 version: 2
 updates:
   - package-ecosystem: npm # reads pnpm-lock.yaml
     directory: /
     schedule:
       interval: weekly
-    open-pull-requests-limit: 5
-    groups:
-      minor-and-patch:
-        update-types: [minor, patch]
+    open-pull-requests-limit: 0
+    # PR titles follow the naming rules in CONTRIBUTING.md, for example "fix(deps): bump undici from 7.1.0 to 7.1.1".
+    commit-message:
+      prefix: fix
+      include: scope
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: weekly
-    groups:
-      actions:
-        patterns: ["*"]
+    open-pull-requests-limit: 0
+    commit-message:
+      prefix: ci
+      include: scope

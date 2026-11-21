@@ -1,8 +1,12 @@
 <!--
 Read CONTRIBUTING.md first. Serra has one maintainer: unsolicited feature PRs are
 closed, and following the rules doesn't guarantee a review or a merge.
-One problem per PR. Title: a conventional commit in plain language, such as
-"fix(daemon): the bot keeps working when the knowledge index runs over its cap".
+One problem per PR. The title becomes the commit on main, so it must be a
+Conventional Commit: type(scope): subject, lowercase, no trailing period, 72
+characters at most, such as "fix(palette): ignore late close events".
+Types: feat, fix, perf, refactor, docs, test, build, ci, chore, revert.
+Branch: type/short-kebab-description, such as fix/palette-late-close.
+See CONTRIBUTING.md › Naming.
 -->
 
 ## Problem

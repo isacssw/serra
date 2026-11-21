@@ -10,7 +10,7 @@ For the maintainer. Releases are cut in CI from `main`, which is protected, so a
 
 ## Cutting a release
 
-1. **Actions › Release: prepare › Run workflow**, on `main`, with the new version (no `v`). It raises `package.json`, turns `## Unreleased` into `## <version> (<date>)`, pushes `release/v<version>` and opens a release PR titled `chore(release): v<version>`. It also starts CI on that branch.
+1. **Actions › Release: prepare › Run workflow**, on `main`, with the new version (no `v`). It raises `package.json`, turns `## Unreleased` into `## <version> (<date>)`, pushes the branch `chore/release-v<version>` and opens a release PR titled `chore(release): v<version>`. It also starts CI on that branch.
 2. Review the PR. Edit `CHANGELOG.md` on the branch to change the notes. Merge it (squash).
 3. The merge starts **Release: publish**. It sees that the push raised the version, runs the checks and tests again, builds the app on macOS, smoke-tests it, then tags the merge commit `v<version>` and publishes a GitHub Release with the changelog section as notes, the `.dmg` and `SHA256SUMS`.
 
