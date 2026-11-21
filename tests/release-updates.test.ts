@@ -67,13 +67,16 @@ test('the newest installable release above the current one is picked; drafts and
 test('a release without a build for this Mac or without SHA256SUMS is skipped, and named when nothing else fits', () => {
   const intelOnly = gh('v0.1.0-alpha.3', { assets: [asset('Serra-0.1.0-alpha.3.dmg'), asset('SHA256SUMS')] });
   assert.deepEqual(pickUpdate([intelOnly], { current: '0.1.0-alpha.2', arch: 'arm64', prereleases: true }), {
-    kind: 'no-build', version: '0.1.0-alpha.3', url: intelOnly.html_url,
+    kind: 'no-build', version: '0.1.0-alpha.3', url: intelOnly.html_url, reason: 'arch',
   });
   const intel = pickUpdate([intelOnly], { current: '0.1.0-alpha.2', arch: 'x64', prereleases: true });
   assert.ok(intel.kind === 'available' && intel.release.dmg.name === 'Serra-0.1.0-alpha.3.dmg');
   const unchecked = gh('v0.1.0-alpha.4', { assets: [asset('Serra-0.1.0-alpha.4-arm64.dmg')] });
   const pick = pickUpdate([unchecked, gh('v0.1.0-alpha.3')], { current: '0.1.0-alpha.2', arch: 'arm64', prereleases: true });
   assert.ok(pick.kind === 'available' && pick.release.version === '0.1.0-alpha.3', 'no checksum file, no install');
+  assert.deepEqual(pickUpdate([unchecked], { current: '0.1.0-alpha.2', arch: 'arm64', prereleases: true }), {
+    kind: 'no-build', version: '0.1.0-alpha.4', url: unchecked.html_url, reason: 'checksum',
+  }, 'said as a missing checksum, not a missing build');
   assert.equal(dmgFor([asset('Serra-1.0.0-universal.dmg')], 'arm64')?.name, 'Serra-1.0.0-universal.dmg');
   assert.equal(dmgFor([asset('notes.txt')], 'arm64'), null);
 });

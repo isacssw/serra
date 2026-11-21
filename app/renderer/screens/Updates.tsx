@@ -71,13 +71,18 @@ const AppUpdateCard = ({ status, card, onAction, onLink, children }: {
   status: NonNullable<UpdatesStatus['app']>; card: AppCard; onAction: (action: CardAction) => void; onLink: (url: string) => void; children?: ReactNode;
 }) => {
   const notes = status.state === 'available' || status.state === 'ready' ? status.release.notes : '';
+  // The button just used (Download, Cancel) goes away with the state: keep keyboard focus in the card.
+  const heading = useRef<HTMLHeadingElement>(null);
+  useEffect(() => {
+    if (!document.activeElement || document.activeElement === document.body) heading.current?.focus();
+  }, [status.state]);
   return (
     <section aria-labelledby="app-update-title" className="flex flex-col gap-3 rounded-lg border border-line bg-panel p-4">
       <div className="flex items-start gap-3">
         <span className="mt-0.5"><ToneIcon tone={card.tone} /></span>
         <div className="flex min-w-0 flex-1 flex-col gap-1">
           <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-0.5">
-            <h2 id="app-update-title" className="text-[15px] font-semibold">{keepVersions(card.title)}</h2>
+            <h2 id="app-update-title" ref={heading} tabIndex={-1} className="text-[15px] font-semibold outline-none">{keepVersions(card.title)}</h2>
             {card.meta && <span className="text-xs text-muted">{keepVersions(card.meta)}</span>}
           </div>
           {card.body && <p className={cx('text-[13px]', card.tone === 'down' ? 'text-ink' : 'text-muted')}>{keepVersions(card.body)}</p>}
@@ -324,7 +329,9 @@ export const Updates = () => {
     : confirm?.action === 'rollback' ? rollbackDialog(confirm.jobs, developer ? 'build' : 'version')
     : confirm ? syncDialog(syncTarget, confirm.jobs, {
       stopped: status.bot.state === 'stopped' || (status.bot.state === 'failed' && status.bot.stopped),
-      older: status.bot.state === 'ahead' ? status.bot.from : null,
+      // A move back to an older version says so, whatever state offered it.
+      older: status.bot.state === 'ahead' || ((status.bot.state === 'stopped' || status.bot.state === 'failed') && status.bot.downgrade)
+        ? status.bot.from : null,
     }) : null;
 
   const noticeBox = notice && (

@@ -22,7 +22,7 @@ export type AppUpdatePhase =
   | { state: 'up-to-date'; checkedAt: string }
   | { state: 'available'; release: AppRelease; checkedAt: string }
   /** A newer release has no build for this Mac. */
-  | { state: 'no-build'; version: string; url: string; checkedAt: string }
+  | { state: 'no-build'; version: string; url: string; reason: 'arch' | 'checksum'; checkedAt: string }
   | { state: 'downloading'; release: AppRelease; received: number; total: number | null }
   | { state: 'verifying'; release: AppRelease }
   | { state: 'ready'; release: AppRelease; install: InstallPlan }
@@ -264,7 +264,7 @@ export const createAppUpdater = (deps: AppUpdaterDeps) => {
         if (failedStart) { failedStart = null; rmSync(failedStartPath, { force: true }); }
         set({ state: 'available', release: result.release, checkedAt });
       }
-      else if (result.kind === 'no-build') set({ state: 'no-build', version: result.version, url: result.url, checkedAt });
+      else if (result.kind === 'no-build') set({ state: 'no-build', version: result.version, url: result.url, reason: result.reason, checkedAt });
       else set({ state: 'up-to-date', checkedAt });
     } catch (error) {
       set({ state: 'error', stage: 'check', message: message(error) });
@@ -342,6 +342,14 @@ export const createAppUpdater = (deps: AppUpdaterDeps) => {
         const script = join(deps.dir, 'swap.sh');
         writeFileSync(script, SWAP_SCRIPT, { mode: 0o700 });
         writeFileSync(pendingPath, JSON.stringify({ from: deps.current, to: release.version, target: deps.bundlePath, release } satisfies Pending));
+        // If the helper gives up (Serra didn't quit within its wait) and exits, offer Restart again.
+        const watch = setInterval(() => {
+          if (phase.state !== 'installing') { clearInterval(watch); return; }
+          let alive = false;
+          try { alive = helperAlive(Number(readFileSync(join(deps.dir, 'swap.lock'), 'utf8').trim().split(' ')[0])); } catch { /* gone */ }
+          if (!alive) { clearInterval(watch); set({ state: 'ready', release, install: { kind: 'replace' } }); }
+        }, 5_000);
+        watch.unref();
         launchSwap(script, [String(process.pid), deps.bundlePath, staged, join(deps.dir, 'swap.log'), startedPath, release.version, ...(deps.relaunchArgs ?? [])]);
         log(`installing ${release.version}; quitting so the swap can run`);
         deps.quit();

@@ -7,6 +7,7 @@ import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { loadConfig } from './config.ts';
 import { launchd, type ServiceDriver } from './deploy.ts';
+import { acquireLock } from './lock.ts';
 
 export interface BotServiceOptions {
   driver?: ServiceDriver;
@@ -23,6 +24,17 @@ const service = (profileDir: string, options: BotServiceOptions): Service => {
   return { directory, label, plist, driver: options.driver ?? launchd };
 };
 
+/**
+ * Runs `work` holding the profile's deployment lock, the one a release switch holds: a manual start, stop or restart
+ * never lands in the middle of a switch (the app's automatic bot update included).
+ */
+const exclusive = async <T>(directory: string, work: () => Promise<T>): Promise<T> => {
+  let unlock: () => void;
+  try { unlock = acquireLock(join(directory, 'deployment.lock')); }
+  catch { throw new Error('The bot is switching to another version right now. Try again in a moment.'); }
+  try { return await work(); } finally { unlock(); }
+};
+
 const load = async ({ label, plist, driver }: Service): Promise<void> => {
   if (!existsSync(plist)) throw new Error(`Service ${label} isn't installed. Activate a release first.`);
   await driver.start(plist);
@@ -31,14 +43,16 @@ const load = async ({ label, plist, driver }: Service): Promise<void> => {
 /** Loads the installed service. Refuses when it is already loaded or was never installed. */
 export const startBot = async (profileDir: string, options: BotServiceOptions = {}): Promise<void> => {
   const target = service(profileDir, options);
-  if (await target.driver.loaded(target.label)) throw new Error('The bot is already running.');
-  await load(target);
+  await exclusive(target.directory, async () => {
+    if (await target.driver.loaded(target.label)) throw new Error('The bot is already running.');
+    await load(target);
+  });
 };
 
 /** Stops the service until the next login or start. The daemon hands waiting messages to their workers first. */
 export const stopBot = async (profileDir: string, options: BotServiceOptions = {}): Promise<void> => {
   const target = service(profileDir, options);
-  await target.driver.stop(target.label);
+  await exclusive(target.directory, () => target.driver.stop(target.label));
 };
 
 /**
@@ -48,9 +62,11 @@ export const stopBot = async (profileDir: string, options: BotServiceOptions = {
 export const restartBot = async (profileDir: string, options: BotServiceOptions = {}): Promise<void> => {
   const target = service(profileDir, options);
   if (!existsSync(target.plist)) throw new Error(`Service ${target.label} isn't installed. Activate a release first.`);
-  await target.driver.stop(target.label);
-  // A crashed daemon leaves its ready marker behind; clear it so `ready` waits for the new one.
-  rmSync(join(target.directory, 'ready.json'), { force: true });
-  await load(target);
-  await target.driver.ready(target.directory);
+  await exclusive(target.directory, async () => {
+    await target.driver.stop(target.label);
+    // A crashed daemon leaves its ready marker behind; clear it so `ready` waits for the new one.
+    rmSync(join(target.directory, 'ready.json'), { force: true });
+    await load(target);
+    await target.driver.ready(target.directory);
+  });
 };

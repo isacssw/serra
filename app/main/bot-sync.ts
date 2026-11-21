@@ -12,11 +12,11 @@ export type BotSync =
   | { state: 'not-installed' }
   | { state: 'in-step'; version: string }
   /** The owner stopped the bot: it isn't restarted on its own. `to` is set when Update now would move it to the app's version. */
-  | { state: 'stopped'; from: string | null; to: string | null }
+  | { state: 'stopped'; from: string | null; to: string | null; downgrade: boolean }
   /** The bot runs an older version and waits for running jobs to finish before it restarts. */
   | { state: 'waiting'; from: string | null; to: string; jobs: number }
   | { state: 'updating'; from: string | null; to: string }
-  | { state: 'failed'; from: string | null; to: string; message: string; stopped: boolean }
+  | { state: 'failed'; from: string | null; to: string; message: string; stopped: boolean; downgrade: boolean }
   /** The bot runs a newer version than the app (an older Serra was reinstalled). It never moves back on its own. */
   | { state: 'ahead'; from: string; to: string }
   /** The last switch stopped halfway; rollback puts the earlier bot back. */
@@ -58,13 +58,15 @@ export const botSyncDecision = (input: BotSyncInput): { sync: BotSync; action: B
   const to = input.appVersion;
   // Same version from a checkout (developer mode earlier) isn't the app's build: it moves to the app's own code.
   const inStep = from === to && input.active.fromApp === true;
+  /** Moving the bot to `to` would take it back to an older version. */
+  const downgrade = Boolean(from && parseVersion(from) && parseVersion(to) && compareVersions(from, to) > 0);
   if (input.running === 'sync' && !inStep) return { sync: { state: 'updating', from, to }, action: 'none' };
   // A failed attempt is shown (with Try again) even for a stopped bot, so the owner sees why Update now didn't work.
-  if (input.failed?.version === to && !inStep) return { sync: { state: 'failed', from, to, message: input.failed.message, stopped: !input.serviceLoaded }, action: 'none' };
-  if (!input.serviceLoaded) return { sync: { state: 'stopped', from, to: inStep ? null : to }, action: 'none' };
+  if (input.failed?.version === to && !inStep) return { sync: { state: 'failed', from, to, message: input.failed.message, stopped: !input.serviceLoaded, downgrade }, action: 'none' };
+  if (!input.serviceLoaded) return { sync: { state: 'stopped', from, to: inStep ? null : to, downgrade }, action: 'none' };
   if (inStep) return { sync: { state: 'in-step', version: to }, action: 'none' };
   // Its state files may already be in the newer format: moving back is the owner's call.
-  if (from && parseVersion(from) && parseVersion(to) && compareVersions(from, to) > 0) return { sync: { state: 'ahead', from, to }, action: 'none' };
+  if (downgrade && from) return { sync: { state: 'ahead', from, to }, action: 'none' };
   if (input.jobs > 0) return { sync: { state: 'waiting', from, to, jobs: input.jobs }, action: 'none' };
   // Another action (a manual prepare or rollback) is running: wait for it.
   if (input.running) return { sync: { state: 'waiting', from, to, jobs: 0 }, action: 'none' };

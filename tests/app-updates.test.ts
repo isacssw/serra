@@ -125,7 +125,7 @@ test('the app card in each state says one thing and offers the one next step', (
   assert.equal(failedVerify.meta, 'You have 0.1.0-alpha.2');
   assert.deepEqual(failedVerify.primary, { action: 'download', label: 'Try again' });
   assert.equal(appCard(view({ state: 'idle' }), now).primary, null);
-  assert.equal(appCard(view({ state: 'no-build', version: '0.2.0', url: release.url, checkedAt: now.toISOString() }), now).body, 'Serra 0.2.0 is out, but it has no build for this Mac yet.');
+  assert.equal(appCard(view({ state: 'no-build', version: '0.2.0', url: release.url, reason: 'arch', checkedAt: now.toISOString() }), now).body, 'Serra 0.2.0 is out, but it has no build for this Mac yet.');
   for (const state of ['checking', 'downloading', 'verifying', 'installing', 'ready', 'unavailable']) assert.equal(canCheck(view({ state, release, install: { kind: 'replace' }, reason: '' })), false, state);
   assert.equal(canCheck(view({ state: 'up-to-date', checkedAt: '' })), true);
 });
@@ -150,12 +150,12 @@ test('the bot line: in step, waiting for jobs, updating, failed, not installed, 
   assert.deepEqual(waiting.action, { kind: 'sync', label: 'Update now' });
   assert.equal(botLine({ state: 'waiting', from: null, to: '0.1.0-alpha.3', jobs: 1 })!.detail, 'It moves to 0.1.0-alpha.3 when the running job finishes.');
   assert.equal(botLine({ state: 'updating', from: null, to: '0.1.0-alpha.3' })!.tone, 'busy');
-  const failed = botLine({ state: 'failed', from: '0.1.0-alpha.2', to: '0.1.0-alpha.3', message: 'No supported Node', stopped: false })!;
+  const failed = botLine({ state: 'failed', from: '0.1.0-alpha.2', to: '0.1.0-alpha.3', message: 'No supported Node', stopped: false, downgrade: false })!;
   assert.equal(failed.text, "The bot couldn't move to 0.1.0-alpha.3, so it's still on version 0.1.0-alpha.2.");
   assert.equal(failed.detail, 'No supported Node');
-  assert.equal(botLine({ state: 'failed', from: null, to: '1.0.0', message: 'Slack account: invalid_auth; GitHub account: Expected alex', stopped: false })!.detail, 'Slack account: invalid_auth (and 1 more)');
-  assert.deepEqual(botLine({ state: 'stopped', from: '0.1.0-alpha.2', to: '0.1.0-alpha.3' })!.action, { kind: 'sync', label: 'Update now' });
-  assert.deepEqual(botLine({ state: 'stopped', from: '0.1.0-alpha.3', to: null }), { tone: 'neutral', text: "The bot is stopped. It's on version 0.1.0-alpha.3, the same as the app.", detail: 'Start it from the menu bar.', action: null });
+  assert.equal(botLine({ state: 'failed', from: null, to: '1.0.0', message: 'Slack account: invalid_auth; GitHub account: Expected alex', stopped: false, downgrade: false })!.detail, 'Slack account: invalid_auth (and 1 more)');
+  assert.deepEqual(botLine({ state: 'stopped', from: '0.1.0-alpha.2', to: '0.1.0-alpha.3', downgrade: false })!.action, { kind: 'sync', label: 'Update now' });
+  assert.deepEqual(botLine({ state: 'stopped', from: '0.1.0-alpha.3', to: null, downgrade: false }), { tone: 'neutral', text: "The bot is stopped. It's on version 0.1.0-alpha.3, the same as the app.", detail: 'Start it from the menu bar.', action: null });
   assert.deepEqual(botLine({ state: 'not-installed' })!.action, { kind: 'setup', label: 'Open setup' });
   assert.deepEqual(botLine({ state: 'interrupted' })!.action, { kind: 'rollback', label: 'Undo last switch' });
   assert.equal(botLine({ state: 'manual' }), null);
@@ -190,11 +190,12 @@ test('the bot follows the app only while no job runs, and never in developer mod
   assert.deepEqual(botSyncDecision(input({ mode: 'developer' })), { sync: { state: 'manual' }, action: 'none' });
   assert.deepEqual(botSyncDecision(input({ follows: false })), { sync: { state: 'manual' }, action: 'none' }, 'a copy run from source does not lead the bot');
   // A bot the owner stopped stays stopped.
-  assert.deepEqual(botSyncDecision(input({ serviceLoaded: false })), { sync: { state: 'stopped', from: '0.1.0-alpha.2', to: '0.1.0-alpha.3' }, action: 'none' });
+  assert.deepEqual(botSyncDecision(input({ serviceLoaded: false })), { sync: { state: 'stopped', from: '0.1.0-alpha.2', to: '0.1.0-alpha.3', downgrade: false }, action: 'none' });
+  assert.equal((botSyncDecision(input({ serviceLoaded: false, appVersion: '0.1.0-alpha.1' })).sync as { downgrade: boolean }).downgrade, true, 'a stopped bot on a newer version warns before moving back');
   // Update now on a stopped bot that failed shows the failure, not "stopped" again.
   assert.equal(botSyncDecision(input({ serviceLoaded: false, failed: { version: '0.1.0-alpha.3', message: 'Slack account: invalid_auth' } })).sync.state, 'failed');
   // Stopped on the app's own version: stopped, not "runs", and nothing to update to.
-  assert.deepEqual(botSyncDecision(input({ serviceLoaded: false, active: { appVersion: '0.1.0-alpha.3', fromApp: true } })), { sync: { state: 'stopped', from: '0.1.0-alpha.3', to: null }, action: 'none' });
+  assert.deepEqual(botSyncDecision(input({ serviceLoaded: false, active: { appVersion: '0.1.0-alpha.3', fromApp: true } })), { sync: { state: 'stopped', from: '0.1.0-alpha.3', to: null, downgrade: false }, action: 'none' });
   assert.deepEqual(botSyncDecision(input({ active: null })), { sync: { state: 'not-installed' }, action: 'none' });
   assert.deepEqual(botSyncDecision(input({ activation: 'switching' })), { sync: { state: 'interrupted' }, action: 'none' });
   assert.equal(botSyncDecision(input({ activation: 'switching', running: 'sync' })).sync.state, 'updating', 'a switch under way is not an interrupted one');

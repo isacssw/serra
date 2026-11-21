@@ -92,8 +92,11 @@ export interface AppRelease {
 export type UpdateCheck =
   | { kind: 'available'; release: AppRelease }
   | { kind: 'up-to-date' }
-  /** A newer release exists but has no build for this Mac (only arm64 is published today). */
-  | { kind: 'no-build'; version: string; url: string };
+  /**
+   * A newer release can't be installed: no build for this Mac (only arm64 is published today), or no `SHA256SUMS` to
+   * check it against.
+   */
+  | { kind: 'no-build'; version: string; url: string; reason: 'arch' | 'checksum' };
 
 /**
  * The `.dmg` for this Mac's architecture. electron-builder names them `Serra-<version>-arm64.dmg`, and the x64 one
@@ -132,7 +135,8 @@ export const pickUpdate = (releases: GithubRelease[], { current, arch, prereleas
     };
   }
   const first = newer[0];
-  return first ? { kind: 'no-build', version: first.tag_name.replace(/^v/, ''), url: first.html_url } : { kind: 'up-to-date' };
+  if (!first) return { kind: 'up-to-date' };
+  return { kind: 'no-build', version: first.tag_name.replace(/^v/, ''), url: first.html_url, reason: dmgFor(first.assets, arch) ? 'checksum' : 'arch' };
 };
 
 export type Fetch = (url: string, init?: { headers?: Record<string, string>; signal?: AbortSignal }) => Promise<Response>;

@@ -64,3 +64,16 @@ test('stop goes through the driver with the profile service label', async (t) =>
   await stopBot(f.profileDir, f.options);
   assert.deepEqual(f.calls, [`stop ${LABEL}`]);
 });
+
+test('start, stop and restart wait out a release switch: they refuse while it holds the deployment lock', async (t) => {
+  const f = fixture(t);
+  // A live process (this one) holds the lock, as activate() does during a switch.
+  writeFileSync(join(f.profileDir, 'deployment.lock'), String(process.pid));
+  for (const action of [restartBot, stopBot, startBot]) {
+    await assert.rejects(action(f.profileDir, f.options), /switching to another version/);
+  }
+  assert.deepEqual(f.calls, [], 'launchd was not touched');
+  rmSync(join(f.profileDir, 'deployment.lock'));
+  await stopBot(f.profileDir, f.options);
+  assert.equal(existsSync(join(f.profileDir, 'deployment.lock')), false, 'the lock is released afterwards');
+});

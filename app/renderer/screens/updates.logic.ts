@@ -85,7 +85,9 @@ export const appCard = (view: AppUpdateView, now = new Date()): AppCard => {
     case 'up-to-date': return { ...base, tone: 'up', title: name, body: "You're on the latest version.", meta: checkedLabel(view.checkedAt, now) };
     case 'no-build': return {
       ...base, tone: 'neutral', title: name, meta: checkedLabel(view.checkedAt, now), link: view.url,
-      body: `Serra ${view.version} is out, but it has no build for this Mac yet.`,
+      body: view.reason === 'checksum'
+        ? `Serra ${view.version} is out, but it was published without a checksum, so Serra won't install it.`
+        : `Serra ${view.version} is out, but it has no build for this Mac yet.`,
     };
     case 'available': return {
       ...base, tone: 'new', title: `Serra ${view.release.version} is available`, meta: `You have ${view.current}`, link: view.release.url,
