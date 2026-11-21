@@ -351,7 +351,7 @@ export const Updates = () => {
       )}
     >
       {/* One short line for screen readers when the state changes; the details stay on demand. */}
-      <p aria-live="polite" className="sr-only">{[card?.title, card?.tone === 'down' ? card.body : '', bot?.text].filter(Boolean).join('. ')}</p>
+      <p aria-live="polite" className="sr-only">{[card?.title, card?.tone === 'down' ? card.body : '', bot?.text].filter(Boolean).map((part) => part!.replace(/\.$/, '')).join('. ')}</p>
       {status.app?.updatedFrom && (
         <p role="status" className="flex items-center gap-2 text-[13px] text-muted">
           <CircleCheck size={16} aria-hidden className="text-up" />
