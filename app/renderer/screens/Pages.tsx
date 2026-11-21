@@ -197,7 +197,8 @@ export const Pages = () => {
       else await bridge.pages.restoreDrift(file.path);
       toast({ message: accept ? `Accepted ${file.path}. The bot uses it now.` : `Restored ${file.path}. The replaced text is in backups/knowledge/.`, tone: 'success' });
       await reload();
-      setReadVersion((version) => version + 1);
+      // Only the open page's own change reloads it; a draft of another page is left alone.
+      if (selected === file.path) setReadVersion((version) => version + 1);
     } catch (error) {
       toast({ message: message(error), tone: 'error' });
       await reload();

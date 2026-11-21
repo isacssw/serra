@@ -495,7 +495,8 @@ test('a thread from before audiences, and an answer to a pending question, also 
   asked.restrict('workflows/release.md');
   await asked.bot.handle({ channel: 'CTEAM', threadTs: '2.1', messageTs: '2.6', user: PRIYA, text: 'Tuesday', direct: false });
   await new Promise((done) => setTimeout(done, 50));
-  assert.equal(asked.answered.length, 0, 'the old thread, which read the page, isn\'t resumed');
+  assert.equal(asked.answered.length, 1);
+  assert.match(JSON.stringify(asked.answered[0]), /Stop here: this thread moved to a fresh session/, 'the old thread only gets told to stop, not the answer');
   assert.equal(asked.started.length, 2);
   assert.match(asked.started[1]!, /Answer to "Which day\?": Tuesday/);
   assert.doesNotMatch(asked.started[1]!, /workflows\/release\.md/);
@@ -597,4 +598,24 @@ test('sharing refuses the whole batch when one page changed outside Serra', (t) 
   writeFileSync(dana, `${readFileSync(dana, 'utf8')}- Edited by hand.\n`);
   assert.throws(() => knowledge.shareWith(['owner/private-notes.md', 'people/dana.md'], 'team'), /Nothing was shared\. people\/dana\.md changed outside Serra/);
   assert.match(readFileSync(join(knowledgeDir, 'owner/private-notes.md'), 'utf8'), /^audience: owner$/m);
+});
+
+test('approval defaults fail closed both ways: a proposal can narrow a page, never widen it, and a new page never starts with outsiders', async (t) => {
+  const { approvalAudience } = await import('../src/owner-model.ts');
+  const page = (audience?: string) => `---\ntype: preference\ndescription: x\n${audience ? `audience: ${audience}\n` : ''}written: 2026-11-20\nverified: no\nsources:\n  - x\n---\n- y\n`;
+  assert.deepEqual(approvalAudience(page('owner'), page('team')), { audience: 'owner', untagged: false, asks: 'narrower' });
+  assert.deepEqual(approvalAudience(page('external'), page('team')), { audience: 'team', untagged: false, asks: 'wider' });
+  assert.deepEqual(approvalAudience(page('team'), page()), { audience: 'owner', untagged: true, asks: 'wider' });
+  assert.deepEqual(approvalAudience(page('external'), null), { audience: 'team', untagged: false, asks: 'wider' });
+  assert.deepEqual(approvalAudience(page(), null), { audience: 'owner', untagged: false, asks: null });
+  // The interview's path: "keep my working style to myself" narrows a team page when approved as is.
+  const profileDir = fixture(t);
+  const knowledgeDir = join(profileDir, 'knowledge');
+  proposal(profileDir, '2026-11-20-style.md', 'owner/working-style.md', '# How Robin works\n\n- Risky releases ship on Tuesday.\n');
+  const file = join(knowledgeDir, 'proposals/2026-11-20-style.md');
+  writeFileSync(file, readFileSync(file, 'utf8').replace('audience: team', 'audience: owner'));
+  const proposals = createProposals({ knowledgeDir });
+  const shown = proposals.readProposal('2026-11-20-style.md');
+  proposals.promoteProposal('2026-11-20-style.md', { folder: 'owner', reviewed: { proposal: shown.proposed, path: shown.proposal.target, page: shown.current } });
+  assert.match(readFileSync(join(knowledgeDir, 'owner/working-style.md'), 'utf8'), /^audience: owner$/m);
 });

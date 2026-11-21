@@ -13,8 +13,9 @@ import { REFRESH_COUNTS } from '../shell/events.ts';
 import { Button, cx, Dialog, Page, useToast } from '../ui/index.ts';
 import { DiffView } from './proposals/DiffView.tsx';
 import { AudienceChoice } from './AudienceChoice.tsx';
-import { frontmatter } from '../../../src/knowledge-rules.ts';
-import { pageAudience, type Audience } from '../../../src/owner-model.ts';
+import { frontmatter, removeHeaderField, setHeaderField } from '../../../src/knowledge-rules.ts';
+import { localDate } from './pages.logic.ts';
+import { approvalAudience, pageAudience, type Audience } from '../../../src/owner-model.ts';
 import { useSearchParams } from 'react-router';
 import { registerActions } from '../commands/registry.ts';
 import {
@@ -176,7 +177,7 @@ export const Proposals = () => {
     setMergeStart(null);
     if (!mergeOpen || !bridge || !diff || !mergeTarget) return;
     if (diff.proposal.target === mergeTarget && diff.current !== null) {
-      setMergeBase(diff.current); setMergeText(withoutTarget(diff.proposed)); setMergeAudience(pageAudience(frontmatter(diff.current)));
+      setMergeBase(diff.current); setMergeText(withoutTarget(diff.proposed)); setMergeAudience(approvalAudience(diff.proposed, diff.current).audience);
       return;
     }
     let live = true;
@@ -184,7 +185,7 @@ export const Proposals = () => {
       (current) => {
         if (!live) return;
         const start = `${current.trimEnd()}\n\n${proposalBody(diff.proposed)}\n`;
-        setMergeBase(current); setMergeText(start); setMergeStart(start); setMergeAudience(pageAudience(frontmatter(current)));
+        setMergeBase(current); setMergeText(start); setMergeStart(start); setMergeAudience(approvalAudience(diff.proposed, current).audience);
       },
       (error) => { if (live) { setMergeOpen(false); toast({ message: message(error), tone: 'error' }); } },
     );
@@ -194,7 +195,7 @@ export const Proposals = () => {
   useEffect(() => {
     if (!diff) return;
     // The page it replaces keeps its own audience; a new page starts from the proposal's. Only the owner widens it.
-    setAudience(diff.current !== null ? pageAudience(frontmatter(diff.current)) : pageAudience(frontmatter(diff.proposed)));
+    setAudience(approvalAudience(diff.proposed, diff.current).audience);
     setFolder(defaultFolder(diff.proposal, targets.folders) ?? '');
     setMergeTarget(diff.proposal.target ?? targets.pages[0] ?? '');
   }, [diff, targets]);
@@ -260,7 +261,7 @@ export const Proposals = () => {
                   {diff.proposal.description && <p className="text-sm text-muted">{diff.proposal.description}</p>}
                   {diff.proposal.target && <p className="text-xs text-muted">Changes <code>{diff.proposal.target}</code></p>}
                 </div>
-                <DiffView current={diff.current} proposed={diff.proposed} />
+                <DiffView current={diff.current} proposed={asWritten(diff, audience)} />
                 {folders.length > 0 ? (
                   <Select
                     label="Target folder"
@@ -274,9 +275,7 @@ export const Proposals = () => {
                 )}
                 <div className="flex flex-col gap-1">
                   <AudienceChoice id="proposal-audience" value={audience} disabled={busy} onChange={setAudience} />
-                  {diff.current !== null && frontmatter(diff.proposed)?.has('audience') && widens(pageAudience(frontmatter(diff.current)), pageAudience(frontmatter(diff.proposed))) && (
-                    <span className="text-xs text-warn">This proposal asks to share the page more widely. It stays as it is unless you choose.</span>
-                  )}
+                  {asks(diff) && <span className="text-xs text-muted">{asks(diff)}</span>}
                 </div>
                 <div className="flex flex-wrap gap-2">
                   <Button
@@ -350,6 +349,23 @@ export const Proposals = () => {
 const AUDIENCE_RANK: Record<Audience, number> = { owner: 0, team: 1, external: 2 };
 /** Whether `to` lets more people hear a page than `from`. */
 const widens = (from: Audience, to: Audience): boolean => AUDIENCE_RANK[to] > AUDIENCE_RANK[from];
+
+/** What the proposal asks for, when it differs from the default the screen starts with. */
+const asks = (diff: ProposalDiff): string | null => {
+  const { asks: direction } = approvalAudience(diff.proposed, diff.current);
+  if (direction === 'narrower') return 'This proposal asks to share the page less. That\u2019s the default.';
+  if (direction === 'wider') return diff.current === null
+    ? 'This proposal asks to share the page with people outside your company. It starts with your team unless you choose.'
+    : 'This proposal asks to share the page more widely. It stays as it is unless you choose.';
+  return null;
+};
+
+/** The page as approving writes it: no `target:`, verified today, and the audience as chosen. */
+const asWritten = (diff: ProposalDiff, audience: Audience): string => {
+  const page = setHeaderField(withoutTarget(diff.proposed), 'verified', localDate(new Date()));
+  const { audience: fallback, untagged } = approvalAudience(diff.proposed, diff.current);
+  return untagged && audience === fallback ? removeHeaderField(page, 'audience') : setHeaderField(page, 'audience', audience);
+};
 
 /** Whether approving into `folder` replaces the page the proposal names, rather than adding a new one. */
 const replaces = (diff: ProposalDiff, folder: string): boolean =>

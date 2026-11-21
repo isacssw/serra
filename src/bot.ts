@@ -44,10 +44,9 @@ const PROGRESS_TEXT_LIMIT = 300;
 const LOADING_REFRESH_MS = 60_000;
 /** After answering a ping, how long the next message from the same person counts as the request, mention or not. */
 const PING_THREAD_MS = 30 * 60_000;
-/** Replies to "I'm here" that aren't a request. */
 /** Posted instead of a reply written with knowledge the owner has since taken back. */
 const WITHHELD = 'Some of what I knew for this answer has since been made private, so I won\'t post it. Ask again and I\'ll answer with what I may share now.';
-
+/** Replies to "I'm here" that aren't a request. */
 const ACKNOWLEDGEMENT = /^(?:thanks?|thx|ty|cheers|nvm|never ?mind|sorted|all good|cool|great|nice|perfect|np|ok(?:ay)?|k|👍)[\s!.,]*$/iu;
 
 /** What the bot records for each thing it does in Slack, one JSON line each, to measure how it behaves. */
@@ -611,6 +610,9 @@ export const createBot = ({
     // The thread asking was briefed with knowledge the owner has since taken back: the answer goes to a fresh thread.
     const answered = typeof answer === 'string' ? answer : answer.join(', ');
     if (await restartIfRevoked(key, job, [{ speaker: user === config.owner ? `${config.ownerName} (your owner)` : await displayName(user), text: `Answer to "${question.question ?? question.id}": ${answered}`, audience: 'bot', ts: messageTs ?? job.threadTs }])) {
+      // The old session's question gets an answer that ends its turn, so it isn't left waiting.
+      await questions.answerQuestion(job.t3ThreadId, state.requestId, Object.fromEntries(state.questions.map((item) => [item.id, 'Stop here: this thread moved to a fresh session. Do nothing more.'])), config.t3Bin)
+        .catch((error: unknown) => logger.warn(`Could not close the question in the earlier T3 thread ${job.t3ThreadId}: ${errorMessage(error)}`));
       await clearQuestion(key, job, user, { ...state, answers });
       updateJob(key, rememberReply);
       return;
@@ -717,16 +719,19 @@ export const createBot = ({
     updateJob(key, () => ({ watching: false, waitingInT3: false }));
   };
 
-  /**
-   * What people say in a thread the bot owns, waiting for the worker's next turn. Messages sent close together,
-   * or while the worker is busy, become one turn and one reply.
-   */
   /** Pages this thread's brief allowed that the owner has since restricted, retired or removed. */
+  // A thread from before audiences has no record of its pages; its next turn restarts (restartIfRevoked), but a reply
+  // already under way when Serra was upgraded is posted.
   const revokedFor = (job: Job): string[] => {
     if (!loadKnowledge || !job.visibility || !job.knowledgePages) return [];
     const now = loadKnowledge(job.visibility).pages;
     return job.knowledgePages.filter((page) => !now.includes(page));
   };
+
+  /**
+   * What people say in a thread the bot owns, waiting for the worker's next turn. Messages sent close together,
+   * or while the worker is busy, become one turn and one reply.
+   */
 
   /**
    * When a page this thread's brief allowed has since been restricted, retired or removed, the old T3 thread still has
@@ -749,7 +754,9 @@ export const createBot = ({
     const thread = await threadContext({ channel: job.channel, threadTs: job.threadTs, messageTs: first.ts, user: job.requester, text: '', direct: false });
     await fetchBase();
     // The fresh thread starts from the old thread's branch, so committed work carries on, and is told where it was.
-    const earlier = job.branch ? `\n\nEarlier work in this thread is on the branch \`${job.branch}\`, which this worktree starts from. Carry on from it, and keep using its PR if it has one.` : '';
+    const earlier = job.branch
+      ? `\n\nEarlier work in this thread is on the branch \`${job.branch}\`, which this worktree starts from. Carry on from it, and keep using its PR if it has one.`
+      : `\n\nThis thread started before Serra recorded branches, so earlier work may be on a branch this worktree doesn't start from: look for it with \`git branch --list '${config.id}/*'\` and its PR with \`gh pr list --author @me\`, and carry on from there.`;
     const input = jobThreadInput(config, {
       summary: 'continued with updated knowledge',
       brief: fillBrief(config, knowledge, { request: followUpMessage(lines) + earlier, requester: 'People in the thread', permalink: 'link unavailable', thread }),

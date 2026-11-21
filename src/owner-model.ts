@@ -164,3 +164,25 @@ export const filterIndex = (index: string, pageOf: (page: string) => { audience:
 };
 
 
+
+const RANK: Record<Audience, number> = { owner: 0, team: 1, external: 2 };
+
+/**
+ * Who may hear a page an approval writes, before the owner picks: replacing a page, the narrower of the page's own
+ * audience and the one the proposal asks for (a proposal can narrow a page, never widen it); a new page, the proposal's,
+ * but never outsiders unless the owner picks it. `untagged`: the page stays without an audience line (owner-only).
+ * `asks` says when the proposal asks for more or less than that, for the screen.
+ */
+export const approvalAudience = (proposed: string, current: string | null): { audience: Audience; untagged: boolean; asks: 'wider' | 'narrower' | null } => {
+  const fields = frontmatter(proposed);
+  const asked = fields?.has('audience') ? pageAudience(fields) : null;
+  if (current === null) {
+    const wanted = asked ?? 'owner';
+    return { audience: wanted === 'external' ? 'team' : wanted, untagged: false, asks: wanted === 'external' ? 'wider' : null };
+  }
+  const own = pageAudience(frontmatter(current));
+  const untaggedNow = !frontmatter(current)?.has('audience');
+  if (asked === null || asked === own) return { audience: own, untagged: untaggedNow, asks: null };
+  const audience = RANK[asked] < RANK[own] ? asked : own;
+  return { audience, untagged: untaggedNow && audience === 'owner', asks: RANK[asked] > RANK[own] ? 'wider' : 'narrower' };
+};
