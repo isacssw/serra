@@ -229,7 +229,7 @@ export const Updates = () => {
     const bridge = serra();
     if (!bridge || !status?.app) return;
     // Back to the default when the choice matches it, so a later stable version turns them off again.
-    const fallback = /-/.test(status.app.current);
+    const fallback = status.app.prereleases.byDefault;
     try {
       const app = await bridge.updates.setPrereleases(on === fallback ? null : on);
       setStatus((current) => (current ? { ...current, app } : current));
@@ -312,8 +312,8 @@ export const Updates = () => {
   const syncTarget = ('to' in status.bot ? status.bot.to : null) ?? status.appVersion;
   const dialog = confirm?.action === 'activate'
     ? activateDialog(releases?.prepared ?? null, confirm.jobs)
-    : confirm?.action === 'rollback' ? rollbackDialog(confirm.jobs)
-    : confirm ? syncDialog(syncTarget, confirm.jobs) : null;
+    : confirm?.action === 'rollback' ? rollbackDialog(confirm.jobs, developer ? 'build' : 'version')
+    : confirm ? syncDialog(syncTarget, confirm.jobs, status.bot.state === 'stopped') : null;
 
   const noticeBox = notice && (
     <div
@@ -390,6 +390,7 @@ export const Updates = () => {
             type="checkbox"
             className="mt-0.5 size-4 cursor-pointer accent-[var(--color-ink)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
             checked={app.prereleases.on}
+            disabled={app.state === 'installing' || app.state === 'verifying'}
             onChange={(event) => void setPrereleases(event.target.checked)}
           />
           <span className="flex flex-col gap-0.5">

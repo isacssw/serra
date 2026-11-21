@@ -4,7 +4,7 @@ import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { app, BrowserWindow, ipcMain, nativeTheme, net, shell } from 'electron';
+import { app, BrowserWindow, ipcMain, nativeTheme, net, Notification, shell } from 'electron';
 import { defaultProfileRoot, profileArgument } from '../../src/config.ts';
 import { pushChannel } from './bridge.ts';
 import { createHandlers, registerHandlers } from './ipc/index.ts';
@@ -183,11 +183,15 @@ const start = async (): Promise<void> => {
   };
   app.on('second-instance', show);
   // A bot switch stops the old bot before starting the new one: quitting halfway would leave none running.
+  let waitingToQuit = false;
   app.on('before-quit', (event) => {
     const pending = quitGuards.map((guard) => guard()).filter((p): p is Promise<unknown> => p !== null);
     if (!pending.length) return;
     event.preventDefault();
     console.log('[serra] waiting for the bot switch to finish before quitting');
+    // Without a word, Quit would look ignored for the few seconds the switch takes.
+    if (!waitingToQuit && Notification.isSupported()) new Notification({ title: 'Serra', body: 'Finishing the bot restart, then quitting.' }).show();
+    waitingToQuit = true;
     void Promise.allSettled(pending).then(() => app.quit());
   });
   app.on('will-quit', () => {

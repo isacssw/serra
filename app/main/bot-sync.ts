@@ -1,6 +1,7 @@
 // Keeping the bot on the app's version (SERRA-46). In release mode the bot follows the app: after the app updates,
 // the bot is rebuilt from the new app's code and restarted, but only while no job is running. Pure decisions here;
 // `ipc/updates.ts` runs them on a timer with the release service.
+import { compareVersions, parseVersion } from '../../src/app-updates.ts';
 import type { Prepared } from '../../src/deploy.ts';
 
 /** What the Updates screen says about the bot. */
@@ -16,6 +17,8 @@ export type BotSync =
   | { state: 'waiting'; from: string | null; to: string; jobs: number }
   | { state: 'updating'; from: string | null; to: string }
   | { state: 'failed'; from: string | null; to: string; message: string }
+  /** The bot runs a newer version than the app (an older Serra was reinstalled). It never moves back on its own. */
+  | { state: 'ahead'; from: string; to: string }
   /** The last switch stopped halfway; rollback puts the earlier bot back. */
   | { state: 'interrupted' };
 
@@ -57,6 +60,8 @@ export const botSyncDecision = (input: BotSyncInput): { sync: BotSync; action: B
   if (!input.serviceLoaded && input.running !== 'sync') return { sync: { state: 'stopped', from, to: inStep ? null : to }, action: 'none' };
   if (inStep) return { sync: { state: 'in-step', version: to }, action: 'none' };
   if (input.running === 'sync') return { sync: { state: 'updating', from, to }, action: 'none' };
+  // Its state files may already be in the newer format: moving back is the owner's call.
+  if (from && parseVersion(from) && parseVersion(to) && compareVersions(from, to) > 0) return { sync: { state: 'ahead', from, to }, action: 'none' };
   if (input.failed?.version === to) return { sync: { state: 'failed', from, to, message: input.failed.message }, action: 'none' };
   if (input.jobs > 0) return { sync: { state: 'waiting', from, to, jobs: input.jobs }, action: 'none' };
   // Another action (a manual prepare or rollback) is running: wait for it.

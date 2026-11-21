@@ -191,7 +191,7 @@ test('check, download, verify and restart: the swap runs after the app quits', a
   assert.equal(f.updater.view().state, 'idle');
   const checked = await f.updater.check();
   assert.equal(checked.state, 'available');
-  assert.deepEqual(checked.prereleases, { on: true, choice: null });
+  assert.deepEqual(checked.prereleases, { on: true, choice: null, byDefault: true });
   f.updater.download();
   await f.settle();
   const ready = f.updater.view();
@@ -203,6 +203,9 @@ test('check, download, verify and restart: the swap runs after the app quits', a
   assert.deepEqual(f.calls.slice(1), ['swap Applications/Serra.app 0.1.0-alpha.3/Serra.app', 'quit']);
   const pending = JSON.parse(readFileSync(join(f.dir, 'updates/pending.json'), 'utf8'));
   assert.deepEqual({ ...pending, release: pending.release.version }, { from: '0.1.0-alpha.2', to: '0.1.0-alpha.3', target: f.bundle, release: '0.1.0-alpha.3' });
+  // The swap is about to take the staged app: changing the channel now leaves it alone.
+  assert.equal((await f.updater.setPrereleases(false)).state, 'installing');
+  assert.ok(existsSync(join(f.dir, 'updates/0.1.0-alpha.3/Serra.app')));
 });
 
 test('a download that fails its checksum is deleted and nothing is staged', async (t) => {
@@ -224,7 +227,7 @@ test('turning prereleases off checks again and hides the alpha', async (t) => {
   await f.updater.check();
   const off = await f.updater.setPrereleases(false);
   assert.equal(off.state, 'up-to-date');
-  assert.deepEqual(off.prereleases, { on: false, choice: false });
+  assert.deepEqual(off.prereleases, { on: false, choice: false, byDefault: true });
 });
 
 test('the first launch after a swap confirms the start for the swap script; a launch on the old version reports it did not apply', async (t) => {

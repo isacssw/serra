@@ -96,7 +96,7 @@ const release = {
   url: 'https://github.com/acme/serra/releases/tag/v0.1.0-alpha.3', dmg: { name: 'Serra-0.1.0-alpha.3-arm64.dmg', url: 'https://example.test/dmg', size: 122_000_000 },
   sums: { url: 'https://example.test/SHA256SUMS' },
 };
-const view = (phase: object): AppUpdateView => ({ current: '0.1.0-alpha.2', prereleases: { on: true, choice: null }, updatedFrom: null, ...phase } as AppUpdateView);
+const view = (phase: object): AppUpdateView => ({ current: '0.1.0-alpha.2', prereleases: { on: true, choice: null, byDefault: true }, updatedFrom: null, ...phase } as AppUpdateView);
 const now = new Date('2026-11-28T12:00:00Z');
 
 test('the app card in each state says one thing and offers the one next step', () => {
@@ -154,7 +154,12 @@ test('the bot line: in step, waiting for jobs, updating, failed, not installed, 
   assert.deepEqual(botLine({ state: 'not-installed' })!.action, { kind: 'setup', label: 'Open setup' });
   assert.deepEqual(botLine({ state: 'interrupted' })!.action, { kind: 'rollback', label: 'Undo last switch' });
   assert.equal(botLine({ state: 'manual' }), null);
-  assert.match(syncDialog('0.1.0-alpha.3', 2).body, /^2 jobs are running\./);
+  assert.match(syncDialog('0.1.0-alpha.3', 2).body, /^2 jobs are running\. The bot restarts on version 0\.1\.0-alpha\.3/);
+  assert.equal(syncDialog('0.1.0-alpha.3', 0, true).body, 'The bot starts on version 0.1.0-alpha.3.');
+  assert.match(rollbackDialog(0, 'version').body, /on the version it ran before/);
+  const ahead = botLine({ state: 'ahead', from: '0.2.0', to: '0.1.0' })!;
+  assert.equal(ahead.text, 'The bot runs version 0.2.0, newer than this app.');
+  assert.deepEqual(ahead.action, { kind: 'sync', label: 'Update now' });
 });
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -188,6 +193,8 @@ test('the bot follows the app only while no job runs, and never in developer mod
   assert.equal(botSyncDecision(input({ failed: { version: '0.1.0-alpha.3', message: 'x' } })).action, 'none');
   assert.equal(botSyncDecision(input({ failed: { version: '0.1.0-alpha.2', message: 'x' } })).action, 'prepare', 'a failure for another version does not block');
   assert.equal(botSyncDecision(input({ running: 'rollback' })).action, 'none');
+  // An older app (reinstalled by hand) never moves the bot back on its own.
+  assert.deepEqual(botSyncDecision(input({ appVersion: '0.1.0-alpha.1' })), { sync: { state: 'ahead', from: '0.1.0-alpha.2', to: '0.1.0-alpha.1' }, action: 'none' });
   // A bot from before versions were recorded counts as older.
   assert.equal(botSyncDecision(input({ active: {} })).action, 'prepare');
 });

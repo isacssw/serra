@@ -33,8 +33,8 @@ export type AppUpdatePhase =
 export type AppUpdateView = AppUpdatePhase & {
   /** The installed version, `app.getVersion()`. */
   current: string;
-  /** Whether prereleases are offered now, and the owner's choice (null: the default, on while on a prerelease). */
-  prereleases: { on: boolean; choice: boolean | null };
+  /** Whether prereleases are offered now, the owner's choice (null: the default) and the default (on while on a prerelease). */
+  prereleases: { on: boolean; choice: boolean | null; byDefault: boolean };
   /** Set on the first launch after an update: the version it came from. */
   updatedFrom: string | null;
 };
@@ -128,7 +128,8 @@ shift 6
 relaunch() { if [ "$#" -gt 0 ]; then open -n "$target" --args "$@"; else open -n "$target"; fi; }
 exec >>"$log" 2>&1
 echo "$(date) swap: waiting for $pid"
-for _ in $(seq 1 600); do kill -0 "$pid" 2>/dev/null || break; sleep 0.1; done
+# Quitting can wait for a bot restart to finish, so allow it ten minutes.
+for _ in $(seq 1 6000); do kill -0 "$pid" 2>/dev/null || break; sleep 0.1; done
 if kill -0 "$pid" 2>/dev/null; then echo "Serra is still running; not replacing it"; exit 1; fi
 previous="$target.previous"; incoming="$target.incoming"
 rm -rf "$previous" "$started" "$incoming"
@@ -142,6 +143,7 @@ relaunch "$@"
 confirmed() { [ "$(cat "$started" 2>/dev/null)" = "$version" ]; }
 for _ in $(seq 1 1200); do confirmed && break; sleep 0.1; done
 if confirmed; then echo "$(date) swap: the new version started"; rm -rf "$previous" "$started"; exit 0; fi
+sleep 1; if confirmed; then echo "$(date) swap: the new version started (late)"; rm -rf "$previous" "$started"; exit 0; fi
 if [ ! -d "$previous" ]; then echo "$(date) swap: the new version didn't confirm its start, and there is no old copy to restore; keeping it"; exit 1; fi
 echo "$(date) swap: the new version didn't start; restoring the old one"
 pkill -f "$target/Contents/MacOS/" 2>/dev/null; sleep 2
@@ -216,7 +218,7 @@ export const createAppUpdater = (deps: AppUpdaterDeps) => {
 
   const view = (): AppUpdateView => {
     const choice = deps.getChoice();
-    return { ...phase, current: deps.current, prereleases: { on: includePrereleases(choice, deps.current), choice }, updatedFrom };
+    return { ...phase, current: deps.current, prereleases: { on: includePrereleases(choice, deps.current), choice, byDefault: includePrereleases(null, deps.current) }, updatedFrom };
   };
   const set = (next: AppUpdatePhase): void => { phase = next; deps.push?.(view()); };
   const busy = (): boolean => ['checking', 'downloading', 'verifying', 'installing'].includes(phase.state);
@@ -306,6 +308,8 @@ export const createAppUpdater = (deps: AppUpdaterDeps) => {
         launchSwap(script, [String(process.pid), deps.bundlePath, staged, join(deps.dir, 'swap.log'), startedPath, release.version, ...(deps.relaunchArgs ?? [])]);
         log(`installing ${release.version}; quitting so the swap can run`);
         deps.quit();
+        // Quitting waits for a bot restart under way; if Serra is still here a minute later, offer the button again.
+        setTimeout(() => { if (phase.state === 'installing') set({ state: 'ready', release, install: { kind: 'replace' } }); }, 60_000).unref();
       } catch (error) {
         rmSync(pendingPath, { force: true });
         set({ state: 'error', stage: 'install', message: message(error), release });
@@ -320,6 +324,8 @@ export const createAppUpdater = (deps: AppUpdaterDeps) => {
       return view();
     },
     setPrereleases: async (choice: boolean | null): Promise<AppUpdateView> => {
+      // Not while the swap is about to take the staged app, or while it's being checked.
+      if (phase.state === 'installing' || phase.state === 'verifying') return view();
       deps.setChoice(choice);
       const on = includePrereleases(choice, deps.current);
       // A pre-release on offer, downloading or downloaded no longer fits: drop it, then look again.

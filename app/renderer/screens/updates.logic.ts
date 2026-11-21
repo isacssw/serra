@@ -187,6 +187,11 @@ export const botLine = (sync: BotSync): BotLine | null => {
       tone: 'down', text: `The bot couldn't move to ${sync.to}, so it still runs ${was(sync.from)}.`, detail: firstProblem(sync.message),
       action: { kind: 'sync', label: 'Try again' },
     };
+    case 'ahead': return {
+      tone: 'neutral', text: `The bot runs version ${sync.from}, newer than this app.`,
+      detail: `Serra doesn't move the bot back on its own. Update now switches it to ${sync.to}.`,
+      action: { kind: 'sync', label: 'Update now' },
+    };
     case 'interrupted': return {
       tone: 'down', text: "The last bot restart didn't finish.", detail: 'Undo it to start the earlier version again.',
       action: { kind: 'rollback', label: 'Undo last switch' },
@@ -195,11 +200,13 @@ export const botLine = (sync: BotSync): BotLine | null => {
 };
 
 /** The confirm dialog for updating the bot now, while jobs run. */
-export const syncDialog = (to: string, runningJobs: number): { title: string; body: string } => ({
+export const syncDialog = (to: string, runningJobs: number, stopped = false): { title: string; body: string } => ({
   title: `Move the bot to ${to} now?`,
-  body: runningJobs === 0
-    ? 'No jobs are running. The bot restarts on the new version.'
-    : `${plural(runningJobs, 'job is', 'jobs are')} running. The bot restarts on the new version; ${runningJobs === 1 ? 'the job continues' : 'the jobs continue'} after the restart, and replies wait until then.`,
+  body: stopped
+    ? `The bot starts on version ${to}.`
+    : runningJobs === 0
+      ? `No jobs are running. The bot restarts on version ${to}.`
+      : `${plural(runningJobs, 'job is', 'jobs are')} running. The bot restarts on version ${to}; ${runningJobs === 1 ? 'the job continues' : 'the jobs continue'} after the restart, and replies wait until then.`,
 });
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -292,11 +299,11 @@ export const activateDialog = (prepared: Labelled | null, runningJobs: number): 
 });
 
 /** The text of the Undo last switch dialog. It restarts the bot too, so it names the running jobs the same way. */
-export const rollbackDialog = (runningJobs: number): { title: string; body: string } => ({
+export const rollbackDialog = (runningJobs: number, what: 'build' | 'version' = 'build'): { title: string; body: string } => ({
   title: 'Undo the last switch?',
   body: runningJobs === 0
-    ? 'No jobs are running. The bot restarts on the build it ran before the last switch.'
-    : `${plural(runningJobs, 'job is', 'jobs are')} running. The bot restarts on the build it ran before the last switch; ${runningJobs === 1 ? 'the job continues' : 'the jobs continue'} after the restart.`,
+    ? `No jobs are running. The bot restarts on the ${what} it ran before the last switch.`
+    : `${plural(runningJobs, 'job is', 'jobs are')} running. The bot restarts on the ${what} it ran before the last switch; ${runningJobs === 1 ? 'the job continues' : 'the jobs continue'} after the restart.`,
 });
 
 export interface Notice {
