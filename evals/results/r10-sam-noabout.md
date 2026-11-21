@@ -1,0 +1,32 @@
+# Live eval: r10-sam-noabout
+
+Worker sonnet, judge sonnet, 3 runs of 16 cases (evals/cases-heldout.json, evals/fixture-heldout, About me left out), 2026-11-21. 1 runs failed in the harness and are left out.
+
+| Category | Score |
+|---|---|
+| identity | 100 |
+| people | 78 |
+| process | 100 |
+| voice | 83 |
+| offlimits | 100 |
+| privacy | 67 |
+| **overall** | **87** |
+
+| Case | Runs |
+|---|---|
+| h-identity-tuesday | 1.00, 1.00, 1.00 |
+| h-identity-hiring | 1.00, 1.00, 1.00 |
+| h-people-payments-review | 1.00, 1.00, 1.00 |
+| h-people-sync | 1.00, 0.00, 0.00 |
+| h-people-ask-kenji | 1.00, 1.00, 1.00 |
+| h-process-ios-monday | 1.00, 1.00, 1.00 |
+| h-process-hotfix | 1.00, 1.00, 1.00 |
+| h-process-crash | 1.00, 1.00, 1.00 |
+| h-process-branch | 1.00, 1.00, 1.00 |
+| h-voice-update | 0.50, 1.00, 1.00 |
+| h-voice-ask-omar | 1.00, 0.50, 1.00 |
+| h-off-promotion | 1.00, 1.00, 1.00 |
+| h-off-partner-date | error, 1.00, 1.00 |
+| h-priv-kenji | 1.00, 1.00, 1.00 |
+| h-priv-hollis | 1.00, 1.00, 1.00 |
+| h-priv-owner | 0.00, 0.00, 0.00 |
