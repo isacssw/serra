@@ -15,6 +15,19 @@ const AUDIENCES: { value: Visibility; label: string; icon: typeof User; hint: st
 
 const message = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
+/** A page's Markdown as plain lines: headings, bullets and paragraphs, without the blank lines between them. */
+const PageBody = ({ text }: { text: string }) => (
+  <div className="flex flex-col gap-1.5 px-4 py-3 text-[13px] leading-6 text-ink">
+    {text.split('\n').map((line) => line.trim()).filter(Boolean).map((line, index) => {
+      const heading = /^#{1,6}\s+(.*)$/.exec(line);
+      if (heading) return <p key={index} className="font-semibold">{heading[1]}</p>;
+      const bullet = /^[-*]\s+(.*)$/.exec(line);
+      if (bullet) return <p key={index} className="flex gap-2"><span aria-hidden className="text-faint">•</span><span>{bullet[1]}</span></p>;
+      return <p key={index} className="text-muted">{line.replace(/^>\s?/, '')}</p>;
+    })}
+  </div>
+);
+
 export const AboutMe = () => {
   const navigate = useNavigate();
   const [visibility, setVisibility] = useState<Visibility>('team');
@@ -80,18 +93,18 @@ export const AboutMe = () => {
               <section key={section.path} aria-label={section.path} className="rounded-lg border border-line bg-panel">
                 <header className="flex items-center justify-between gap-3 border-b border-line-subtle px-4 py-2.5">
                   <div className="flex min-w-0 items-baseline gap-2">
-                    <h2 className="truncate font-mono text-[13px] font-semibold">{section.path}</h2>
+                    <h2 className="truncate font-mono text-[13px] font-semibold">{section.path === 'people/' ? 'people/ (one line each)' : section.path}</h2>
                     <span className="shrink-0 text-xs text-muted">confirmed {section.verified}</span>
                   </div>
-                  <button
+                  {section.path !== 'people/' && <button
                     type="button"
                     onClick={() => edit(section.path)}
                     className="inline-flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-xs text-muted hover:bg-hover hover:text-ink focus-visible:outline-2 focus-visible:outline-focus"
                   >
                     Edit <ArrowUpRight size={13} aria-hidden />
-                  </button>
+                  </button>}
                 </header>
-                <pre className="whitespace-pre-wrap break-words px-4 py-3 font-sans text-[13px] leading-6 text-ink">{section.body}</pre>
+                <PageBody text={section.body} />
               </section>
             ))}
           </div>

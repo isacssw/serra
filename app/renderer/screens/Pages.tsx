@@ -19,7 +19,7 @@ const message = (error: unknown): string => (error instanceof Error ? error.mess
  * approved version until the owner accepts the change as theirs or puts the approved text back.
  */
 const DriftNotice = ({ files, busy, onAccept, onRestore }: { files: string[]; busy: boolean; onAccept: () => void; onRestore: () => void }) => (
-  <section aria-labelledby="drift-title" className="flex flex-col gap-3 rounded-lg border border-warn/40 bg-panel p-4 sm:flex-row sm:items-start">
+  <section aria-labelledby="drift-title" className="flex gap-3 rounded-lg border border-warn/40 bg-panel p-4">
     <AlertTriangle size={16} aria-hidden className="mt-0.5 shrink-0 text-warn" />
     <div className="flex min-w-0 flex-1 flex-col gap-1">
       <h2 id="drift-title" className="text-sm font-semibold">
@@ -29,10 +29,10 @@ const DriftNotice = ({ files, busy, onAccept, onRestore }: { files: string[]; bu
       <ul className="mt-1 flex flex-wrap gap-x-3 gap-y-1">
         {files.map((file) => <li key={file} className="font-mono text-xs text-ink">{file}</li>)}
       </ul>
-    </div>
-    <div className="flex shrink-0 gap-2">
-      <Button disabled={busy} onClick={onRestore}>Restore approved</Button>
-      <Button variant="primary" disabled={busy} onClick={onAccept}>Accept as mine</Button>
+      <div className="mt-2 flex flex-wrap gap-2">
+        <Button variant="primary" disabled={busy} onClick={onAccept}>Accept as mine</Button>
+        <Button disabled={busy} onClick={onRestore}>Restore approved</Button>
+      </div>
     </div>
   </section>
 );
