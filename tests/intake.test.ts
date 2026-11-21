@@ -3,7 +3,7 @@ import { appendFileSync, existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test, { type TestContext } from 'node:test';
-import { admit, HELD_REQUESTS, heldCount, holdRequest, INTAKE_PAUSED, PAUSE_MS, pauseIntake, readPause, resumeIntake, takeHeld } from '../src/intake.ts';
+import { acknowledgePause, admit, dropHeld, HELD_REQUESTS, heldThread, holdRequest, INTAKE_ACK, INTAKE_PAUSED, PAUSE_MS, pauseIntake, readAck, readHeld, readPause, readPauseFile, resumeIntake } from '../src/intake.ts';
 import type { IncomingMessage } from '../src/types.ts';
 
 const profile = (t: TestContext): string => {
@@ -36,14 +36,35 @@ test('while paused, only a request that would start new work is held; a running 
   assert.equal(admit(false, true), 'handle');
 });
 
-test('held requests come back once, in order, and a broken line is skipped', (t) => {
+test('held requests stay on disk until each is started, in order, once; a broken line is skipped', (t) => {
   const dir = profile(t);
-  assert.deepEqual(takeHeld(dir), []);
-  holdRequest(dir, message('first'));
+  assert.deepEqual(readHeld(dir), []);
+  const first = message('first');
+  const second = { ...message('second'), messageTs: '2.000' };
+  holdRequest(dir, first);
+  holdRequest(dir, first);
   appendFileSync(join(dir, HELD_REQUESTS), 'not json\n');
-  holdRequest(dir, message('second'));
-  assert.equal(heldCount(dir), 3);
-  assert.deepEqual(takeHeld(dir).map((msg) => msg.text), ['first', 'second']);
-  assert.deepEqual(takeHeld(dir), [], 'each is started once');
-  assert.equal(heldCount(dir), 0);
+  holdRequest(dir, second);
+  assert.deepEqual(readHeld(dir).map((msg) => msg.text), ['first', 'second'], 'a message Slack delivered twice is held once');
+  assert.ok(heldThread(dir, first.channel, first.threadTs), 'its thread counts as the bot\'s, so replies wait behind it');
+  assert.equal(heldThread(dir, first.channel, '9.000'), false);
+  dropHeld(dir, first);
+  assert.deepEqual(readHeld(dir).map((msg) => msg.text), ['second'], 'the others stay until their turn');
+  dropHeld(dir, second);
+  assert.equal(existsSync(join(dir, HELD_REQUESTS)), false);
+});
+
+test('the daemon acknowledges a pause with the requests it is still starting; a stale or missing one says nothing', (t) => {
+  const dir = profile(t);
+  const now = Date.parse('2026-11-21T22:00:00Z');
+  assert.equal(readAck(dir, now), null, 'a daemon from before pauses writes none');
+  acknowledgePause(dir, 2, { pid: 42, now });
+  assert.deepEqual(readAck(dir, now + 1000), { pid: 42, at: new Date(now).toISOString(), starting: 2 });
+  assert.equal(readAck(dir, now + 120_000), null, 'stale');
+  pauseIntake(dir, 'app-update', { now });
+  resumeIntake(dir);
+  assert.equal(existsSync(join(dir, INTAKE_ACK)), false, 'lifting the pause drops the acknowledgment');
+  pauseIntake(dir, 'bot-update', { now, ms: 1000 });
+  assert.equal(readPause(dir, now + 2000), null);
+  assert.equal(readPauseFile(dir)?.reason, 'bot-update', 'the lapsed pause is still on file, for the cool-down after a restart');
 });

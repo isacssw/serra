@@ -13,7 +13,7 @@ import {
   type StatusOptions,
 } from '../../../src/releases.ts';
 import { launchd, preparedProblems, type DeployOptions, type PrepareOptions } from '../../../src/deploy.ts';
-import { pauseIntake, readPause, resumeIntake } from '../../../src/intake.ts';
+import { pauseIntake, readAck, readPause, readPauseFile, resumeIntake } from '../../../src/intake.ts';
 import type { Handlers } from '../bridge.ts';
 import { botSyncDecision, type BotSync } from '../bot-sync.ts';
 import type { HandlerContext } from './context.ts';
@@ -101,8 +101,11 @@ export const updatesService = (context: HandlerContext, deps: UpdatesDeps = {}) 
   const decide = async (profileDir: string | null, status?: Awaited<ReturnType<typeof releaseStatus>>) => {
     if (!profileDir || !status) return null;
     const paused = readPause(profileDir, now()) !== null;
-    // Our pause ran out while jobs still ran: let requests flow and wait for a natural quiet moment for a while.
+    // A pause that ran out while jobs still ran (this app's, or one left by the app before a restart): let requests flow
+    // and wait for a natural quiet moment for a while.
     if (ourPauses.has(profileDir) && !paused) { ourPauses.delete(profileDir); lapsed.set(profileDir, now()); }
+    const expired = !paused ? readPauseFile(profileDir) : null;
+    if (expired) lapsed.set(profileDir, Math.max(lapsed.get(profileDir) ?? 0, Date.parse(expired.until)));
     const mayPause = now() - (lapsed.get(profileDir) ?? -Infinity) > PAUSE_COOLDOWN_MS;
     let serviceLoaded = false;
     try { serviceLoaded = status.active ? await driver.loaded(status.active.label) : false; } catch { /* launchd didn't answer: treat as stopped */ }
@@ -161,8 +164,10 @@ export const updatesService = (context: HandlerContext, deps: UpdatesDeps = {}) 
         beforeStop: async () => {
           // The owner may have stopped the bot while this was building: don't start it again on its own.
           if (!force && label && !await driver.loaded(label)) throw new Error(stopped);
-          // Last, as close to the stop as possible: a job that started meanwhile holds the restart.
+          // Last, as close to the stop as possible: a job that started meanwhile holds the restart, and so does a request
+          // the paused daemon let through before the pause and is still starting (it says so in its acknowledgment).
           if (!force && runningJobs(profileDir).length > 0) throw new Error(jobStarted);
+          if (!force && (readAck(profileDir, now())?.starting ?? 0) > 0) throw new Error(jobStarted);
           context.expectStop?.();
         },
       });
@@ -176,9 +181,9 @@ export const updatesService = (context: HandlerContext, deps: UpdatesDeps = {}) 
         return { ok: false as const, error: outcome.error };
       }
       // The app's code and the app disagree on the version (a build mix-up): stop here rather than restart every minute.
-      const now = (await releaseStatus(profileDir)).active?.appVersion;
-      if (now !== target) {
-        const message = `The bot's code is version ${now ?? 'unknown'}, not ${target}. Reinstall Serra.`;
+      const running = (await releaseStatus(profileDir)).active?.appVersion;
+      if (running !== target) {
+        const message = `The bot's code is version ${running ?? 'unknown'}, not ${target}. Reinstall Serra.`;
         fail(message);
         line(message);
         return { ok: false as const, error: message };
@@ -236,12 +241,15 @@ export const updatesService = (context: HandlerContext, deps: UpdatesDeps = {}) 
       catch (error) { line(`Prepare failed: ${errorText(error)}`); throw error; }
     }),
     activate: () => exclusive('activate', async (profileDir) => {
-      const outcome = await activateRelease(profileDir, { ...deps.deploy, log: line });
+      // No new job starts during the switch; requests that arrive meanwhile start on the restarted bot.
+      pause(profileDir);
+      const outcome = await activateRelease(profileDir, { ...deps.deploy, log: line }).finally(() => resume(profileDir));
       if (!outcome.ok && outcome.stage === 'checks') line(`Activation refused: ${outcome.error}`);
       return outcome;
     }),
     rollback: () => exclusive('rollback', async (profileDir) => {
-      const outcome = await rollbackRelease(profileDir, { ...deps.deploy, log: line });
+      pause(profileDir);
+      const outcome = await rollbackRelease(profileDir, { ...deps.deploy, log: line }).finally(() => resume(profileDir));
       if (!outcome.ok) line(`Rollback failed: ${outcome.error}`);
       return outcome;
     }),
@@ -255,11 +263,17 @@ export const updatesService = (context: HandlerContext, deps: UpdatesDeps = {}) 
       if (running && running !== 'prepare') throw new Error('The bot is restarting. Restart Serra once it has finished.');
       // The bot follows the new version next: from now on new requests wait, so the running jobs are the last ones on
       // the old bot. The pause lapses on its own if the new version never gets to it.
+      // Written before Serra quits; if it can't be, the restart doesn't happen.
       const profileDir = context.profileDirOrNull();
-      const view = app().install();
-      if (view.state === 'installing' && profileDir && context.botFollowsApp && existsSync(join(profileDir, 'active.json'))) {
-        try { pauseIntake(profileDir, 'app-update', { now: now() }); } catch (error) { echo(`couldn't pause new requests: ${errorText(error)}`); }
+      const leads = profileDir !== null && context.botFollowsApp === true && existsSync(join(profileDir, 'active.json'));
+      const before = leads ? readPause(profileDir, now()) : null;
+      if (leads) {
+        try { pauseIntake(profileDir, 'app-update', { now: now() }); }
+        catch (error) { throw new Error(`Serra couldn't hold new requests for the update, so it didn't restart: ${errorText(error)}`); }
       }
+      const view = app().install();
+      // Not installing after all (nothing ready, a swap already waiting): lift a pause this call started.
+      if (leads && view.state !== 'installing' && !before) resumeIntake(profileDir);
       return view;
     },
     openInstaller: () => app().openInstaller(),

@@ -18,7 +18,7 @@ import { botSyncDecision, type BotSyncInput } from '../app/main/bot-sync.ts';
 import { updatesService } from '../app/main/ipc/updates.ts';
 import { type ServiceDriver } from '../src/deploy.ts';
 import { createProfile } from '../src/setup.ts';
-import { pauseIntake, readPause } from '../src/intake.ts';
+import { acknowledgePause, pauseIntake, readPause } from '../src/intake.ts';
 
 // ---------------------------------------------------------------------------------------------------------------
 // Developer-mode logic
@@ -318,7 +318,8 @@ test('activate and rollback run with the daemon stopped, one at a time, and repo
   assert.ok(during.log.includes('Checking the prepared release'));
   started();
   assert.deepEqual(await activating, { ok: true, release: plan.release });
-  assert.equal(pushes.at(-1), 'Bot connected. The new release is active.');
+  assert.ok(pushes.includes('Bot connected. The new release is active.'));
+  assert.equal(pushes.at(-1), 'New requests start again.', 'the switch paused new requests and lifted the pause after');
 
   const active = await handlers.status();
   assert.equal(active.releases?.active?.release, plan.release);
@@ -334,7 +335,7 @@ test('activate and rollback run with the daemon stopped, one at a time, and repo
   assert.equal((await handlers.status()).releases?.canRollback, true);
   pushes.length = 0;
   assert.deepEqual(await handlers.rollback(), { ok: true, release: plan.release });
-  assert.equal(pushes.at(-1), 'Previous installation restored.');
+  assert.ok(pushes.includes('Previous installation restored.'));
   assert.deepEqual(await handlers.rollback(), { ok: false, error: 'Already rolled back' });
   assert.equal(pushes.at(-1), 'Rollback failed: Already rolled back');
 });
@@ -470,11 +471,62 @@ test('Restart to update pauses new requests first, so the bot can move to the ne
   const f = await profileFixture(t);
   writeFileSync(join(f.directory, 'active.json'), JSON.stringify({ release: join(f.directory, 'releases/x'), appVersion: '0.1.0-alpha.2' }));
   const installing = { state: 'installing' } as unknown as AppUpdateView;
-  const appUpdater = { install: () => installing } as unknown as NonNullable<HandlerContext['appUpdater']>;
+  // The pause is on disk before Serra is told to quit.
+  let pausedAtInstall: unknown = 'not called';
+  const appUpdater = { install: () => { pausedAtInstall = readPause(f.directory)?.reason ?? null; return installing; } } as unknown as NonNullable<HandlerContext['appUpdater']>;
   const quiet = updatesHandlers({ ...contextFor(f.directory, []), appUpdater, botFollowsApp: false }, { echo: () => {} });
   quiet.install();
   assert.equal(readPause(f.directory), null, 'a copy run from source leads no bot: nothing paused');
   const handlers = updatesHandlers({ ...contextFor(f.directory, []), appUpdater, botFollowsApp: true }, { echo: () => {} });
   assert.equal((await handlers.install()).state, 'installing');
+  assert.equal(pausedAtInstall, 'app-update');
   assert.equal(readPause(f.directory)?.reason, 'app-update');
+
+  // Nothing to install after all: the pause this call started is lifted.
+  rmSync(join(f.directory, 'intake-paused.json'));
+  const idle = { install: () => ({ state: 'ready' }) } as unknown as NonNullable<HandlerContext['appUpdater']>;
+  await updatesHandlers({ ...contextFor(f.directory, []), appUpdater: idle, botFollowsApp: true }, { echo: () => {} }).install();
+  assert.equal(readPause(f.directory), null);
+});
+
+test('a request the paused daemon is still starting holds the restart, like a running job', async (t) => {
+  const f = await profileFixture(t);
+  const context: HandlerContext = { ...contextFor(f.directory, []), runtime: { version: '0.1.0-alpha.3', electron: '45.0.0', node: '22.20.0', platform: 'darwin' }, botFollowsApp: true };
+  const deps = { findNode: async () => '/opt/homebrew/bin/node', prepare: { install: false }, deploy: { driver: f.driver, launchAgentsDir: f.agents, preflight: async (): Promise<void> => {} }, echo: () => {} };
+  const { handlers, tick } = updatesService(context, deps);
+  const old = await handlers.prepare();
+  mkdirSync(join(old.release, 'node_modules/@slack/bolt'), { recursive: true });
+  writeFileSync(join(f.directory, 'prepared.json'), JSON.stringify({ ...old, appVersion: '0.1.0-alpha.2', fromApp: true }));
+  assert.equal((await handlers.activate()).ok, true);
+  f.driver.loaded = async () => true;
+  const fresh = await handlers.prepare();
+  mkdirSync(join(fresh.release, 'node_modules/@slack/bolt'), { recursive: true });
+  writeFileSync(join(f.directory, 'prepared.json'), JSON.stringify({ ...fresh, appVersion: '0.1.0-alpha.3', fromApp: true }));
+  f.events.length = 0;
+  // During the health checks the daemon reports a request it let in before the pause and is still starting.
+  deps.deploy.preflight = async () => { pauseIntake(f.directory, 'bot-update'); acknowledgePause(f.directory, 1); };
+  await tick();
+  assert.deepEqual(f.events, [], 'not restarted while a request is still starting');
+  deps.deploy.preflight = async () => { acknowledgePause(f.directory, 0); };
+  await tick();
+  assert.equal((await handlers.status()).releases?.active?.release, fresh.release);
+  assert.equal(readPause(f.directory), null);
+});
+
+test('a pause left by the app before a restart that lapsed with jobs running is not renewed by the new app at once', async (t) => {
+  const f = await profileFixture(t);
+  const clock = Date.parse('2026-11-21T23:00:00Z');
+  const context: HandlerContext = { ...contextFor(f.directory, []), runtime: { version: '0.1.0-alpha.3', electron: '45.0.0', node: '22.20.0', platform: 'darwin' }, botFollowsApp: true };
+  const deps = { findNode: async () => '/opt/homebrew/bin/node', prepare: { install: false }, deploy: { driver: f.driver, launchAgentsDir: f.agents, preflight: async () => {} }, echo: () => {}, now: () => clock };
+  const { handlers, tick } = updatesService(context, deps);
+  const old = await handlers.prepare();
+  mkdirSync(join(old.release, 'node_modules/@slack/bolt'), { recursive: true });
+  writeFileSync(join(f.directory, 'prepared.json'), JSON.stringify({ ...old, appVersion: '0.1.0-alpha.2', fromApp: true }));
+  assert.equal((await handlers.activate()).ok, true);
+  f.driver.loaded = async () => true;
+  followJob(f.directory);
+  // The previous app's pause ran out ten minutes ago.
+  pauseIntake(f.directory, 'app-update', { now: clock - 40 * 60_000 });
+  await tick();
+  assert.equal(readPause(f.directory, clock), null, 'requests keep flowing for now');
 });

@@ -22,6 +22,7 @@ Use one private profile per bot, outside the code checkout. `pnpm run setup` cre
 | releases/ | Prepared code snapshots and installed production dependencies |
 | prepared.json | The next prepared release and its content hash |
 | intake-paused.json | Present while the app has paused new work for an update; lapses on its own after 30 minutes |
+| intake-paused.ack.json | The bot's acknowledgment of that pause, with the requests it is still starting |
 | held-requests.jsonl | Requests that arrived during that pause, started by the bot once it is over |
 | active.json | Current activated release |
 | activation.json | Latest cutover transaction and rollback information |
