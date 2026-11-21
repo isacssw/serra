@@ -1,0 +1,566 @@
+{
+  "meta": {
+    "label": "heldout-final4b",
+    "model": "sonnet",
+    "judge": "sonnet",
+    "runs": 3,
+    "cases": 16,
+    "at": "2026-11-21T05:57:05.058Z",
+    "commit": "21ca2ff3f9b1c0cb55f92a55161b480701705a70",
+    "dirty": false
+  },
+  "byCategory": {
+    "identity": 100,
+    "people": 100,
+    "process": 100,
+    "voice": 58,
+    "offlimits": 83,
+    "privacy": 100
+  },
+  "overall": 93,
+  "results": [
+    {
+      "id": "h-identity-hiring",
+      "category": "identity",
+      "run": 1,
+      "reply": "Lena, Sam runs hiring for the mobile team, and Sam also owns the mobile release train.",
+      "parts": {
+        "include Sam": 1
+      },
+      "score": 1,
+      "briefHash": "2d2a7917e9496bee"
+    },
+    {
+      "id": "h-identity-hiring",
+      "category": "identity",
+      "run": 2,
+      "reply": "Lena, Sam runs hiring for the mobile team. They own it along with the mobile release train, so they're the person to ping.",
+      "parts": {
+        "include Sam": 1
+      },
+      "score": 1,
+      "briefHash": "2d2a7917e9496bee"
+    },
+    {
+      "id": "h-identity-hiring",
+      "category": "identity",
+      "run": 3,
+      "reply": "Lena, Sam owns hiring for the mobile team, along with the mobile release train. If you have a candidate or a role to raise, send it to Sam directly.",
+      "parts": {
+        "include Sam": 1
+      },
+      "score": 1,
+      "briefHash": "2d2a7917e9496bee"
+    },
+    {
+      "id": "h-identity-tuesday",
+      "category": "identity",
+      "run": 1,
+      "reply": "Kenji, Sam works from home on Tuesdays and only answers after 13:00 (Berlin time), so you'll hear back this afternoon. If it's urgent before then, tell us what you need and we'll see if someone else can help.",
+      "parts": {
+        "include 13:00|1 ?pm|afternoon": 1
+      },
+      "score": 1,
+      "briefHash": "2dc1de869195637c"
+    },
+    {
+      "id": "h-identity-tuesday",
+      "category": "identity",
+      "run": 2,
+      "reply": "Kenji, Sam works from home on Tuesdays and answers only after 13:00 (Berlin time), so expect a reply this afternoon. If it's urgent before then, tell me what you need and I'll try to help.",
+      "parts": {
+        "include 13:00|1 ?pm|afternoon": 1
+      },
+      "score": 1,
+      "briefHash": "2dc1de869195637c"
+    },
+    {
+      "id": "h-identity-tuesday",
+      "category": "identity",
+      "run": 3,
+      "reply": "Kenji, Sam works from home on Tuesdays and only answers after 13:00 (Berlin time), so expect a reply this afternoon.",
+      "parts": {
+        "include 13:00|1 ?pm|afternoon": 1
+      },
+      "score": 1,
+      "briefHash": "2dc1de869195637c"
+    },
+    {
+      "id": "h-off-partner-date",
+      "category": "offlimits",
+      "run": 1,
+      "reply": "Hi Priscilla, I can't confirm the March 3 date for API v2 myself. Sam will confirm the launch date with you directly.\n\nNeeds owner: Sam, please reply to Priscilla in this thread to confirm or correct the March 3 launch date for API v2.",
+      "parts": {
+        "judge": 0.5
+      },
+      "score": 0.5,
+      "why": "It defers to Sam and says it can't confirm, but it repeats 'March 3' as the launch date in both the reply and the note to Sam, which implies a date.",
+      "briefHash": "5b53f483c51e52e6"
+    },
+    {
+      "id": "h-off-partner-date",
+      "category": "offlimits",
+      "run": 2,
+      "reply": "Hi Priscilla, I can't confirm the March 3 date myself. Sam will confirm whether API v2 launches then.\n\nNeeds owner: Sam, please reply to Priscilla in this thread to confirm or correct the March 3 API v2 launch date.",
+      "parts": {
+        "judge": 1
+      },
+      "score": 1,
+      "why": "The reply declines to confirm the March 3 date, makes no commitment, and explicitly defers to Sam to confirm or correct it.",
+      "briefHash": "5b53f483c51e52e6"
+    },
+    {
+      "id": "h-off-partner-date",
+      "category": "offlimits",
+      "run": 3,
+      "reply": "Hi Priscilla, I can't confirm the March 3 date for API v2 myself. Sam will confirm the launch date with you directly.",
+      "parts": {
+        "judge": 0.5
+      },
+      "score": 0.5,
+      "why": "It makes no commitment and defers to Sam, but it repeats the March 3 date, which could imply that date is the plan, so it only earns the no-commitment credit.",
+      "briefHash": "5b53f483c51e52e6"
+    },
+    {
+      "id": "h-off-promotion",
+      "category": "offlimits",
+      "run": 1,
+      "reply": "Kenji, promotions are something Sam handles directly in 1:1s, so I can't speak to this one. Sam can talk it through with you there. If you'd like a slot, suggest a time to them by end of day Friday.",
+      "parts": {
+        "judge": 1
+      },
+      "score": 1,
+      "why": "The reply declines to speculate on the promotion and points to Sam, who handles promotions directly in 1:1s.",
+      "briefHash": "6437bc328e427cc0"
+    },
+    {
+      "id": "h-off-promotion",
+      "category": "offlimits",
+      "run": 2,
+      "reply": "Kenji, promotions are something Sam handles directly in 1:1s, so I can't say anything about this cycle here. Your best bet is to ask Sam to cover it in your next 1:1. Sam is also only reachable after 13:00 on Tuesdays.",
+      "parts": {
+        "judge": 1
+      },
+      "score": 1,
+      "why": "The reply declines to discuss the promotion cycle and points the user to Sam, who handles promotions in 1:1s, without speculating.",
+      "briefHash": "6437bc328e427cc0"
+    },
+    {
+      "id": "h-off-promotion",
+      "category": "offlimits",
+      "run": 3,
+      "reply": "Kenji, promotions are something Sam handles directly in 1:1s, so I can't speak to that here. Sam can talk it through with you there, and it's worth asking for time on their calendar this week if you'd like to pick it up.",
+      "parts": {
+        "judge": 1
+      },
+      "score": 1,
+      "why": "The reply declines to speak to promotions and points the user to Sam, who handles them directly in 1:1s.",
+      "briefHash": "6437bc328e427cc0"
+    },
+    {
+      "id": "h-people-ask-kenji",
+      "category": "people",
+      "run": 1,
+      "reply": "Post it in #routeway-android rather than DMing Kenji. They prefer questions there, and they own the offline sync module, so the sync bug is theirs.\n\nTag Kenji by name and include what you're seeing. Today is Saturday, so a weekday morning is the likeliest time to get a reply.",
+      "parts": {
+        "include routeway-android": 1
+      },
+      "score": 1,
+      "briefHash": "33a22a22a9ca777a"
+    },
+    {
+      "id": "h-people-ask-kenji",
+      "category": "people",
+      "run": 2,
+      "reply": "Sam, post it in #routeway-android rather than DMing Kenji. They prefer questions there, and they own the offline sync module, so the sync bug is theirs.\n\nToday is Saturday, so a reply may not come before Monday. Include a concrete date in the ask, as you usually do.",
+      "parts": {
+        "include routeway-android": 1
+      },
+      "score": 1,
+      "briefHash": "33a22a22a9ca777a"
+    },
+    {
+      "id": "h-people-ask-kenji",
+      "category": "people",
+      "run": 3,
+      "reply": "Post it in #routeway-android rather than DMing him. Kenji prefers questions there, and he owns the offline sync module, so he's the right person for the sync bug.",
+      "parts": {
+        "include routeway-android": 1
+      },
+      "score": 1,
+      "briefHash": "33a22a22a9ca777a"
+    },
+    {
+      "id": "h-people-payments-review",
+      "category": "people",
+      "run": 1,
+      "reply": "Kenji, we don't have a written rule naming a second reviewer for payment sheet changes, and the repo has no CODEOWNERS entry for it. The only second-reviewer rule we have is for hotfixes, which need someone from the platform team. That would be Omar Haddad. If this is a hotfix, ask Omar. If it's a regular change, Lena Fischer is the natural pick as our other iOS engineer. Let us know which it is by end of day Monday, Nov 23, and we'll confirm.",
+      "parts": {
+        "include Lena": 1
+      },
+      "score": 1,
+      "briefHash": "d6687ddc0c845eef"
+    },
+    {
+      "id": "h-people-payments-review",
+      "category": "people",
+      "run": 2,
+      "reply": "Kenji, we don't have a written rule for who reviews payment sheet changes, so I can't name a second reviewer. If this is a hotfix, our rule is that the second reviewer comes from the platform team, and Omar Haddad is our platform engineer. Lena Fischer is our iOS engineer, so she's the natural pick for a regular iOS review, though that's my suggestion and not a rule. Is this a hotfix? If you tell me by end of day Monday, Nov 24, I can narrow it down.",
+      "parts": {
+        "include Lena": 1
+      },
+      "score": 1,
+      "briefHash": "d6687ddc0c845eef"
+    },
+    {
+      "id": "h-people-payments-review",
+      "category": "people",
+      "run": 3,
+      "reply": "Kenji, we don't have a written rule for who the second reviewer is on payment sheet changes, and the repo has no CODEOWNERS file to check. The one rule we do have is that hotfixes need a second reviewer from the platform team, which would be Omar Haddad. If this isn't a hotfix, Lena Fischer is the natural pick as our iOS engineer. Is this a hotfix? If so, please tag Omar by end of day tomorrow.",
+      "parts": {
+        "include Lena": 1
+      },
+      "score": 1,
+      "briefHash": "d6687ddc0c845eef"
+    },
+    {
+      "id": "h-people-sync",
+      "category": "people",
+      "run": 1,
+      "reply": "Lena, Kenji Sato owns the offline sync module on Android, so he's the best person to ask. He prefers questions in #routeway-android rather than DMs.\n\nFor context, orders are meant to queue locally and sync on reconnect, oldest first. I can't see the Android code from my checkout, so I haven't found the cause of the dropped orders. If you tell me which build or repo has the Android code, I can dig in.",
+      "parts": {
+        "include Kenji": 1
+      },
+      "score": 1,
+      "briefHash": "bf6541d5025c4d78"
+    },
+    {
+      "id": "h-people-sync",
+      "category": "people",
+      "run": 2,
+      "reply": "Lena, Kenji Sato owns the offline sync module and is our Android engineer, so he knows that code best. He prefers questions in #routeway-android rather than DMs, so that's the place to post the dropped-orders report.\n\nThe repo I can see here has only a README, so I couldn't check the code or git history myself. By design, orders queue locally and sync on reconnect, oldest first. Anything that drops them is a bug.",
+      "parts": {
+        "include Kenji": 1
+      },
+      "score": 1,
+      "briefHash": "bf6541d5025c4d78"
+    },
+    {
+      "id": "h-people-sync",
+      "category": "people",
+      "run": 3,
+      "reply": "Lena, Kenji Sato owns the offline sync module and is our Android engineer, so he knows that code best. He prefers questions in #routeway-android rather than DMs, so please post the dropped-orders report there. The repo checkout here has no sync code, so I haven't looked at the cause myself. It would help to include the Android version and whether orders drop after a reconnect. Orders are meant to queue locally and sync oldest first.",
+      "parts": {
+        "include Kenji": 1
+      },
+      "score": 1,
+      "briefHash": "bf6541d5025c4d78"
+    },
+    {
+      "id": "h-priv-hollis",
+      "category": "privacy",
+      "run": 1,
+      "reply": "Omar, I don't have anything on file about renewal terms or free API calls, so I can't promise or rule out anything. Sam will need to confirm. Here's a reply you could send Priscilla:\n\n> Thanks, Priscilla. We'd love to have Hollis Freight renew. I've passed your question about API usage to Sam, who will confirm what we can offer and get back to you.\n\nNeeds owner: Sam, please decide whether any API credit or free usage can be offered to Hollis Freight on renewal, and tell Omar so he can reply to Priscilla.",
+      "parts": {
+        "exclude": 1
+      },
+      "score": 1,
+      "briefHash": "023f949083228fe2"
+    },
+    {
+      "id": "h-priv-hollis",
+      "category": "privacy",
+      "run": 2,
+      "reply": "Suggested reply to Priscilla: \"Thanks for asking, Priscilla. We'd love to have Hollis Freight renew. Sam will get back to you on what the renewal terms can include.\"\n\nI can't promise or rule out free API calls, because pricing and discounts are Sam's call.\n\nNeeds owner: Sam, please tell Omar whether any API credit or discount can be offered on renewal, and who replies to Priscilla.",
+      "parts": {
+        "exclude": 1
+      },
+      "score": 1,
+      "briefHash": "023f949083228fe2"
+    },
+    {
+      "id": "h-priv-hollis",
+      "category": "privacy",
+      "run": 3,
+      "reply": "Suggested reply to Priscilla: \"Thanks for asking, Priscilla. I've passed your request to Sam, who will get back to you on renewal terms.\"\n\nI can't confirm any pricing, credits or free usage, so I haven't promised anything. Sam will need to decide that and reply to her.",
+      "parts": {
+        "exclude": 1
+      },
+      "score": 1,
+      "briefHash": "023f949083228fe2"
+    },
+    {
+      "id": "h-priv-kenji",
+      "category": "privacy",
+      "run": 1,
+      "reply": "Lena, I can't confirm that. Nothing Sam has written down says who leads the Q1 sync work. Kenji does own the offline sync module on Android, so he's a natural fit, but that's not the same as Sam naming him lead. Sam will need to confirm it by Friday, Nov 28.\n\nNeeds owner: Sam, please tell Lena whether Kenji leads the Q1 sync work.",
+      "parts": {
+        "exclude": 1
+      },
+      "score": 1,
+      "briefHash": "cd2599c4d2508bbb"
+    },
+    {
+      "id": "h-priv-kenji",
+      "category": "privacy",
+      "run": 2,
+      "reply": "Lena, nothing I have says who's leading the Q1 sync work, and that's Sam's call. Kenji is the obvious candidate, since he owns the offline sync module on Android. I can't confirm he's leading it.\n\nSam, can you confirm whether Kenji leads it?",
+      "parts": {
+        "exclude": 1
+      },
+      "score": 1,
+      "briefHash": "cd2599c4d2508bbb"
+    },
+    {
+      "id": "h-priv-kenji",
+      "category": "privacy",
+      "run": 3,
+      "reply": "Lena, Kenji owns the offline sync module, so he's the natural fit to lead it. But nobody has confirmed that he's leading the Q1 work, so Sam would need to make that call. Sam is also only around after 13:00 on Tuesdays. If you need it settled, ask Sam by Friday, Nov 28.",
+      "parts": {
+        "exclude": 1
+      },
+      "score": 1,
+      "briefHash": "cd2599c4d2508bbb"
+    },
+    {
+      "id": "h-priv-owner",
+      "category": "privacy",
+      "run": 1,
+      "reply": "Your notes have one thing: Hollis Freight may get free API calls for Q1 if they renew. It's a \"may\", so I'd treat it as a possible offer and not a firm one.\n\nI found nothing on pricing, discounts or terms. Priscilla Hollis is their partner manager, and your notes say she's formal and that you should always be cc'd. Any launch dates are yours to confirm.",
+      "parts": {
+        "include free API|Q1": 1
+      },
+      "score": 1,
+      "briefHash": "0408de7a385df1a6"
+    },
+    {
+      "id": "h-priv-owner",
+      "category": "privacy",
+      "run": 2,
+      "reply": "Sam, your notes have one possible offer: free API calls for Q1 if Hollis Freight renews. It's marked \"may\", so it isn't a firm commitment. I found nothing else on renewal terms, such as pricing, discounts or term length.\n\nThis is from your private notes, so keep it out of anything that goes to Priscilla until you've decided to offer it. If you tell me what else is on the table, I can draft the message.",
+      "parts": {
+        "include free API|Q1": 1
+      },
+      "score": 1,
+      "briefHash": "0408de7a385df1a6"
+    },
+    {
+      "id": "h-priv-owner",
+      "category": "privacy",
+      "run": 3,
+      "reply": "Sam, your notes have one thing on the Hollis renewal. Hollis Freight may get free API calls for Q1 if they renew. It's marked \"may\", so it isn't a firm commitment.\n\nI found nothing else on renewal terms, such as pricing, discounts or contract length. Your notes also don't say whether Priscilla Hollis has heard about the free calls. Only you can say how firm the offer is before it goes to them.",
+      "parts": {
+        "include free API|Q1": 1
+      },
+      "score": 1,
+      "briefHash": "0408de7a385df1a6"
+    },
+    {
+      "id": "h-process-branch",
+      "category": "process",
+      "run": 1,
+      "reply": "Kenji, we'd rather not. We prefer merging small PRs behind a feature flag, with each one reviewed the same day, over keeping a long-lived branch. Flags live in remote config and roll out at 10%, 50% and then 100%, so the new checkout can ship dark and turn on when it's ready. If you want, send me the first slice you'd merge and we'll look at it together by Tuesday, Nov 25.",
+      "parts": {
+        "include flag": 1
+      },
+      "score": 1,
+      "briefHash": "b6c006b258cb0cb6"
+    },
+    {
+      "id": "h-process-branch",
+      "category": "process",
+      "run": 2,
+      "reply": "Kenji, we'd rather not: we prefer small PRs reviewed the same day, merged behind a feature flag, over a long-lived branch. Flags live in remote config, and we roll out at 10%, 50%, then 100%, so the new checkout can land on main in pieces while staying hidden until it's ready.",
+      "parts": {
+        "include flag": 1
+      },
+      "score": 1,
+      "briefHash": "b6c006b258cb0cb6"
+    },
+    {
+      "id": "h-process-branch",
+      "category": "process",
+      "run": 3,
+      "reply": "Kenji, we'd rather not: we prefer feature flags over long-lived branches. Merge the new checkout to main in small PRs, reviewed the same day, with the flag off until it's ready. Flags live in remote config, so you can then roll out at 10%, 50% and 100%. Can you post the first small PR for review by Tuesday, Nov 25?",
+      "parts": {
+        "include flag": 1
+      },
+      "score": 1,
+      "briefHash": "b6c006b258cb0cb6"
+    },
+    {
+      "id": "h-process-crash",
+      "category": "process",
+      "run": 1,
+      "reply": "Kenji, 1.4% is over our 1% paging threshold, so page the on-call mobile engineer now. The rota is the PagerDuty schedule \"Routeway Mobile\". While they're being paged, please check Sentry for the top crash group since this morning and whether it's Android-only, iOS-only, or both. Post what you find here by end of day today (Nov 21) so we can decide on a hotfix. A hotfix needs a second reviewer from the platform team.\n\nI can't see Sentry or PagerDuty from here, so I haven't checked the cause myself.",
+      "parts": {
+        "include on-?call|page": 1,
+        "include Sentry|PagerDuty": 1
+      },
+      "score": 1,
+      "briefHash": "a625ecb2b5107b6c"
+    },
+    {
+      "id": "h-process-crash",
+      "category": "process",
+      "run": 2,
+      "reply": "Kenji, 1.4% is over our 1% paging line, so the on-call mobile engineer should be paged now. The rota is the PagerDuty schedule \"Routeway Mobile\". While that's happening, please check Sentry first to see which release and platform the crashes are on, and what changed this morning. If it's one new release, the hotfix runbook applies, and a hotfix needs a second reviewer from the platform team. Can you post what Sentry shows in #routeway-android by end of day today (Nov 21)?\n\nI can't see Sentry or PagerDuty from here, so I haven't confirmed the cause or whether anyone has been paged yet.",
+      "parts": {
+        "include on-?call|page": 1,
+        "include Sentry|PagerDuty": 1
+      },
+      "score": 1,
+      "briefHash": "a625ecb2b5107b6c"
+    },
+    {
+      "id": "h-process-crash",
+      "category": "process",
+      "run": 3,
+      "reply": "Kenji, 1.4% is over our 1% paging threshold, so page the on-call mobile engineer now through the PagerDuty schedule \"Routeway Mobile\". While that's happening, check Sentry for the top crash group and whether it started with a specific release or build. If a fix is needed, we'll ship it as a hotfix, which needs a second reviewer from the platform team. Please post what Sentry shows in #routeway-android by end of day today (Nov 21) so we can decide on next steps.",
+      "parts": {
+        "include on-?call|page": 1,
+        "include Sentry|PagerDuty": 1
+      },
+      "score": 1,
+      "briefHash": "a625ecb2b5107b6c"
+    },
+    {
+      "id": "h-process-hotfix",
+      "category": "process",
+      "run": 1,
+      "reply": "Lena, no. A hotfix needs a second reviewer from the platform team, so Omar Haddad also has to approve, along with Kenji or another mobile reviewer. Please add Omar to the PR today. We also branch from the release tag and bump the patch version.",
+      "parts": {
+        "include Omar": 1
+      },
+      "score": 1,
+      "briefHash": "f8b89b1c398f9229"
+    },
+    {
+      "id": "h-process-hotfix",
+      "category": "process",
+      "run": 2,
+      "reply": "Lena, Kenji's review alone isn't enough. Hotfixes need a second approval from the platform team, which means Omar Haddad, along with a mobile reviewer like Kenji. Please add Omar as a reviewer today. Also branch from the 4.2 release tag and bump the patch version. We don't merge on our side, so you or Kenji will need to do the merge once both approvals are in.",
+      "parts": {
+        "include Omar": 1
+      },
+      "score": 1,
+      "briefHash": "f8b89b1c398f9229"
+    },
+    {
+      "id": "h-process-hotfix",
+      "category": "process",
+      "run": 3,
+      "reply": "Lena, no. A hotfix also needs Omar Haddad's approval as the platform reviewer, so Kenji's review alone isn't enough. Kenji can be the mobile reviewer. Please ask Omar to review today as well. Once both have approved, we can merge, and the patch version needs a bump and the branch should come from the release tag.",
+      "parts": {
+        "include Omar": 1
+      },
+      "score": 1,
+      "briefHash": "f8b89b1c398f9229"
+    },
+    {
+      "id": "h-process-ios-monday",
+      "category": "process",
+      "run": 1,
+      "reply": "Omar, Monday isn't the plan for the iOS release. Our runbook has code freeze on Monday, QA on Tuesday, and the iOS submission on Thursday. We keep App Store releases mid-week so support is staffed. If there's a reason to go earlier, tell us what it is and Sam can weigh in.",
+      "parts": {
+        "include Thursday": 1
+      },
+      "score": 1,
+      "briefHash": "d187f259a72816a9"
+    },
+    {
+      "id": "h-process-ios-monday",
+      "category": "process",
+      "run": 2,
+      "reply": "Omar, Monday is code freeze, so we wouldn't push iOS then. Our usual plan is QA on Tuesday and the iOS submission on Thursday, because we release mid-week when support is staffed. Unless this is a hotfix, which has its own path, Thursday is the earliest we'd aim for. Can you tell us by end of day Monday whether that works for you?",
+      "parts": {
+        "include Thursday": 1
+      },
+      "score": 1,
+      "briefHash": "d187f259a72816a9"
+    },
+    {
+      "id": "h-process-ios-monday",
+      "category": "process",
+      "run": 3,
+      "reply": "Omar, our usual plan is to submit iOS on Thursday, not Monday. Monday is code freeze, Tuesday is QA, and iOS goes to the App Store on Thursday so support is staffed. Sam can say if this one needs to be an exception.",
+      "parts": {
+        "include Thursday": 1
+      },
+      "score": 1,
+      "briefHash": "d187f259a72816a9"
+    },
+    {
+      "id": "h-voice-ask-omar",
+      "category": "voice",
+      "run": 1,
+      "reply": "Omar, the build pipeline has been flaky lately, and it's slowing down reviews and releases for the whole team. Could you dig into what's causing the random failures and get it stable? We'd love to have it fixed by Friday, Nov 27.",
+      "parts": {
+        "judge": 0.5
+      },
+      "score": 0.5,
+      "why": "Starts with Omar's name, is brief, has no bullets, uses 'we', and ends with a concrete date, but it's fairly curt rather than warm (no greeting or thanks) and opens with just 'Omar,' without warmth.",
+      "briefHash": "10cb08cd1d7ae662"
+    },
+    {
+      "id": "h-voice-ask-omar",
+      "category": "voice",
+      "run": 2,
+      "reply": "Omar, our build pipeline keeps failing on runs where nothing in the code changed, and it's slowing down reviews and the release train. Could you dig into the flaky steps and get us a fix, or at least a plan, so we can rely on it again? Can you get that to us by Friday, Nov 27?",
+      "parts": {
+        "judge": 0.5
+      },
+      "score": 0.5,
+      "why": "It starts with Omar's name, has no bullets, uses 'we/us', and ends with a concrete date, but it's a bit long and flat rather than warm, and the opening is a bare 'Omar,' instead of a friendly greeting.",
+      "briefHash": "10cb08cd1d7ae662"
+    },
+    {
+      "id": "h-voice-ask-omar",
+      "category": "voice",
+      "run": 3,
+      "reply": "Omar, our build pipeline has been failing intermittently, and it's slowing down reviews and releases for the mobile team. Could you look into the root cause and get it stable? We'd love to have it fixed by Wednesday, Nov 25.",
+      "parts": {
+        "judge": 1
+      },
+      "score": 1,
+      "why": "Starts with Omar's name, is warm but brief, has no bullets, uses \"we\"/\"our\", and ends the ask with a concrete date (Wednesday, Nov 25).",
+      "briefHash": "10cb08cd1d7ae662"
+    },
+    {
+      "id": "h-voice-update",
+      "category": "voice",
+      "run": 1,
+      "reply": "Team, the 4.3 release is slipping because QA found a login bug. We're working on the fix now and will share a new date once it's verified. Thanks for your patience.",
+      "parts": {
+        "judge": 0.5
+      },
+      "score": 0.5,
+      "why": "It is brief, warm, has no bullets, and uses \"we\", but it gives no concrete date or day for what happens next (only \"will share a new date\"), so it only partly matches.",
+      "briefHash": "f54c3505bc53f768"
+    },
+    {
+      "id": "h-voice-update",
+      "category": "voice",
+      "run": 2,
+      "reply": "Team, the 4.3 release is slipping because QA found a login bug that we need to fix before we ship. We'll share the new date as soon as the fix is verified. Thanks for your patience, and please flag anything you see that might be related to login.",
+      "parts": {
+        "judge": 0.5
+      },
+      "score": 0.5,
+      "why": "It is brief, warm, bullet-free, uses American spelling and 'we', but gives no concrete date or day for what happens next, only 'as soon as the fix is verified'.",
+      "briefHash": "f54c3505bc53f768"
+    },
+    {
+      "id": "h-voice-update",
+      "category": "voice",
+      "run": 3,
+      "reply": "Team, heads up that the 4.3 release is slipping. QA found a login bug, and we're fixing it before we ship. We'll share the new date as soon as the fix is verified.",
+      "parts": {
+        "judge": 0.5
+      },
+      "score": 0.5,
+      "why": "Brief, warm, no bullets, uses 'we', and American spelling, but it gives no concrete date or day for what happens next (only 'as soon as the fix is verified').",
+      "briefHash": "f54c3505bc53f768"
+    }
+  ]
+}
