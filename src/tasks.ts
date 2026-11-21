@@ -93,7 +93,7 @@ export const taskBriefInput = (config: Pick<Config, 'ownerName'>, request: strin
 
 /** The brief a task's worker gets: the daemon's `fillBrief` with the profile's brief and knowledge index. */
 export const taskBrief = (config: Config, request: string): string =>
-  fillBrief(config, createKnowledge(config.knowledgeDir).loadIndex(), taskBriefInput(config, request));
+  fillBrief(config, createKnowledge(config.knowledgeDir).briefKnowledge('owner'), taskBriefInput(config, request));
 
 /** The thread `startTask` would start, without starting it. */
 export const taskThreadInput = (config: Config, request: string, now: Date = new Date()): StartThreadInput =>

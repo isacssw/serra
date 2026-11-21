@@ -33,7 +33,7 @@ export const briefHandlers = (context: HandlerContext): Handlers<'brief'> => {
     check: (document, value) => briefProblems(documentName(document), text(value, 'The text')),
     preview: (request, draft) => {
       const config = loadConfig({ profileDir: context.profileDir(), env: {} });
-      const index = createKnowledge(config.knowledgeDir).loadIndex();
+      const index = createKnowledge(config.knowledgeDir).briefKnowledge('owner');
       const input = sampleBriefInput(config, nonEmpty(request, 'A sample request'));
       if (draft === undefined || draft === null) return fillBrief(config, index, input);
       const template = text(draft, 'The draft');

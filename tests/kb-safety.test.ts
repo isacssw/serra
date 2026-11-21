@@ -12,6 +12,7 @@ import { buildBrief } from '../evals/capture.ts';
 import { codeRoot } from '../src/config.ts';
 import { createKnowledge } from '../src/knowledge.ts';
 import { createProposals } from '../src/proposals.ts';
+import { proposeBriefUpdate } from '../src/brief.ts';
 
 const ROBIN = 'UROBIN0001'; const PRIYA = 'UPRIYA0001';
 
@@ -125,7 +126,7 @@ test('merging a proposal for a page replaces the page instead of appending to it
 
 // --- Who sees what ---------------------------------------------------------------------------------------------------
 
-test('owner-only pages never reach a teammate\'s or an outsider\'s brief, and still reach the owner', { todo: 'SERRA-41 step 4' }, async (t) => {
+test('owner-only pages never reach a teammate\'s or an outsider\'s brief, and still reach the owner', async (t) => {
   const profileDir = fixture(t);
   const teammate = await buildBrief(profileDir, { via: 'channel', user: PRIYA, text: 'any news?' });
   const shared = await buildBrief(profileDir, { via: 'shared', user: PRIYA, text: 'any news?' });
@@ -138,7 +139,7 @@ test('owner-only pages never reach a teammate\'s or an outsider\'s brief, and st
   assert.match(owner, /private-notes\.md/);
 });
 
-test('every brief carries the owner\'s About me, capped in size', { todo: 'SERRA-41 step 4' }, async (t) => {
+test('every brief carries the owner\'s About me, capped in size', async (t) => {
   const brief = await buildBrief(fixture(t), { via: 'channel', user: PRIYA, text: 'what does Robin own?' });
   const about = /<about-owner>([\s\S]*?)<\/about-owner>/.exec(brief)?.[1] ?? '';
   assert.match(about, /Staff engineer/);
@@ -165,4 +166,17 @@ test('the owner can accept a hand edit as theirs, or put the approved text back'
   assert.deepEqual(knowledge.drift(), { changed: [], removed: [] });
   const brief = await buildBrief(profileDir, { via: 'dm', user: ROBIN, text: 'what are my rules?' });
   assert.doesNotMatch(brief, /unreviewed changes/);
+});
+
+test('an older brief gets About me anyway, and the shipped brief is proposed for the owner to review', async (t) => {
+  const profileDir = fixture(t);
+  const old = readFileSync(join(profileDir, 'brief.md'), 'utf8')
+    .replace(/## About \{\{OWNER_NAME\}\}[\s\S]*?(?=## What)/, '')
+    .replace('- Never promote, merge or undo a proposal', '- When {{OWNER_NAME}} confirms a proposal in the thread, promote it: edit index.md.\n- Never promote, merge or undo a proposal');
+  writeFileSync(join(profileDir, 'brief.md'), old);
+  const brief = await buildBrief(profileDir, { via: 'channel', user: PRIYA, text: 'what does Robin own?' });
+  assert.match(brief, /<about-owner>[\s\S]*Staff engineer[\s\S]*<\/about-owner>/);
+  assert.equal(proposeBriefUpdate(profileDir), true);
+  assert.equal(readFileSync(join(profileDir, 'proposed/knowledge-update/brief.md'), 'utf8'), readFileSync(join(codeRoot, 'templates/brief.md'), 'utf8'));
+  assert.equal(proposeBriefUpdate(profileDir), false, 'proposed once');
 });

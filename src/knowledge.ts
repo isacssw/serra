@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync } from '
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { writeFileAtomic } from './config.ts';
 import { createJournal, type KnowledgeDrift } from './knowledge-journal.ts';
+import { compileAboutMe, filterIndex, pageAudience, type AboutMe, type Visibility } from './owner-model.ts';
 import type { KnowledgePage, Profile } from './contracts.ts';
 import {
   DATE, daysSince, frontmatter, INDEX_MAX_LINES, lineCount, normalizePageText, NOT_PAGES, pageBadge, pageProblems, PROPOSALS_DIR,
@@ -59,6 +60,24 @@ export const knowledgePagePath = (root: string, relativePath: string, what: stri
   if (path === PROPOSALS_DIR || path.startsWith(`${PROPOSALS_DIR}/`)) throw new Error(`${what} can't be inside proposals/: ${relativePath}`);
   if (NOT_PAGES.has(path)) throw new Error(`${what} can't be ${path}; that file is not a page.`);
   return path;
+};
+
+/** The knowledge a brief carries for one reply. */
+export interface BriefKnowledge {
+  index: string;
+  aboutMe: AboutMe;
+  visibility: Visibility;
+}
+
+/** Markdown files under `dir`, relative to it, skipping dot folders. */
+const markdownIn = (dir: string, relativeDir = ''): string[] => {
+  if (!existsSync(join(dir, relativeDir))) return [];
+  return readdirSync(join(dir, relativeDir), { withFileTypes: true }).flatMap((entry) => {
+    if (entry.name.startsWith('.')) return [];
+    const path = relativeDir ? `${relativeDir}/${entry.name}` : entry.name;
+    if (entry.isDirectory()) return markdownIn(dir, path);
+    return entry.name.endsWith('.md') && !NOT_PAGES.has(path) && !path.startsWith(`${PROPOSALS_DIR}/`) ? [path] : [];
+  });
 };
 
 export interface KnowledgeOptions {
@@ -122,15 +141,30 @@ export const createKnowledge = (knowledgeDir: string, { backupDir }: KnowledgeOp
    * The index comes from the owner's approved copy (knowledge-journal.ts). When files changed outside Serra since,
    * the brief gets the approved index and says which pages changed and where their approved text is.
    */
-  const loadIndex = (): string => {
+  const loadIndex = (visibility: Visibility = 'owner'): string => briefKnowledge(visibility).index;
+
+  /**
+   * What a brief gets from the knowledge for a reply that `visibility` will see: the index rows that audience may
+   * open, and About me. Both come from the owner's approved copy; when files changed outside Serra since, the index
+   * says which, and where their approved text is.
+   */
+  const briefKnowledge = (visibility: Visibility, now: Date = new Date()): BriefKnowledge => {
     const current = read('index.md');
     journal.seed();
     const { changed, removed } = journal.drift();
-    if (changed.length === 0 && removed.length === 0) return current.trim();
-    const index = (journal.approvedText('index.md') ?? current).trim();
-    const files = [...changed, ...removed].map((path) => `\`${path}\``).join(', ');
-    return `${index}\n\nThese files changed outside Serra and the owner hasn't approved them yet (unreviewed changes): ${files}. `
-      + `Don't use what they say now. Read the approved copy of any page from ${journal.approvedRoot} instead.`;
+    const drifted = changed.length > 0 || removed.length > 0;
+    const approved = (path: string): string | null => (drifted ? journal.approvedText(path) : existsSync(join(root, path)) ? read(path) : null);
+    const pages = (drifted ? markdownIn(journal.approvedRoot) : pageFiles()).filter((path) => path !== 'index.md')
+      .flatMap((path) => { const text = approved(path); return text === null ? [] : [{ path, text }]; });
+    const audiences = new Map(pages.map(({ path, text }) => [path, pageAudience(frontmatter(text))]));
+    const aboutMe = compileAboutMe(pages, visibility, now);
+    let index = filterIndex((drifted ? journal.approvedText('index.md') ?? current : current).trim(), (page) => audiences.get(page) ?? null, visibility);
+    if (drifted) {
+      const files = [...changed, ...removed].map((path) => `\`${path}\``).join(', ');
+      index += `\n\nThese files changed outside Serra and the owner hasn't approved them yet (unreviewed changes): ${files}. `
+        + `Don't use what they say now. Read the approved copy of any page from ${journal.approvedRoot} instead.`;
+    }
+    return { index, aboutMe, visibility };
   };
 
   /** Files that changed outside Serra since the owner last approved the knowledge. */
@@ -310,5 +344,5 @@ export const createKnowledge = (knowledgeDir: string, { backupDir }: KnowledgeOp
     return { page: describePage(page, after, readIndexed(), { now, roots }), backupId };
   };
 
-  return { loadIndex, checkKnowledge, listPages, readPage, savePage, drift, acceptDrift, restoreDrift };
+  return { loadIndex, briefKnowledge, checkKnowledge, listPages, readPage, savePage, drift, acceptDrift, restoreDrift };
 };

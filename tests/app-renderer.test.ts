@@ -75,11 +75,11 @@ test('routes: every sidebar item has a unique route, in a known section', () => 
   for (const route of routes) {
     assert.ok(sectionIds.has(route.section), `${route.id} is in an unknown section`);
     assert.match(route.path, /^\/[a-z-]+(\/[a-z-]+)?$/);
-    assert.match(route.ticket, /^APP-\d+$/);
+    assert.match(route.ticket, /^(APP|SERRA)-\d+$/);
   }
   // The MVP screens from the spike, in the mockup's order.
   assert.deepEqual(routes.map((route) => route.label), [
-    'Needs you', 'Running', 'Done today', 'New task', 'Proposals', 'Pages', 'Brief & policy', 'Bot & Slack', 'People', 'Repositories',
+    'Needs you', 'Running', 'Done today', 'New task', 'About me', 'Proposals', 'Pages', 'Brief & policy', 'Bot & Slack', 'People', 'Repositories',
     'Alerts', 'Worker', 'Secrets', 'Tools', 'Updates', 'Diagnostics', 'Appearance',
   ]);
 });

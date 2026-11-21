@@ -3,6 +3,8 @@ import { randomBytes } from 'node:crypto';
 import { join } from 'node:path';
 import type { webApi } from '@slack/bolt';
 import { fillBrief, needsOwner, NO_THREAD } from './brief.ts';
+import type { BriefKnowledge } from './knowledge.ts';
+import type { Visibility } from './owner-model.ts';
 import type { Config, MessageTrigger } from './config.ts';
 import { audienceOf, createBatcher, followUpMessage, isPing, mentionedUsers, NO_MENTION_HINT, ownerNotice, readable, speakerName, type Audience, type ThreadLine } from './conversation.ts';
 import { shareImages } from './images.ts';
@@ -135,6 +137,8 @@ export interface BotDeps {
   botUserId: () => string;
   store: ReturnType<typeof createStore>;
   loadIndex: () => string;
+  /** The knowledge for a reply the given audience will see. Without it, every brief gets `loadIndex()` and no About me. */
+  loadKnowledge?: (visibility: Visibility) => BriefKnowledge;
   logger: { info(message: string): void; warn(message: string): void; error(message: string): void; debug(message: string): void };
   t3?: { startThread: typeof startThread; sendToThread: typeof sendToThread; showThread: typeof showThread };
   questions?: { listQuestions: typeof listQuestions; answerQuestion: typeof answerQuestion };
@@ -153,7 +157,7 @@ export interface BotDeps {
  * and posts what it answers. Everything Slack sees goes through here.
  */
 export const createBot = ({
-  config, client, botUserId, store, loadIndex, logger,
+  config, client, botUserId, store, loadIndex, loadKnowledge, logger,
   t3 = { startThread, sendToThread, showThread },
   questions = { listQuestions, answerQuestion },
   fetchBase = () => run('git', ['-C', config.project, 'fetch', config.remote, '--quiet']),
@@ -316,18 +320,44 @@ export const createBot = ({
       .catch((failure: unknown) => logger.error(`Could not report the failure in ${key}: ${errorMessage(failure)}`));
   };
 
+  /** Whether a channel is shared with another company, remembered for a few minutes: it rarely changes. */
+  const sharedChannels = new Map<string, { external: boolean; until: number }>();
+  const VISIBILITY_TTL_MS = 10 * 60 * 1000;
+
+  /**
+   * Who will see the bot's reply in this thread. A DM is the owner's own, or a teammate's. A channel shared with
+   * another company, or one Slack won't describe, counts as outside: the brief then carries only what may be said there.
+   */
+  const replyVisibility = async (msg: IncomingMessage): Promise<Visibility> => {
+    if (msg.channel.startsWith('D')) return msg.user === config.owner ? 'owner' : 'team';
+    const known = sharedChannels.get(msg.channel);
+    if (known && known.until > now()) return known.external ? 'external' : 'team';
+    try {
+      const { channel } = await client.conversations.info({ channel: msg.channel });
+      const shared = channel as { is_im?: boolean; is_ext_shared?: boolean; is_pending_ext_shared?: boolean } | undefined;
+      if (shared?.is_im) return msg.user === config.owner ? 'owner' : 'team';
+      const external = Boolean(shared?.is_ext_shared || shared?.is_pending_ext_shared);
+      sharedChannels.set(msg.channel, { external, until: now() + VISIBILITY_TTL_MS });
+      return external ? 'external' : 'team';
+    } catch (error) {
+      logger.warn(`Could not tell who can see ${msg.channel}, so its brief carries only what outsiders may hear: ${errorMessage(error)}`);
+      return 'external';
+    }
+  };
+
   const startJob = async (msg: IncomingMessage, request: string, summary: string, trigger?: MessageTrigger): Promise<void> => {
-    const [requester, permalink, thread] = await Promise.all([
+    const [requester, permalink, thread, visibility] = await Promise.all([
       trigger ? Promise.resolve(msg.botId ? `Automated alert from bot ${msg.botId}` : `Automatically triggered message from user ${msg.user}`) : speaker(msg.user),
       client.chat.getPermalink({ channel: msg.channel, message_ts: msg.messageTs }).catch(() => null),
       threadContext(msg),
+      replyVisibility(msg),
     ]);
 
     await fetchBase();
     const t3ThreadId = await t3.startThread(jobThreadInput(config, {
       // The branch and title come from what the person wrote, not the request with its attachment notes.
       summary,
-      brief: fillBrief(config, loadIndex(), { request, requester, permalink: permalink?.permalink ?? 'link unavailable', thread,
+      brief: fillBrief(config, loadKnowledge ? loadKnowledge(visibility) : loadIndex(), { request, requester, permalink: permalink?.permalink ?? 'link unavailable', thread,
         ...(trigger ? { triggerInstructions: trigger.instructions } : {}) }),
       now: new Date(now()),
     }), config.t3Bin);

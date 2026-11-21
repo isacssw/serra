@@ -3,6 +3,7 @@
 // message the service refuses a save with, so Save stays disabled until the page would pass `pnpm knowledge`.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AlertTriangle, CheckCircle2, FileText, Search } from 'lucide-react';
+import { useSearchParams } from 'react-router';
 import type { KnowledgePage } from '../../../src/contracts.ts';
 import { serra } from '../bridge.ts';
 import { Badge, Button, cx, Dialog, Page, useToast } from '../ui/index.ts';
@@ -92,6 +93,15 @@ export const Pages = () => {
   const [pendingSelect, setPendingSelect] = useState<string | null>(null);
   const [drifted, setDrifted] = useState<string[]>([]);
   const [resolving, setResolving] = useState(false);
+
+  // `?page=<path>` (About me's Edit) opens that page, once.
+  const [search, setSearch] = useSearchParams();
+  const asked = search.get('page');
+  useEffect(() => {
+    if (asked === null) return;
+    setSearch((current) => { const next = new URLSearchParams(current); next.delete('page'); return next; }, { replace: true });
+    setSelected(asked);
+  }, [asked, setSearch]);
 
   const reload = useCallback(async () => {
     const bridge = serra();

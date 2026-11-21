@@ -95,7 +95,7 @@ test('without a profile the bot refuses to start instead of falling back to buil
 
 test('the shared brief template and starter knowledge render and validate', () => {
   const brief = readFileSync(join(codeRoot, 'templates/brief.md'), 'utf8');
-  assert.doesNotThrow(() => renderBrief(brief, { BOT_NAME: 'Friday', BOT_ID: 'friday', OWNER_NAME: 'Alex', OWNER_GITHUB: 'alex', BASE_REF: 'origin/main', PROJECT_PATH: '/p', REPOSITORIES: 'none', REQUESTER: 'Sam', PERMALINK: 'link', REQUEST: 'question', THREAD_CONTEXT: 'none', KNOWLEDGE_DIR: '/knowledge', KNOWLEDGE_INDEX: 'index' }));
+  assert.doesNotThrow(() => renderBrief(brief, { BOT_NAME: 'Friday', BOT_ID: 'friday', OWNER_NAME: 'Alex', OWNER_GITHUB: 'alex', BASE_REF: 'origin/main', PROJECT_PATH: '/p', REPOSITORIES: 'none', REQUESTER: 'Sam', PERMALINK: 'link', REQUEST: 'question', THREAD_CONTEXT: 'none', KNOWLEDGE_DIR: '/knowledge', KNOWLEDGE_INDEX: 'index', OWNER_PROFILE: 'about', VISIBILITY: 'the team' }));
   assert.deepEqual(createKnowledge(join(codeRoot, 'templates/knowledge')).checkKnowledge().problems, []);
   assert.equal(existsSync(join(codeRoot, 'brief.md')), false);
   assert.equal(existsSync(join(codeRoot, 'knowledge')), false);

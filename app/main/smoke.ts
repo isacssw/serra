@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { nativeTheme, type BrowserWindow } from 'electron';
 import type { Theme } from './bridge.ts';
 import { codeRoot } from '../../src/config.ts';
+import { createJournal } from '../../src/knowledge-journal.ts';
 import { createProfile } from '../../src/setup.ts';
 import { missingRuntimeFiles } from './runtime-files.ts';
 
@@ -120,9 +121,20 @@ const layoutProfile = (): string => {
     ['---', 'type: preference', `description: ${description}`, 'written: 2026-11-19', ...extra, 'sources:', '  - Owner interview, 2026-11-19', '---', '', text, ''].join('\n');
   const knowledge = join(directory, 'knowledge');
   mkdirSync(join(knowledge, 'owner'), { recursive: true });
-  writeFileSync(join(knowledge, 'owner/role.md'), page("The owner's role", ['verified: 2026-11-19'], 'Owns the API.'));
-  writeFileSync(join(knowledge, 'index.md'), "# Knowledge index\n\n| When the request | Open | What it gives you |\n|---|---|---|\n| who owns what | `owner/role.md` | The owner's role |\n");
+  mkdirSync(join(knowledge, 'people'), { recursive: true });
+  const team = ['verified: 2026-11-19', 'audience: team'];
+  writeFileSync(join(knowledge, 'owner/role.md'), page("The owner's role", team, '# Smoke Owner\n\n- Tech lead for the payments API.\n- Works 09:00–17:00, Monday to Thursday.'));
+  writeFileSync(join(knowledge, 'owner/working-style.md'), page('How the owner decides', team, '# How I work\n\n- Risky releases ship on Tuesday.\n- A bug fix starts with a failing test.'));
+  writeFileSync(join(knowledge, 'owner/voice.md'), page('How the owner writes', team, '# Voice\n\n- Lead with the answer.\n- No exclamation marks.'));
+  writeFileSync(join(knowledge, 'owner/notes.md'), page('Private notes', ['verified: 2026-11-19'], '# Notes\n\n- Owner-only.'));
+  writeFileSync(join(knowledge, 'people/ana-silva.md'), page('Who Ana is', team, '# Ana Silva\n\n- Product manager. Prefers short written notes.'));
+  writeFileSync(join(knowledge, 'index.md'), "# Knowledge index\n\n| When the request | Open | What it gives you |\n|---|---|---|\n"
+    + "| who owns what | `owner/role.md` | The owner's role |\n| releases, tests | `owner/working-style.md` | How the owner decides |\n"
+    + "| writing | `owner/voice.md` | How the owner writes |\n| private | `owner/notes.md` | Private notes |\n| mentions Ana | `people/ana-silva.md` | Who Ana is |\n");
   writeFileSync(join(knowledge, 'proposals/2026-11-19-role.md'), page("The owner's role", ['verified: no', 'target: owner/role.md'], 'Owns the API and reviews every PR.'));
+  // A page changed outside Serra after the owner approved the rest, so Pages shows its notice.
+  createJournal(knowledge).seed();
+  writeFileSync(join(knowledge, 'owner/voice.md'), page('How the owner writes', team, '# Voice\n\n- Lead with the answer.\n- No exclamation marks.\n- Edited by hand.'));
   return directory;
 };
 

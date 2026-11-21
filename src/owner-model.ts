@@ -30,6 +30,18 @@ export const VISIBILITY_LABEL: Record<Visibility, string> = {
 /** About me rides in every brief, so its size is a cost every job pays. About 1,000 tokens. */
 export const ABOUT_MAX_CHARS = 4000;
 export const OWNER_FOLDER = 'owner';
+export const PEOPLE_FOLDER = 'people';
+/** The people roster is one line per person, so the worker knows who someone is before their name comes up. */
+const ROSTER_MAX_CHARS = 900;
+
+/** One line for a person card: its title and its first bullet, like "Priya Nair: Product manager. Decides scope." */
+const rosterLine = (text: string): string | null => {
+  const body = text.replace(/^---\n[\s\S]*?\n---\n/, '');
+  const name = /^#\s+(.+)$/m.exec(body)?.[1]?.trim();
+  const first = /^[-*]\s+(.+)$/m.exec(body)?.[1]?.trim();
+  if (!name) return null;
+  return `- ${name}${first ? `: ${first}` : ''}`;
+};
 
 /** Which owner pages come first when About me is over its size: who they are, then limits, rules, voice, skills. */
 const rank = (path: string, type: string): number => {
@@ -53,6 +65,8 @@ export interface AboutMePage { path: string; reason?: string }
 export interface AboutMe {
   /** The text that goes into the brief, or empty when no page qualifies. */
   text: string;
+  /** The same, page by page, for the app. */
+  sections: { path: string; verified: string; body: string }[];
   /** Pages in it, in order. */
   included: string[];
   /** Owner pages left out, and why. */
@@ -74,20 +88,40 @@ export const compileAboutMe = (pages: { path: string; text: string }[], visibili
     const audience = pageAudience(fields);
     if (!DATE.test(verified)) { left.push({ path: page.path, reason: 'not verified yet' }); return []; }
     if (DATE.test(expires) && expires < today) { left.push({ path: page.path, reason: `expired ${expires}` }); return []; }
-    if (!mayUse(audience, visibility)) { left.push({ path: page.path, reason: `for ${VISIBILITY_LABEL[audience]} only` }); return []; }
+    if (!mayUse(audience, visibility)) { left.push({ path: page.path, reason: audience === 'owner' ? 'only for you' : 'only for your team' }); return []; }
     return [{ path: page.path, verified, rank: rank(page.path, fields?.get('type')?.trim() ?? ''), body: currentBody(page.text) }];
   }).sort((a, b) => a.rank - b.rank || b.verified.localeCompare(a.verified) || a.path.localeCompare(b.path));
 
+  // Who the owner works with: a line per confirmed person card this audience may hear about, the most recent first.
+  const roster = pages.filter((page) => page.path.startsWith(`${PEOPLE_FOLDER}/`)).flatMap((page) => {
+    const fields = frontmatter(page.text);
+    const verified = fields?.get('verified')?.trim() ?? '';
+    if (!DATE.test(verified) || !mayUse(pageAudience(fields), visibility)) return [];
+    const line = rosterLine(page.text);
+    return line ? [{ path: page.path, verified, line }] : [];
+  }).sort((a, b) => a.path.localeCompare(b.path));
+  let rosterBody = '';
+  for (const person of roster) {
+    if (rosterBody.length + person.line.length + 1 > ROSTER_MAX_CHARS) break;
+    rosterBody += `${rosterBody ? '\n' : ''}${person.line}`;
+  }
+  const rosterAt = Math.min(2, candidates.length);
+  if (rosterBody) {
+    const latest = roster.map((person) => person.verified).sort().at(-1)!;
+    candidates.splice(rosterAt, 0, { path: `${PEOPLE_FOLDER}/`, verified: latest, rank: 2, body: `People the owner works with (open a person's page for more):\n${rosterBody}` });
+  }
+
   const sections: string[] = [];
+  const parts: AboutMe['sections'] = [];
   const included: string[] = [];
   let chars = 0;
   for (const page of candidates) {
     const section = `From ${page.path} (confirmed ${page.verified}):\n${page.body}`;
     if (chars + section.length + 2 > ABOUT_MAX_CHARS) { left.push({ path: page.path, reason: 'over the size limit' }); continue; }
-    sections.push(section); included.push(page.path); chars += section.length + 2;
+    sections.push(section); parts.push({ path: page.path, verified: page.verified, body: page.body }); included.push(page.path); chars += section.length + 2;
   }
   const text = sections.join('\n\n');
-  return { text, included, left: left.sort((a, b) => a.path.localeCompare(b.path)), chars: text.length };
+  return { text, sections: parts, included, left: left.sort((a, b) => a.path.localeCompare(b.path)), chars: text.length };
 };
 
 /**

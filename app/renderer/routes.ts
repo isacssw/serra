@@ -28,6 +28,7 @@ export const routes = [
   { id: 'jobs-running', path: '/jobs/running', label: 'Running', section: 'jobs', badge: 'running', nav: false, ticket: 'APP-12' },
   { id: 'jobs-done', path: '/jobs/done', label: 'Done today', section: 'jobs', nav: false, ticket: 'APP-12' },
   { id: 'new-task', path: '/jobs/new', label: 'New task', section: 'jobs', nav: false, ticket: 'APP-25' },
+  { id: 'about-me', path: '/knowledge/about', label: 'About me', section: 'knowledge', ticket: 'SERRA-41' },
   { id: 'proposals', path: '/knowledge/proposals', label: 'Proposals', section: 'knowledge', badge: 'proposals', ticket: 'APP-13' },
   { id: 'pages', path: '/knowledge/pages', label: 'Pages', section: 'knowledge', ticket: 'APP-20' },
   { id: 'brief', path: '/brief', label: 'Brief & policy', section: 'brief', ticket: 'APP-21' },

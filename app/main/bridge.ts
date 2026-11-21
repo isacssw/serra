@@ -15,6 +15,7 @@ import type { SectionSetting } from '../../src/profile-settings.ts';
 import type { CliOverview } from '../../src/clis.ts';
 import type { McpOverview } from '../../src/mcp.ts';
 import type { ProposalTargets } from '../../src/proposals.ts';
+import type { AboutMe, Visibility } from '../../src/owner-model.ts';
 import type { ActivationOutcome, ReleaseOverview, RollbackOutcome, RunningJob } from '../../src/releases.ts';
 import type { Prepared } from '../../src/deploy.ts';
 import type { InterviewPreview, StartedTask } from '../../src/tasks.ts';
@@ -136,6 +137,8 @@ export interface SerraApi {
     acceptDrift(): void;
     /** Put back the approved text, keeping a backup of what was there. */
     restoreDrift(): void;
+    /** What every brief carries about the owner for a reply this audience sees, and the owner pages left out. */
+    aboutMe(visibility: Visibility): AboutMe;
   };
   /** Brief and policy (APP-21). */
   brief: {
@@ -276,7 +279,7 @@ export const bridgeMethods = {
   bot: methods<'bot'>()(['status', 'start', 'stop', 'restart']),
   jobs: methods<'jobs'>()(['list', 'cleanupWorktrees']),
   proposals: methods<'proposals'>()(['list', 'diff', 'targets', 'promote', 'mergeInto', 'discard', 'undo']),
-  pages: methods<'pages'>()(['list', 'read', 'save', 'drift', 'acceptDrift', 'restoreDrift']),
+  pages: methods<'pages'>()(['list', 'read', 'save', 'drift', 'acceptDrift', 'restoreDrift', 'aboutMe']),
   brief: methods<'brief'>()(['read', 'save', 'check', 'preview', 'listProposed', 'readProposed', 'applyProposed']),
   settings: methods<'settings'>()(['read', 'sections', 'saveSection', 'addPerson', 'removePerson']),
   secrets: methods<'secrets'>()(['list', 'setSource', 'check']),

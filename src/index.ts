@@ -3,6 +3,7 @@ import { basename, dirname, join } from 'node:path';
 import { App, LogLevel, SocketModeReceiver } from '@slack/bolt';
 import { createBot } from './bot.ts';
 import { createKnowledge } from './knowledge.ts';
+import { proposeBriefUpdate } from './brief.ts';
 import { createStore } from './state.ts';
 import { loadConfig, defaultProfileRoot } from './config.ts';
 import { acquireLock } from './lock.ts';
@@ -19,7 +20,7 @@ const config = loadConfig();
 mkdirSync(dirname(config.statePath), { recursive: true, mode: 0o700 });
 const releaseProfileLock = acquireLock(`${config.statePath}.lock`);
 process.on('exit', releaseProfileLock);
-const { checkKnowledge, loadIndex } = createKnowledge(config.knowledgeDir);
+const { checkKnowledge, loadIndex, briefKnowledge } = createKnowledge(config.knowledgeDir);
 
 const logger = timestampedLogger(LogLevel.INFO);
 // Under launchd, macOS may block the repository (Documents, Desktop, Downloads). Find out now, not on the first job.
@@ -38,7 +39,7 @@ const store = createStore(config.statePath);
 const logEvent = eventLog(join(logsDir, 'events.jsonl'));
 let status: StatusServer | null = null;
 const bot = createBot({
-  config, client: app.client, botUserId: () => botUserId, store, loadIndex, logger: app.logger,
+  config, client: app.client, botUserId: () => botUserId, store, loadIndex, loadKnowledge: (visibility) => briefKnowledge(visibility), logger: app.logger,
   // The app sees the same events as events.jsonl, live.
   events: (name, fields) => { logEvent(name, fields); status?.publish(name, fields); },
 });
@@ -76,6 +77,9 @@ app.message(async ({ message }) => {
 
 // A missing index stops the daemon here instead of failing the first request. An index over its cap and page problems only warn.
 loadIndex();
+if (proposeBriefUpdate(config.profileDir)) {
+  app.logger.info('The shipped brief has new knowledge rules: review it in Brief & policy (proposed/knowledge-update).');
+}
 const knowledge = checkKnowledge({
   roots: [{ name: basename(config.project), path: config.project }, ...config.repositories.map(({ name, path }) => ({ name, path }))],
 });

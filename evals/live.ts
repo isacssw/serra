@@ -137,8 +137,10 @@ await Promise.all(Array.from({ length: Number(args.concurrency) }, async () => {
 results.sort((a, b) => a.id.localeCompare(b.id) || a.run - b.run);
 const categories = [...new Set(cases.map((item) => item.category))];
 const mean = (values: number[]): number => (values.length ? values.reduce((a, b) => a + b, 0) / values.length : 0);
-const byCategory = Object.fromEntries(categories.map((category) => [category, Math.round(100 * mean(results.filter((r) => r.category === category).map((r) => r.score)))]));
-const overall = Math.round(100 * mean(results.map((r) => r.score)));
+// A run the harness couldn't finish (the CLI failed or timed out) is left out, not scored 0: it says nothing about the brief.
+const graded = results.filter((r) => !r.error);
+const byCategory = Object.fromEntries(categories.map((category) => [category, Math.round(100 * mean(graded.filter((r) => r.category === category).map((r) => r.score)))]));
+const overall = Math.round(100 * mean(graded.map((r) => r.score)));
 
 const outDir = join(root, 'evals/results');
 mkdirSync(outDir, { recursive: true });
@@ -146,7 +148,7 @@ const meta = { label: args.label, model: args.model, judge: args.judge, runs: Nu
 writeFileSync(join(outDir, `${args.label}.json`), JSON.stringify({ meta, byCategory, overall, results }, null, 2) + '\n');
 const lines = [
   `# Live eval: ${args.label}`, '',
-  `Worker ${args.model}, judge ${args.judge}, ${args.runs} runs of ${cases.length} cases, ${meta.at.slice(0, 10)}.`, '',
+  `Worker ${args.model}, judge ${args.judge}, ${args.runs} runs of ${cases.length} cases, ${meta.at.slice(0, 10)}.${results.length > graded.length ? ` ${results.length - graded.length} runs failed in the harness and are left out.` : ''}`, '',
   '| Category | Score |', '|---|---|',
   ...categories.map((category) => `| ${category} | ${byCategory[category]} |`),
   `| **overall** | **${overall}** |`, '',

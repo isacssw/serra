@@ -8,6 +8,7 @@ import { defaultPath, routeForPath, routes, type RouteId } from './routes.ts';
 import { BriefPolicy } from './screens/BriefPolicy.tsx';
 import { Diagnostics } from './screens/Diagnostics.tsx';
 import { Jobs } from './screens/Jobs.tsx';
+import { AboutMe } from './screens/AboutMe.tsx';
 import { NewTask } from './screens/NewTask.tsx';
 import { Pages } from './screens/Pages.tsx';
 import { Proposals } from './screens/Proposals.tsx';
@@ -34,6 +35,7 @@ const screens: Record<RouteId, ReactElement> = {
   'jobs-running': <Jobs group="running" />,
   'jobs-done': <Jobs group="done" />,
   'new-task': <NewTask />,
+  'about-me': <AboutMe />,
   proposals: <Proposals />,
   pages: <Pages />,
   brief: <BriefPolicy />,

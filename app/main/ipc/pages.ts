@@ -31,5 +31,9 @@ export const pagesHandlers = (context: HandlerContext): Handlers<'pages'> => {
     drift: () => service().drift(),
     acceptDrift: () => { service().acceptDrift(); },
     restoreDrift: () => { service().restoreDrift(); },
+    aboutMe: (visibility) => {
+      if (visibility !== 'owner' && visibility !== 'team' && visibility !== 'external') throw new Error('Pick who sees the reply: owner, team or external.');
+      return service().briefKnowledge(visibility).aboutMe;
+    },
   };
 };

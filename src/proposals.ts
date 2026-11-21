@@ -14,7 +14,7 @@ import { DATE, frontmatter, INDEX_MAX_LINES, lineCount, NOT_PAGES, pageProblems,
  * `backups/knowledge/`, outside `knowledge/` so `pnpm knowledge` never mistakes a backup for a page. The backup's ID
  * is what `undoProposalChange` takes, so the app's undo toast and the CLI's `undo` share one path.
  *
- * Promotion is an owner action: the app and `pnpm bot proposals` call it, Slack never does.
+ * Promotion is an owner action: only the app calls it. `pnpm bot proposals` lists and shows, and workers never promote.
  */
 
 /** Files in `proposals/` that aren't proposals: the folder's README and the onboarding interview's progress notes. */

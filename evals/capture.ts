@@ -57,7 +57,7 @@ export const buildBrief = async (profileDir: string, item: EvalCase): Promise<st
   let brief = '';
   const knowledge = createKnowledge(config.knowledgeDir);
   const bot = createBot({
-    config, client, botUserId: () => BOT_USER, store: createStore(config.statePath), loadIndex: knowledge.loadIndex,
+    config, client, botUserId: () => BOT_USER, store: createStore(config.statePath), loadIndex: () => knowledge.loadIndex(), loadKnowledge: (visibility) => knowledge.briefKnowledge(visibility),
     logger: { info: quiet, warn: (m: string) => process.stderr.write(`warn: ${m}\n`), error: (m: string) => process.stderr.write(`error: ${m}\n`), debug: quiet },
     t3: {
       startThread: async (input: { brief: string }) => { brief = input.brief; return 't3-eval'; },
