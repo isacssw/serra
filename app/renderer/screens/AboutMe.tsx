@@ -33,7 +33,7 @@ const PageBody = ({ text }: { text: string }) => (
 
 export const AboutMe = () => {
   const navigate = useNavigate();
-  const [visibility, setVisibility] = useState<Visibility>('team');
+  const [visibility, setVisibility] = useState<Visibility>('owner');
   const [about, setAbout] = useState<AboutMeData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [untagged, setUntagged] = useState<{ path: string; description: string; offlimits: boolean; preview: string; text: string }[]>([]);
@@ -101,7 +101,7 @@ export const AboutMe = () => {
               {untagged.length === 1 ? 'It doesn\u2019t say who may hear it, so teammates\u2019 briefs leave it out.' : 'They don\u2019t say who may hear them, so teammates\u2019 briefs leave them out.'}
             </p>
             <div className="mt-2">
-              <Button onClick={() => { setShareTo('team'); setSharing(new Set()); }}>Choose who may hear them</Button>
+              <Button onClick={() => { setShareTo('team'); setSharing(new Set()); }}>{untagged.length === 1 ? 'Choose who may hear it' : 'Choose who may hear them'}</Button>
             </div>
           </div>
         </section>
@@ -143,7 +143,7 @@ export const AboutMe = () => {
               <section key={section.path} aria-label={section.path} className="rounded-lg border border-line bg-panel">
                 <header className="flex items-center justify-between gap-3 border-b border-line-subtle px-4 py-2.5">
                   <div className="flex min-w-0 items-baseline gap-2">
-                    <h2 className="truncate font-mono text-[13px] font-semibold">{section.path === 'people/' ? 'people/ (one line each)' : section.path === 'outsiders' ? 'Rules for outsiders (built in)' : section.path === 'private topics' ? 'Private topics (built in)' : section.path}</h2>
+                    <h2 className="min-w-0 font-mono text-[13px] font-semibold break-all">{section.path === 'people/' ? 'people/ (one line each)' : section.path === 'outsiders' ? 'Rules for outsiders (built in)' : section.path === 'private topics' ? 'Private topics (built in)' : section.path}</h2>
                     <span className="shrink-0 text-xs text-muted">confirmed {section.verified}</span>
                   </div>
                   {section.path !== 'people/' && section.path !== 'outsiders' && section.path !== 'private topics' && <button

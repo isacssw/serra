@@ -1,5 +1,6 @@
 import { homedir } from 'node:os';
 import { randomBytes } from 'node:crypto';
+import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import type { webApi } from '@slack/bolt';
 import { fillBrief, needsOwner, NO_THREAD } from './brief.ts';
@@ -406,7 +407,7 @@ export const createBot = ({
       lastPostedRunId: null,
       watching: true,
       ownerFollows: msg.user === config.owner,
-      ...(knowledge ? { visibility, knowledgeRead: knowledge.read } : {}),
+      ...(knowledge ? { visibility, knowledgeRead: knowledge.read, knowledgeDir: knowledge.readDir } : {}),
       branch: input.branch,
       createdAt: new Date(now()).toISOString(),
       lastActivityAt: new Date(now()).toISOString(),
@@ -776,6 +777,8 @@ export const createBot = ({
     const visibility = job.visibility && WIDTH[job.visibility] >= WIDTH[current] ? job.visibility : current;
     const knowledge = loadKnowledge!(visibility);
     if (!job.knowledgeRead) return { visibility, knowledge, revoked: visibility === 'owner' ? [] : ['(pages from before Serra recorded them)'] };
+    // The owner may hear anything they ever had, removed pages included: nothing of theirs is withheld from them.
+    if (visibility === 'owner') return { visibility, knowledge, revoked: [] };
     // A page is revoked for this audience when the version the worker read wasn't for them, or when the page as it is
     // now isn't (narrowed, retired or removed since).
     return { visibility, knowledge, revoked: Object.entries(job.knowledgeRead).filter(([page, audience]) => !mayUse(audience, visibility) || !knowledge.pages.includes(page)).map(([page]) => page) };
@@ -796,7 +799,9 @@ export const createBot = ({
   const restartIfRevoked = async (key: string, job: Job, lines: Heard[]): Promise<boolean> => {
     if (!loadKnowledge) return false;
     const { visibility, knowledge, revoked } = await revocation(job);
-    if (revoked.length === 0) {
+    // A snapshot folder cleaned up after a long pause leaves the worker nothing to open: that thread starts fresh too.
+    const folderGone = job.knowledgeDir !== undefined && !existsSync(job.knowledgeDir);
+    if (revoked.length === 0 && !folderGone) {
       if (!job.knowledgeRead) updateJob(key, () => ({ visibility, knowledgeRead: knowledge.read }));
       return false;
     }
@@ -813,9 +818,9 @@ export const createBot = ({
       now: new Date(now()),
     });
     const t3ThreadId = await t3.startThread({ ...input, ...(job.branch ? { baseRef: job.branch } : {}) }, config.t3Bin);
-    updateJob(key, () => ({ t3ThreadId, visibility, knowledgeRead: knowledge.read, branch: input.branch, lastPostedRunId: null, watching: true, question: undefined, waitingInT3: false }));
+    updateJob(key, () => ({ t3ThreadId, visibility, knowledgeRead: knowledge.read, knowledgeDir: knowledge.readDir, branch: input.branch, lastPostedRunId: null, watching: true, question: undefined, waitingInT3: false }));
     await reply(job.channel, job.threadTs, 'Some knowledge this thread used has changed, so I\'m carrying on in a fresh session.');
-    logger.info(`Knowledge this thread used was taken back (${revoked.length} page(s)); continued ${key} in a fresh T3 thread ${t3ThreadId}`);
+    logger.info(`${folderGone ? 'The knowledge folder this thread read was cleaned up' : `Knowledge this thread used was taken back (${revoked.length} page(s))`}; continued ${key} in a fresh T3 thread ${t3ThreadId}`);
     events('knowledge_revoked', { key, t3ThreadId });
     return true;
   };

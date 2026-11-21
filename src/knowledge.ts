@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from 'node:crypto';
-import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, utimesSync } from 'node:fs';
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { writeFileAtomic } from './config.ts';
 import { createJournal, type KnowledgeDrift } from './knowledge-journal.ts';
@@ -82,8 +82,11 @@ export const audienceDir = (knowledgeDir: string, visibility: Visibility): strin
   return join(dirname(root), `.${basename(root)}-${visibility}`);
 };
 
-/** Snapshots older than this are removed when a new one is made: no thread waits that long between turns. */
-const SNAPSHOT_KEEP_MS = 30 * 24 * 60 * 60 * 1000;
+/**
+ * Snapshots unused for this long are removed when a new one is made. Using one (a new brief with the same knowledge)
+ * makes it new again, and a thread whose folder is gone carries on in a fresh session.
+ */
+const SNAPSHOT_KEEP_MS = 90 * 24 * 60 * 60 * 1000;
 
 /**
  * A folder under `base` holding exactly `files` (path → text), named after their hash: the same files give the same
@@ -93,7 +96,10 @@ const snapshot = (base: string, files: Map<string, string>, now: Date): string =
   const hash = createHash('sha256');
   for (const [path, text] of [...files].sort(([a], [b]) => a.localeCompare(b))) hash.update(`${path}\0${text}\0`);
   const dir = join(base, hash.digest('hex').slice(0, 16));
-  if (existsSync(dir)) return dir;
+  if (existsSync(dir)) {
+    utimesSync(dir, now, now);
+    return dir;
+  }
   mkdirSync(base, { recursive: true, mode: 0o700 });
   for (const entry of readdirSync(base, { withFileTypes: true })) {
     const old = join(base, entry.name);

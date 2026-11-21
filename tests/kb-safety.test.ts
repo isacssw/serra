@@ -570,7 +570,7 @@ test('approving never widens who may hear a page by default, merging into anothe
   assert.match(readFileSync(join(knowledgeDir, 'workflows/release.md'), 'utf8'), /^audience: team$/m);
 });
 
-test('round 7: one audience line per page, untagged pages stay owner-only through approvals, older briefs get the rules', async (t) => {
+test('one audience line per page, untagged pages stay owner-only through approvals, and older briefs get the rules', async (t) => {
   const profileDir = fixture(t);
   const knowledgeDir = join(profileDir, 'knowledge');
   const knowledge = createKnowledge(knowledgeDir);
@@ -639,7 +639,7 @@ test('approval defaults fail closed both ways: a proposal can narrow a page, nev
   assert.match(readFileSync(join(knowledgeDir, 'owner/working-style.md'), 'utf8'), /^audience: owner$/m);
 });
 
-test('round 8: a thread whose knowledge was taken back posts no question card, no progress note, and no reply, older threads included', async (t) => {
+test('a thread whose knowledge was taken back posts no question card, no progress note and no reply, older threads included', async (t) => {
   const question = { id: 'q1', header: 'Day', question: 'Release on Thursday?', options: [{ label: 'Yes', description: '' }, { label: 'No', description: '' }] };
   const asking = await botOn(fixture(t));
   await asking.bot.handle({ channel: 'CTEAM', threadTs: '6.1', messageTs: '6.1', user: PRIYA, text: '<@UMOSS> how do I cut a release?', direct: true });
@@ -672,7 +672,7 @@ test('round 8: a thread whose knowledge was taken back posts no question card, n
   assert.ok(!older.posted.some((text) => /release:prepare/.test(text)), 'a thread from before audiences had every page: its reply is withheld');
 });
 
-test('round 8: accepting a hand edit validates it, and a custom brief without the proposals placeholder still reads the approved copy', async (t) => {
+test('accepting a hand edit validates it, and a custom brief without the proposals placeholder still reads the approved copy', async (t) => {
   const profileDir = fixture(t);
   const knowledgeDir = join(profileDir, 'knowledge');
   const knowledge = createKnowledge(knowledgeDir);
@@ -688,7 +688,7 @@ test('round 8: accepting a hand edit validates it, and a custom brief without th
   assert.match(brief, /Notes are in [^\n]*\.knowledge-owner\/[0-9a-f]{16}\./);
 });
 
-test('round 9: the next question of a form, a thread from before Serra recorded its pages, and the review channel never carry withheld knowledge', async (t) => {
+test('the next question of a form, a thread from before Serra recorded its pages, and the review channel never carry withheld knowledge', async (t) => {
   // A two-question form: after the first answer, the second is not shown once the thread's knowledge was taken back.
   const form = await botOn(fixture(t));
   await form.bot.handle({ channel: 'CTEAM', threadTs: '9.1', messageTs: '9.1', user: PRIYA, text: '<@UMOSS> how do I cut a release?', direct: true });
@@ -738,7 +738,7 @@ test('round 9: the next question of a form, a thread from before Serra recorded 
   assert.equal(team.reviews[0]?.heldBack, undefined, 'a teammate\'s thread posts as before');
 });
 
-test('round 9: a teammate\'s worker reads a folder with only the pages they may hear, and a new header field lands where the template has it', async (t) => {
+test('a teammate\'s worker reads a folder with only the pages they may hear, and a new header field lands where the template has it', async (t) => {
   const profileDir = fixture(t);
   createKnowledge(join(profileDir, 'knowledge')).seedApproved();
   const brief = await buildBrief(profileDir, { via: 'channel', user: PRIYA, text: 'what does Robin own?' });
@@ -753,7 +753,7 @@ test('round 9: a teammate\'s worker reads a folder with only the pages they may 
   assert.equal(setHeaderField('---\ntype: rule\ndescription: x\nwritten: 2026-11-01\n---\nBody\n', 'audience', 'team'), '---\ntype: rule\ndescription: x\naudience: team\nwritten: 2026-11-01\n---\nBody\n');
 });
 
-test('round 10: an approval keeps the page\'s own header order, and sharing can keep pages for the owner only', async (t) => {
+test('an approval keeps the page\'s own header order, and sharing can keep pages for the owner only', async (t) => {
   const { alignHeader } = await import('../src/knowledge-rules.ts');
   const page = '---\ntype: rule\ndescription: x\naudience: team\nwritten: 2026-11-01\nverified: 2026-11-02\nsources:\n  - Owner, 2026-11-01\n---\nOld\n';
   const proposal = '---\nverified: 2026-11-21\nwritten: 2026-11-20\ntype: rule\nsources:\n  - Owner, 2026-11-20\ndescription: x\naudience: team\n---\nNew\n';
@@ -771,7 +771,7 @@ test('round 10: an approval keeps the page\'s own header order, and sharing can 
   assert.match(readFileSync(notes, 'utf8'), /^audience: owner$/m);
 });
 
-test('round 10: a channel shared outside since, an outside review channel, a page shared since, and a closed form never carry withheld knowledge', async (t) => {
+test('a channel shared outside since, an outside review channel, a page shared since, and a closed form never carry withheld knowledge', async (t) => {
   // The channel becomes shared with another company while the worker runs: the team-only reply isn't posted.
   const run = await botOn(fixture(t));
   await run.bot.handle({ channel: 'CTEAM', threadTs: '14.1', messageTs: '14.1', user: PRIYA, text: '<@UMOSS> how do I cut a release?', direct: true });
@@ -816,7 +816,7 @@ test('round 10: a channel shared outside since, an outside review channel, a pag
   assert.ok(![...form.posted, ...form.updated].some((text) => /despite the freeze/.test(text)), 'the worker\'s question is never republished');
 });
 
-test('round 11: checks run right before each send, follow the version a worker read, and every closed form uses fixed copy', async (t) => {
+test('checks run right before each send, follow the version a worker read, and every closed form uses fixed copy', async (t) => {
   // The channel is shared outside while the reply is being prepared (after the first check): it isn't posted.
   const late = await botOn(fixture(t));
   await late.bot.handle({ channel: 'CTEAM', threadTs: '19.1', messageTs: '19.1', user: PRIYA, text: '<@UMOSS> how do I cut a release?', direct: true });
@@ -855,4 +855,42 @@ test('round 11: checks run right before each send, follow the version a worker r
   await form.bot.poll();
   assert.ok(form.updated.some((body) => /This question was closed/.test(body)));
   assert.ok(!form.updated.some((body) => /despite the freeze/.test(body)));
+});
+
+test('a snapshot in use is never cleaned up under a thread, a thread whose folder is gone starts fresh, and the owner\'s own thread is never withheld', async (t) => {
+  const { utimesSync, statSync } = await import('node:fs');
+  const profileDir = fixture(t);
+  const knowledge = createKnowledge(join(profileDir, 'knowledge'));
+  knowledge.seedApproved();
+  const month = new Date(Date.now() - 100 * 24 * 60 * 60 * 1000);
+  const folder = knowledge.briefKnowledge('team').readDir;
+  utimesSync(folder, month, month);
+  // A new brief with the same knowledge reuses the folder and makes it new again.
+  assert.equal(knowledge.briefKnowledge('team').readDir, folder);
+  assert.ok(Date.now() - statSync(folder).mtimeMs < 60_000);
+  // An edit makes a new snapshot; the reused one stays.
+  const release = join(profileDir, 'knowledge/workflows/release.md');
+  knowledge.savePage('workflows/release.md', `${readFileSync(release, 'utf8')}- One more step.\n`);
+  assert.notEqual(knowledge.briefKnowledge('team').readDir, folder);
+  assert.ok(existsSync(folder));
+
+  // A thread whose folder was cleaned up (the knowledge changed since, so it isn't made again) carries on in a fresh
+  // session on its next turn. With the same knowledge, the same folder is simply made again.
+  const run = await botOn(fixture(t));
+  await run.bot.handle({ channel: 'CTEAM', threadTs: '23.1', messageTs: '23.1', user: PRIYA, text: '<@UMOSS> how do I cut a release?', direct: true });
+  const releasePage = join(run.config.knowledgeDir, 'workflows/release.md');
+  run.knowledge.savePage('workflows/release.md', `${readFileSync(releasePage, 'utf8')}- One more step.\n`);
+  rmSync(run.store.getJob('CTEAM:23.1')!.knowledgeDir!, { recursive: true, force: true });
+  await run.bot.handle({ channel: 'CTEAM', threadTs: '23.1', messageTs: '23.2', user: PRIYA, text: '<@UMOSS> and after that?', direct: true });
+  await new Promise((done) => setTimeout(done, 80));
+  assert.equal(run.started.length, 2);
+  assert.equal(run.sent.length, 0);
+
+  // The owner deleting a page never withholds the owner's own reply.
+  const owner = await botOn(fixture(t));
+  await owner.bot.handle({ channel: 'DROBIN', threadTs: '24.1', messageTs: '24.1', user: ROBIN, text: 'how do I cut a release?', direct: true });
+  rmSync(join(owner.config.knowledgeDir, 'workflows/release.md'));
+  owner.knowledge.acceptDrift('workflows/release.md', null);
+  await owner.finish('Run pnpm release:prepare.');
+  assert.ok(owner.posted.some((text) => /release:prepare/.test(text)));
 });

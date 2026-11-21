@@ -69,6 +69,8 @@ export interface Job {
    * where every one of them may be heard; after one is taken back, a follow-up starts a fresh T3 thread.
    */
   knowledgeRead?: Record<string, 'owner' | 'team' | 'external'>;
+  /** The snapshot folder the thread's worker reads pages from. When it's gone, the next turn starts a fresh thread. */
+  knowledgeDir?: string;
   /** The task branch the thread works on, so a fresh thread can carry on from its committed work. */
   branch?: string;
 }

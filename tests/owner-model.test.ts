@@ -83,7 +83,7 @@ test('outsiders get a rule that names no internal topic, and off-limits pages on
   assert.match(compileAboutMe(pages, 'team', NOW).text, /^From owner\/offlimits\.md[\s\S]*reorg/, 'teammates get the page itself, first');
 });
 
-test('round 9: the people roster skips expired cards and never takes a line from replaced text', () => {
+test('the people roster skips expired cards and never takes a line from replaced text', () => {
   const card = (path: string, fields: { expires?: string }, body: string) => page(path, { type: 'person', audience: 'team', ...fields }, body);
   const about = compileAboutMe([
     card('people/ana.md', { expires: '2026-01-01' }, '# Ana Ruiz\n\n- Left the team.'),
