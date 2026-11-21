@@ -62,6 +62,9 @@ body {
 /* Thin scrollbars that keep out of the way, like the system's overlay ones. */
 * { scrollbar-width: thin; scrollbar-color: var(--color-line-strong) transparent; }
 
+/* A heading focused by a shortcut (⌘,) marks where focus went without a ring: it isn't a control. */
+[data-serra-main] h1[tabindex="-1"]:focus { outline: none; }
+
 ::selection { background: light-dark(rgb(0 0 0 / 0.12), rgb(255 255 255 / 0.2)); }
 
 /* Overlays fade in; nothing moves for people who asked for less motion (spinners stop too). */

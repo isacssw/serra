@@ -38,6 +38,9 @@ const statusIcons: Record<StatusTone, string> = { up: upIcon, 'needs-you': needs
 
 /** macOS draws the traffic lights over the sidebar's first row, except in full screen, where they're hidden. */
 const isMac = typeof navigator !== 'undefined' && /Mac/.test(navigator.userAgent);
+/** Shortcut hints in the platform's words: ⌘N on macOS, Ctrl+N elsewhere (shortcuts.logic.ts follows the same rule). */
+const mod = isMac ? '⌘' : 'Ctrl+';
+const ariaMod = isMac ? 'Meta' : 'Control';
 const useFullScreen = (): boolean => {
   const check = (): boolean => window.outerWidth === screen.width && window.outerHeight === screen.height;
   const [full, setFull] = useState(check);
@@ -97,32 +100,31 @@ export const Sidebar = ({ status, counts }: { status: BotStatus | null; counts: 
   return (
     <aside data-serra-sidebar className="flex w-60 shrink-0 flex-col border-r border-line bg-sidebar">
       <TitleRow status={status} />
-      <nav aria-label="Screens" onKeyDown={moveFocus} className="flex min-h-0 flex-1 flex-col overflow-y-auto px-2 pt-1 pb-3">
+      <nav aria-label="Screens" onKeyDown={moveFocus} className="flex min-h-0 flex-1 flex-col overflow-y-auto px-2 pt-1.5 pb-3">
         <div className="flex flex-col gap-0.5 pb-2">
           <NavLink
             to="/jobs/new"
             data-route="new-task"
-            aria-keyshortcuts="Meta+N"
-            className={({ isActive }) => cx(
-              'flex h-8 items-center gap-2 rounded-lg border px-2.5 text-[13px] font-medium transition-colors duration-150',
-              'focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-focus',
-              isActive ? 'border-line-strong bg-selected text-ink' : 'border-line bg-panel text-ink hover:border-line-strong hover:bg-hover',
+            aria-keyshortcuts={`${ariaMod}+N`}
+            className={cx(
+              'flex h-8 items-center gap-2 rounded-lg bg-accent px-2.5 text-[13px] font-medium text-accent-ink transition-colors duration-150',
+              'hover:bg-accent/85 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus',
             )}
           >
             <SquarePen size={15} strokeWidth={1.75} aria-hidden className="shrink-0" />
             <span className="flex-1">New task</span>
-            <kbd className="font-sans text-[11px] font-normal text-muted" aria-hidden>⌘N</kbd>
+            <kbd className="font-sans text-[11px] font-normal opacity-70" aria-hidden>{mod}N</kbd>
           </NavLink>
           <button
             type="button"
             data-nav
-            aria-keyshortcuts="Meta+K"
+            aria-keyshortcuts={`${ariaMod}+K`}
             onClick={() => window.dispatchEvent(new Event(OPEN_COMMAND_PALETTE))}
             className={itemClass(false)}
           >
             <Search size={15} strokeWidth={1.75} aria-hidden className="shrink-0 text-muted group-hover:text-ink" />
             <span className="flex-1 text-left">Search</span>
-            <kbd className="font-sans text-[11px] text-muted" aria-hidden>⌘K</kbd>
+            <kbd className="font-sans text-[11px] text-muted" aria-hidden>{mod}K</kbd>
           </button>
         </div>
         {sections.map((section) => {
@@ -133,7 +135,7 @@ export const Sidebar = ({ status, counts }: { status: BotStatus | null; counts: 
               {section.heading && (
                 <h2 id={`nav-${section.id}`} className="flex items-center justify-between px-2 pt-4 pb-1 text-[11px] font-medium text-muted">
                   {section.heading}
-                  {section.id === 'settings' && <kbd className="font-sans font-normal" aria-hidden>⌘,</kbd>}
+                  {section.id === 'settings' && <kbd className="font-sans font-normal" aria-hidden>{mod},</kbd>}
                 </h2>
               )}
               {items.map((route) => {

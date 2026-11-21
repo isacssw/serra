@@ -224,7 +224,7 @@ const EMPTY_STATES: Record<JobGroup, { icon: ReactNode; title: string; body: str
   done: {
     icon: <GitPullRequest size={18} strokeWidth={1.75} />,
     title: 'Nothing finished today',
-    body: 'Jobs that finish today show here, with their pull request.',
+    body: 'Jobs that finish today show here, with a link to the pull request when there is one.',
     start: false,
   },
 };
@@ -243,7 +243,7 @@ const JobTabs = ({ sections, group, onPick }: { sections: JobSection[]; group: J
     if (next) onPick(next.group, true);
   };
   return (
-    <div role="tablist" aria-label="Jobs by state" onKeyDown={onKeyDown} className="flex items-center gap-1 overflow-x-auto border-b border-line">
+    <div role="tablist" aria-label="Jobs by state" onKeyDown={onKeyDown} className="flex items-center gap-1 overflow-x-auto overflow-y-hidden [scrollbar-width:none] shadow-[inset_0_-1px_0_var(--color-line)]">
       {sections.map((section) => {
         const selected = section.group === group;
         const urgent = section.group === 'needs you' && section.rows.length > 0;
@@ -258,7 +258,7 @@ const JobTabs = ({ sections, group, onPick }: { sections: JobSection[]; group: J
             tabIndex={selected ? 0 : -1}
             onClick={() => onPick(section.group, false)}
             className={cx(
-              '-mb-px flex h-9 shrink-0 items-center gap-1.5 rounded-t-md border-b-2 px-2 text-[13px] whitespace-nowrap transition-colors duration-150',
+              'flex h-9 shrink-0 items-center gap-1.5 rounded-t-md border-b-2 px-2 text-[13px] whitespace-nowrap transition-colors duration-150',
               'focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-focus',
               selected ? 'border-ink font-medium text-ink' : 'border-transparent text-muted hover:text-ink',
             )}
@@ -381,8 +381,9 @@ export const Jobs = ({ group }: { group: JobGroup }) => {
               id="jobs-panel"
               role="tabpanel"
               aria-labelledby={TAB_IDS[current.group]}
-              // A panel with nothing to focus takes focus itself, so Tab from the tabs reaches its content.
-              tabIndex={current.rows.length === 0 && !channel && !empty.start ? 0 : -1}
+              // The panel takes focus itself, so Tab from the tabs always reaches it, even when its rows have no
+              // enabled link to land on.
+              tabIndex={0}
               className="rounded-xl focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
             >
               {current.rows.length === 0
