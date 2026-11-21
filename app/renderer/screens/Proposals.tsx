@@ -193,9 +193,8 @@ export const Proposals = () => {
 
   useEffect(() => {
     if (!diff) return;
-    // The proposal's audience, else the page it replaces keeps its own: a correction never quietly un-shares a page.
-    const named = frontmatter(diff.proposed)?.get('audience')?.trim();
-    setAudience(named ? pageAudience(frontmatter(diff.proposed)) : diff.current !== null ? pageAudience(frontmatter(diff.current)) : 'owner');
+    // The page it replaces keeps its own audience; a new page starts from the proposal's. Only the owner widens it.
+    setAudience(diff.current !== null ? pageAudience(frontmatter(diff.current)) : pageAudience(frontmatter(diff.proposed)));
     setFolder(defaultFolder(diff.proposal, targets.folders) ?? '');
     setMergeTarget(diff.proposal.target ?? targets.pages[0] ?? '');
   }, [diff, targets]);
@@ -273,7 +272,12 @@ export const Proposals = () => {
                 ) : (
                   <p className="text-sm text-muted">knowledge/ has no folders yet. Create one to promote into.</p>
                 )}
-                <AudienceChoice id="proposal-audience" value={audience} disabled={busy} onChange={setAudience} />
+                <div className="flex flex-col gap-1">
+                  <AudienceChoice id="proposal-audience" value={audience} disabled={busy} onChange={setAudience} />
+                  {diff.current !== null && frontmatter(diff.proposed)?.has('audience') && widens(pageAudience(frontmatter(diff.current)), pageAudience(frontmatter(diff.proposed))) && (
+                    <span className="text-xs text-warn">This proposal asks to share the page more widely. It stays as it is unless you choose.</span>
+                  )}
+                </div>
                 <div className="flex flex-wrap gap-2">
                   <Button
                     variant="primary"

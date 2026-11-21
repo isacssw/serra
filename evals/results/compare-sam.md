@@ -1,4 +1,4 @@
-Before: heldout-main. After: r5-sam. 16 cases, each counted once (the mean of its runs).
+Before: heldout-main. After: r6-sam. 16 cases, each counted once (the mean of its runs).
 
 | Category | Cases | Before | After | Change ±2 SE | Better / worse | At 100 before | Verdict |
 |---|---|---|---|---|---|---|---|
@@ -7,11 +7,11 @@ Before: heldout-main. After: r5-sam. 16 cases, each counted once (the mean of it
 | people | 3 | 78 | 100 | +22 ±44 | 1 / 0 | 2 | within noise |
 | privacy | 3 | 100 | 100 | +0 ±0 | 0 / 0 | 3 | within noise |
 | process | 4 | 100 | 100 | +0 ±0 | 0 / 0 | 4 | within noise |
-| voice | 2 | 50 | 67 | +17 ±33 | 1 / 0 | 0 | within noise |
-| **overall** | 16 | 89 | 96 | +7 ±9 | 3 / 0 | 12 | within noise |
+| voice | 2 | 50 | 75 | +25 ±50 | 1 / 0 | 0 | within noise |
+| **overall** | 16 | 89 | 97 | +8 ±10 | 3 / 0 | 12 | within noise |
 
 Cases that moved by more than 0.1:
 
 - h-off-partner-date: 83 → 100
 - h-people-sync: 33 → 100
-- h-voice-ask-omar: 50 → 83
+- h-voice-ask-omar: 50 → 100

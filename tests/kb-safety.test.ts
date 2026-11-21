@@ -432,13 +432,13 @@ const botOn = async (profileDir: string) => {
   const config = loadConfig({ profileDir, env: { SLACK_BOT_TOKEN: 'xoxb-t', SLACK_APP_TOKEN: 'xapp-t' } });
   const knowledge = createKnowledge(config.knowledgeDir);
   knowledge.seedApproved();
-  const started: string[] = []; const sent: string[] = []; const answered: unknown[] = [];
+  const started: string[] = []; const sent: string[] = []; const answered: unknown[] = []; const bases: string[] = []; const posted: string[] = [];
   let pendingQuestions: { requestId: string; questions: unknown[] }[] = [];
   const store = createStore(config.statePath);
   const client = {
     users: { info: async ({ user }: { user: string }) => ({ user: { real_name: user, team_id: 'THOME' } }) },
     conversations: { replies: async () => ({ messages: [] }), info: async () => ({ channel: { id: 'CTEAM', is_ext_shared: false, is_pending_ext_shared: false } }) },
-    chat: { getPermalink: async () => ({ permalink: 'https://x/p' }), postMessage: async () => ({ ts: '9.1' }), update: async () => ({}), delete: async () => ({}) },
+    chat: { getPermalink: async () => ({ permalink: 'https://x/p' }), postMessage: async (body: { text: string }) => { posted.push(body.text); return { ts: '9.1' }; }, update: async () => ({}), delete: async () => ({}) },
     reactions: { add: async () => ({}), remove: async () => ({}) },
     assistant: { threads: { setStatus: async () => ({ ok: true }) } },
   } as never;
@@ -447,7 +447,7 @@ const botOn = async (profileDir: string) => {
     config, client, botUserId: () => 'UMOSS', store, loadIndex: () => knowledge.loadIndex(),
     loadKnowledge: (visibility) => knowledge.briefKnowledge(visibility), logger: { info: quiet, warn: quiet, error: quiet, debug: quiet },
     t3: {
-      startThread: async (input: { brief: string }) => { started.push(input.brief); return `t3-${started.length}`; },
+      startThread: async (input: { brief: string; baseRef: string }) => { started.push(input.brief); bases.push(input.baseRef); return `t3-${started.length}`; },
       sendToThread: async (_id: string, message: string) => { sent.push(message); },
       showThread: async (id: string) => ({ thread: { threadId: id, link: 'https://t3/x', status: 'idle', latestRunId: null, activeRunId: null, pendingRequestCount: 0 }, messages: [] }),
     } as never,
@@ -459,7 +459,7 @@ const botOn = async (profileDir: string) => {
     const file = join(config.knowledgeDir, page);
     knowledge.savePage(page, readFileSync(file, 'utf8').replace('audience: team', 'audience: owner'));
   };
-  return { bot, store, config, knowledge, started, sent, answered, restrict, setQuestions: (list: typeof pendingQuestions) => { pendingQuestions = list; } };
+  return { bot, store, config, knowledge, started, sent, answered, bases, posted, restrict, setQuestions: (list: typeof pendingQuestions) => { pendingQuestions = list; } };
 };
 
 test('the worker opens pages from the approved copy, and writes proposals to knowledge/proposals', async (t) => {
@@ -514,4 +514,33 @@ test('saves, shares and accepts apply only to what the owner saw, and accepting 
   const huge = `${readFileSync(offlimits, 'utf8')}${'- Never discuss the internal roadmap with anyone outside the payments team.\n'.repeat(19)}`;
   writeFileSync(offlimits, huge);
   assert.throws(() => knowledge.acceptDrift('owner/offlimits.md', huge), /Not accepted\. Off-limits/);
+});
+
+test('a fresh session after knowledge is taken back starts from the old branch, and says so in the thread', async (t) => {
+  const run = await botOn(fixture(t));
+  await run.bot.handle({ channel: 'CTEAM', threadTs: '3.1', messageTs: '3.1', user: PRIYA, text: '<@UMOSS> how do I cut a release?', direct: true });
+  const branch = run.store.getJob('CTEAM:3.1')!.branch!;
+  run.restrict('workflows/release.md');
+  await run.bot.handle({ channel: 'CTEAM', threadTs: '3.1', messageTs: '3.2', user: PRIYA, text: '<@UMOSS> and after that?', direct: true });
+  await new Promise((done) => setTimeout(done, 80));
+  assert.equal(run.bases[1], branch, 'the new worktree starts from the old thread\'s branch');
+  assert.match(run.started[1]!, new RegExp(`Earlier work in this thread is on the branch \`${branch}\``));
+  assert.ok(run.posted.some((text) => /carrying on in a fresh session/.test(text)));
+});
+
+test('approving never widens who may hear a page by default, merging into another page included', (t) => {
+  const profileDir = fixture(t);
+  const knowledgeDir = join(profileDir, 'knowledge');
+  const proposals = createProposals({ knowledgeDir });
+  // A correction that asks to share an owner-only page with outsiders.
+  writeFileSync(join(knowledgeDir, 'proposals/2026-11-20-notes.md'), '---\ntype: preference\ndescription: Notes\naudience: external\nwritten: 2026-11-20\nverified: no\ntarget: owner/private-notes.md\nsources:\n  - Owner, 2026-11-20\n---\n# Private notes\n\n- Updated.\n');
+  let shown = proposals.readProposal('2026-11-20-notes.md');
+  proposals.promoteProposal('2026-11-20-notes.md', { folder: 'owner', reviewed: { proposal: shown.proposed, path: shown.proposal.target, page: shown.current } });
+  assert.match(readFileSync(join(knowledgeDir, 'owner/private-notes.md'), 'utf8'), /^audience: owner$/m);
+  // A new fact with no target and no audience, merged into a team page.
+  writeFileSync(join(knowledgeDir, 'proposals/2026-11-20-fact.md'), '---\ntype: workflow\ndescription: Fact\nwritten: 2026-11-20\nverified: no\nsources:\n  - Owner, 2026-11-20\n---\n- Ship notes go in #ledgerline-releases.\n');
+  shown = proposals.readProposal('2026-11-20-fact.md');
+  const current = readFileSync(join(knowledgeDir, 'workflows/release.md'), 'utf8');
+  proposals.mergeProposal('2026-11-20-fact.md', { into: 'workflows/release.md', text: `${current.trimEnd()}\n5. Ship notes go in #ledgerline-releases.\n`, reviewed: { proposal: shown.proposed, path: 'workflows/release.md', page: current } });
+  assert.match(readFileSync(join(knowledgeDir, 'workflows/release.md'), 'utf8'), /^audience: team$/m);
 });

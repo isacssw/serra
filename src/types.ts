@@ -66,6 +66,8 @@ export interface Job {
   visibility?: 'owner' | 'team' | 'external';
   /** Knowledge pages the thread's brief allowed. A follow-up after one is taken back starts a fresh T3 thread. */
   knowledgePages?: string[];
+  /** The task branch the thread works on, so a fresh thread can carry on from its committed work. */
+  branch?: string;
 }
 
 export interface StartThreadInput {

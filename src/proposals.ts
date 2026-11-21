@@ -324,8 +324,9 @@ export const createProposals = ({ knowledgeDir, backupDir, now = () => new Date(
     // The text the owner reviewed, which checkReviewed found unchanged: not a second read that could differ.
     const proposed = reviewed.proposal;
     const verifiedPage = removeHeaderField(setHeaderField(proposed, 'verified', at), 'target');
-    // Replacing a page never quietly changes who may hear it: the owner's pick, else the proposal's, else the page's.
-    const kept = audience ?? (frontmatter(proposed)?.get('audience')?.trim() || (current !== null ? frontmatter(current)?.get('audience')?.trim() : undefined));
+    // Replacing a page never quietly changes who may hear it: the owner's pick, else the page's own, else (a new page)
+    // the proposal's. A proposal can ask for a wider audience, but only the owner grants it.
+    const kept = audience ?? ((current !== null ? frontmatter(current)?.get('audience')?.trim() : undefined) || frontmatter(proposed)?.get('audience')?.trim());
     const page = kept ? setHeaderField(verifiedPage, 'audience', kept) : verifiedPage;
     const fields = frontmatter(page);
     const budget = isOfflimits(destination, fields) ? offlimitsBudgetAfter(root, destination, page) : null;
@@ -378,8 +379,8 @@ export const createProposals = ({ knowledgeDir, backupDir, now = () => new Date(
     // The page keeps where every rule came from: the old page's sources, then the new text's and the proposal's.
     const sources = [...new Set([...sourceItems(current), ...sourceItems(page), ...sourceItems(proposed)])];
     const withSources = setHeaderField(addSources(withoutSources(page.endsWith('\n') ? page : `${page}\n`), sources), 'verified', at);
-    // A merge never quietly changes who may hear the page: the owner's pick, else the merged text's, else the page's.
-    const kept = audience ?? (frontmatter(withSources)?.get('audience')?.trim() || frontmatter(current)?.get('audience')?.trim());
+    // A merge never quietly changes who may hear the page: the owner's pick, else the page's own, else the merged text's.
+    const kept = audience ?? (frontmatter(current)?.get('audience')?.trim() || frontmatter(withSources)?.get('audience')?.trim());
     const merged = kept ? setHeaderField(withSources, 'audience', kept) : withSources;
     const budget = isOfflimits(target, frontmatter(merged)) ? offlimitsBudgetAfter(root, target, merged) : null;
     const problems = [...pageProblems(target, merged, frontmatter(merged)), ...(budget ? [budget] : [])];

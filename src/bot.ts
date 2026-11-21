@@ -373,13 +373,14 @@ export const createBot = ({
 
     await fetchBase();
     const knowledge = loadKnowledge ? loadKnowledge(visibility) : null;
-    const t3ThreadId = await t3.startThread(jobThreadInput(config, {
+    const input = jobThreadInput(config, {
       // The branch and title come from what the person wrote, not the request with its attachment notes.
       summary,
       brief: fillBrief(config, knowledge ?? loadIndex(), { request, requester, permalink: permalink?.permalink ?? 'link unavailable', thread,
         ...(trigger ? { triggerInstructions: trigger.instructions } : {}) }),
       now: new Date(now()),
-    }), config.t3Bin);
+    });
+    const t3ThreadId = await t3.startThread(input, config.t3Bin);
 
     putJob(slackKey(msg.channel, msg.threadTs), {
       t3ThreadId,
@@ -393,6 +394,7 @@ export const createBot = ({
       watching: true,
       ownerFollows: msg.user === config.owner,
       ...(knowledge ? { visibility, knowledgePages: knowledge.pages } : {}),
+      branch: input.branch,
       createdAt: new Date(now()).toISOString(),
       lastActivityAt: new Date(now()).toISOString(),
     });
@@ -734,12 +736,16 @@ export const createBot = ({
     const first = lines[0]!;
     const thread = await threadContext({ channel: job.channel, threadTs: job.threadTs, messageTs: first.ts, user: job.requester, text: '', direct: false });
     await fetchBase();
-    const t3ThreadId = await t3.startThread(jobThreadInput(config, {
+    // The fresh thread starts from the old thread's branch, so committed work carries on, and is told where it was.
+    const earlier = job.branch ? `\n\nEarlier work in this thread is on the branch \`${job.branch}\`, which this worktree starts from. Carry on from it, and keep using its PR if it has one.` : '';
+    const input = jobThreadInput(config, {
       summary: 'continued with updated knowledge',
-      brief: fillBrief(config, knowledge, { request: followUpMessage(lines), requester: 'People in the thread', permalink: 'link unavailable', thread }),
+      brief: fillBrief(config, knowledge, { request: followUpMessage(lines) + earlier, requester: 'People in the thread', permalink: 'link unavailable', thread }),
       now: new Date(now()),
-    }), config.t3Bin);
-    updateJob(key, () => ({ t3ThreadId, visibility, knowledgePages: knowledge.pages, lastPostedRunId: null, watching: true, question: undefined, waitingInT3: false }));
+    });
+    const t3ThreadId = await t3.startThread({ ...input, ...(job.branch ? { baseRef: job.branch } : {}) }, config.t3Bin);
+    updateJob(key, () => ({ t3ThreadId, visibility, knowledgePages: knowledge.pages, branch: input.branch, lastPostedRunId: null, watching: true, question: undefined, waitingInT3: false }));
+    await reply(job.channel, job.threadTs, 'Some knowledge this thread used has changed, so I\'m carrying on in a fresh session.');
     logger.info(`Knowledge this thread used was taken back (${revoked.length} page(s)); continued ${key} in a fresh T3 thread ${t3ThreadId}`);
     events('knowledge_revoked', { key, t3ThreadId });
     return true;
