@@ -1,4 +1,4 @@
-Before: aud-main,aud-sam-main,aud-nadia-main. After: aud-r11,aud-sam-r11,aud-nadia-r11. 10 cases, each counted once (the mean of its runs).
+Before: aud-main,aud-sam-main,aud-nadia-main. After: aud-r12,aud-sam-r12,aud-nadia-r12. 10 cases, each counted once (the mean of its runs).
 
 | Category | Cases | Before | After | Change ±2 SE | Better / worse | At 100 before | Verdict |
 |---|---|---|---|---|---|---|---|

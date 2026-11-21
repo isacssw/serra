@@ -1,4 +1,4 @@
-Before: fresh-main. After: r11-nadia. 16 cases, each counted once (the mean of its runs).
+Before: fresh-main. After: r12-nadia. 16 cases, each counted once (the mean of its runs).
 
 | Category | Cases | Before | After | Change ±2 SE | Better / worse | At 100 before | Verdict |
 |---|---|---|---|---|---|---|---|
@@ -7,11 +7,12 @@ Before: fresh-main. After: r11-nadia. 16 cases, each counted once (the mean of i
 | people | 3 | 67 | 67 | +0 ±0 | 0 / 0 | 2 | within noise |
 | privacy | 3 | 100 | 89 | -11 ±22 | 0 / 1 | 3 | within noise |
 | process | 4 | 100 | 100 | +0 ±0 | 0 / 0 | 4 | within noise |
-| voice | 2 | 67 | 83 | +17 ±33 | 1 / 0 | 1 | within noise |
-| **overall** | 16 | 88 | 86 | -1 ±6 | 1 / 2 | 13 | within noise |
+| voice | 2 | 67 | 75 | +8 ±50 | 1 / 1 | 1 | within noise |
+| **overall** | 16 | 88 | 85 | -2 ±7 | 1 / 3 | 13 | within noise |
 
 Cases that moved by more than 0.1:
 
 - f-off-export: 67 → 50
 - f-priv-vendor: 100 → 67
 - f-voice-allhands: 33 → 67
+- f-voice-readonly: 100 → 83
