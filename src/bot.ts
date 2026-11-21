@@ -337,7 +337,8 @@ export const createBot = ({
       const shared = channel as { is_im?: boolean; is_ext_shared?: boolean; is_pending_ext_shared?: boolean } | undefined;
       if (!shared) throw new Error('Slack returned no channel');
       if (shared.is_im) return msg.user === config.owner ? 'owner' : 'team';
-      const external = Boolean(shared?.is_ext_shared || shared?.is_pending_ext_shared);
+      // Team only on Slack's word: it says the channel isn't shared outside. Anything else counts as outside.
+      const external = shared.is_ext_shared !== false || shared.is_pending_ext_shared === true;
       sharedChannels.set(msg.channel, { external, until: now() + VISIBILITY_TTL_MS });
       return external ? 'external' : 'team';
     } catch (error) {

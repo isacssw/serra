@@ -7,10 +7,10 @@ import type { HandlerContext } from './context.ts';
 /** What the screen showed the owner: the proposal's text and the page it changes, as strings (null for a new page). */
 const reviewedInput = (value: unknown): Reviewed => {
   const shown = value as Partial<Reviewed> | null;
-  if (!shown || typeof shown.proposal !== 'string' || (shown.page !== null && typeof shown.page !== 'string')) {
+  if (!shown || typeof shown.proposal !== 'string' || (shown.page !== null && typeof shown.page !== 'string') || (shown.path !== null && typeof shown.path !== 'string')) {
     throw new Error('Review the proposal in the app before approving it.');
   }
-  return { proposal: shown.proposal, page: shown.page };
+  return { proposal: shown.proposal, path: shown.path, page: shown.page };
 };
 
 const text = (value: unknown, what: string): string => {

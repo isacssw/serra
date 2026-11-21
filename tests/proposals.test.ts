@@ -8,12 +8,12 @@ import { runCli } from '../src/manage.ts';
 import { createProposals } from '../src/proposals.ts';
 
 /** What the app shows the owner before an approval: the proposal and the page it would change. */
-const shown = (service: { readProposal: (id: string) => { proposed: string; current: string | null } }, id: string) => {
+const shown = (service: { readProposal: (id: string) => { proposed: string; current: string | null; proposal: { target: string | null } } }, id: string) => {
   try {
-    const { proposed, current } = service.readProposal(id);
-    return { proposal: proposed, page: current };
+    const { proposed, current, proposal } = service.readProposal(id);
+    return { proposal: proposed, path: proposal.target, page: current };
   } catch {
-    return { proposal: '', page: null };
+    return { proposal: '', path: null, page: null };
   }
 };
 

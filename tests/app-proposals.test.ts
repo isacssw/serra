@@ -163,8 +163,8 @@ test('handlers: list, diff and the folder and page pickers come from the profile
 
 /** What the screen shows before an approval, as the handlers get it back. */
 const shown = async (handlers: { diff: (path: string) => unknown }, path: string) => {
-  const { proposed, current } = await handlers.diff(path) as { proposed: string; current: string | null };
-  return { proposal: proposed, page: current };
+  const { proposed, current, proposal } = await handlers.diff(path) as { proposed: string; current: string | null; proposal: { target: string | null } };
+  return { proposal: proposed, path: proposal.target, page: current };
 };
 
 test('handlers: promoting then undoing restores every file', async (t) => {

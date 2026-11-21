@@ -47,9 +47,12 @@ export interface ProposalChange {
   undoneAt?: string;
 }
 
-/** What the owner was shown when they approved: the proposal's text, and the page it changes (null for a new page). */
+/** What the owner was shown when they approved: the proposal's text, and which page it changes and its text then. */
 export interface Reviewed {
   proposal: string;
+  /** The page the screen showed, relative to `knowledge/`, or null when it showed none (a new page). */
+  path: string | null;
+  /** That page's text as shown, or null when it didn't exist. */
   page: string | null;
 }
 
@@ -215,7 +218,9 @@ export const createProposals = ({ knowledgeDir, backupDir, now = () => new Date(
   const checkReviewed = (source: string, reviewed: Reviewed | undefined, page: string | null, current: string | null): void => {
     if (!reviewed) throw new Error('Review the proposal in the app before approving it.');
     if (readText(source) !== reviewed.proposal) throw new Error('The proposal changed since you reviewed it. Look at it again, then approve it.');
-    if (page !== null && current !== null && current !== reviewed.page) {
+    // The page the screen showed is the one this approval writes, and it still reads (or is still missing) as shown.
+    // A page the owner didn't see must not exist: approving never writes over text nobody reviewed.
+    if (reviewed.path === page ? current !== reviewed.page : current !== null) {
       throw new Error(`${page} changed since you reviewed this proposal. Look at the refreshed diff, then approve it again.`);
     }
   };

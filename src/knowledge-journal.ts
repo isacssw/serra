@@ -1,5 +1,5 @@
 import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 import { writeFileAtomic } from './config.ts';
 import { NOT_PAGES, PROPOSALS_DIR } from './knowledge-rules.ts';
 
@@ -23,8 +23,14 @@ export interface KnowledgeDrift {
   removed: string[];
 }
 
-/** Next to `knowledge/` in the profile, outside it and outside the backups undo lists. */
-export const approvedDir = (knowledgeDir: string): string => join(dirname(resolve(knowledgeDir)), '.knowledge-approved');
+/**
+ * Next to `knowledge/` in the profile (`.knowledge-approved/`), outside it and outside the backups undo lists. Named
+ * after the folder, so two knowledge folders side by side never share one.
+ */
+export const approvedDir = (knowledgeDir: string): string => {
+  const root = resolve(knowledgeDir);
+  return join(dirname(root), `.${basename(root)}-approved`);
+};
 
 /** Files that shape a brief: the index and every page. Not proposals, the log or READMEs, which workers may write. */
 const isTracked = (path: string): boolean => path === 'index.md' || (

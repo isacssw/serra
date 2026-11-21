@@ -15,8 +15,7 @@ const AUDIENCES: { value: Visibility; label: string; icon: typeof User; hint: st
 
 const message = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
-/** Pages whose names suggest they're private start unchecked when sharing with the team. */
-const PRIVATE_NAME = /private|personal|notes|secret|salar|1-?1|one-on-one|hr\b/i;
+
 
 /** A page's Markdown as plain lines: headings, bullets and paragraphs, without the blank lines between them. */
 const PageBody = ({ text }: { text: string }) => (
@@ -36,7 +35,7 @@ export const AboutMe = () => {
   const [visibility, setVisibility] = useState<Visibility>('team');
   const [about, setAbout] = useState<AboutMeData | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [untagged, setUntagged] = useState<string[]>([]);
+  const [untagged, setUntagged] = useState<{ path: string; description: string }[]>([]);
   const [sharing, setSharing] = useState<Set<string> | null>(null);
   const [busy, setBusy] = useState(false);
   const toast = useToast();
@@ -98,7 +97,7 @@ export const AboutMe = () => {
               {untagged.length === 1 ? 'It doesn\u2019t say who may hear it, so teammates\u2019 briefs leave it out.' : 'They don\u2019t say who may hear them, so teammates\u2019 briefs leave them out.'}
             </p>
             <div className="mt-2">
-              <Button onClick={() => setSharing(new Set(untagged.filter((path) => !PRIVATE_NAME.test(path))))}>Choose what your team can hear</Button>
+              <Button onClick={() => setSharing(new Set())}>Choose what your team can hear</Button>
             </div>
           </div>
         </section>
@@ -189,7 +188,7 @@ export const AboutMe = () => {
         open={sharing !== null}
         onClose={() => setSharing(null)}
         title="Share pages with your team"
-        description="Checked pages go into your teammates' briefs. Leave anything private unchecked. You can change a page later in Pages."
+        description="Checked pages go into your teammates' briefs. Nothing is checked until you choose. You can change a page later in Pages."
         actions={(
           <>
             <Button onClick={() => setSharing(null)}>Cancel</Button>
@@ -199,10 +198,19 @@ export const AboutMe = () => {
           </>
         )}
       >
+        <div className="mb-2 flex justify-end">
+          <button
+            type="button"
+            onClick={() => setSharing(sharing?.size === untagged.length ? new Set() : new Set(untagged.map((page) => page.path)))}
+            className="rounded-md px-1.5 py-0.5 text-xs text-muted hover:bg-hover hover:text-ink focus-visible:outline-2 focus-visible:outline-focus"
+          >
+            {sharing?.size === untagged.length ? 'Clear all' : 'Select all'}
+          </button>
+        </div>
         <ul className="flex max-h-80 flex-col gap-1 overflow-y-auto">
-          {untagged.map((path) => (
+          {untagged.map(({ path, description }) => (
             <li key={path}>
-              <label className="flex items-center gap-2 rounded-md px-1 py-1 text-sm hover:bg-hover">
+              <label className="flex items-start gap-2 rounded-md px-1 py-1 text-sm hover:bg-hover">
                 <input
                   type="checkbox"
                   checked={sharing?.has(path) ?? false}
@@ -211,9 +219,12 @@ export const AboutMe = () => {
                     if (event.target.checked) next.add(path); else next.delete(path);
                     return next;
                   })}
-                  className="size-4 accent-[var(--color-accent)]"
+                  className="mt-0.5 size-4 accent-[var(--color-accent)]"
                 />
-                <span className="font-mono text-xs">{path}</span>
+                <span className="flex min-w-0 flex-col">
+                  <span className="font-mono text-xs">{path}</span>
+                  {description && <span className="text-xs text-muted">{description}</span>}
+                </span>
               </label>
             </li>
           ))}

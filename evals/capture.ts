@@ -20,6 +20,8 @@ export interface EvalCase {
   names?: Record<string, string>;
   /** The chat app says nothing about the channel (a failed or empty lookup). */
   noChannelInfo?: boolean;
+  /** The chat app describes the channel but doesn't say whether it is shared outside. */
+  bareChannel?: boolean;
 }
 
 const BOT_USER = 'UMOSS00001';
@@ -47,7 +49,7 @@ export const buildBrief = async (profileDir: string, item: EvalCase): Promise<st
     users: { info: async ({ user }: { user: string }) => ({ user: { real_name: item.names?.[user] ?? NAMES[user] ?? user } }) },
     conversations: {
       replies: async () => ({ messages: thread }),
-      info: async () => (item.noChannelInfo ? {} : { channel: { id: channel, is_im: item.via === 'dm', is_ext_shared: item.via === 'shared', is_shared: item.via === 'shared' } }),
+      info: async () => (item.noChannelInfo ? {} : item.bareChannel ? { channel: { id: channel } } : { channel: { id: channel, is_im: item.via === 'dm', is_ext_shared: item.via === 'shared', is_shared: item.via === 'shared' } }),
     },
     chat: {
       getPermalink: async () => ({ permalink: `https://larchwood.slack.test/archives/${channel}/p1` }),

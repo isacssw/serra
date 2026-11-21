@@ -149,9 +149,10 @@ export const createKnowledge = (knowledgeDir: string, { backupDir }: KnowledgeOp
    * says which, and where their approved text is.
    */
   const briefKnowledge = (visibility: Visibility, now: Date = new Date()): BriefKnowledge => {
-    const current = read('index.md');
     const { changed, removed } = journal.drift();
     const drifted = changed.length > 0 || removed.length > 0;
+    // A missing index.md still stops jobs, unless there is an approved one to use instead.
+    const current = drifted && journal.approvedText('index.md') !== null ? '' : read('index.md');
     const approved = (path: string): string | null => (drifted ? journal.approvedText(path) : existsSync(join(root, path)) ? read(path) : null);
     const pages = (drifted ? markdownIn(journal.approvedRoot) : pageFiles()).filter((path) => path !== 'index.md')
       .flatMap((path) => { const text = approved(path); return text === null ? [] : [{ path, text }]; });
@@ -161,8 +162,11 @@ export const createKnowledge = (knowledgeDir: string, { backupDir }: KnowledgeOp
     if (drifted) {
       // Only the owner hears which files: a page's name can say more than a teammate may know.
       const files = visibility === 'owner' ? `: ${[...changed, ...removed].map((path) => `\`${path}\``).join(', ')}` : '';
+      // Only the owner's brief says where the approved copy is: nobody else's worker needs to know.
       index += `\n\nSome knowledge files changed outside Serra and the owner hasn't approved them yet (unreviewed changes)${files}. `
-        + `Don't use what they say now. Read the approved copy of any page from ${journal.approvedRoot} instead.`;
+        + (visibility === 'owner'
+          ? `Don't use what they say now. Read the approved copy of any page from ${journal.approvedRoot} instead.`
+          : `Don't open pages to answer this: use only what this brief says.`);
     }
     return { index, aboutMe, visibility };
   };
@@ -335,6 +339,11 @@ export const createKnowledge = (knowledgeDir: string, { backupDir }: KnowledgeOp
   const savePage = (path: string, text: string, { now = new Date(), roots = [] }: CheckOptions = {}): PageSave => {
     if (typeof text !== 'string') throw new Error('A page is text.');
     const page = existingPage(path);
+    // Saving a page that changed outside Serra would approve that change along with the owner's edit, unseen.
+    const { changed, removed } = journal.drift();
+    if (changed.includes(page) || removed.includes(page)) {
+      throw new Error(`${page} changed outside Serra. Review it at the top of Pages (accept or restore it) before editing.`);
+    }
     const after = normalizePageText(text);
     const problems = saveProblems(page, after);
     if (problems.length > 0) throw new Error(saveRefusal(problems));
@@ -357,6 +366,10 @@ export const createKnowledge = (knowledgeDir: string, { backupDir }: KnowledgeOp
   /** Pages whose header doesn't say who may hear them, so only the owner's own replies use them. */
   const untaggedPages = (): string[] => pageFiles().sort().filter((page) => !frontmatter(read(page))?.has('audience'));
 
+  /** The same, with each page's description, for the app's list. */
+  const untaggedDetails = (): { path: string; description: string }[] =>
+    untaggedPages().map((path) => ({ path, description: frontmatter(read(path))?.get('description')?.trim() ?? '' }));
+
   /**
    * Set who may hear each page, as the owner chose in the app. Each page is saved like an edit, with a backup.
    * A page that changed outside Serra is skipped and returned: the owner reviews it in Pages first.
@@ -374,5 +387,5 @@ export const createKnowledge = (knowledgeDir: string, { backupDir }: KnowledgeOp
     return { shared, skipped };
   };
 
-  return { untaggedPages, shareWith, loadIndex, briefKnowledge, checkKnowledge, listPages, readPage, savePage, seedApproved, drift, driftDetails, acceptDrift, restoreDrift };
+  return { untaggedPages, untaggedDetails, shareWith, loadIndex, briefKnowledge, checkKnowledge, listPages, readPage, savePage, seedApproved, drift, driftDetails, acceptDrift, restoreDrift };
 };

@@ -72,6 +72,7 @@ const countLabels: Record<BadgeKey, (n: string) => string> = {
   needsYou: (n) => `${n} need you`,
   running: (n) => `${n} running`,
   proposals: (n) => `${n} to review`,
+  untagged: (n) => `${n} only for you`,
 };
 
 const itemClass = (active: boolean): string => cx(

@@ -43,7 +43,7 @@ export const pagesHandlers = (context: HandlerContext): Handlers<'pages'> => {
       if (visibility !== 'owner' && visibility !== 'team' && visibility !== 'external') throw new Error('Pick who sees the reply: owner, team or external.');
       return service().briefKnowledge(visibility).aboutMe;
     },
-    untagged: () => service().untaggedPages(),
+    untagged: () => service().untaggedDetails(),
     share: (paths, audience) => {
       if (!Array.isArray(paths) || paths.some((path) => typeof path !== 'string')) throw new Error('Pick the pages to share.');
       return service().shareWith(paths as string[], audience, { roots: roots() });

@@ -141,7 +141,7 @@ export interface SerraApi {
     /** What every brief carries about the owner for a reply this audience sees, and the owner pages left out. */
     aboutMe(visibility: Visibility): AboutMe;
     /** Pages without an `audience:`, which only the owner's own replies use. */
-    untagged(): string[];
+    untagged(): { path: string; description: string }[];
     /** Set who may hear these pages (saved like edits). Pages changed outside Serra are skipped and returned. */
     share(paths: string[], audience: Visibility): { shared: string[]; skipped: string[] };
   };

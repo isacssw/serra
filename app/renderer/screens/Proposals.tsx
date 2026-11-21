@@ -16,7 +16,7 @@ import { useSearchParams } from 'react-router';
 import { registerActions } from '../commands/registry.ts';
 import {
   defaultFolder, folderChoices, folderLabel, groupByDate, interviewStartedText, nextSelection, pendingLabel, PROPOSAL_PARAM, promoteProposalAction, proposalBody,
-  proposalTitle, withoutTarget,
+  proposalTitle, withoutTarget, diffRows, diffStats,
 } from './proposals.logic.ts';
 
 const unregister = registerActions([promoteProposalAction]);
@@ -102,6 +102,8 @@ export const Proposals = () => {
   const [mergeText, setMergeText] = useState<string | null>(null);
   /** The page as the merge dialog loaded it: what the owner reviewed, so a change while the dialog is open refuses the merge. */
   const [mergeBase, setMergeBase] = useState<string | null>(null);
+  /** The text the merge dialog started from when it put the proposal under another page: merging it unchanged would keep both. */
+  const [mergeStart, setMergeStart] = useState<string | null>(null);
   /** Bumped to reread the selected proposal's diff, after an approval found its page had changed. */
   const [diffVersion, setDiffVersion] = useState(0);
 
@@ -164,11 +166,16 @@ export const Proposals = () => {
     const bridge = serra();
     setMergeText(null);
     setMergeBase(null);
+    setMergeStart(null);
     if (!mergeOpen || !bridge || !diff || !mergeTarget) return;
     if (diff.proposal.target === mergeTarget && diff.current !== null) { setMergeBase(diff.current); setMergeText(withoutTarget(diff.proposed)); return; }
     let live = true;
     bridge.pages.read(mergeTarget).then(
-      (current) => { if (live) { setMergeBase(current); setMergeText(`${current.trimEnd()}\n\n${proposalBody(diff.proposed)}\n`); } },
+      (current) => {
+        if (!live) return;
+        const start = `${current.trimEnd()}\n\n${proposalBody(diff.proposed)}\n`;
+        setMergeBase(current); setMergeText(start); setMergeStart(start);
+      },
       (error) => { if (live) { setMergeOpen(false); toast({ message: message(error), tone: 'error' }); } },
     );
     return () => { live = false; };
@@ -257,7 +264,7 @@ export const Proposals = () => {
                   <Button
                     variant="primary"
                     disabled={busy || !folder}
-                    onClick={() => void act((path) => bridge.proposals.promote(path, folder, { proposal: diff.proposed, page: diff.current }), `Promoted ${title} to ${folderLabel(folder)}.`)}
+                    onClick={() => void act((path) => bridge.proposals.promote(path, folder, { proposal: diff.proposed, path: diff.proposal.target, page: diff.current }), `Promoted ${title} to ${folderLabel(folder)}.`)}
                   >
                     Promote
                   </Button>
@@ -279,12 +286,12 @@ export const Proposals = () => {
             <Button onClick={() => setMergeOpen(false)}>Cancel</Button>
             <Button
               variant="primary"
-              disabled={busy || !mergeTarget || mergeText === null || mergeBase === null}
+              disabled={busy || !mergeTarget || mergeText === null || mergeBase === null || (mergeStart !== null && mergeText === mergeStart)}
               onClick={() => {
                 setMergeOpen(false);
                 const into = mergeTarget;
                 const text = mergeText ?? undefined;
-                const reviewed = { proposal: diff!.proposed, page: mergeBase };
+                const reviewed = { proposal: diff!.proposed, path: into, page: mergeBase };
                 void act((path) => bridge!.proposals.mergeInto(path, into, text, reviewed), `Merged ${title} into ${into}.`);
               }}
             >
@@ -296,6 +303,8 @@ export const Proposals = () => {
         <Select label="Page" value={mergeTarget} onChange={setMergeTarget} options={targets.pages.map((value) => ({ value, label: value }))} />
         <label className="mt-3 flex flex-col gap-1.5 text-sm">
           <span className="font-medium">Page after the merge</span>
+          {mergeStart !== null && <span className="text-xs text-muted">The proposal is below the page. Edit them into one page, removing any rule it replaces, before merging.</span>}
+          {mergeBase !== null && mergeText !== null && <MergeStats before={mergeBase} after={mergeText} />}
           <textarea
             value={mergeText ?? ''}
             onChange={(event) => setMergeText(event.target.value)}
@@ -308,6 +317,17 @@ export const Proposals = () => {
         </label>
       </Dialog>
     </Page>
+  );
+};
+
+/** How the merged page differs from the page now, and a warning when nothing of the old page goes. */
+const MergeStats = ({ before, after }: { before: string; after: string }) => {
+  const stats = diffStats(diffRows(before, after));
+  return (
+    <span className={cx('text-xs', stats.removed === 0 ? 'text-warn' : 'text-muted')}>
+      {stats.removed} line{stats.removed === 1 ? '' : 's'} removed, {stats.added} added.
+      {stats.removed === 0 && ' Nothing of the page goes: check that no rule it replaces is left beside the new one.'}
+    </span>
   );
 };
 

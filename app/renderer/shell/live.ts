@@ -29,6 +29,7 @@ const loadOrNull = async <T,>(load: () => Promise<T>): Promise<T | null> => {
 export const useBadgeCounts = (status: BotStatus | null): BadgeCounts => {
   const [jobs, setJobs] = useState<JobSummary[] | null>(null);
   const [proposals, setProposals] = useState<Proposal[] | null>(null);
+  const [untagged, setUntagged] = useState<unknown[] | null>(null);
   useEffect(() => {
     const bridge = serra();
     if (!bridge) return;
@@ -36,6 +37,7 @@ export const useBadgeCounts = (status: BotStatus | null): BadgeCounts => {
     const reload = (): void => {
       void loadOrNull(() => bridge.jobs.list()).then((list) => { if (live) setJobs(list); });
       void loadOrNull(() => bridge.proposals.list()).then((list) => { if (live) setProposals(list); });
+      void loadOrNull(() => bridge.pages.untagged()).then((list) => { if (live) setUntagged(list); });
     };
     reload();
     const off = bridge.on.event(reload);
@@ -43,5 +45,5 @@ export const useBadgeCounts = (status: BotStatus | null): BadgeCounts => {
     window.addEventListener(REFRESH_COUNTS, reload);
     return () => { live = false; off(); window.removeEventListener('focus', reload); window.removeEventListener(REFRESH_COUNTS, reload); };
   }, [status?.state]);
-  return badgeCounts({ status, jobs, proposals });
+  return badgeCounts({ status, jobs, proposals, untagged });
 };

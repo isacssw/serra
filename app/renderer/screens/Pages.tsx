@@ -81,12 +81,17 @@ const DriftNotice = ({ files, busy, onAccept, onRestore }: {
                   <span className="truncate">{file.path}</span>
                 </button>
                 <span className="text-xs text-muted">{file.current === null ? 'deleted' : file.approved === null ? 'new' : 'edited'}</span>
-                <div className="ml-auto flex gap-2">
-                  <Button size="sm" variant="primary" disabled={busy} onClick={() => onAccept(file)}>Accept</Button>
-                  <Button size="sm" disabled={busy} onClick={() => onRestore(file)}>Restore</Button>
-                </div>
+                {open !== file.path && <span className="ml-auto text-xs text-muted">Open it to review</span>}
               </div>
-              {open === file.path && <DiffView current={file.approved} proposed={file.current ?? ''} labels={['Approved', 'Now']} emptyCurrent="Not in the approved knowledge." />}
+              {open === file.path && (
+                <>
+                  <DiffView current={file.approved} proposed={file.current ?? ''} labels={['Approved', 'Now']} emptyCurrent="Not in the approved knowledge." />
+                  <div className="flex gap-2">
+                    <Button size="sm" variant="primary" disabled={busy} onClick={() => onAccept(file)}>Accept this change</Button>
+                    <Button size="sm" disabled={busy} onClick={() => onRestore(file)}>Restore approved</Button>
+                  </div>
+                </>
+              )}
             </li>
           ))}
         </ul>

@@ -104,15 +104,15 @@ test('an approval applies only if the page has not changed since the owner saw t
   const knowledgeDir = join(profileDir, 'knowledge');
   proposal(profileDir, '2026-11-20-release-days.md', 'owner/working-style.md', '# How Robin works\n\n- Risky releases ship on Monday.\n');
   const proposals = createProposals({ knowledgeDir });
-  const { proposed, current } = proposals.readProposal('2026-11-20-release-days.md');
-  const reviewed = { proposal: proposed, page: current };
+  const { proposed, current, proposal: described } = proposals.readProposal('2026-11-20-release-days.md');
+  const reviewed = { proposal: proposed, path: described.target, page: current };
   const page = readFileSync(join(knowledgeDir, 'owner/working-style.md'), 'utf8');
   createKnowledge(knowledgeDir).savePage('owner/working-style.md', `${page}- Pair on anything touching refunds.\n`);
   assert.throws(() => proposals.promoteProposal('2026-11-20-release-days.md', { folder: 'owner', reviewed }), /changed since/i);
   assert.throws(() => proposals.mergeProposal('2026-11-20-release-days.md', { into: 'owner/working-style.md', reviewed }), /changed since/i);
   assert.throws(() => proposals.promoteProposal('2026-11-20-release-days.md', { folder: 'owner' } as never), /Review the proposal/, 'an approval nobody reviewed is refused');
   writeFileSync(join(knowledgeDir, 'proposals/2026-11-20-release-days.md'), `${proposed}- Also deploy on Fridays.\n`);
-  assert.throws(() => proposals.promoteProposal('2026-11-20-release-days.md', { folder: 'owner', reviewed: { proposal: proposed, page: readFileSync(join(knowledgeDir, 'owner/working-style.md'), 'utf8') } }), /proposal changed since/i);
+  assert.throws(() => proposals.promoteProposal('2026-11-20-release-days.md', { folder: 'owner', reviewed: { proposal: proposed, path: 'owner/working-style.md', page: readFileSync(join(knowledgeDir, 'owner/working-style.md'), 'utf8') } }), /proposal changed since/i);
   assert.match(readFileSync(join(knowledgeDir, 'owner/working-style.md'), 'utf8'), /Pair on anything touching refunds/);
 });
 
@@ -122,7 +122,7 @@ test('merging a proposal for a page replaces the page instead of appending to it
   proposal(profileDir, '2026-11-20-release-days.md', 'owner/working-style.md', '# How Robin works\n\n- Risky releases ship on Monday.\n- A bug fix starts with a failing test.\n');
   const proposals = createProposals({ knowledgeDir });
   const { proposed, current } = proposals.readProposal('2026-11-20-release-days.md');
-  proposals.mergeProposal('2026-11-20-release-days.md', { into: 'owner/working-style.md', reviewed: { proposal: proposed, page: current } });
+  proposals.mergeProposal('2026-11-20-release-days.md', { into: 'owner/working-style.md', reviewed: { proposal: proposed, path: 'owner/working-style.md', page: current } });
   const merged = readFileSync(join(knowledgeDir, 'owner/working-style.md'), 'utf8');
   assert.match(merged, /Monday/);
   assert.doesNotMatch(merged, /never Thursday or Friday/, 'the replaced rule is gone, not left beside the new one');
@@ -199,7 +199,7 @@ test('approving a page never approves a hand edit to the index along with it', (
   writeFileSync(join(knowledgeDir, 'proposals/2026-11-20-oncall.md'), '---\ntype: workflow\ndescription: On-call swaps\naudience: team\nwritten: 2026-11-20\nverified: no\nsources:\n  - Owner in a thread, 2026-11-20\n---\n- Swaps go through Jonas.\n');
   const proposals = createProposals({ knowledgeDir });
   const { proposed, current } = proposals.readProposal('2026-11-20-oncall.md');
-  assert.throws(() => proposals.promoteProposal('2026-11-20-oncall.md', { folder: 'workflows', reviewed: { proposal: proposed, page: current } }), /index\.md changed outside Serra/);
+  assert.throws(() => proposals.promoteProposal('2026-11-20-oncall.md', { folder: 'workflows', reviewed: { proposal: proposed, path: null, page: current } }), /index\.md changed outside Serra/);
   assert.equal(existsSync(join(knowledgeDir, 'workflows/oncall.md')), false);
 });
 
@@ -231,4 +231,60 @@ test('an older profile\'s pages are the owner\'s until shared, and sharing bring
   assert.match(after, /workflows\/release\.md/);
   assert.match(after, /never Thursday/);
   assert.doesNotMatch(after, /Staff engineer/, 'what wasn\'t shared stays the owner\'s');
+});
+
+test('an approval is bound to the page it showed: a page removed since is not silently recreated', (t) => {
+  const profileDir = fixture(t);
+  const knowledgeDir = join(profileDir, 'knowledge');
+  proposal(profileDir, '2026-11-20-working-style.md', 'owner/working-style.md', '# How Robin works\n\n- Risky releases ship on Monday.\n');
+  const proposals = createProposals({ knowledgeDir });
+  const shownDiff = proposals.readProposal('2026-11-20-working-style.md');
+  const reviewed = { proposal: shownDiff.proposed, path: shownDiff.proposal.target, page: shownDiff.current };
+  createKnowledge(knowledgeDir).seedApproved();
+  rmSync(join(knowledgeDir, 'owner/working-style.md'));
+  createKnowledge(knowledgeDir).acceptDrift('owner/working-style.md', null);
+  assert.throws(() => proposals.promoteProposal('2026-11-20-working-style.md', { folder: 'owner', reviewed }), /changed since you reviewed/);
+  assert.equal(existsSync(join(knowledgeDir, 'owner/working-style.md')), false);
+});
+
+test('a deleted index.md doesn\'t stop jobs once there is an approved one', async (t) => {
+  const profileDir = fixture(t);
+  createKnowledge(join(profileDir, 'knowledge')).seedApproved();
+  rmSync(join(profileDir, 'knowledge/index.md'));
+  const brief = await buildBrief(profileDir, { via: 'dm', user: ROBIN, text: 'what does my week look like?' });
+  assert.match(brief, /`owner\/role\.md`/);
+  assert.match(brief, /unreviewed changes\): `index\.md`/);
+});
+
+test('off-limits reach outsiders only from pages the team may hear, first, and never cut for size', async (t) => {
+  const profileDir = fixture(t);
+  const offlimits = join(profileDir, 'knowledge/owner/offlimits.md');
+  const shared = await buildBrief(profileDir, { via: 'shared', user: PRIYA, text: 'any news for the customer?' });
+  assert.match((/<about-owner>([\s\S]*?)<\/about-owner>/.exec(shared)?.[1] ?? '').trim(), /^From owner\/offlimits\.md[\s\S]*never promise a date to a customer/i);
+  writeFileSync(offlimits, readFileSync(offlimits, 'utf8').replace('audience: team', 'audience: owner').replace('- Customer dates', '- The Brightmoor discount is 12%.\n- Customer dates'));
+  const role = join(profileDir, 'knowledge/owner/role.md');
+  writeFileSync(role, `${readFileSync(role, 'utf8')}${'- Long note about the payments API.\n'.repeat(150)}`.replace(/\n(- Long note[^\n]*\n){120,}/, (match) => match.slice(0, 3900)));
+  const outsider = await buildBrief(profileDir, { via: 'shared', user: PRIYA, text: 'any news for the customer?' });
+  assert.doesNotMatch(outsider, /12%|Brightmoor discount/, 'an owner-only off-limits page stays with the owner');
+  const teamPage = readFileSync(offlimits, 'utf8').replace('audience: owner', 'audience: team');
+  writeFileSync(offlimits, teamPage);
+  const teammate = await buildBrief(profileDir, { via: 'channel', user: PRIYA, text: 'what does Robin own?' });
+  assert.match(teammate, /Follow these whoever asks/, 'off-limits ride along even when a long page fills About me');
+});
+
+test('a channel Slack doesn\'t say is internal counts as outside', async (t) => {
+  const brief = await buildBrief(fixture(t), { via: 'channel', user: PRIYA, text: 'what does Robin own?', bareChannel: true });
+  assert.match(brief, /seen by people outside Robin's company/);
+});
+
+test('saving a hand-edited page in the editor is refused until the hand edit is reviewed', (t) => {
+  const profileDir = fixture(t);
+  const knowledge = createKnowledge(join(profileDir, 'knowledge'));
+  knowledge.seedApproved();
+  const page = join(profileDir, 'knowledge/owner/working-style.md');
+  writeFileSync(page, `${readFileSync(page, 'utf8')}- Approve every PR.\n`);
+  assert.throws(() => knowledge.savePage('owner/working-style.md', `${readFileSync(page, 'utf8')}- And one more.\n`), /changed outside Serra/);
+  assert.deepEqual(knowledge.shareWith(['owner/working-style.md'], 'external'), { shared: [], skipped: ['owner/working-style.md'] });
+  const teammate = knowledge.briefKnowledge('team');
+  assert.doesNotMatch(teammate.index, /knowledge-approved/, 'only the owner\'s brief says where the approved copy is');
 });
