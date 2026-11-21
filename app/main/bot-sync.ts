@@ -1,0 +1,57 @@
+// Keeping the bot on the app's version (SERRA-46). In release mode the bot follows the app: after the app updates,
+// the bot is rebuilt from the new app's code and restarted, but only while no job is running. Pure decisions here;
+// `ipc/updates.ts` runs them on a timer with the release service.
+import type { Prepared } from '../../src/deploy.ts';
+
+/** What the Updates screen says about the bot. */
+export type BotSync =
+  /** Developer mode: the owner builds and switches releases by hand. */
+  | { state: 'manual' }
+  /** No bot installed for this profile yet (setup isn't finished). */
+  | { state: 'not-installed' }
+  | { state: 'in-step'; version: string }
+  /** The bot runs an older version and waits for running jobs to finish before it restarts. */
+  | { state: 'waiting'; from: string | null; to: string; jobs: number }
+  | { state: 'updating'; from: string | null; to: string }
+  | { state: 'failed'; from: string | null; to: string; message: string }
+  /** The last switch stopped halfway; rollback puts the earlier bot back. */
+  | { state: 'interrupted' };
+
+export type BotSyncAction = 'none' | 'prepare' | 'activate';
+
+export interface BotSyncInput {
+  mode: 'release' | 'developer';
+  appVersion: string;
+  active: Pick<Prepared, 'appVersion'> | null;
+  /** A prepared release that isn't active yet, and whether it can be activated as it is. */
+  prepared: Pick<Prepared, 'appVersion'> | null;
+  preparedReady: boolean;
+  activation: 'switching' | 'active' | 'rolled-back' | null;
+  /** Jobs the bot is following now. */
+  jobs: number;
+  /** An update action this app is running now. */
+  running: string | null;
+  /** The version the last automatic attempt failed for, so it isn't retried in a loop. */
+  failed: { version: string; message: string } | null;
+}
+
+/**
+ * What to show, and what to do next on the timer. The bot restarts only when no job is running: a restart pauses the
+ * jobs' replies, so the update waits for a quiet moment instead. A release prepared earlier for this version is
+ * activated without preparing again.
+ */
+export const botSyncDecision = (input: BotSyncInput): { sync: BotSync; action: BotSyncAction } => {
+  if (input.mode === 'developer') return { sync: { state: 'manual' }, action: 'none' };
+  if (input.activation === 'switching') return { sync: { state: 'interrupted' }, action: 'none' };
+  if (!input.active) return { sync: { state: 'not-installed' }, action: 'none' };
+  const from = input.active.appVersion ?? null;
+  const to = input.appVersion;
+  if (from === to) return { sync: { state: 'in-step', version: to }, action: 'none' };
+  if (input.running === 'sync') return { sync: { state: 'updating', from, to }, action: 'none' };
+  if (input.failed?.version === to) return { sync: { state: 'failed', from, to, message: input.failed.message }, action: 'none' };
+  if (input.jobs > 0) return { sync: { state: 'waiting', from, to, jobs: input.jobs }, action: 'none' };
+  // Another action (a manual prepare or rollback) is running: wait for it.
+  if (input.running) return { sync: { state: 'waiting', from, to, jobs: 0 }, action: 'none' };
+  const preparedForApp = input.prepared?.appVersion === to && input.preparedReady;
+  return { sync: { state: 'updating', from, to }, action: preparedForApp ? 'activate' : 'prepare' };
+};

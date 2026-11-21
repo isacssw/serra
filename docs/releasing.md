@@ -7,6 +7,7 @@ For the maintainer. Releases are cut in CI from `main`, which is protected, so a
 - `package.json`'s `version` is the last released version. The app shows it, and the `.dmg` is named after it.
 - `CHANGELOG.md` keeps merged, unreleased changes under `## Unreleased`. Add a line there in each PR a user would notice.
 - Tags are `v<version>`, like `v0.1.0-alpha.2`. A version with a `-` (alpha, beta, rc) is published as a prerelease; one without is marked the latest release.
+- The app updates from these releases (Settings › Updates, [app updates](app/install.md#updates)). It reads the releases list, not `/releases/latest`, so prereleases are found, and it only offers a release that has a `.dmg` for the Mac's architecture (`Serra-<version>-arm64.dmg`) and a `SHA256SUMS` line for it. Keep those names when changing the publish workflow.
 
 ## Cutting a release
 

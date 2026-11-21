@@ -87,6 +87,22 @@ const codeCommit = async (root: string): Promise<{ commit?: string; dirty?: bool
     return { commit, dirty: changes.length > 0 };
   } catch { return {}; }
 };
+/**
+ * What a packaged app's `release-source` says about the code it was built from: `release.json`, written by
+ * `pnpm app:build` with the version and commit, since the copy itself has no git. Empty for a checkout.
+ */
+export const RELEASE_INFO = 'release.json';
+const shippedBuild = (root: string): { appVersion?: string; commit?: string } => {
+  const read = (name: string): Record<string, unknown> => {
+    try { return JSON.parse(readFileSync(join(root, name), 'utf8')) as Record<string, unknown>; } catch { return {}; }
+  };
+  const info = read(RELEASE_INFO);
+  const version = typeof info.version === 'string' ? info.version : read('package.json').version;
+  return {
+    ...(typeof version === 'string' ? { appVersion: version } : {}),
+    ...(typeof info.commit === 'string' && /^[0-9a-f]{40}$/.test(info.commit) ? { commit: info.commit } : {}),
+  };
+};
 /** The branch Updates follows in the profile's update source when `updates.ref` isn't set. */
 export const DEFAULT_UPDATES_REF = 'origin/main';
 
@@ -97,7 +113,7 @@ const warnIfBehind = async (root: string, commit: string, ref: string, log: Depl
     if (target && target !== commit) log(`Note: ${root} is at ${commit.slice(0, 12)}, not ${ref} (${target.slice(0, 12)}). Run git pull there to release ${ref}.`);
   } catch { /* no such ref: status reports it */ }
 };
-export const releasedPaths = ['src', 'templates', 'docs', 'examples', 'README.md', 'package.json', 'pnpm-lock.yaml', 'tsconfig.json'];
+export const releasedPaths = ['src', 'templates', 'docs', 'examples', 'README.md', 'package.json', 'pnpm-lock.yaml', 'tsconfig.json', RELEASE_INFO];
 /** What the daemon can't run without. The rest of `releasedPaths` is copied when it is there. */
 const requiredPaths = ['src', 'templates', 'examples', 'package.json', 'pnpm-lock.yaml', 'tsconfig.json'];
 
@@ -118,6 +134,7 @@ export const stageReleaseSource = (from: string, to: string): void => {
   rmSync(to, { recursive: true, force: true });
   mkdirSync(to, { recursive: true });
   for (const name of releasedPaths) {
+    if (!existsSync(join(from, name))) continue;
     // docs/app is screenshots: megabytes the daemon never reads.
     cpSync(join(from, name), join(to, name), { recursive: true, filter: (path) => relative(join(from, 'docs/app'), path).startsWith('..') });
   }
@@ -161,6 +178,8 @@ export interface Prepared {
   commit?: string;
   /** The checkout had uncommitted changes in the copied files, so the release is not exactly `commit`. */
   dirty?: boolean;
+  /** The Serra version of the code (its package.json), like `0.1.0-alpha.2`. Absent on releases made before it was recorded. */
+  appVersion?: string;
 }
 interface Activation {
   version: 1;
@@ -201,7 +220,7 @@ export const prepareRelease = async (directory: string, { root, install = true, 
     if (!existsSync(join(root, name))) continue;
     cpSync(join(root, name), join(release, name), { recursive: true });
   }
-  const source = await codeCommit(root);
+  const source = { ...shippedBuild(root), ...await codeCommit(root) };
   if (source.commit) log(`Code at ${source.commit.slice(0, 12)}${source.dirty ? ' with uncommitted changes' : ''}`);
   if (source.commit && updates) await warnIfBehind(root, source.commit, updates.ref ?? DEFAULT_UPDATES_REF, log);
   writeFileSync(join(release, 'service.plist'), servicePlist({ directory, release, label: config.serviceLabel, node }), { mode: 0o600 });
@@ -322,6 +341,17 @@ export const activationPhase = (directory: string): Activation['phase'] | null =
 };
 
 /**
+ * Whether rollback has something to do: an interrupted cutover, or an activation with an earlier release to go back
+ * to. Undoing the first activation would leave no bot running, so it doesn't count.
+ */
+export const canRollBack = (directory: string): boolean => {
+  const path = join(resolve(directory), 'activation.json');
+  if (!existsSync(path)) return false;
+  const transaction = readJson<Activation>(path);
+  return transaction.phase === 'switching' || (transaction.phase === 'active' && transaction.previousActive !== undefined);
+};
+
+/**
  * A failed cutover. `restored` says whether the previous installation is back. When it isn't, the owner has to run
  * rollback once the cause is fixed.
  */
@@ -372,6 +402,10 @@ export const activate = async (directory: string, options: DeployOptions = {}): 
       transaction.phase = 'active';
       writeJson(join(directory, 'activation.json'), transaction);
       log('Bot connected. The new release is active.');
+      try {
+        const removed = pruneReleases(directory);
+        if (removed.length) log(`Removed ${removed.length} old ${removed.length === 1 ? 'release' : 'releases'}`);
+      } catch (error) { log(`Couldn't remove old releases: ${String(error)}`); }
     } catch (error) {
       log(`Cutover failed: ${String(error)}`);
       log('Restoring the previous installation');
@@ -400,6 +434,36 @@ const restore = async (directory: string, transaction: Activation, driver: Servi
   log('Previous installation restored.');
 };
 
+/** The `releases/` folder names prepare makes: `2026-11-21T16-08-23-951Z-85116`. */
+const RELEASE_ID = /^\d{4}-\d\d-\d\dT\d\d-\d\d-\d\d-\d{3}Z-\d+$/;
+
+/**
+ * Removes old release folders, keeping the active one, the one before it (what rollback switches back to) and a
+ * prepared one that isn't active yet. Only folders named like a release under `<profile>/releases/` are touched.
+ * Returns the folders removed.
+ */
+export const pruneReleases = (directory: string): string[] => {
+  directory = resolve(directory);
+  const root = join(directory, 'releases');
+  if (!existsSync(root)) return [];
+  const keep = new Set<string>();
+  const remember = (release: Prepared | undefined | null): void => { if (release?.release) keep.add(resolve(release.release)); };
+  const read = <T>(name: string): T | null => existsSync(join(directory, name)) ? readJson<T>(join(directory, name)) : null;
+  remember(read<Prepared>('active.json'));
+  remember(read<Prepared>('prepared.json'));
+  const transaction = read<Activation>('activation.json');
+  remember(transaction?.prepared);
+  remember(transaction?.previousActive);
+  const removed: string[] = [];
+  for (const entry of readdirSync(root, { withFileTypes: true })) {
+    const path = join(root, entry.name);
+    if (!entry.isDirectory() || !RELEASE_ID.test(entry.name) || keep.has(path)) continue;
+    rmSync(path, { recursive: true, force: true });
+    removed.push(path);
+  }
+  return removed;
+};
+
 export const rollback = async (directory: string, options: DeployOptions = {}): Promise<void> => {
   directory = resolve(directory);
   const unlock = acquireLock(join(directory, 'deployment.lock'));
@@ -407,6 +471,8 @@ export const rollback = async (directory: string, options: DeployOptions = {}): 
     if (!existsSync(join(directory, 'activation.json'))) throw new Error('Nothing to roll back: no release was activated for this profile');
     const transaction = readJson<Activation>(join(directory, 'activation.json'));
     if (transaction.phase === 'rolled-back') throw new Error('Already rolled back');
+    // Undoing the first activation would stop the bot and remove its service, leaving nothing running.
+    if (transaction.phase === 'active' && !transaction.previousActive) throw new Error('Nothing to roll back to: this is the first release installed for this profile');
     const { driver, log } = defaults(options);
     await restore(directory, transaction, driver, log);
   } finally { unlock(); }

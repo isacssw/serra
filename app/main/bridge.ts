@@ -18,6 +18,8 @@ import type { ProposalTargets, Reviewed } from '../../src/proposals.ts';
 import type { AboutMe, Visibility } from '../../src/owner-model.ts';
 import type { ActivationOutcome, ReleaseOverview, RollbackOutcome, RunningJob } from '../../src/releases.ts';
 import type { Prepared } from '../../src/deploy.ts';
+import type { AppUpdateView } from './app-updater.ts';
+import type { BotSync } from './bot-sync.ts';
 import type { InterviewPreview, StartedTask } from '../../src/tasks.ts';
 import type { DetectedProject, OwnerConfirmed, ProfileDraft, SetupProgress, SlackManifest } from '../../src/setup.ts';
 import type {
@@ -39,6 +41,8 @@ export interface AppPrefs {
   window: { width: number; height: number; x?: number; y?: number; maximized: boolean };
   /** The bot profile folder the app manages, when `--profile` or `BOT_PROFILE` don't name one. */
   profileDir: string | null;
+  /** Offer prerelease versions of the app (Updates). Null: the default, on while the installed version is a prerelease. */
+  includePrereleases: boolean | null;
 }
 
 export interface AppInfo {
@@ -194,22 +198,47 @@ export interface SerraApi {
     /** The command-line tools Serra knows: installed, version, signed in. And why each recommendation fits. */
     clis(request?: { fresh?: boolean }): CliOverview;
   };
-  /** Updates (APP-19, services from APP-18). Prepare/activate/rollback stream lines on `on.releaseLog`. */
+  /**
+   * Updates (APP-19, SERRA-46). The app updates from GitHub Releases; the bot follows the app's version on its own
+   * (release mode), or, when the profile names a Serra checkout, the owner builds and switches releases by hand
+   * (developer mode). Bot actions stream lines on `on.releaseLog`; the app's update state arrives on `on.appUpdate`.
+   */
   updates: {
-    /** Releases and new commits, read from files and git (works with the daemon stopped). `fetch` runs `git fetch` first. */
-    status(options?: { fetch?: boolean }): ReleaseOverview & {
-      /** The action this app is running now, if any. Only one runs at a time. */
-      running: 'prepare' | 'activate' | 'rollback' | null;
-      /** The lines of the running or last action, so the log survives leaving the screen. */
+    /** The app's and the bot's state. `fetch` runs `git fetch` first (developer mode). Reads files and git only. */
+    status(options?: { fetch?: boolean }): {
+      /** The installed app's version. */
+      appVersion: string;
+      /** The app's update state; null where the app can't update itself (tests). */
+      app: AppUpdateView | null;
+      /** The bot's releases; null without a profile. */
+      releases: ReleaseOverview | null;
+      /** Where the bot stands against the app's version. */
+      bot: BotSync;
+      /** The bot action this app is running now, if any. Only one runs at a time. */
+      running: 'prepare' | 'activate' | 'rollback' | 'sync' | null;
+      /** The lines of the running or last bot action, so the log survives leaving the screen. */
       log: string[];
     };
-    /** Jobs the bot is following, which an activation restarts under, for the confirm dialog. */
+    /** Jobs the bot is following, which a restart pauses, for the confirm dialogs. */
     runningJobs(): RunningJob[];
-    /** Snapshots the code into a new release with a real Node binary (never Electron's). The live bot is untouched. */
+    /** Developer mode: snapshots the code into a new release with a real Node binary (never Electron's). The live bot is untouched. */
     prepare(): Prepared;
     /** Never throws for a failed cutover: the outcome says whether the old release is back and whether to roll back. */
     activate(): ActivationOutcome;
     rollback(): RollbackOutcome;
+    /** Brings the bot to the app's version now, even with jobs running (they continue after the restart). */
+    syncBot(): { ok: true; waiting: boolean } | { ok: false; error: string };
+    /** Looks for a newer release on GitHub. */
+    check(): AppUpdateView;
+    /** Starts downloading the available update; progress arrives on `on.appUpdate`. */
+    download(): AppUpdateView;
+    cancelDownload(): AppUpdateView;
+    /** Quits, replaces the app with the verified download and opens it again. */
+    install(): AppUpdateView;
+    /** Opens the verified disk image in Finder, when the app can't replace itself. */
+    openInstaller(): AppUpdateView;
+    /** Whether to offer prereleases; null is the default (on while the installed version is a prerelease). */
+    setPrereleases(choice: boolean | null): AppUpdateView;
   };
   /** Diagnostics (APP-22). */
   diagnostics: {
@@ -253,8 +282,10 @@ export interface SerraPushes {
   status: BotStatus;
   /** One daemon event (job started, reply, needs owner, failure). */
   event: BotEvent;
-  /** One line from a running prepare, activate or rollback. */
+  /** One line from a running prepare, activate, rollback or bot update. */
   releaseLog: string;
+  /** The app's update state changed: checking, download progress, ready, error. */
+  appUpdate: AppUpdateView;
   /** A route to show, with an optional `?job=<key>` (APP-24: clicking a notification). */
   navigate: string;
   /** Something under the profile's `knowledge/proposals/` changed (APP-26): the Proposals queue rereads its list. */
@@ -293,13 +324,16 @@ export const bridgeMethods = {
   settings: methods<'settings'>()(['read', 'sections', 'saveSection', 'addPerson', 'removePerson']),
   secrets: methods<'secrets'>()(['list', 'setSource', 'check']),
   tools: methods<'tools'>()(['overview', 'clis']),
-  updates: methods<'updates'>()(['status', 'runningJobs', 'prepare', 'activate', 'rollback']),
+  updates: methods<'updates'>()([
+    'status', 'runningJobs', 'prepare', 'activate', 'rollback', 'syncBot',
+    'check', 'download', 'cancelDownload', 'install', 'openInstaller', 'setPrereleases',
+  ]),
   diagnostics: methods<'diagnostics'>()(['run', 'logTail']),
   people: methods<'people'>()(['add']),
   tasks: methods<'tasks'>()(['preview', 'start', 'previewInterview', 'startInterview']),
 } satisfies { [N in Namespace]: readonly (keyof SerraApi[N])[] };
 
-export const pushChannels = ['status', 'event', 'releaseLog', 'navigate', 'proposals', 'jobs'] as const satisfies readonly (keyof SerraPushes)[];
+export const pushChannels = ['status', 'event', 'releaseLog', 'appUpdate', 'navigate', 'proposals', 'jobs'] as const satisfies readonly (keyof SerraPushes)[];
 
 export const invokeChannel = (namespace: string, method: string): string => `serra:${namespace}.${method}`;
 export const pushChannel = (name: keyof SerraPushes): string => `serra:on.${name}`;

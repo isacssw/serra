@@ -8,6 +8,7 @@ export const defaultPrefs: AppPrefs = {
   lastScreen: null,
   window: { width: 1100, height: 720, maximized: false },
   profileDir: null,
+  includePrereleases: null,
 };
 
 /** Where prefs are read from and saved to. */
@@ -32,6 +33,9 @@ const parseField = (key: string, value: unknown): Partial<AppPrefs> => {
     case 'profileDir':
       if (value !== null && (typeof value !== 'string' || !isAbsolute(value))) throw new Error('profileDir must be an absolute folder path or null.');
       return { profileDir: value };
+    case 'includePrereleases':
+      if (value !== null && typeof value !== 'boolean') throw new Error('includePrereleases must be true, false or null.');
+      return { includePrereleases: value };
     case 'window': {
       if (!isRecord(value)) throw new Error('window must be an object.');
       const { width, height, x, y, maximized } = value;

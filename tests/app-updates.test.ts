@@ -10,53 +10,49 @@ import { updatesHandlers } from '../app/main/ipc/updates.ts';
 import { memoryPrefs } from '../app/main/prefs.ts';
 import { stoppedStatusSource } from '../app/main/status.ts';
 import {
-  actionStates, activateDialog, activationNotice, commitsHeading, preparedLabel, releaseLabel, rollbackDialog, rollbackNotice, sourceLabel,
-  type UpdatesStatus,
+  actionStates, activateDialog, activationNotice, appCard, botLine, canCheck, commitsHeading, homeOf, noteLines, preparedLabel, progressPercent,
+  releaseLabel, rollbackDialog, rollbackNotice, sourceLabel, syncDialog, tildePath,
 } from '../app/renderer/screens/updates.logic.ts';
+import type { AppUpdateView } from '../app/main/app-updater.ts';
+import { botSyncDecision, type BotSyncInput } from '../app/main/bot-sync.ts';
+import { updatesService } from '../app/main/ipc/updates.ts';
 import { type ServiceDriver } from '../src/deploy.ts';
 import { createProfile } from '../src/setup.ts';
 
 // ---------------------------------------------------------------------------------------------------------------
-// Logic
+// Developer-mode logic
 // ---------------------------------------------------------------------------------------------------------------
 
 const prepared = { release: '/Users/you/bot/releases/2026-11-19T10-00-00-000Z-42', commit: 'a1b2c3d4e5f60718293a4b5c6d7e8f9012345678' };
 
-test('the activate dialog names the release and the running jobs: none, one and several', () => {
-  assert.deepEqual(activateDialog(prepared, 0), {
-    title: 'Activate a1b2c3d?',
-    body: 'No jobs are running. Activating restarts the bot.',
-  });
-  assert.deepEqual(activateDialog(prepared, 1), {
-    title: 'Activate a1b2c3d?',
-    body: '1 job is running. Activating restarts the bot; the job continues after restart.',
-  });
-  assert.deepEqual(activateDialog(prepared, 3), {
-    title: 'Activate a1b2c3d?',
-    body: '3 jobs are running. Activating restarts the bot; the jobs continue after restart.',
-  });
+test('the restart dialog names the build and the running jobs: none, one and several', () => {
+  assert.deepEqual(activateDialog(prepared, 0), { title: 'Restart the bot on a1b2c3d?', body: 'No jobs are running. The bot restarts on this build.' });
+  assert.match(activateDialog(prepared, 1).body, /^1 job is running\..*the job continues after the restart\.$/);
+  assert.match(activateDialog(prepared, 3).body, /^3 jobs are running\..*the jobs continue after the restart\.$/);
 });
 
-test('the rollback dialog counts running jobs the same way', () => {
-  assert.match(rollbackDialog(0).body, /^No jobs are running\. Rolling back restarts the bot/);
-  assert.match(rollbackDialog(1).body, /^1 job is running\..*; the job continues after restart\.$/);
-  assert.match(rollbackDialog(2).body, /^2 jobs are running\..*; the jobs continue after restart\.$/);
+test('the undo dialog counts running jobs the same way', () => {
+  assert.match(rollbackDialog(0).body, /^No jobs are running\. The bot restarts on the build it ran before/);
+  assert.match(rollbackDialog(1).body, /^1 job is running\..*; the job continues after the restart\.$/);
+  assert.match(rollbackDialog(2).body, /^2 jobs are running\..*; the jobs continue after the restart\.$/);
 });
 
-test('release labels use the commit, mark uncommitted changes, and fall back to the folder name', () => {
+test('release labels use the commit, then the version, and fall back to the folder name', () => {
   assert.equal(releaseLabel(prepared), 'a1b2c3d');
   assert.equal(releaseLabel({ ...prepared, dirty: true }), 'a1b2c3d + changes');
+  assert.equal(releaseLabel({ release: prepared.release, appVersion: '0.1.0-alpha.2' }), '0.1.0-alpha.2', 'a packaged build has a version, not a timestamp');
   assert.equal(releaseLabel({ release: '/Users/you/bot/releases/2026-11-19T10-00-00-000Z-42' }), '2026-11-19T10-00-00-000Z-42');
   assert.equal(releaseLabel(null), 'None');
   assert.equal(preparedLabel({}), '');
   assert.equal(preparedLabel({ preparedAt: 'not a date' }), '');
-  assert.match(preparedLabel({ preparedAt: '2026-11-19T12:00:00.000Z' }), /^prepared Nov (19|20), \d\d:\d\d$/);
+  assert.match(preparedLabel({ preparedAt: '2026-11-19T12:00:00.000Z' }), /^built Nov (19|20), \d\d:\d\d$/);
 });
 
-test('the source line names the GitHub repository and branch Updates follows', () => {
-  assert.equal(sourceLabel({ ref: 'origin/main', source: '/Users/you/git/serra', upstream: 'git@github.com:acme/serra.git' }), 'From acme/serra main, in /Users/you/git/serra');
-  assert.equal(sourceLabel({ ref: 'upstream/release', source: '/code', upstream: 'https://github.com/acme/serra' }), 'From acme/serra release, in /code');
-  assert.equal(sourceLabel({ ref: null, source: '/Applications/Serra.app/Contents/Resources/app', upstream: null }), 'From /Applications/Serra.app/Contents/Resources/app');
+test('the source line names the repository and branch, with the home folder shortened', () => {
+  assert.equal(sourceLabel({ ref: 'origin/main', source: '/Users/you/git/serra', upstream: 'git@github.com:acme/serra.git' }, '/Users/you'), 'acme/serra main, in ~/git/serra');
+  assert.equal(sourceLabel({ ref: 'upstream/release', source: '/code', upstream: 'https://github.com/acme/serra' }), 'acme/serra release, in /code');
+  assert.equal(sourceLabel({ ref: null, source: '/Users/you/serra', upstream: null }, homeOf('/Users/you/serra')), '~/serra');
+  assert.equal(tildePath('/Users/younger/x', '/Users/you'), '/Users/younger/x', 'only the folder itself, not a prefix of a name');
 });
 
 test('the commits heading counts commits on main, says when up to date, and when it cannot tell', () => {
@@ -64,38 +60,121 @@ test('the commits heading counts commits on main, says when up to date, and when
   assert.equal(commitsHeading({ ref: 'origin/main', commitsProblem: null, newCommits: [commit, commit, commit, commit] }), '4 new commits on main');
   assert.equal(commitsHeading({ ref: 'main', commitsProblem: null, newCommits: [commit] }), '1 new commit on main');
   assert.equal(commitsHeading({ ref: 'origin/main', commitsProblem: null, newCommits: [] }), 'Up to date with main');
-  assert.equal(commitsHeading({ ref: null, commitsProblem: 'No main branch', newCommits: [] }), 'New commits unknown');
+  assert.equal(commitsHeading({ ref: null, commitsProblem: 'No main branch', newCommits: [] }), "Can't list new commits");
 });
 
-const status = (patch: Partial<UpdatesStatus> = {}): UpdatesStatus => ({
-  active: null, prepared: null, newCommits: [], ref: 'main', commitsProblem: null, activation: null, source: '/code', upstream: null,
-  canRollback: false, activateProblems: [], running: null, log: [], ...patch,
-});
-
-test('buttons: activate needs a clean prepared release, rollback needs an activation, and one action runs at a time', () => {
-  const idle = actionStates(status({ activateProblems: ['No prepared release. Run prepare first.'] }));
+test('buttons: restart needs a clean build, undo needs an earlier bot, and one action runs at a time', () => {
+  const idle = actionStates({ activateProblems: ['No prepared release. Run prepare first.'], canRollback: false, running: null });
   assert.deepEqual(idle.prepare, { enabled: true });
   assert.deepEqual(idle.activate, { enabled: false, reason: 'No prepared release. Run prepare first.' });
   assert.equal(idle.rollback.enabled, false);
-  const ready = actionStates(status({ canRollback: true }));
+  const ready = actionStates({ activateProblems: [], canRollback: true, running: null });
   assert.ok(ready.activate.enabled && ready.rollback.enabled);
-  const busy = actionStates(status({ canRollback: true, running: 'prepare' }));
-  for (const state of Object.values(busy)) assert.deepEqual(state, { enabled: false, reason: 'Preparing… Wait for it to finish.' });
+  const busy = actionStates({ activateProblems: [], canRollback: true, running: 'sync' });
+  for (const state of Object.values(busy)) assert.deepEqual(state, { enabled: false, reason: 'Updating the bot… Wait for it to finish.' });
 });
 
-test('after activation: success, refused, restored, and rollback offered when the restore failed', () => {
-  const ok = activationNotice({ ok: true, release: prepared.release }, prepared);
-  assert.deepEqual(ok, { tone: 'success', message: 'Activated a1b2c3d. The bot is running the new release.', offerRollback: false });
+test('after a restart: success, refused, restored, and undo offered when the restore failed', () => {
+  assert.deepEqual(activationNotice({ ok: true, release: prepared.release }, prepared), { tone: 'success', message: 'The bot runs a1b2c3d now.', offerRollback: false });
   const refused = activationNotice({ ok: false, stage: 'checks', error: 'GitHub unavailable', restored: true, rollbackAvailable: false });
-  assert.match(refused.message, /^Activation refused; nothing changed\. GitHub unavailable$/);
+  assert.equal(refused.message, "The bot wasn't restarted; nothing changed. GitHub unavailable");
   assert.equal(refused.offerRollback, false);
   const restored = activationNotice({ ok: false, stage: 'cutover', error: 'bad app token', restored: true, rollbackAvailable: false });
   assert.match(restored.message, /previous one is running again/);
-  assert.equal(restored.offerRollback, false);
-  const stuck = activationNotice({ ok: false, stage: 'cutover', error: 'bootout hung', restored: false, rollbackAvailable: true });
-  assert.equal(stuck.offerRollback, true);
-  assert.deepEqual(rollbackNotice({ ok: true, release: null }), { tone: 'success', message: 'Rolled back. No release is active now.', offerRollback: false });
-  assert.equal(rollbackNotice({ ok: false, error: 'Already rolled back' }).message, 'Rollback failed. Already rolled back');
+  assert.equal(activationNotice({ ok: false, stage: 'cutover', error: 'bootout hung', restored: false, rollbackAvailable: true }).offerRollback, true);
+  assert.deepEqual(rollbackNotice({ ok: true, release: prepared.release }, prepared), { tone: 'success', message: 'The bot runs a1b2c3d again.', offerRollback: false });
+  assert.equal(rollbackNotice({ ok: false, error: 'Already rolled back' }).message, "Couldn't undo the switch. Already rolled back");
+});
+
+// ---------------------------------------------------------------------------------------------------------------
+// Release-mode logic: the app card and the bot line
+// ---------------------------------------------------------------------------------------------------------------
+
+const release = {
+  version: '0.1.0-alpha.3', prerelease: true, notes: '## Added\n- **Updates** from [GitHub](https://github.com)\n- `pnpm` no longer needed', publishedAt: '2026-11-28T10:00:00Z',
+  url: 'https://github.com/acme/serra/releases/tag/v0.1.0-alpha.3', dmg: { name: 'Serra-0.1.0-alpha.3-arm64.dmg', url: 'https://example.test/dmg', size: 122_000_000 },
+  sums: { url: 'https://example.test/SHA256SUMS' },
+};
+const view = (phase: object): AppUpdateView => ({ current: '0.1.0-alpha.2', prereleases: { on: true, choice: null }, updatedFrom: null, ...phase } as AppUpdateView);
+const now = new Date('2026-11-28T12:00:00Z');
+
+test('the app card in each state says one thing and offers the one next step', () => {
+  assert.deepEqual(appCard(view({ state: 'up-to-date', checkedAt: '2026-11-28T11:55:00Z' }), now), {
+    tone: 'up', title: 'Serra 0.1.0-alpha.2', body: "You're on the latest version.", meta: 'Checked 5 min ago', primary: null, secondary: null, link: null,
+  });
+  const available = appCard(view({ state: 'available', release, checkedAt: now.toISOString() }), now);
+  assert.equal(available.title, 'Serra 0.1.0-alpha.3 is available');
+  assert.equal(available.meta, 'You have 0.1.0-alpha.2');
+  assert.equal(available.body, 'Pre-release · Nov 28');
+  assert.deepEqual(available.primary, { action: 'download', label: 'Download' });
+  const downloading = appCard(view({ state: 'downloading', release, received: 76_000_000, total: 122_000_000 }), now);
+  assert.equal(downloading.body, '76 of 122 MB');
+  assert.deepEqual(downloading.secondary, { action: 'cancel', label: 'Cancel' });
+  assert.equal(progressPercent(76_000_000, 122_000_000), 62);
+  assert.equal(progressPercent(5, null), null);
+  assert.deepEqual(appCard(view({ state: 'ready', release, install: { kind: 'replace' } }), now).primary, { action: 'install', label: 'Restart to update' });
+  const installer = appCard(view({ state: 'ready', release, install: { kind: 'installer', reason: 'Serra is running from its disk image.' } }), now);
+  assert.deepEqual(installer.primary, { action: 'openInstaller', label: 'Open installer' });
+  assert.match(installer.body, /^Serra is running from its disk image\. Open the installer/);
+  const failedCheck = appCard(view({ state: 'error', stage: 'check', message: "Couldn't reach GitHub." }), now);
+  assert.equal(failedCheck.title, "Couldn't check for updates");
+  assert.deepEqual(failedCheck.primary, { action: 'check', label: 'Try again' });
+  assert.deepEqual(appCard(view({ state: 'error', stage: 'verify', message: 'x', release }), now).primary, { action: 'download', label: 'Try again' });
+  assert.equal(appCard(view({ state: 'no-build', version: '0.2.0', url: release.url, checkedAt: now.toISOString() }), now).body, 'Serra 0.2.0 is out, but it has no build for this Mac yet.');
+  for (const state of ['checking', 'downloading', 'verifying', 'installing', 'ready', 'unavailable']) assert.equal(canCheck(view({ state, release, install: { kind: 'replace' }, reason: '' })), false, state);
+  assert.equal(canCheck(view({ state: 'up-to-date', checkedAt: '' })), true);
+});
+
+test('release notes become plain lines without Markdown syntax', () => {
+  assert.deepEqual(noteLines(release.notes), [
+    { kind: 'heading', text: 'Added' }, { kind: 'item', text: 'Updates from GitHub' }, { kind: 'item', text: 'pnpm no longer needed' },
+  ]);
+  assert.deepEqual(noteLines(''), []);
+});
+
+test('the bot line: in step, waiting for jobs, updating, failed, not installed, and nothing in developer mode', () => {
+  assert.equal(botLine({ state: 'in-step', version: '0.1.0-alpha.3' })?.text, 'The bot runs version 0.1.0-alpha.3.');
+  const waiting = botLine({ state: 'waiting', from: '0.1.0-alpha.2', to: '0.1.0-alpha.3', jobs: 2 })!;
+  assert.equal(waiting.text, 'The bot still runs version 0.1.0-alpha.2.');
+  assert.equal(waiting.detail, 'It moves to 0.1.0-alpha.3 when the 2 running jobs finish.');
+  assert.deepEqual(waiting.action, { kind: 'sync', label: 'Update now' });
+  assert.equal(botLine({ state: 'waiting', from: null, to: '0.1.0-alpha.3', jobs: 1 })!.detail, 'It moves to 0.1.0-alpha.3 when the running job finishes.');
+  assert.equal(botLine({ state: 'updating', from: null, to: '0.1.0-alpha.3' })!.tone, 'busy');
+  const failed = botLine({ state: 'failed', from: '0.1.0-alpha.2', to: '0.1.0-alpha.3', message: 'No supported Node' })!;
+  assert.equal(failed.text, "The bot couldn't move to 0.1.0-alpha.3, so it still runs version 0.1.0-alpha.2.");
+  assert.equal(failed.detail, 'No supported Node');
+  assert.deepEqual(botLine({ state: 'not-installed' })!.action, { kind: 'setup', label: 'Open setup' });
+  assert.deepEqual(botLine({ state: 'interrupted' })!.action, { kind: 'rollback', label: 'Roll back' });
+  assert.equal(botLine({ state: 'manual' }), null);
+  assert.match(syncDialog('0.1.0-alpha.3', 2).body, /^2 jobs are running\./);
+});
+
+// ---------------------------------------------------------------------------------------------------------------
+// Bot sync decisions
+// ---------------------------------------------------------------------------------------------------------------
+
+const input = (patch: Partial<BotSyncInput> = {}): BotSyncInput => ({
+  mode: 'release', appVersion: '0.1.0-alpha.3', active: { appVersion: '0.1.0-alpha.2' }, prepared: null, preparedReady: false,
+  activation: 'active', jobs: 0, running: null, failed: null, ...patch,
+});
+
+test('the bot follows the app only while no job runs, and never in developer mode', () => {
+  assert.deepEqual(botSyncDecision(input()), { sync: { state: 'updating', from: '0.1.0-alpha.2', to: '0.1.0-alpha.3' }, action: 'prepare' });
+  // A running job defers the restart: nothing is done, the screen says it waits.
+  assert.deepEqual(botSyncDecision(input({ jobs: 1 })), { sync: { state: 'waiting', from: '0.1.0-alpha.2', to: '0.1.0-alpha.3', jobs: 1 }, action: 'none' });
+  // A build already prepared for this version (a job started while preparing) is only activated.
+  assert.equal(botSyncDecision(input({ prepared: { appVersion: '0.1.0-alpha.3' }, preparedReady: true })).action, 'activate');
+  assert.equal(botSyncDecision(input({ prepared: { appVersion: '0.1.0-alpha.3' }, preparedReady: false })).action, 'prepare');
+  assert.deepEqual(botSyncDecision(input({ active: { appVersion: '0.1.0-alpha.3' } })), { sync: { state: 'in-step', version: '0.1.0-alpha.3' }, action: 'none' });
+  assert.deepEqual(botSyncDecision(input({ mode: 'developer' })), { sync: { state: 'manual' }, action: 'none' });
+  assert.deepEqual(botSyncDecision(input({ active: null })), { sync: { state: 'not-installed' }, action: 'none' });
+  assert.deepEqual(botSyncDecision(input({ activation: 'switching' })), { sync: { state: 'interrupted' }, action: 'none' });
+  // A failure isn't retried on its own; another action running makes it wait.
+  assert.equal(botSyncDecision(input({ failed: { version: '0.1.0-alpha.3', message: 'x' } })).action, 'none');
+  assert.equal(botSyncDecision(input({ failed: { version: '0.1.0-alpha.2', message: 'x' } })).action, 'prepare', 'a failure for another version does not block');
+  assert.equal(botSyncDecision(input({ running: 'rollback' })).action, 'none');
+  // A bot from before versions were recorded counts as older.
+  assert.equal(botSyncDecision(input({ active: {} })).action, 'prepare');
 });
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -158,11 +237,11 @@ test('prepare uses the Node findNode resolves, never process.execPath, and strea
 
   // The status works from files with the daemon stopped, and keeps the last action's log for the screen.
   const after = await handlers.status();
-  assert.equal(after.prepared?.release, plan.release);
+  assert.equal(after.releases?.prepared?.release, plan.release);
   assert.equal(after.running, null);
   assert.deepEqual(after.log, pushes);
-  assert.deepEqual(after.activateProblems, ['Prepared dependencies missing. Run prepare again.']);
-  assert.match(after.commitsProblem ?? '', /isn't a git checkout.*updates\.source/);
+  assert.deepEqual(after.releases?.activateProblems, ['Prepared dependencies missing. Run prepare again.']);
+  assert.match(after.releases?.commitsProblem ?? '', /isn't a git checkout.*updates\.source/);
 });
 
 test('a prepare that cannot find Node fails before anything is written, with the reason in the log', async (t) => {
@@ -174,7 +253,7 @@ test('a prepare that cannot find Node fails before anything is written, with the
   });
   await assert.rejects(async () => handlers.prepare(), /No supported Node/);
   assert.match(pushes.at(-1) ?? '', /^Prepare failed: No supported Node/);
-  assert.equal((await handlers.status()).prepared, null);
+  assert.equal((await handlers.status()).releases?.prepared, null);
 });
 
 test('activate and rollback run with the daemon stopped, one at a time, and report their outcome', async (t) => {
@@ -207,12 +286,94 @@ test('activate and rollback run with the daemon stopped, one at a time, and repo
   assert.equal(pushes.at(-1), 'Bot connected. The new release is active.');
 
   const active = await handlers.status();
-  assert.equal(active.active?.release, plan.release);
-  assert.equal(active.canRollback, true);
+  assert.equal(active.releases?.active?.release, plan.release);
+  // The first bot installed has nothing before it: rollback is off and refuses, instead of removing the only bot.
+  assert.equal(active.releases?.canRollback, false);
+  f.events.length = 0;
+  assert.deepEqual(await handlers.rollback(), { ok: false, error: 'Nothing to roll back to: this is the first release installed for this profile' });
+  assert.deepEqual(f.events, [], 'nothing was stopped');
 
+  const next = await handlers.prepare();
+  mkdirSync(join(next.release, 'node_modules/@slack/bolt'), { recursive: true });
+  assert.deepEqual(await handlers.activate(), { ok: true, release: next.release });
+  assert.equal((await handlers.status()).releases?.canRollback, true);
   pushes.length = 0;
-  assert.deepEqual(await handlers.rollback(), { ok: true, release: null });
+  assert.deepEqual(await handlers.rollback(), { ok: true, release: plan.release });
   assert.equal(pushes.at(-1), 'Previous installation restored.');
   assert.deepEqual(await handlers.rollback(), { ok: false, error: 'Already rolled back' });
   assert.equal(pushes.at(-1), 'Rollback failed: Already rolled back');
+});
+
+/** Writes a job the bot is following into state.json, as the daemon does. */
+const followJob = (directory: string): void => writeFileSync(join(directory, 'state.json'), JSON.stringify({
+  'C0123456789:1.000': {
+    t3ThreadId: 't3-1', channel: 'C0123456789', threadTs: '1.000', requester: 'U0123456789', pendingReactionTs: null, lastPostedRunId: null,
+    watching: true, createdAt: '2026-11-21T10:00:00.000Z',
+  },
+}));
+
+test('developer mode needs an update source: without one, status compares nothing with git and the bot follows the app', async (t) => {
+  const f = await profileFixture(t);
+  const handlers = updatesHandlers(contextFor(f.directory, []), { echo: () => {} });
+  const release = await handlers.status();
+  assert.equal(release.releases?.mode, 'release');
+  assert.equal(release.releases?.commitsProblem, null, 'no git error about the packaged app');
+  assert.deepEqual(release.bot, { state: 'not-installed' });
+  assert.equal(release.appVersion, '0.0.0');
+
+  const path = join(f.directory, 'profile.json');
+  writeFileSync(path, JSON.stringify({ ...JSON.parse(readFileSync(path, 'utf8')), updates: { source: f.root } }, null, 2));
+  const developer = await handlers.status();
+  assert.equal(developer.releases?.mode, 'developer');
+  assert.match(developer.releases?.commitsProblem ?? '', /isn't a git checkout/);
+  assert.deepEqual(developer.bot, { state: 'manual' });
+});
+
+test('after an app update the bot moves to the new version, but waits while a job runs', async (t) => {
+  const f = await profileFixture(t);
+  const pushes: string[] = [];
+  const scheduled: (() => void)[] = [];
+  const context: HandlerContext = {
+    ...contextFor(f.directory, pushes),
+    runtime: { version: '0.1.0-alpha.3', electron: '45.0.0', node: '22.20.0', platform: 'darwin' },
+    every: (_first, _every, task) => { scheduled.push(task); },
+    expectStop: () => { pushes.push('expect-stop'); },
+  };
+  const deps = {
+    findNode: async () => '/opt/homebrew/bin/node',
+    // The release service installs no dependencies here, so mark them present as each release is prepared.
+    prepare: { install: false },
+    deploy: { driver: f.driver, launchAgentsDir: f.agents, preflight: async () => {} },
+    echo: () => {},
+  };
+  const { handlers, tick } = updatesService(context, deps);
+  assert.equal(scheduled.length, 1, 'the version check is scheduled');
+
+  // The bot runs a build from the previous app version.
+  const old = await handlers.prepare();
+  mkdirSync(join(old.release, 'node_modules/@slack/bolt'), { recursive: true });
+  writeFileSync(join(f.directory, 'prepared.json'), JSON.stringify({ ...old, appVersion: '0.1.0-alpha.2' }));
+  assert.equal((await handlers.activate()).ok, true);
+  f.events.length = 0;
+
+  followJob(f.directory);
+  assert.deepEqual((await handlers.status()).bot, { state: 'waiting', from: '0.1.0-alpha.2', to: '0.1.0-alpha.3', jobs: 1 });
+  await tick();
+  assert.deepEqual(f.events, [], 'a running job is never interrupted: nothing stopped or started');
+
+  // The new app's build was prepared earlier (a job started while preparing): once jobs finish, it is activated.
+  const fresh = await handlers.prepare();
+  mkdirSync(join(fresh.release, 'node_modules/@slack/bolt'), { recursive: true });
+  writeFileSync(join(f.directory, 'prepared.json'), JSON.stringify({ ...fresh, appVersion: '0.1.0-alpha.3' }));
+  await tick();
+  assert.deepEqual(f.events, [], 'still waiting for the job');
+
+  rmSync(join(f.directory, 'state.json'));
+  await tick();
+  const after = await handlers.status();
+  assert.equal(after.releases?.active?.release, fresh.release);
+  assert.deepEqual(after.bot, { state: 'in-step', version: '0.1.0-alpha.3' });
+  const events: string[] = f.events;
+  assert.ok(events.includes('stop') && events.includes('start'), 'the bot restarted on the new build');
+  assert.ok(pushes.includes('expect-stop'), 'notifications are told the stop is expected');
 });

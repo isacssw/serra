@@ -11,7 +11,7 @@ import { basename, delimiter, join, resolve } from 'node:path';
 import { codeRoot, readProfileFile } from './config.ts';
 import type { ReleaseStatus } from './contracts.ts';
 import {
-  activate, activationPhase, CutoverError, DEFAULT_UPDATES_REF, preparedProblems, prepareRelease, rollback,
+  activate, activationPhase, canRollBack, CutoverError, DEFAULT_UPDATES_REF, preparedProblems, prepareRelease, rollback,
   type DeployLog, type DeployOptions, type Prepared, type PrepareOptions,
 } from './deploy.ts';
 import { createStore } from './state.ts';
@@ -25,6 +25,11 @@ const errorText = (error: unknown): string => error instanceof Error ? error.mes
 // ---------------------------------------------------------------------------------------------------------------
 
 export interface ReleaseOverview extends ReleaseStatus {
+  /**
+   * `release`: the app updates from GitHub Releases and the bot follows the app (no `updates` in profile.json).
+   * `developer`: `updates.source` names a Serra checkout, and the owner builds and switches releases from its commits.
+   */
+  mode: 'release' | 'developer';
   /** The ref new commits were counted on, like `origin/main`. Null when no ref was found. */
   ref: string | null;
   /** The checkout commits are counted in and Prepare copies from: the profile's `updates.source`, else the running code. */
@@ -35,7 +40,7 @@ export interface ReleaseOverview extends ReleaseStatus {
   commitsProblem: string | null;
   /** The last cutover: none yet, interrupted (`switching`), done (`active`) or undone (`rolled-back`). */
   activation: 'switching' | 'active' | 'rolled-back' | null;
-  /** Rollback can run: the last cutover is active or was interrupted. */
+  /** Rollback can run: the last cutover was interrupted, or is active with an earlier release to go back to. */
   canRollback: boolean;
   /** Why the prepared release can't be activated right now. Empty when it can. */
   activateProblems: string[];
@@ -48,7 +53,14 @@ export interface StatusOptions {
   ref?: string;
   /** Fetch the ref's branch from its remote first. Off by default so status stays fast and offline. */
   fetch?: boolean;
+  /** Count new commits even in release mode (tests and the CLI, which runs from a checkout). Default: developer mode only. */
+  commits?: boolean;
 }
+
+/** Developer mode: the profile names a Serra checkout to update from (Settings › Worker). */
+export const updateMode = (directory: string): ReleaseOverview['mode'] => {
+  try { return readProfileFile(directory).updates ? 'developer' : 'release'; } catch { return 'release'; }
+};
 
 const git = (root: string, args: string[]): Promise<string> => run('git', ['-C', root, ...args], { timeoutMs: 30_000 });
 const refExists = async (root: string, ref: string): Promise<boolean> => {
@@ -123,11 +135,16 @@ export const releaseStatus = async (directory: string, options: StatusOptions = 
   let activateProblems: string[];
   try { activateProblems = prepared ? preparedProblems(directory) : ['No prepared release. Run prepare first.']; }
   catch (error) { activateProblems = [errorText(error)]; }
+  const mode = updateMode(directory);
+  // In release mode nothing is compared with git: the app's own version is what the owner follows.
+  const commits = mode === 'developer' || options.commits || options.root
+    ? await listNewCommits(directory, active, options)
+    : { ref: null, newCommits: [], commitsProblem: null, source: updateSource(directory).root, upstream: null };
   return {
-    active, prepared, activation,
-    canRollback: activation === 'active' || activation === 'switching',
+    mode, active, prepared, activation,
+    canRollback: canRollBack(directory),
     activateProblems,
-    ...await listNewCommits(directory, active, options),
+    ...commits,
   };
 };
 

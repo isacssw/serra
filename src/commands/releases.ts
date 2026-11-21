@@ -7,7 +7,7 @@ const command: Command = {
   summary: 'Show the active and prepared releases, new commits on main and the jobs an activation would restart under.',
   usage: ['pnpm bot releases --profile /absolute/profile [--fetch]'],
   async run({ flag, profileDir, log }) {
-    const status = await releaseStatus(profileDir, { fetch: flag('--fetch') });
+    const status = await releaseStatus(profileDir, { fetch: flag('--fetch'), commits: true });
     const describe = (release: NonNullable<typeof status.active>): string =>
       `${release.release}\n  ${short(release.commit)}${release.dirty ? ' with uncommitted changes' : ''}${release.preparedAt ? `, prepared ${release.preparedAt}` : ''}`;
     log(`Active release: ${status.active ? describe(status.active) : 'none'}`);

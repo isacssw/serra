@@ -3,6 +3,7 @@
 import type { PrefsStore } from '../prefs.ts';
 import type { StatusSource } from '../status.ts';
 import type { AppInfo, SerraPushes } from '../bridge.ts';
+import type { AppUpdater } from '../app-updater.ts';
 
 export interface HandlerContext {
   /** The profile folder in use. Throws a message for the window when none is selected. */
@@ -19,6 +20,12 @@ export interface HandlerContext {
   openPath(path: string): Promise<void>;
   /** Sends a push to the open window, if any (APP-19 streams release log lines). Absent in tests that don't need it. */
   push?<P extends keyof SerraPushes>(channel: P, payload: SerraPushes[P]): void;
+  /** The app's updater (SERRA-46). Absent in tests that don't need it. */
+  appUpdater?: AppUpdater;
+  /** Runs `task` after `firstMs`, then every `everyMs` (the bot's version check). Absent in tests: nothing is scheduled. */
+  every?(firstMs: number, everyMs: number, task: () => void): void;
+  /** Tells notifications that the app is about to restart the bot itself, so the stop isn't reported. */
+  expectStop?(): void;
 }
 
 /** The error a stub throws until its ticket fills it in. The window shows the message. */

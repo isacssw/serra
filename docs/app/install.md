@@ -40,7 +40,19 @@ The version shown in the app is `version` in `package.json`, which a release PR 
 | `assets/brand/serra-status-*.png` | The menubar icons (APP-11), loaded from `assets/brand` next to `app/` |
 | `node_modules/` | Production dependencies only (`@slack/bolt`, `electron-store`) |
 
-Beside it, `Serra.app/Contents/Resources/release-source/` holds the daemon's own code (`src/`, `templates/`, `examples/`, the `docs/*.md` pages, and the original `package.json` and `pnpm-lock.yaml`). Updates › Prepare and Install the service make releases from it: the app folder has only the bundle, and its `package.json` has no devDependencies, so `pnpm install --frozen-lockfile` would refuse it. `pnpm app:build` stages it in `app/out/release-source/`. That copy is frozen at build time and has no git: to follow the repository's new commits from a packaged app, set the profile's `updates.source` to a clone of it (Settings › Worker › Update source, see [configuration](../configuration.md)). Updates and Prepare then use that clone instead.
+Beside it, `Serra.app/Contents/Resources/release-source/` holds the daemon's own code (`src/`, `templates/`, `examples/`, the `docs/*.md` pages, the original `package.json` and `pnpm-lock.yaml`, and `release.json` with the version and commit it was built from). Install the service and the bot's updates make releases from it: the app folder has only the bundle, and its `package.json` has no devDependencies, so `pnpm install --frozen-lockfile` would refuse it. `pnpm app:build` stages it in `app/out/release-source/`.
+
+### Updates
+
+Settings › Updates shows the app's version and looks for a newer one on [GitHub Releases](https://github.com/isacssw/serra/releases) 15 seconds after launch, every 6 hours, and on **Check for updates**. Pre-releases are included while the installed version is one (an alpha); the checkbox on the screen changes that. Nothing downloads until you click **Download**. The download is checked against the release's `SHA256SUMS` and the app inside the disk image must be Serra (`dev.serra.app`) at the expected version with an intact signature; a download that fails is deleted.
+
+**Restart to update** quits Serra, moves the old app aside, puts the new one in its place and opens it. The old copy is kept as `Serra.app.previous` until the new version starts, and put back if the move fails. Serra opens the disk image for you instead (**Open installer**) when it can't replace itself: when it runs from the disk image or a folder macOS moved it to (App Translocation), or when its folder needs an administrator.
+
+The background bot keeps running through the app's update. It then follows the app's version on its own: when no job is running, Serra builds the bot from the new app's code (this needs Node and pnpm, as Install the service does) and restarts it, and puts the previous bot back if the new one doesn't start. While a job runs it waits, and **Update now** restarts it anyway (jobs continue after the restart). Old bot builds in the profile's `releases/` folder are removed after each switch, keeping the current one and the one before it.
+
+The app is ad-hoc signed, not notarized, so the checksum is what guards an update: it catches a broken or swapped download, but `SHA256SUMS` comes from the same release. Serra downloads updates itself, so macOS doesn't quarantine them and doesn't ask again.
+
+To work on Serra itself, set Settings › Worker › **Developer: update from a checkout** to a clone of the repository (the profile's `updates`, see [configuration](../configuration.md)). Updates then switches to developer mode: it lists the new commits on the branch, **Build from main** makes a bot build from the clone, **Restart bot on it** switches the bot to that build, and **Undo last switch** goes back to the one before (shown only when there is one). The app's own updates still come from GitHub Releases.
 
 [`app/main/runtime-files.ts`](../../app/main/runtime-files.ts) lists the files the code reads from disk. `tests/app-package.test.ts` checks that `electron-builder.yml` copies each of them, and `--smoke` checks that they are there in the built app.
 

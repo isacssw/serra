@@ -4,6 +4,10 @@ Serra follows [Semantic Versioning](https://semver.org) once it reaches 1.0. Unt
 
 ## Unreleased
 
+- Updates in the app follow GitHub Releases: it checks for a newer version (pre-releases included while you're on an alpha), shows the release notes, downloads and verifies it against the release's `SHA256SUMS`, and **Restart to update** replaces the app and opens it again (or opens the installer when it can't replace itself). The bot then moves to the new version on its own when no job is running. The commit-based flow is now a developer mode, shown only when Settings › Worker › Developer: update from a checkout is set, with clearer names (Build from main, Restart bot on it, Undo last switch). Bot builds record the app version, so the screen shows `0.1.0-alpha.2` instead of a timestamp.
+- Fixed: Roll back on Updates (and `pnpm bot rollback`) right after setup stopped the bot and removed its service, with nothing to go back to. It is now off until there is an earlier bot.
+- Old bot builds in the profile's `releases/` folder are removed after each switch, keeping the current one and the one before it.
+
 ## 0.1.0-alpha.2 (2026-11-21)
 
 First public alpha, for trying Serra locally on macOS. Serra bridges a chat app to your local coding agents; this alpha supports one chat channel, Slack.

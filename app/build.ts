@@ -1,10 +1,12 @@
 // Bundles the Electron main process with esbuild. Run with `pnpm app:build`.
 // See docs/app/electron-build.md for why the app is bundled and why esbuild.
+import { execFileSync } from 'node:child_process';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { build, type Plugin } from 'esbuild';
-import { stageReleaseSource } from '../src/deploy.ts';
+import { RELEASE_INFO, stageReleaseSource } from '../src/deploy.ts';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 const outfile = join(root, 'app/out/main/index.mjs');
@@ -55,3 +57,9 @@ await build({
 
 // Updates › Prepare in the packaged app makes its release from this copy (electron-builder.yml, `extraResources`).
 stageReleaseSource(root, join(root, 'app/out/release-source'));
+// The copy has no git, so record what it was built from: releases made from it show this version and commit.
+const commit = (() => {
+  try { return execFileSync('git', ['-C', root, 'rev-parse', 'HEAD'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim(); } catch { return undefined; }
+})();
+const { version } = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')) as { version: string };
+writeFileSync(join(root, 'app/out/release-source', RELEASE_INFO), JSON.stringify({ version, ...(commit ? { commit } : {}) }, null, 2) + '\n');

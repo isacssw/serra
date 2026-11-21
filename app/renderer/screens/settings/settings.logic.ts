@@ -51,7 +51,7 @@ export const sectionTitles: Record<ProfileSection, string> = {
   serviceLabel: 'Service label',
   t3Bin: 'T3 command',
   branchPattern: 'Task branches',
-  updates: 'Update source',
+  updates: 'Developer: update from a checkout',
 };
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -286,7 +286,7 @@ export const t3BinForm: SectionForm<'t3Bin'> = {
 
 export const updatesForm: SectionForm<'updates'> = {
   section: 'updates',
-  description: 'The Serra checkout Updates counts new commits in and Prepare copies from, and the branch it follows. Empty uses the code the app runs from (a packaged app has no git, so it can\'t list new commits).',
+  description: 'For working on Serra itself. Set a clone of the Serra repository and Updates switches to developer mode: it lists new commits on the branch, and you build the bot from the clone and restart it by hand. Leave empty to update from GitHub Releases, with the bot following the app.',
   fields: [
     { key: 'source', label: 'Checkout path', placeholder: '/Users/you/git/serra' },
     { key: 'ref', label: 'Branch', hint: 'Empty uses origin/main.', placeholder: 'origin/main' },

@@ -89,7 +89,7 @@ process.exit(0);
 };
 
 const context = (prefsDir: string | null = null): HandlerContext & { pushed: string[] } => {
-  const prefs = memoryPrefs({ theme: 'system', lastScreen: null, window: { width: 1100, height: 720, maximized: false }, profileDir: prefsDir });
+  const prefs = memoryPrefs({ theme: 'system', lastScreen: null, window: { width: 1100, height: 720, maximized: false }, profileDir: prefsDir, includePrereleases: null });
   const pushed: string[] = [];
   return {
     pushed,

@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import test from 'node:test';
 import { codeRoot } from '../src/config.ts';
 import { createProfile } from '../src/setup.ts';
-import { activate, defaultNode, PACKAGED_SOURCE, startupError, pnpmCommand, prepareRelease, releaseSourceRoot, rollback, servicePlist, type ServiceDriver } from '../src/deploy.ts';
+import { activate, canRollBack, defaultNode, PACKAGED_SOURCE, pruneReleases, RELEASE_INFO, stageReleaseSource, startupError, pnpmCommand, prepareRelease, releaseSourceRoot, rollback, servicePlist, type ServiceDriver } from '../src/deploy.ts';
 import { activateRelease, activationPreflight, findNode, nvmNodes, prepareNextRelease, releaseStatus, rollbackRelease, supportedNode } from '../src/releases.ts';
 
 /**
@@ -150,7 +150,10 @@ test('status with a prepared release and nothing active yet', async (t) => {
   assert.equal(status.prepared?.release, f.plan.release);
   assert.deepEqual(status.activateProblems, []);
   assert.equal(status.activation, null); assert.equal(status.canRollback, false);
-  assert.deepEqual(status.newCommits, []); assert.match(status.commitsProblem ?? '', /No active release/);
+  // Release mode (no `updates` in the profile) compares nothing with git.
+  assert.equal(status.mode, 'release');
+  assert.deepEqual(status.newCommits, []); assert.equal(status.commitsProblem, null);
+  assert.match((await releaseStatus(f.directory, { commits: true })).commitsProblem ?? '', /No active release/);
 });
 
 test('status without a prepared release lists the commits on main the active release lacks', async (t) => {
@@ -167,7 +170,8 @@ test('status without a prepared release lists the commits on main the active rel
   assert.equal(status.active?.release, plan.release);
   assert.equal(status.prepared, null, 'prepared.json of the active release is not a pending release');
   assert.deepEqual(status.activateProblems, ['No prepared release. Run prepare first.']);
-  assert.equal(status.activation, 'active'); assert.equal(status.canRollback, true);
+  assert.equal(status.activation, 'active');
+  assert.equal(status.canRollback, false, 'the first activation has nothing earlier to roll back to');
   assert.equal(status.ref, 'main'); assert.equal(status.commitsProblem, null);
   assert.deepEqual(status.newCommits.map((c) => c.subject), ['Third change', 'Second change']);
   assert.equal(status.newCommits[0]!.sha, gitIn(code, 'rev-parse', 'HEAD'));
@@ -192,7 +196,7 @@ test('status explains when commits cannot be counted', async (t) => {
   assert.match((await releaseStatus(f.directory, { root: f.root })).commitsProblem ?? '', /No main branch/);
 });
 
-/** Points the fixture profile's `updates` at `source`, as Settings › Worker › Update source does. */
+/** Points the fixture profile's `updates` at `source`, as Settings › Worker › Developer: update from a checkout does. */
 const followUpdates = (directory: string, updates: { source: string; ref?: string }): void => {
   const path = join(directory, 'profile.json');
   writeFileSync(path, JSON.stringify({ ...JSON.parse(readFileSync(path, 'utf8')), updates }, null, 2));
@@ -274,8 +278,17 @@ test('activate streams its steps; a refused activation changes nothing', async (
   const outcome = await activateRelease(f.directory, { ...f.opts, log: (line) => lines.push(line) });
   assert.deepEqual(outcome, { ok: true, release: f.plan.release });
   assert.deepEqual(lines.map((line) => line.split(' ')[0]), ['Checking', 'Running', 'Stopping', 'Starting', 'Waiting', 'Bot']);
+  // The first activation has nothing before it: rollback refuses instead of stopping the only bot.
+  assert.equal(canRollBack(f.directory), false);
+  assert.deepEqual(await rollbackRelease(f.directory, f.opts), { ok: false, error: 'Nothing to roll back to: this is the first release installed for this profile' });
+  assert.equal(existsSync(join(f.directory, 'active.json')), true);
+
+  const next = await prepareNextRelease(f.directory, { install: false });
+  mkdirSync(join(next.release, 'node_modules/@slack/bolt'), { recursive: true });
+  assert.deepEqual(await activateRelease(f.directory, f.opts), { ok: true, release: next.release });
+  assert.equal(canRollBack(f.directory), true);
   lines.length = 0;
-  assert.deepEqual(await rollbackRelease(f.directory, { ...f.opts, log: (line) => lines.push(line) }), { ok: true, release: null });
+  assert.deepEqual(await rollbackRelease(f.directory, { ...f.opts, log: (line) => lines.push(line) }), { ok: true, release: f.plan.release });
   assert.equal(lines.at(-1), 'Previous installation restored.');
   assert.deepEqual(await rollbackRelease(f.directory, f.opts), { ok: false, error: 'Already rolled back' });
 });
@@ -412,6 +425,41 @@ test('prepare in a packaged app copies the release from release-source, with its
   assert.equal(readFileSync(join(plan.release, 'package.json'), 'utf8'), readFileSync(join(codeRoot, 'package.json'), 'utf8'), 'the pristine package.json, matching the lockfile');
   assert.ok(!existsSync(join(plan.release, 'docs')), 'optional folders the package leaves out are skipped');
   assert.equal(plan.commit, undefined, 'no git in the package');
+  const version = JSON.parse(readFileSync(join(codeRoot, 'package.json'), 'utf8')).version;
+  assert.equal(plan.appVersion, version, 'the version comes from the shipped package.json');
+
+  // `pnpm app:build` records the version and commit the copy was built from, so the release can name them.
+  const commit = 'a1b2c3d4e5f60718293a4b5c6d7e8f9012345678';
+  writeFileSync(join(shipped, RELEASE_INFO), JSON.stringify({ version: '9.9.9-alpha.1', commit }));
+  const labelled = await prepareRelease(f.directory, { root: app, install: false });
+  assert.equal(labelled.appVersion, '9.9.9-alpha.1');
+  assert.equal(labelled.commit, commit);
+});
+
+test('activation removes old releases but keeps the active one, the one before it and a prepared one', async (t) => {
+  const f = await fixture(t);
+  const releases: string[] = [f.plan.release];
+  for (let i = 0; i < 3; i++) {
+    await activate(f.directory, f.opts);
+    await new Promise((done) => setTimeout(done, 2));
+    const next = await prepareRelease(f.directory, { install: false });
+    mkdirSync(join(next.release, 'node_modules/@slack/bolt'), { recursive: true });
+    releases.push(next.release);
+  }
+  // Activating the 3rd removed the 1st: active 3rd, previous 2nd, prepared 4th.
+  assert.deepEqual(releases.map((path) => existsSync(path)), [false, true, true, true]);
+  const stray = join(f.directory, 'releases', 'notes'); mkdirSync(stray);
+  assert.deepEqual(pruneReleases(f.directory), [], 'nothing else is old, and folders not named like a release stay');
+  await activate(f.directory, f.opts);
+  assert.deepEqual(releases.map((path) => existsSync(path)), [false, false, true, true]);
+  assert.ok(existsSync(stray));
+});
+
+test('stageReleaseSource skips files a checkout lacks, like release.json', (t) => {
+  const to = mkdtempSync(join(tmpdir(), 'bots-stage-')); t.after(() => rmSync(to, { recursive: true, force: true }));
+  stageReleaseSource(codeRoot, to);
+  assert.ok(existsSync(join(to, 'src/index.ts')));
+  assert.equal(existsSync(join(to, RELEASE_INFO)), existsSync(join(codeRoot, RELEASE_INFO)));
 });
 
 test('prepare names what is missing when neither the root nor release-source has the code', async (t) => {
