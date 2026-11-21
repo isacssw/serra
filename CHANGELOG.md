@@ -4,6 +4,8 @@ Serra follows [Semantic Versioning](https://semver.org) once it reaches 1.0. Unt
 
 ## Unreleased
 
+- Docs: the README now starts from the released app (download, checksum, install, first run), says how updates work and what a reinstall keeps, and how to migrate from a checkout-run Serra or another self-hosted bot. Running from source moved to CONTRIBUTING.
+
 ## 0.1.0-alpha.3 (2026-11-21)
 
 **Upgrading from alpha.2:** install this one by hand, one last time. Download `Serra-0.1.0-alpha.3-arm64.dmg` below, quit Serra, drag the new Serra to Applications and replace the old copy. From alpha.3 on, Serra updates itself: Settings › Updates finds new releases, and **Restart to update** installs them. After you open alpha.3, the bot moves to the new version on its own once no job is running.

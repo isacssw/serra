@@ -1,8 +1,8 @@
 # Installing the Serra app
 
-Serra is in alpha. The app is built locally as a `.dmg`. It has no Developer ID signature and isn't notarized, so macOS asks once before the first launch.
+Serra is in alpha. Download the `.dmg` from [GitHub Releases](https://github.com/isacssw/serra/releases) (see the [README](../../README.md#1-get-the-app)), or build it yourself as below. It has no Developer ID signature and isn't notarized, so macOS asks once before the first launch.
 
-The app can set up a new bot or manage one that already runs. Setup connects the bot to Slack, the chat channel Serra supports today. With no profile, it opens on the first-run wizard (below). A bot can still be set up from a checkout with `pnpm run setup` and `pnpm bot activate`, as in the [README](../../README.md). The app doesn't need the checkout to stay in place.
+The app can set up a new bot or manage one that already runs. Setup connects the bot to Slack, the chat channel Serra supports today. With no profile, it opens on the first-run wizard (below). A bot can still be set up from a checkout with `pnpm run setup` and `pnpm bot activate`, as in [CONTRIBUTING](../../CONTRIBUTING.md#run-a-bot-from-the-checkout-without-the-app). The app doesn't need the checkout to stay in place.
 
 ## Build the `.dmg`
 
@@ -61,7 +61,7 @@ To work on Serra itself, set Settings › Worker › **Developer: update from a 
 1. Open the `.dmg` and drag **Serra** to **Applications**.
 2. Eject the disk image.
 
-To update, quit Serra (menubar icon, or ⌘Q with the window focused), then drag the new version over the old one. App preferences are kept.
+From alpha.3 on, Serra updates itself (see [Updates](#updates)). To install by hand (alpha.2 or older, or a build of your own), quit Serra (menubar icon, or ⌘Q with the window focused), then drag the new version over the old one. App preferences and the bot's profile are kept.
 
 ## First launch past Gatekeeper
 
@@ -127,4 +127,4 @@ Opened from Finder, an app gets a short `PATH` (`/usr/bin:/bin:/usr/sbin:/sbin`)
 
 ## Uninstall
 
-Quit Serra and move it from Applications to the Trash. Optionally remove `~/Library/Application Support/serra/`. This doesn't touch the bot, its profile or its launchd service; see the README to remove those.
+Quit Serra and move it from Applications to the Trash. Optionally remove `~/Library/Application Support/serra/`. This doesn't touch the bot, its profile or its launchd service; see the [README](../../README.md#uninstall) to remove those.

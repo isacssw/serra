@@ -70,7 +70,7 @@ if command -v pnpm >/dev/null 2>&1; then
 elif command -v corepack >/dev/null 2>&1; then
   if [ "$check_only" = 1 ]; then note "pnpm is not on PATH. Install will run: corepack enable pnpm"
   elif corepack enable pnpm 2>/dev/null && command -v pnpm >/dev/null 2>&1; then pnpm_cmd=(pnpm); pass "pnpm enabled with Corepack"
-  else pnpm_cmd=(corepack pnpm); note "Couldn't add a pnpm command to PATH; using \"corepack pnpm\". Use it wherever the README says pnpm"; fi
+  else pnpm_cmd=(corepack pnpm); note "Couldn't add a pnpm command to PATH; using \"corepack pnpm\". Use it wherever the docs say pnpm"; fi
 else
   fail "pnpm is not installed and Corepack is missing. Run: npm install -g pnpm@10"
 fi

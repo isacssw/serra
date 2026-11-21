@@ -59,16 +59,67 @@ A PR that breaks a rule gets a comment saying which one and how to fix it, and t
 
 ## Development setup
 
-You need the [requirements](README.md#requirements) from the README, except that tests don't need Slack, T3 Code or a GitHub login.
+You need [what the README lists](README.md#what-you-need), except that tests don't need Slack, T3 Code or a GitHub login. Intel Macs are fine for development.
+
+```sh
+git clone https://github.com/isacssw/serra.git
+cd serra
+./scripts/install.sh   # checks prerequisites, enables pnpm, installs, then starts `pnpm run setup`
+```
+
+Or by hand:
 
 ```sh
 corepack enable pnpm
 pnpm install --frozen-lockfile
-pnpm check   # TypeScript for the daemon, the app main process and the renderer
-pnpm test    # node --test tests/*.test.ts
+pnpm check       # TypeScript for the daemon, the app main process and the renderer
+pnpm test        # node --test tests/*.test.ts; no Slack, launchd or T3 needed
+pnpm knowledge   # checks the knowledge template
+pnpm app:dev     # build and run the app from the checkout
 ```
 
+`./scripts/install.sh --check` only checks prerequisites. Tests use temporary profiles, a fake `t3` and a simulated launchd driver.
+
 To try a change against a real bot, use a separate Slack app and profile from the one you rely on, run it in the foreground with `pnpm start --profile …`, and keep your service on its prepared release.
+
+### Run a bot from the checkout, without the app
+
+Everything the app's wizard does is also a command. The examples use the bot ID `friday`.
+
+```sh
+pnpm run setup                                                   # asks the same questions as the wizard, creates ~/.local/share/serra/<bot-id>
+pnpm run doctor --profile "$HOME/.local/share/serra/friday"      # PASS/FAIL per check; --offline skips Slack, GitHub and T3
+pnpm start --profile "$HOME/.local/share/serra/friday"           # run in the foreground; Ctrl-C stops it
+pnpm bot interview --profile "$HOME/.local/share/serra/friday"   # the knowledge interview
+```
+
+Use `pnpm run setup` and `pnpm run doctor` with `run`: `pnpm setup` and `pnpm doctor` are pnpm's own commands. Setup can also read a file: copy [`examples/profile.json`](examples/profile.json), edit it, and run `pnpm run setup --config my-profile.json --profile "$HOME/.local/share/serra/friday"`.
+
+For the Slack app, paste the profile's `manifest.json` at [api.slack.com/apps](https://api.slack.com/apps) › **Create New App** › **From a manifest**, install it, and put the `xoxb-` and `xapp-` (`connections:write`) tokens in the profile's `.env`, or in the Keychain: `pbpaste | pnpm bot secrets set SLACK_BOT_TOKEN --keychain --profile …` ([tokens](docs/configuration.md#tokens-and-precedence)).
+
+To run it in the background as a launchd service:
+
+```sh
+pnpm bot prepare  --profile "$HOME/.local/share/serra/friday"   # snapshot the code into releases/, install, check
+pnpm bot activate --profile "$HOME/.local/share/serra/friday"   # install and start the service dev.serra.friday
+pnpm bot status   --profile "$HOME/.local/share/serra/friday"   # also: restart, stop, rollback
+tail -f "$HOME/.local/share/serra/friday/logs/bot.log"
+```
+
+The service runs a copy from the profile's `releases/`, so you can keep changing the checkout. To move it to new code: `git pull`, `pnpm install --frozen-lockfile`, then `prepare` and `activate` again. Every `pnpm bot` command is in [docs/configuration.md](docs/configuration.md).
+
+### Update a bot from your checkout
+
+With the app installed, the bot normally follows the app's version from GitHub Releases. To make it follow your checkout instead, set **Settings › Worker › Developer: update from a checkout** to the clone (the profile's `updates` field). Updates then lists new commits on the branch, **Build from checkout** makes a bot build from it, **Restart bot on it** switches to it, and **Undo last switch** goes back. The app itself still updates from Releases. See [app updates](docs/app/install.md#updates).
+
+### Build the app
+
+```sh
+pnpm app:package                                            # release/Serra-<version>-arm64.dmg
+release/mac-arm64/Serra.app/Contents/MacOS/Serra --smoke   # opens every screen and quits
+```
+
+For an Intel Mac: `pnpm app:build && pnpm exec electron-builder --mac --x64`. Releases are cut as in [docs/releasing.md](docs/releasing.md). More: [docs/app/install.md](docs/app/install.md).
 
 ## Layout
 
