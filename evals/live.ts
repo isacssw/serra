@@ -9,7 +9,8 @@
 //   node evals/live.ts --label baseline [--runs 2] [--model sonnet] [--judge sonnet] [--only id,id] [--concurrency 6]
 //
 // Results go to evals/results/<label>.json (every reply, for audit) and <label>.md (the table).
-import { spawn } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { cpSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -26,7 +27,7 @@ interface Case extends EvalCase {
   judge?: string;
 }
 
-interface Graded { id: string; category: string; run: number; reply: string; score: number; parts: Record<string, number>; why?: string; error?: string }
+interface Graded { id: string; category: string; run: number; reply: string; score: number; parts: Record<string, number>; why?: string; error?: string; briefHash?: string }
 
 const { values: args } = parseArgs({
   options: {
@@ -123,14 +124,20 @@ const runOne = async (item: Case, run: number): Promise<Graded> => {
   const { dir, profileDir, project } = scratch();
   try {
     const brief = await buildBrief(profileDir, item);
+    // The brief with the scratch folder's path taken out, so the same code always gives the same hash.
+    const briefHash = createHash('sha256').update(brief.replaceAll(dir, '<scratch>')).digest('hex').slice(0, 16);
     const reply = await claude(brief, { cwd: project, tools: 'Read,Grep,Glob', model: args.model!, addDirs: [profileDir] });
-    return await grade(item, run, reply);
+    return { ...await grade(item, run, reply), briefHash };
   } catch (error) {
     return { id: item.id, category: item.category, run, reply: '', score: 0, parts: {}, error: error instanceof Error ? error.message : String(error) };
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
 };
+
+const git = (...command: string[]): string => { try { return execFileSync('git', ['-C', root, ...command], { encoding: 'utf8' }).trim(); } catch { return ''; } };
+// Which code produced these results, read before any run starts: the commit, and whether the code had changes on top.
+const startedFrom = { commit: git('rev-parse', 'HEAD'), dirty: git('status', '--porcelain', '--', 'src', 'templates', 'evals/capture.ts', 'evals/live.ts') !== '' };
 
 const jobs = cases.flatMap((item) => Array.from({ length: Number(args.runs) }, (_, run) => () => runOne(item, run + 1)));
 const results: Graded[] = [];
@@ -154,7 +161,7 @@ const overall = Math.round(100 * mean(graded.map((r) => r.score)));
 
 const outDir = join(root, 'evals/results');
 mkdirSync(outDir, { recursive: true });
-const meta = { label: args.label, model: args.model, judge: args.judge, runs: Number(args.runs), cases: cases.length, at: new Date().toISOString() };
+const meta = { label: args.label, model: args.model, judge: args.judge, runs: Number(args.runs), cases: cases.length, at: new Date().toISOString(), ...startedFrom };
 writeFileSync(join(outDir, `${args.label}.json`), JSON.stringify({ meta, byCategory, overall, results }, null, 2) + '\n');
 const lines = [
   `# Live eval: ${args.label}`, '',

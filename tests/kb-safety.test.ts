@@ -311,3 +311,26 @@ test('a proposal reviewed against a page that is gone now is never promoted as s
   assert.throws(() => proposals.promoteProposal('2026-11-20-release-rules.md', { folder: 'owner', reviewed }), /which is gone now/);
   assert.equal(existsSync(join(knowledgeDir, 'owner/release-rules.md')), false);
 });
+
+test('a DM from someone in another company counts as outside; a teammate\'s DM as team', async (t) => {
+  const profileDir = fixture(t);
+  const teammate = await buildBrief(profileDir, { via: 'dm', user: PRIYA, text: 'what does Robin own?' });
+  assert.match(teammate, /seen by Robin's teammates/);
+  const stranger = await buildBrief(profileDir, { via: 'dm', user: PRIYA, text: 'what does Robin own?', strangers: [PRIYA] });
+  assert.match(stranger, /seen by people outside Robin's company/);
+  assert.doesNotMatch(stranger, /owner\/working-style\.md/);
+});
+
+test('the server refuses a merge that keeps the old page with the proposal below it, unedited', (t) => {
+  const profileDir = fixture(t);
+  const knowledgeDir = join(profileDir, 'knowledge');
+  writeFileSync(join(knowledgeDir, 'proposals/2026-11-20-extra.md'), '---\ntype: preference\ndescription: Extra\naudience: team\nwritten: 2026-11-20\nverified: no\nsources:\n  - Owner in a thread, 2026-11-20\n---\n- Release on Mondays.\n');
+  const proposals = createProposals({ knowledgeDir });
+  const shownDiff = proposals.readProposal('2026-11-20-extra.md');
+  const current = readFileSync(join(knowledgeDir, 'owner/working-style.md'), 'utf8');
+  const unedited = `${current.trimEnd()}\n\n- Release on Mondays.\n`;
+  const reviewed = { proposal: shownDiff.proposed, path: 'owner/working-style.md', page: current };
+  assert.throws(() => proposals.mergeProposal('2026-11-20-extra.md', { into: 'owner/working-style.md', text: unedited, reviewed }), /Edit owner\/working-style\.md into one page/);
+  proposals.mergeProposal('2026-11-20-extra.md', { into: 'owner/working-style.md', text: unedited.replace(/- Risky releases[^\n]*\n/, ''), reviewed });
+  assert.doesNotMatch(readFileSync(join(knowledgeDir, 'owner/working-style.md'), 'utf8'), /never Thursday/);
+});

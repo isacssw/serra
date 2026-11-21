@@ -329,7 +329,7 @@ export const createBot = ({
    * another company, or one Slack won't describe, counts as outside: the brief then carries only what may be said there.
    */
   const replyVisibility = async (msg: IncomingMessage): Promise<Visibility> => {
-    if (msg.channel.startsWith('D')) return msg.user === config.owner ? 'owner' : 'team';
+    if (msg.channel.startsWith('D')) return msg.user === config.owner ? 'owner' : dmVisibility(msg.user);
     const known = sharedChannels.get(msg.channel);
     if (known && known.until > now()) return known.external ? 'external' : 'team';
     try {
@@ -343,6 +343,22 @@ export const createBot = ({
       return external ? 'external' : 'team';
     } catch (error) {
       logger.warn(`Could not tell who can see ${msg.channel}, so its brief carries only what outsiders may hear: ${errorMessage(error)}`);
+      return 'external';
+    }
+  };
+
+  /**
+   * A teammate's DM is team only when Slack says they're in the owner's workspace: a Slack Connect user from another
+   * company, or one Slack won't describe, counts as outside.
+   */
+  const dmVisibility = async (user: string): Promise<Visibility> => {
+    try {
+      const [person, owner] = await Promise.all([client.users.info({ user }), client.users.info({ user: config.owner })]);
+      const them = person.user as { team_id?: string; is_stranger?: boolean } | undefined;
+      const home = (owner.user as { team_id?: string } | undefined)?.team_id;
+      return them?.team_id && home && them.team_id === home && !them.is_stranger ? 'team' : 'external';
+    } catch (error) {
+      logger.warn(`Could not tell where ${user} works, so their DM's brief carries only what outsiders may hear: ${errorMessage(error)}`);
       return 'external';
     }
   };

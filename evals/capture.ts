@@ -22,6 +22,8 @@ export interface EvalCase {
   noChannelInfo?: boolean;
   /** The chat app describes the channel but doesn't say whether it is shared outside. */
   bareChannel?: boolean;
+  /** Members from another company (Slack Connect). */
+  strangers?: string[];
 }
 
 const BOT_USER = 'UMOSS00001';
@@ -47,7 +49,7 @@ export const buildBrief = async (profileDir: string, item: EvalCase): Promise<st
 
   const quiet = (): void => {};
   const client = {
-    users: { info: async ({ user }: { user: string }) => ({ user: { real_name: item.names?.[user] ?? NAMES[user] ?? user } }) },
+    users: { info: async ({ user }: { user: string }) => ({ user: { real_name: item.names?.[user] ?? NAMES[user] ?? user, team_id: item.strangers?.includes(user) ? 'TOTHER' : 'THOME' } }) },
     conversations: {
       replies: async () => ({ messages: thread }),
       info: async () => (item.noChannelInfo ? {} : item.bareChannel ? { channel: { id: channel } } : { channel: { id: channel, is_im: item.via === 'dm', is_ext_shared: item.via === 'shared', is_shared: item.via === 'shared' } }),

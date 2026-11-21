@@ -122,6 +122,9 @@ const sourceItems = (text: string): string[] => {
   return items.filter(Boolean);
 };
 
+/** The page without its `---` header. */
+const body = (text: string): string => text.replace(/^---\n[\s\S]*?\n---\n/, '');
+
 /** The page with its header's `sources` list taken out. */
 const withoutSources = (text: string): string => {
   const match = /^---\n([\s\S]*?)\n---\n/.exec(text);
@@ -358,6 +361,10 @@ export const createProposals = ({ knowledgeDir, backupDir, now = () => new Date(
     }
     checkReviewed(source, reviewed, target, current);
     const proposed = reviewed.proposal;
+    // The merge dialog's starting text keeps both the old page and the proposal: merging it unchanged is the old append.
+    if (text !== undefined && named !== target && text.trim() === `${current.trimEnd()}\n\n${body(proposed).trim()}`.trim()) {
+      throw new Error(`Edit ${target} into one page before merging: as it is, it keeps the old text with the proposal below it.`);
+    }
     const page = text ?? removeHeaderField(proposed, 'target');
     // The page keeps where every rule came from: the old page's sources, then the new text's and the proposal's.
     const sources = [...new Set([...sourceItems(current), ...sourceItems(page), ...sourceItems(proposed)])];
