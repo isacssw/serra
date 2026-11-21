@@ -141,19 +141,26 @@ export const compileAboutMe = (pages: { path: string; text: string }[], visibili
 };
 
 /**
- * The index with only the rows this visibility may open. A row is kept only when every page it points at may be
- * used: a page with no known audience counts as the owner's. Text around the table stays; a table row that names no
- * page is dropped, since nothing says who may hear it. The owner gets the whole index.
+ * The index for a reply someone other than the owner will see: one row per page it may open, in the owner's order,
+ * written from the approved page's own description. Nothing the owner wrote in the index itself (headings, notes, a
+ * row's text from before a page was replaced or shared) is copied. A page with no known audience counts as the
+ * owner's. The owner gets the whole index.
  */
-export const filterIndex = (index: string, audienceOf: (page: string) => Audience | null, visibility: Visibility): string => {
+export const filterIndex = (index: string, pageOf: (page: string) => { audience: Audience; description: string } | null, visibility: Visibility): string => {
   if (visibility === 'owner') return index;
-  // Rebuilt rather than filtered: fixed heading, intro and column labels, so nothing the owner wrote around the rows
-  // (a heading, a note, the table header) can carry anything unchecked.
-  const rows = index.split('\n').filter((line) => {
+  const cell = (text: string): string => text.replace(/\s+/g, ' ').trim().replace(/\|/g, '\\|');
+  const seen = new Set<string>();
+  const rows = index.split('\n').flatMap((line) => {
+    if (!line.trim().startsWith('|')) return [];
     const pages = [...line.matchAll(/`([^`\s]+\.md)`/g)].map((match) => match[1]!);
-    return line.trim().startsWith('|') && pages.length > 0 && pages.every((page) => mayUse(audienceOf(page) ?? 'owner', visibility));
+    if (pages.length !== 1 || seen.has(pages[0]!)) return [];
+    const page = pageOf(pages[0]!);
+    if (!page || !mayUse(page.audience, visibility)) return [];
+    seen.add(pages[0]!);
+    return [`| ${cell(page.description || pages[0]!)} | \`${pages[0]}\` | ${cell(page.description || pages[0]!)} |`];
   });
   return ['# Knowledge index', '', 'Open the pages whose row matches the request, and only those. Paths are relative to this folder.', '',
-    '| When the request | Open | What it gives you |', '|---|---|---|', ...rows].join('\n');
+    '| When the request is about | Open | What it gives you |', '|---|---|---|', ...rows].join('\n');
 };
+
 

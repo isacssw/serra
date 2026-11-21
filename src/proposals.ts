@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync } from 'node:f
 import { basename, dirname, join, relative, resolve, sep } from 'node:path';
 import { writeFileAtomic } from './config.ts';
 import type { Proposal, ProposalDiff } from './contracts.ts';
-import type { Audience } from './owner-model.ts';
+import { pageAudience, type Audience } from './owner-model.ts';
 import { insideKnowledge, knowledgePagePath, offlimitsBudgetAfter } from './knowledge.ts';
 import { createJournal } from './knowledge-journal.ts';
 import { DATE, frontmatter, INDEX_MAX_LINES, isOfflimits, lineCount, NOT_PAGES, pageProblems, PROPOSALS_DIR, removeHeaderField, setHeaderField } from './knowledge-rules.ts';
@@ -129,6 +129,17 @@ const sourceItems = (text: string): string[] => {
 
 /** The page without its `---` header. */
 const body = (text: string): string => text.replace(/^---\n[\s\S]*?\n---\n/, '');
+
+/**
+ * Who may hear the approved page: the owner's pick; else, when it replaces a page, that page's own (an untagged page
+ * stays untagged, so owner-only); else, for a new page, the proposal's. A proposal never widens a page by itself.
+ */
+const withAudience = (text: string, picked: Audience | undefined, current: string | null): string => {
+  if (picked) return setHeaderField(text, 'audience', picked);
+  if (current === null) return text;
+  const own = frontmatter(current)?.get('audience')?.trim();
+  return own ? setHeaderField(text, 'audience', pageAudience(frontmatter(current))) : removeHeaderField(text, 'audience');
+};
 
 /** The page with its header's `sources` list taken out. */
 const withoutSources = (text: string): string => {
@@ -326,8 +337,7 @@ export const createProposals = ({ knowledgeDir, backupDir, now = () => new Date(
     const verifiedPage = removeHeaderField(setHeaderField(proposed, 'verified', at), 'target');
     // Replacing a page never quietly changes who may hear it: the owner's pick, else the page's own, else (a new page)
     // the proposal's. A proposal can ask for a wider audience, but only the owner grants it.
-    const kept = audience ?? ((current !== null ? frontmatter(current)?.get('audience')?.trim() : undefined) || frontmatter(proposed)?.get('audience')?.trim());
-    const page = kept ? setHeaderField(verifiedPage, 'audience', kept) : verifiedPage;
+    const page = withAudience(verifiedPage, audience, current);
     const fields = frontmatter(page);
     const budget = isOfflimits(destination, fields) ? offlimitsBudgetAfter(root, destination, page) : null;
     const problems = [...pageProblems(destination, page, fields), ...(budget ? [budget] : [])];
@@ -380,8 +390,7 @@ export const createProposals = ({ knowledgeDir, backupDir, now = () => new Date(
     const sources = [...new Set([...sourceItems(current), ...sourceItems(page), ...sourceItems(proposed)])];
     const withSources = setHeaderField(addSources(withoutSources(page.endsWith('\n') ? page : `${page}\n`), sources), 'verified', at);
     // A merge never quietly changes who may hear the page: the owner's pick, else the page's own, else the merged text's.
-    const kept = audience ?? (frontmatter(current)?.get('audience')?.trim() || frontmatter(withSources)?.get('audience')?.trim());
-    const merged = kept ? setHeaderField(withSources, 'audience', kept) : withSources;
+    const merged = withAudience(withSources, audience, current);
     const budget = isOfflimits(target, frontmatter(merged)) ? offlimitsBudgetAfter(root, target, merged) : null;
     const problems = [...pageProblems(target, merged, frontmatter(merged)), ...(budget ? [budget] : [])];
     if (problems.length > 0) throw new Error(`The merged page would fail the knowledge check:\n${problems.join('\n')}`);

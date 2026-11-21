@@ -171,8 +171,9 @@ export const createKnowledge = (knowledgeDir: string, { backupDir }: KnowledgeOp
     const pages = (fromApproved ? markdownIn(journal.approvedRoot) : pageFiles()).filter((path) => path !== 'index.md')
       .flatMap((path) => { const text = approved(path); return text === null ? [] : [{ path, text }]; });
     const audiences = new Map(pages.map(({ path, text }) => [path, pageAudience(frontmatter(text))]));
+    const descriptions = new Map(pages.map(({ path, text }) => [path, frontmatter(text)?.get('description')?.trim() ?? '']));
     const aboutMe = compileAboutMe(pages, visibility, now);
-    let index = filterIndex(indexText.trim(), (page) => audiences.get(page) ?? null, visibility);
+    let index = filterIndex(indexText.trim(), (page) => (audiences.has(page) ? { audience: audiences.get(page)!, description: descriptions.get(page) ?? '' } : null), visibility);
     if (drifted) {
       // Only the owner hears which files: a page's name can say more than a teammate may know.
       const files = visibility === 'owner' ? `: ${[...changed, ...removed].map((path) => `\`${path}\``).join(', ')}` : '';
@@ -414,11 +415,12 @@ export const createKnowledge = (knowledgeDir: string, { backupDir }: KnowledgeOp
     // Every page is checked before any is saved, so sharing is all or nothing and a refusal names the page.
     const ready = pages.flatMap((path) => {
       const page = existingPage(path);
-      if (changed.includes(page) || removed.includes(page)) { skipped.push(page); return []; }
+      if (changed.includes(page) || removed.includes(page)) throw new Error(`Nothing was shared. ${page} changed outside Serra: review it in Pages first.`);
       // Shared as the owner previewed it: a page that changed since is refused, and nothing is shared.
       if (options.seen && options.seen[page] !== read(page)) throw new Error(`Nothing was shared. ${page} changed since you looked at it: open the list again.`);
       const text = setHeaderField(read(page), 'audience', audience);
-      const problems = saveProblems(page, normalizePageText(text));
+      const budget = isOfflimits(page, frontmatter(text)) ? offlimitsBudgetAfter(root, page, text) : null;
+      const problems = [...saveProblems(page, normalizePageText(text)), ...(budget ? [budget] : [])];
       if (problems.length > 0) throw new Error(`Nothing was shared. ${page} needs fixing first:\n${problems.join('\n')}`);
       return [{ page, text }];
     });

@@ -52,7 +52,11 @@ export const offlimitsBudgetProblem = (pages: { path: string; text: string }[]):
 /** Header and line-cap problems of one page, the rules `pnpm knowledge` fails on. */
 export const pageProblems = (page: string, text: string, fields: Map<string, string> | null): string[] => {
   if (!fields) return [`${page}: no header. See README.md for the page format.`];
-  const problems = REQUIRED_KEYS.filter((key) => !fields.has(key)).map((key) => `${page}: header is missing \`${key}\`.`);
+  const header = /^---\n([\s\S]*?)\n---\n/.exec(text)?.[1] ?? '';
+  const keys = header.split('\n').flatMap((line) => /^([a-z]+):/.exec(line)?.[1] ?? []);
+  const repeated = [...new Set(keys.filter((key, at) => keys.indexOf(key) !== at))];
+  const duplicates = repeated.map((key) => `${page}: the header has \`${key}\` more than once; keep one.`);
+  const problems = [...duplicates, ...REQUIRED_KEYS.filter((key) => !fields.has(key)).map((key) => `${page}: header is missing \`${key}\`.`)];
   const written = fields.get('written');
   if (written !== undefined && !DATE.test(written)) problems.push(`${page}: \`written\` must be a date like 2026-11-16.`);
   const verified = fields.get('verified');
@@ -102,9 +106,11 @@ export const removeHeaderField = (text: string, key: string): string => {
 export const setHeaderField = (text: string, key: string, value: string): string => {
   const match = /^---\n([\s\S]*?)\n---\n/.exec(text);
   if (!match?.[1]) return text;
+  // One line per key: every other copy goes, so what is saved is what the parser reads.
   const lines = match[1].split('\n');
   const index = lines.findIndex((line) => line.startsWith(`${key}:`));
-  if (index === -1) lines.push(`${key}: ${value}`);
-  else lines[index] = `${key}: ${value}`;
-  return `---\n${lines.join('\n')}\n---\n${text.slice(match[0].length)}`;
+  const kept = lines.filter((line, at) => at === index || !line.startsWith(`${key}:`));
+  if (index === -1) kept.push(`${key}: ${value}`);
+  else kept[kept.indexOf(lines[index]!)] = `${key}: ${value}`;
+  return `---\n${kept.join('\n')}\n---\n${text.slice(match[0].length)}`;
 };

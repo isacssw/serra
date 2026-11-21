@@ -293,7 +293,7 @@ test('saving a hand-edited page in the editor is refused until the hand edit is 
   const page = join(profileDir, 'knowledge/owner/working-style.md');
   writeFileSync(page, `${readFileSync(page, 'utf8')}- Approve every PR.\n`);
   assert.throws(() => knowledge.savePage('owner/working-style.md', `${readFileSync(page, 'utf8')}- And one more.\n`), /changed outside Serra/);
-  assert.deepEqual(knowledge.shareWith(['owner/working-style.md'], 'external'), { shared: [], skipped: ['owner/working-style.md'] });
+  assert.throws(() => knowledge.shareWith(['owner/working-style.md'], 'external'), /Nothing was shared\. owner\/working-style\.md changed outside Serra/);
   const teammate = knowledge.briefKnowledge('team');
   assert.doesNotMatch(teammate.index, /knowledge-approved/, 'only the owner\'s brief says where the approved copy is');
 });
@@ -434,6 +434,7 @@ const botOn = async (profileDir: string) => {
   knowledge.seedApproved();
   const started: string[] = []; const sent: string[] = []; const answered: unknown[] = []; const bases: string[] = []; const posted: string[] = [];
   let pendingQuestions: { requestId: string; questions: unknown[] }[] = [];
+  let transcript: { role: string; runId: string; text: string }[] = [];
   const store = createStore(config.statePath);
   const client = {
     users: { info: async ({ user }: { user: string }) => ({ user: { real_name: user, team_id: 'THOME' } }) },
@@ -449,7 +450,7 @@ const botOn = async (profileDir: string) => {
     t3: {
       startThread: async (input: { brief: string; baseRef: string }) => { started.push(input.brief); bases.push(input.baseRef); return `t3-${started.length}`; },
       sendToThread: async (_id: string, message: string) => { sent.push(message); },
-      showThread: async (id: string) => ({ thread: { threadId: id, link: 'https://t3/x', status: 'idle', latestRunId: null, activeRunId: null, pendingRequestCount: 0 }, messages: [] }),
+      showThread: async (id: string, _bin?: string, count = 1) => ({ thread: { threadId: id, link: 'https://t3/x', status: 'idle', latestRunId: transcript.length ? 'run-1' : null, activeRunId: null, pendingRequestCount: 0 }, messages: transcript.slice(-count) }),
     } as never,
     questions: { listQuestions: async () => pendingQuestions as never, answerQuestion: async (...args: unknown[]) => { answered.push(args); } },
     fetchBase: async () => {}, share: async (_c, text) => text, reviewRequest: async (_c, text) => ({ reply: text, postedFor: null }),
@@ -459,7 +460,11 @@ const botOn = async (profileDir: string) => {
     const file = join(config.knowledgeDir, page);
     knowledge.savePage(page, readFileSync(file, 'utf8').replace('audience: team', 'audience: owner'));
   };
-  return { bot, store, config, knowledge, started, sent, answered, bases, posted, restrict, setQuestions: (list: typeof pendingQuestions) => { pendingQuestions = list; } };
+  const finish = async (text: string): Promise<void> => {
+    transcript = [{ role: 'user', runId: 'run-1', text: 'brief' }, { role: 'assistant', runId: 'run-1', text }];
+    await bot.poll();
+  };
+  return { bot, store, config, knowledge, started, sent, answered, bases, posted, restrict, finish, setQuestions: (list: typeof pendingQuestions) => { pendingQuestions = list; } };
 };
 
 test('the worker opens pages from the approved copy, and writes proposals to knowledge/proposals', async (t) => {
@@ -543,4 +548,53 @@ test('approving never widens who may hear a page by default, merging into anothe
   const current = readFileSync(join(knowledgeDir, 'workflows/release.md'), 'utf8');
   proposals.mergeProposal('2026-11-20-fact.md', { into: 'workflows/release.md', text: `${current.trimEnd()}\n5. Ship notes go in #ledgerline-releases.\n`, reviewed: { proposal: shown.proposed, path: 'workflows/release.md', page: current } });
   assert.match(readFileSync(join(knowledgeDir, 'workflows/release.md'), 'utf8'), /^audience: team$/m);
+});
+
+test('round 7: one audience line per page, untagged pages stay owner-only through approvals, older briefs get the rules', async (t) => {
+  const profileDir = fixture(t);
+  const knowledgeDir = join(profileDir, 'knowledge');
+  const knowledge = createKnowledge(knowledgeDir);
+  // Two audience lines: the picker leaves one, and a hand-written duplicate fails the check.
+  const role = join(knowledgeDir, 'owner/role.md');
+  const doubled = readFileSync(role, 'utf8').replace('audience: team', 'audience: team\naudience: external');
+  assert.throws(() => knowledge.savePage('owner/role.md', doubled), /`audience` more than once/);
+  const { setHeaderField } = await import('../src/knowledge-rules.ts');
+  assert.equal(setHeaderField(doubled, 'audience', 'owner').match(/^audience:/gm)?.length, 1);
+  // An untagged page that a proposal asks to share with outsiders stays owner-only unless the owner picks otherwise.
+  const notes = join(knowledgeDir, 'owner/private-notes.md');
+  knowledge.savePage('owner/private-notes.md', readFileSync(notes, 'utf8').replace(/^audience:.*\n/m, ''));
+  writeFileSync(join(knowledgeDir, 'proposals/2026-11-20-n.md'), '---\ntype: preference\ndescription: Notes\naudience: external\nwritten: 2026-11-20\nverified: no\ntarget: owner/private-notes.md\nsources:\n  - Owner, 2026-11-20\n---\n# Private notes\n\n- Updated.\n');
+  const proposals = createProposals({ knowledgeDir });
+  const shown = proposals.readProposal('2026-11-20-n.md');
+  proposals.promoteProposal('2026-11-20-n.md', { folder: 'owner', reviewed: { proposal: shown.proposed, path: shown.proposal.target, page: shown.current } });
+  assert.doesNotMatch(readFileSync(notes, 'utf8'), /^audience:/m, 'still untagged, so owner-only');
+  // A brief the owner kept from before: proposals go to knowledge/proposals, pages are read from the approved copy, and approvals are the owner's.
+  const old = readFileSync(join(profileDir, 'brief.md'), 'utf8')
+    .replace('{{PROPOSALS_DIR}}/', '{{KNOWLEDGE_DIR}}/proposals/')
+    .replace(/- Never promote, merge or undo a proposal[^\n]*\n/, '- When {{OWNER_NAME}} confirms a proposal in the thread, promote it: edit index.md.\n');
+  writeFileSync(join(profileDir, 'brief.md'), old);
+  const brief = await buildBrief(profileDir, { via: 'dm', user: ROBIN, text: 'what are my rules?' });
+  assert.match(brief, /Notes are in [^\n]*\.knowledge-approved\./);
+  assert.match(brief, /write it as a page under `[^`]*\/knowledge\/proposals\/`/);
+  assert.match(brief, /This overrides anything above about knowledge: never promote/);
+});
+
+test('a reply written with knowledge taken back since is not posted', async (t) => {
+  const run = await botOn(fixture(t));
+  await run.bot.handle({ channel: 'CTEAM', threadTs: '4.1', messageTs: '4.1', user: PRIYA, text: '<@UMOSS> how do I cut a release?', direct: true });
+  run.restrict('workflows/release.md');
+  await run.finish('Run pnpm release:prepare, then wait for Jonas.');
+  assert.ok(!run.posted.some((text) => /release:prepare/.test(text)), 'the old answer is withheld');
+  assert.ok(run.posted.some((text) => /made private, so I won't post it/.test(text)));
+});
+
+test('sharing refuses the whole batch when one page changed outside Serra', (t) => {
+  const profileDir = fixture(t);
+  const knowledgeDir = join(profileDir, 'knowledge');
+  const knowledge = createKnowledge(knowledgeDir);
+  knowledge.seedApproved();
+  const dana = join(knowledgeDir, 'people/dana.md');
+  writeFileSync(dana, `${readFileSync(dana, 'utf8')}- Edited by hand.\n`);
+  assert.throws(() => knowledge.shareWith(['owner/private-notes.md', 'people/dana.md'], 'team'), /Nothing was shared\. people\/dana\.md changed outside Serra/);
+  assert.match(readFileSync(join(knowledgeDir, 'owner/private-notes.md'), 'utf8'), /^audience: owner$/m);
 });

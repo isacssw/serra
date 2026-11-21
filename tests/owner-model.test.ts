@@ -47,17 +47,15 @@ test('About me is cut at whole pages to its size, keeping the most important', (
   assert.ok(about.chars <= ABOUT_MAX_CHARS);
 });
 
-test('the index keeps only rows whose page this audience may open, and fails closed', () => {
-  const index = '# Knowledge index\n\n| When | Open | Gives |\n|---|---|---|\n| a | `owner/role.md` | r |\n| b | `owner/private.md` | p |\n| c | `gone.md` | g |\n| d | owner/plain.md | no backticks |';
-  const audiences: Record<string, 'owner' | 'team'> = { 'owner/role.md': 'team', 'owner/private.md': 'owner' };
-  const team = filterIndex(index, (path) => audiences[path] ?? null, 'team');
-  assert.match(team, /owner\/role\.md/);
-  assert.match(team, /\| When the request \| Open \| What it gives you \|\n\|---\|---\|---\|/, 'a fixed table header');
-  assert.doesNotMatch(team, /\| When \| Open \| Gives \|/, 'the owner\'s own header text isn\'t copied');
-  assert.doesNotMatch(team, /owner\/private\.md/);
-  assert.doesNotMatch(team, /gone\.md/, 'a page with no known audience counts as the owner\'s');
-  assert.doesNotMatch(team, /no backticks/, 'a row that names no page can\'t be checked, so it goes');
-  assert.equal(filterIndex(index, (path) => audiences[path] ?? null, 'owner'), index, 'the owner gets the whole index');
+test('a non-owner index is rebuilt from approved page descriptions, fails closed, and copies nothing the owner wrote around it', () => {
+  const index = '# Knowledge index\n\nPrivate note: Priya moves in January.\n\n| When | Open | Gives |\n|---|---|---|\n| a | `owner/role.md` | old row text about the reorg |\n| b | `owner/private.md` | p |\n| c | `gone.md` | g |\n| d | owner/plain.md | no backticks |';
+  const pages: Record<string, { audience: 'owner' | 'team'; description: string }> = {
+    'owner/role.md': { audience: 'team', description: "Robin's role" }, 'owner/private.md': { audience: 'owner', description: 'Private notes' },
+  };
+  const team = filterIndex(index, (path) => pages[path] ?? null, 'team');
+  assert.match(team, /\| Robin's role \| `owner\/role\.md` \| Robin's role \|/);
+  assert.doesNotMatch(team, /reorg|Private note|owner\/private\.md|gone\.md|no backticks|\| When \| Open \| Gives \|/);
+  assert.equal(filterIndex(index, (path) => pages[path] ?? null, 'owner'), index, 'the owner gets the whole index');
 });
 
 test('outsiders get a rule that names no internal topic, and off-limits pages only when marked for them', () => {

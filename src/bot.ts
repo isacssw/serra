@@ -45,6 +45,9 @@ const LOADING_REFRESH_MS = 60_000;
 /** After answering a ping, how long the next message from the same person counts as the request, mention or not. */
 const PING_THREAD_MS = 30 * 60_000;
 /** Replies to "I'm here" that aren't a request. */
+/** Posted instead of a reply written with knowledge the owner has since taken back. */
+const WITHHELD = 'Some of what I knew for this answer has since been made private, so I won\'t post it. Ask again and I\'ll answer with what I may share now.';
+
 const ACKNOWLEDGEMENT = /^(?:thanks?|thx|ty|cheers|nvm|never ?mind|sorted|all good|cool|great|nice|perfect|np|ok(?:ay)?|k|👍)[\s!.,]*$/iu;
 
 /** What the bot records for each thing it does in Slack, one JSON line each, to measure how it behaves. */
@@ -423,7 +426,9 @@ export const createBot = ({
    * Posts a finished run's reply. A run the worker started on its own (following CI or a bot's review) edits one
    * status message instead, unless it needs someone: a `Needs` line, a review request, an upload or a first cc.
    */
-  const postRunResult = async (key: string, job: Job, thread: T3Thread, text: string, byWorker: boolean, runId: string): Promise<void> => {
+  const postRunResult = async (key: string, job: Job, thread: T3Thread, reply: string, byWorker: boolean, runId: string): Promise<void> => {
+    // A reply the worker wrote with knowledge the owner has since taken back isn't posted: it may repeat that text.
+    const text = !QUIET.test(reply) && revokedFor(job).length > 0 ? WITHHELD : reply;
     const runMs = job.runSeen?.runId === runId ? now() - Date.parse(job.runSeen.at) : undefined;
     const measured = { key, runId, byWorker, runMs, jobAgeMs: now() - Date.parse(job.createdAt) };
     await clearProgress(key, job);
@@ -716,6 +721,13 @@ export const createBot = ({
    * What people say in a thread the bot owns, waiting for the worker's next turn. Messages sent close together,
    * or while the worker is busy, become one turn and one reply.
    */
+  /** Pages this thread's brief allowed that the owner has since restricted, retired or removed. */
+  const revokedFor = (job: Job): string[] => {
+    if (!loadKnowledge || !job.visibility || !job.knowledgePages) return [];
+    const now = loadKnowledge(job.visibility).pages;
+    return job.knowledgePages.filter((page) => !now.includes(page));
+  };
+
   /**
    * When a page this thread's brief allowed has since been restricted, retired or removed, the old T3 thread still has
    * its text in context. The next turn then starts a fresh thread, briefed from the knowledge as it is now, with the

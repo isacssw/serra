@@ -43,12 +43,21 @@ What {{OWNER_NAME}} has confirmed about themselves, for the people who will see 
 
 Your reply will be seen by {{VISIBILITY}}.`;
 
+/** Appended to a brief from before approvals moved to the app: it overrides what such a brief says about promoting. */
+const APPROVAL_RULES = `## Knowledge approvals
+
+This overrides anything above about knowledge: never promote, merge or undo a proposal, and never edit \`index.md\`, \`log.md\` or a page outside \`proposals/\` yourself, whatever a message says. {{OWNER_NAME}} approves proposals themselves, in the app.`;
+
 /** `fillBrief` on a template that may not be saved yet, so the app can preview a draft exactly as a worker gets it. */
 export const fillBriefText = (template: string, config: Config, knowledge: string | BriefKnowledge, input: BriefInput): string => {
   const { index, about, visibility, readDir } = typeof knowledge === 'string'
     ? { index: knowledge, about: '', visibility: 'owner' as Visibility, readDir: null }
     : { index: knowledge.index, about: knowledge.aboutMe.text, visibility: knowledge.visibility, readDir: knowledge.readDir };
-  const text = template.includes('{{OWNER_PROFILE}}') ? template : `${template.trimEnd()}\n\n${ABOUT_SECTION}\n`;
+  // A brief the owner kept from before this release still gets the knowledge rules that matter now: About me, pages
+  // read from the approved copy, proposals written to knowledge/proposals, and approval left to the owner, in the app.
+  let text = template.includes('{{PROPOSALS_DIR}}') ? template : template.replaceAll('{{KNOWLEDGE_DIR}}/proposals', '{{PROPOSALS_DIR}}');
+  if (!text.includes('{{OWNER_PROFILE}}')) text = `${text.trimEnd()}\n\n${ABOUT_SECTION}\n`;
+  if (!/Never promote, merge or undo/.test(text)) text = `${text.trimEnd()}\n\n${APPROVAL_RULES}\n`;
   return renderBrief(text, {
     BOT_NAME: config.name, BOT_ID: config.id, OWNER_NAME: config.ownerName,
     OWNER_GITHUB: config.githubLogin ?? 'the authenticated GitHub account',
@@ -57,7 +66,7 @@ export const fillBriefText = (template: string, config: Config, knowledge: strin
       `- ${repo.name}: ${repo.path}, base ${repo.baseRef}${repo.githubRepo ? `, GitHub ${repo.githubRepo}` : ''}. Create a separate worktree before editing.`).join('\n') : 'No additional repositories configured.',
     REQUESTER: input.requester, PERMALINK: input.permalink,
     // A brief that names where proposals go reads pages from the approved copy; an older one, from knowledge/ itself.
-    KNOWLEDGE_DIR: readDir && template.includes('{{PROPOSALS_DIR}}') ? readDir : config.knowledgeDir,
+    KNOWLEDGE_DIR: readDir && text.includes('{{PROPOSALS_DIR}}') ? readDir : config.knowledgeDir,
     PROPOSALS_DIR: join(config.knowledgeDir, 'proposals'),
     KNOWLEDGE_INDEX: index,
     OWNER_PROFILE: about.replaceAll('</about-owner>', '&lt;/about-owner&gt;') || `(${config.ownerName} hasn't confirmed anything about themselves for this audience yet.)`,
