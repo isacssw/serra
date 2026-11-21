@@ -438,18 +438,24 @@ const botOn = async (profileDir: string) => {
   const started: string[] = []; const sent: string[] = []; const answered: unknown[] = []; const bases: string[] = []; const posted: string[] = []; const updated: string[] = [];
   const reviews: { heldBack?: string }[] = [];
   const outside = new Set<string>();
-  const hooks: { beforeShare?: () => void | Promise<void> } = {};
+  const hooks: { beforeShare?: () => void | Promise<void>; history: { ts: string; user?: string; bot_id?: string; text: string }[] } = { history: [] };
   let pendingQuestions: { requestId: string; questions: unknown[] }[] = [];
   let transcript: { role: string; runId: string; text: string }[] = [];
   let activeRunId: string | null = null;
   const store = createStore(config.statePath);
   const client = {
     users: { info: async ({ user }: { user: string }) => ({ user: { real_name: user, team_id: 'THOME' } }) },
-    conversations: { replies: async () => ({ messages: [] }), info: async ({ channel }: { channel: string }) => {
+    conversations: { replies: async () => ({ messages: hooks.history }), info: async ({ channel }: { channel: string }) => {
       if (outside.has('FAIL')) throw new Error('ratelimited');
       return { channel: { id: channel, is_ext_shared: outside.has(channel), is_pending_ext_shared: false } };
     } },
-    chat: { getPermalink: async () => ({ permalink: 'https://x/p' }), postMessage: async (body: { text: string }) => { posted.push(body.text); return { ts: '9.1' }; }, update: async (body: unknown) => { updated.push(JSON.stringify(body)); return {}; }, delete: async () => ({}) },
+    chat: { getPermalink: async () => ({ permalink: 'https://x/p' }), postMessage: async (body: { text: string }) => { posted.push(body.text); return { ts: '9.1' }; }, update: async (body: { ts?: string; text?: string }) => {
+      updated.push(JSON.stringify(body));
+      // As Slack does: the thread's history shows a message as it was last edited.
+      const line = hooks.history.find((message) => message.ts === body.ts);
+      if (line && body.text !== undefined) line.text = body.text;
+      return {};
+    }, delete: async () => ({}) },
     reactions: { add: async () => ({}), remove: async () => ({}) },
     assistant: { threads: { setStatus: async () => ({ ok: true }) } },
   } as never;
@@ -906,4 +912,43 @@ test('a Slack lookup that fails right before posting keeps the thread\'s audienc
   await run.finish('Run pnpm release:prepare.');
   assert.ok(run.posted.some((text) => /release:prepare/.test(text)), 'the finished reply is posted');
   assert.ok(!run.posted.some((text) => /made private/.test(text)));
+});
+
+test('a fresh session never sees the old question through Slack history, an older owner thread is never given a record it didn\'t earn, and the policy path survives the snapshot', async (t) => {
+  // The old card sits in the thread's Slack history with the question as its text.
+  const form = await botOn(fixture(t));
+  await form.bot.handle({ channel: 'CTEAM', threadTs: '26.1', messageTs: '26.1', user: PRIYA, text: '<@UMOSS> how do I cut a release?', direct: true });
+  const question = { id: 'q1', header: 'Day', question: 'Release on Thursday despite the freeze?', options: [{ label: 'Yes', description: '' }, { label: 'No', description: '' }] };
+  form.hooks.history.push({ ts: '26.1', user: PRIYA, text: '<@UMOSS> how do I cut a release?' }, { ts: '26.5', bot_id: 'BMOSS', text: question.question });
+  form.setQuestions([{ requestId: 'r26', questions: [question] }]);
+  const job = form.store.getJob('CTEAM:26.1')!;
+  form.store.putJob('CTEAM:26.1', { ...job, question: { requestId: 'r26', questions: [question], ts: '26.5', nonce: 'n', index: 0, answers: {}, runId: null } as never });
+  form.restrict('workflows/release.md');
+  form.hooks.history.push({ ts: '26.6', user: PRIYA, text: 'next Tuesday instead' });
+  await form.bot.handle({ channel: 'CTEAM', threadTs: '26.1', messageTs: '26.6', user: PRIYA, text: 'next Tuesday instead', direct: false });
+  await new Promise((done) => setTimeout(done, 50));
+  assert.equal(form.started.length, 2);
+  assert.doesNotMatch(form.started[1]!, /despite the freeze/);
+
+  // An owner DM from before Serra recorded what its worker read: a follow-up doesn't stamp today's pages on it, so a
+  // review request it writes is still the owner's to post.
+  const owner = await botOn(fixture(t));
+  (owner.config as { reviewChannel?: string }).reviewChannel = 'CREVIEW';
+  await owner.bot.handle({ channel: 'DROBIN', threadTs: '27.1', messageTs: '27.1', user: ROBIN, text: 'fix the release script', direct: true });
+  const legacy = owner.store.getJob('DROBIN:27.1')!;
+  delete legacy.visibility; delete legacy.knowledgeRead; delete legacy.knowledgeDir;
+  owner.store.putJob('DROBIN:27.1', legacy);
+  await owner.bot.handle({ channel: 'DROBIN', threadTs: '27.1', messageTs: '27.2', user: ROBIN, text: 'and open the PR', direct: true });
+  await new Promise((done) => setTimeout(done, 80));
+  assert.equal(owner.store.getJob('DROBIN:27.1')!.knowledgeRead, undefined);
+  await owner.finish('Done. <review-request>Please review https://github.com/larchwood/moss/pull/6</review-request>');
+  assert.match(owner.reviews[0]?.heldBack ?? '', /may not hear/);
+
+  // The policy is in the profile folder, not next to the snapshot a worker reads; an older brief's path is fixed too.
+  const profileDir = fixture(t);
+  const brief = await buildBrief(profileDir, { via: 'channel', user: PRIYA, text: 'what does Robin own?' });
+  assert.ok(brief.includes(join(profileDir, 'policy.md')));
+  assert.doesNotMatch(brief, /knowledge-team\/[0-9a-f]{16}\/\.\.\/policy/);
+  writeFileSync(join(profileDir, 'brief.md'), readFileSync(join(profileDir, 'brief.md'), 'utf8').replace('{{POLICY_PATH}}', '{{KNOWLEDGE_DIR}}/../policy.md'));
+  assert.ok((await buildBrief(profileDir, { via: 'channel', user: PRIYA, text: 'what does Robin own?' })).includes(join(profileDir, 'policy.md')));
 });

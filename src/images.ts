@@ -114,8 +114,11 @@ const upload = async (
 export const shareImages = async (
   client: SlackClient,
   text: string,
-  thread: { channel: string; threadTs: string },
+  thread: { channel: string; threadTs: string; mayPost?: () => Promise<boolean> },
 ): Promise<string> => {
+  // Checked right before each upload: one file going out must not carry the next past a change.
+  let stopped = false;
+  const mayUpload = async (): Promise<boolean> => !stopped && (!thread.mayPost || (await thread.mayPost()) || ((stopped = true), false));
   const embeds = [...text.matchAll(LOCAL_IMAGE)];
   const links = [...text.matchAll(LOCAL_FILE_LINK)].filter(([, , bracketed, plain]) =>
     FILE_TYPES.has(extname(bracketed ?? plain ?? '').toLowerCase()),
@@ -144,6 +147,7 @@ export const shareImages = async (
       notes.set(embed, `_(image attached above: ${label})_`);
       continue;
     }
+    if (!(await mayUpload())) break;
     const error = await upload(client, thread, checked.path, label, label);
     if (error) {
       notes.set(embed, `_(image "${label}" not attached: ${error.message})_`);
@@ -165,6 +169,7 @@ export const shareImages = async (
     if ('problem' in checked) continue;
     if (!sent.has(checked.path)) {
       if (files >= MAX_FILES) continue;
+      if (!(await mayUpload())) break;
       if (await upload(client, thread, checked.path, label.replaceAll('`', ''))) continue;
       files++;
       sent.add(checked.path);

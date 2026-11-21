@@ -56,6 +56,8 @@ export const fillBriefText = (template: string, config: Config, knowledge: strin
   // A brief the owner kept from before this release still gets the knowledge rules that matter now: About me, pages
   // read from the approved copy, proposals written to knowledge/proposals, and approval left to the owner, in the app.
   let text = template.includes('{{PROPOSALS_DIR}}') ? template : template.replaceAll('{{KNOWLEDGE_DIR}}/proposals', '{{PROPOSALS_DIR}}');
+  // Pages are read from a snapshot folder now, so a path relative to it no longer reaches the profile's policy.md.
+  text = text.replaceAll('{{KNOWLEDGE_DIR}}/../policy.md', '{{POLICY_PATH}}');
   if (!text.includes('{{OWNER_PROFILE}}')) text = `${text.trimEnd()}\n\n${ABOUT_SECTION}\n`;
   if (!/Never promote, merge or undo/.test(text)) text = `${text.trimEnd()}\n\n${APPROVAL_RULES}\n`;
   return renderBrief(text, {
@@ -69,6 +71,7 @@ export const fillBriefText = (template: string, config: Config, knowledge: strin
     // Workers read pages from the approved copy whatever the brief says; proposals have their own path above.
     KNOWLEDGE_DIR: readDir ?? config.knowledgeDir,
     PROPOSALS_DIR: join(config.knowledgeDir, 'proposals'),
+    POLICY_PATH: join(config.profileDir, 'policy.md'),
     KNOWLEDGE_INDEX: index,
     OWNER_PROFILE: about.replaceAll('</about-owner>', '&lt;/about-owner&gt;') || `(${config.ownerName} hasn't confirmed anything about themselves for this audience yet.)`,
     VISIBILITY: visibilityText(visibility, config.ownerName),
@@ -113,6 +116,7 @@ export const BRIEF_PLACEHOLDERS = {
   PERMALINK: "The Slack link to the request (empty for a task started in the app, so ` ({{PERMALINK}})` is left out)",
   KNOWLEDGE_DIR: 'Where the worker reads pages: the approved copy of the knowledge folder',
   PROPOSALS_DIR: 'Where the worker writes proposals: knowledge/proposals',
+  POLICY_PATH: "The owner's policy.md, in the profile folder",
   KNOWLEDGE_INDEX: "The knowledge index's text: only the rows the people who will see the reply may open",
   OWNER_PROFILE: 'About the owner: their confirmed owner/ pages for this audience, capped in size',
   VISIBILITY: 'Who will see the reply: only the owner, their teammates, or people outside their company too',
@@ -266,7 +270,7 @@ export const proposeBriefUpdate = (profileDir: string): boolean => {
   const briefFile = join(profileDir, 'brief.md');
   if (!existsSync(briefFile)) return false;
   const brief = readFileSync(briefFile, 'utf8');
-  const outdated = !brief.includes('{{OWNER_PROFILE}}') || !brief.includes('{{PROPOSALS_DIR}}') || /promote it:/i.test(brief);
+  const outdated = !brief.includes('{{OWNER_PROFILE}}') || !brief.includes('{{PROPOSALS_DIR}}') || /promote it:/i.test(brief) || brief.includes('{{KNOWLEDGE_DIR}}/../policy.md');
   const dir = join(profileDir, 'proposed', KNOWLEDGE_BRIEF_UPDATE);
   if (!outdated || existsSync(dir)) return false;
   mkdirSync(dir, { recursive: true });

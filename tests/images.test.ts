@@ -111,3 +111,14 @@ test('a file in the per-user temp folder is not uploaded, though an image there 
   assert.equal(f.uploads.length, 1);
   assert.match(text, /\[Report\]\(/);
 });
+
+test('each upload is checked right before it goes out: once the check fails, nothing more is uploaded', async (t) => {
+  const f = fixture(t);
+  const [a, b, c] = [f.file('a.png'), f.file('b.png'), f.file('c.html', '<html></html>')];
+  let checks = 0;
+  const shared = await shareImages(f.client, `![](${a})\n![](${b})\n[report](${c})`, { ...thread, mayPost: async () => ++checks === 1 });
+  assert.equal(f.uploads.length, 1, 'only the upload before the change went out');
+  assert.equal(f.uploads[0]?.file, a);
+  assert.ok(checks >= 2);
+  assert.doesNotMatch(shared, /report _\(attached above\)_/);
+});

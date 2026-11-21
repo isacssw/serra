@@ -449,6 +449,10 @@ export const createBot = ({
     updateJob(key, () => ({ progress: undefined }));
   };
 
+  /** A status message's fields, swapped for the withheld notice when the thread's knowledge was taken back since. */
+  const withheldIfRevoked = async (job: Job, body: string): Promise<{ text?: string; blocks?: unknown[] }> =>
+    ((await stillMayPost(job, body)) === WITHHELD ? { text: WITHHELD, blocks: [{ type: 'markdown', text: WITHHELD }] } : {});
+
   /** `text`, or the withheld notice when the thread's knowledge was taken back for who can see it now. */
   const stillMayPost = async (job: Job, text: string): Promise<string> =>
     text !== WITHHELD && (await revokedFor(job)).length > 0 ? WITHHELD : text;
@@ -495,7 +499,7 @@ export const createBot = ({
     // Images go up first, so they sit in the thread just above the reply that refers to them. Checked again right
     // before uploading and before posting: who can see the thread, and what its worker was told, can change meanwhile.
     const toShare = await stillMayPost(job, review.reply);
-    const shared = await share(client, toShare, { channel: job.channel, threadTs: job.threadTs });
+    const shared = await share(client, toShare, { channel: job.channel, threadTs: job.threadTs, mayPost: async () => (await revokedFor(job)).length === 0 });
     const uploaded = shared !== toShare;
     const prepared = truncate(localLinksToText(shared, pathRoots).trim() || '(No reply text. Check the T3 thread.)');
     const body = await stillMayPost(job, prepared);
@@ -520,7 +524,8 @@ export const createBot = ({
           return false;
         })
         : false;
-      const statusTs = edited ? job.statusTs : (await client.chat.postMessage({ ...message, thread_ts: job.threadTs })).ts;
+      // A new post in place of a failed edit is checked again first: time has passed.
+      const statusTs = edited ? job.statusTs : (await client.chat.postMessage({ ...message, ...(await withheldIfRevoked(job, body)), thread_ts: job.threadTs })).ts;
       updateJob(key, () => ({
         lastPostedRunId: runId,
         ...(statusTs ? { statusTs } : {}),
@@ -655,11 +660,8 @@ export const createBot = ({
     // that's no longer available.
     const typed = typeof answer === 'string' && !question.options.some((option) => (option.value ?? option.label) === answer);
     const note = `Answered a question from the earlier session${typed ? `: "${answered}"` : ''}. The question isn't repeated here because it used knowledge that's no longer available: ask again if you still need it.`;
-    if (await restartIfRevoked(key, job, [{ speaker: user === config.owner ? `${config.ownerName} (your owner)` : await displayName(user), text: note, audience: 'bot', ts: messageTs ?? job.threadTs }])) {
-      // The old session's question gets an answer that ends its turn, so it isn't left waiting.
-      await questions.answerQuestion(job.t3ThreadId, state.requestId, Object.fromEntries(state.questions.map((item) => [item.id, 'Stop here: this thread moved to a fresh session. Do nothing more.'])), config.t3Bin)
-        .catch((error: unknown) => logger.warn(`Could not close the question in the earlier T3 thread ${job.t3ThreadId}: ${errorMessage(error)}`));
-      await clearQuestion(key, job, user, { ...state, answers }, true);
+    // On a restart, the old card is closed and the old session told to stop before anything else (see restartIfRevoked).
+    if (await restartIfRevoked(key, { ...job, question: state }, [{ speaker: user === config.owner ? `${config.ownerName} (your owner)` : await displayName(user), text: note, audience: 'bot', ts: messageTs ?? job.threadTs }])) {
       updateJob(key, rememberReply);
       return;
     }
@@ -672,6 +674,11 @@ export const createBot = ({
       } catch (error) {
         const code = (error as { data?: { error?: string } })?.data?.error;
         if (code !== 'message_not_found' && errorMessage(error) !== 'message_not_found') throw error;
+        // A new card in place of a failed edit is the worker's words again: checked first.
+        if ((await revokedFor(job)).length > 0) {
+          await clearQuestion(key, job, user, { ...state, answers }, true);
+          return;
+        }
         const posted = await client.chat.postMessage({ channel: job.channel, thread_ts: job.threadTs, ...questionMessage(next, recipient), unfurl_links: false });
         if (!posted.ts) throw new Error('Slack returned no question message');
         next.ts = posted.ts;
@@ -813,8 +820,17 @@ export const createBot = ({
     // A snapshot folder cleaned up after a long pause leaves the worker nothing to open: that thread starts fresh too.
     const folderGone = job.knowledgeDir !== undefined && !existsSync(job.knowledgeDir);
     if (revoked.length === 0 && !folderGone) {
-      if (!job.knowledgeRead) updateJob(key, () => ({ visibility, knowledgeRead: knowledge.read }));
+      // A thread from before Serra recorded what its worker read keeps no record: today's pages aren't what it read.
+      if (!job.visibility) updateJob(key, () => ({ visibility }));
       return false;
+    }
+    // An open question card is the old worker's words: it's closed with fixed copy, and the old session told to stop,
+    // before the thread's history is read for the fresh brief, so the question never reaches it.
+    if (job.question) {
+      const open = job.question;
+      await questions.answerQuestion(job.t3ThreadId, open.requestId, Object.fromEntries(open.questions.map((item) => [item.id, 'Stop here: this thread moved to a fresh session. Do nothing more.'])), config.t3Bin)
+        .catch((error: unknown) => logger.warn(`Could not close the question in the earlier T3 thread ${job.t3ThreadId}: ${errorMessage(error)}`));
+      await clearQuestion(key, job, undefined, open, true);
     }
     const first = lines[0]!;
     const thread = await threadContext({ channel: job.channel, threadTs: job.threadTs, messageTs: first.ts, user: job.requester, text: '', direct: false });
