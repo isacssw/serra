@@ -161,7 +161,9 @@ export const CommandPalette = () => {
       aria-label="Command palette"
       // Escape is handled in the field (it steps back first); this only covers focus being elsewhere.
       onCancel={(event) => { event.preventDefault(); if (document.activeElement !== inputRef.current) close(); }}
-      onClose={() => setOpen(false)}
+      // `close` arrives a task (or, when frames are slow, several) after the dialog shut, so it can land after ⌘K
+      // reopened it. Only a dialog that is still shut means the palette closed.
+      onClose={() => { if (!dialogRef.current?.open) setOpen(false); }}
       onClick={(event) => { if (event.target === dialogRef.current) close(); }}
       className="mx-auto mt-[12vh] w-[min(36rem,calc(100vw-2rem))] overflow-hidden rounded-xl border border-line bg-panel p-0 text-ink shadow-2xl backdrop:bg-black/40"
     >

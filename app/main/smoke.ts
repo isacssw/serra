@@ -28,8 +28,11 @@ interface RendererReport {
   title: string;
   header: string | null;
   visited: { route: string; label: string; heading: string | null; hash: string }[];
-  /** APP-16: ⌘K on each screen opens the palette and Escape closes it; a search then Enter opens the screen found. */
-  palette: { opened: string[]; notOpened: string[]; options: number; ranTo: string | null };
+  /**
+   * APP-16: ⌘K on each screen opens the palette and Escape closes it; a search then Enter opens the screen found.
+   * `shutByLateClose`: screens where a late `close` event from an earlier close shut the reopened palette.
+   */
+  palette: { opened: string[]; notOpened: string[]; shutByLateClose: string[]; options: number; ranTo: string | null };
 }
 
 // Runs in the page, through the same `window.serra` the renderer uses. Listens for the next status push first,
@@ -63,12 +66,19 @@ const pageScript = `(async () => {
       const palette = await (async () => {
         const dialog = () => document.querySelector('dialog[data-command-palette]');
         const field = () => dialog()?.querySelector('input') ?? null;
-        const opened = [], notOpened = [];
+        const opened = [], notOpened = [], shutByLateClose = [];
         let options = 0;
         for (const link of document.querySelectorAll('[data-serra-sidebar] a[data-route]')) {
           link.click();
           document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', metaKey: true, bubbles: true }));
           if (await wait(() => dialog()?.open && field())) opened.push(link.dataset.route); else notOpened.push(link.dataset.route);
+          // A dialog's close event comes a task after it shut, and Chromium can hold several back while frames are
+          // slow (a cold CI runner), so one from the last Escape can reach the palette just reopened. It must stay open.
+          if (dialog()?.open) {
+            dialog().dispatchEvent(new Event('close'));
+            await new Promise((r) => setTimeout(r, 50));
+            if (!dialog()?.open) { shutByLateClose.push(link.dataset.route); continue; }
+          }
           options = Math.max(options, document.querySelectorAll('dialog[data-command-palette] [role=option]').length);
           field()?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
           await wait(() => !dialog()?.open);
@@ -84,7 +94,7 @@ const pageScript = `(async () => {
         }
         const heading = () => document.querySelector('[data-serra-main] h1')?.textContent ?? null;
         await wait(() => heading() === 'Diagnostics' && !dialog()?.open);
-        return { opened, notOpened, options, ranTo: dialog()?.open ? null : heading() };
+        return { opened, notOpened, shutByLateClose, options, ranTo: dialog()?.open ? null : heading() };
       })();
       return { title: document.title, header: header(), visited, palette };
     })(),
@@ -360,6 +370,7 @@ export const runSmokeChecks = async (window: BrowserWindow, resendStatus: () => 
     report.renderer.visited.length < 15 && 'the sidebar does not list every screen',
     ...report.renderer.visited.filter((v) => v.heading !== v.label).map((v) => `sidebar item ${v.route} did not open its screen`),
     ...report.renderer.palette.notOpened.map((route) => `⌘K did not open the command palette on ${route}`),
+    ...report.renderer.palette.shutByLateClose.map((route) => `a late close event shut the reopened command palette on ${route}`),
     report.renderer.palette.opened.length < 15 && '⌘K was not tried on every screen',
     report.renderer.palette.options < 18 && 'the command palette does not list every built-in action',
     report.renderer.palette.ranTo !== 'Diagnostics' && 'running a palette search did not open its screen',
