@@ -112,6 +112,7 @@ test('the brief a task sends is the one the daemon sends for the same request, b
   const bot = createBot({
     config, client, botUserId: () => 'UBOT', store: createStore(config.statePath),
     loadIndex: createKnowledge(config.knowledgeDir).loadIndex,
+    loadKnowledge: (visibility) => createKnowledge(config.knowledgeDir).briefKnowledge(visibility),
     logger: { info: quiet, warn: quiet, debug: quiet, error: (message) => assert.fail(message) },
     t3: {
       startThread: async (input) => { daemon = input; return 'slack-thread'; },
@@ -260,6 +261,7 @@ test('an index pushed over its cap outside the app still lets the daemon and a t
   const bot = createBot({
     config, client, botUserId: () => 'UBOT', store: createStore(config.statePath),
     loadIndex: createKnowledge(config.knowledgeDir).loadIndex,
+    loadKnowledge: (visibility) => createKnowledge(config.knowledgeDir).briefKnowledge(visibility),
     logger: { info: quiet, warn: quiet, debug: quiet, error: (message) => assert.fail(message) },
     t3: {
       startThread: async (input) => { daemon = input; return 'slack-thread'; },

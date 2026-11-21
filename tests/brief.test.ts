@@ -127,7 +127,7 @@ test('the preview is exactly what a worker gets for the same request', async (t)
 
   // What the daemon's startJob does for a new thread from the owner.
   const config = loadConfig({ profileDir: directory, env: {} });
-  const worker = fillBrief(config, createKnowledge(config.knowledgeDir).loadIndex(),
+  const worker = fillBrief(config, createKnowledge(config.knowledgeDir).briefKnowledge('owner'),
     { request, requester: 'Alex', permalink: 'link unavailable (preview)', thread: NO_THREAD });
   assert.equal(preview, worker);
   assert.match(preview, /You are Friday, Alex's engineering assistant/);

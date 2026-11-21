@@ -64,8 +64,11 @@ export interface Job {
   runSeen?: { runId: string; at: string };
   /** Who sees this thread's replies, as its brief was built for. Absent on jobs from before audiences. */
   visibility?: 'owner' | 'team' | 'external';
-  /** Knowledge pages the thread's brief allowed. A follow-up after one is taken back starts a fresh T3 thread. */
-  knowledgePages?: string[];
+  /**
+   * Knowledge pages the thread's worker could read, each with who could hear the version it read. A reply only goes
+   * where every one of them may be heard; after one is taken back, a follow-up starts a fresh T3 thread.
+   */
+  knowledgeRead?: Record<string, 'owner' | 'team' | 'external'>;
   /** The task branch the thread works on, so a fresh thread can carry on from its committed work. */
   branch?: string;
 }

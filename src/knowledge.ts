@@ -69,13 +69,15 @@ export interface BriefKnowledge {
   visibility: Visibility;
   /** Every page this brief let the worker use or open, so a later restriction can be noticed. */
   pages: string[];
-  /** Where the worker opens pages: the approved copy once it exists, so an unreviewed edit is never read. */
+  /** The same pages, each with who could hear the version the worker could read. */
+  read: Record<string, Audience>;
+  /** Where the worker opens pages: a snapshot of the approved pages it may use, which never changes. */
   readDir: string;
 }
 
 /** Markdown files under `dir`, relative to it, skipping dot folders. */
-/** Where the snapshots a teammate's or an outsider's worker reads are kept: `.knowledge-team/` or `.knowledge-external/`. */
-export const audienceDir = (knowledgeDir: string, visibility: Exclude<Visibility, 'owner'>): string => {
+/** Where the snapshots workers read are kept, one folder per audience: `.knowledge-owner/`, `.knowledge-team/`, `.knowledge-external/`. */
+export const audienceDir = (knowledgeDir: string, visibility: Visibility): string => {
   const root = resolve(knowledgeDir);
   return join(dirname(root), `.${basename(root)}-${visibility}`);
 };
@@ -206,27 +208,27 @@ export const createKnowledge = (knowledgeDir: string, { backupDir }: KnowledgeOp
     const descriptions = new Map(pages.map(({ path, text }) => [path, frontmatter(text)?.get('description')?.trim() ?? '']));
     const aboutMe = compileAboutMe(pages, visibility, now);
     let index = filterIndex(indexText.trim(), (page) => (audiences.has(page) ? { audience: audiences.get(page)!, description: descriptions.get(page) ?? '' } : null), visibility);
-    // Once briefs read the approved copy, a teammate's worker opens only approved pages, so an edit waiting for review
-    // needs no note there. The owner hears which files are waiting. Before the copy exists, nobody opens pages.
+    // Every worker reads a snapshot of approved pages, so an edit waiting for review needs no note for teammates. The
+    // owner hears which files are waiting. Before the approved copy exists, nobody opens pages.
     if (drifted && visibility === 'owner') {
       index += `\n\nSome knowledge files changed outside Serra and the owner hasn't approved them yet (unreviewed changes): ${[...changed, ...removed].map((path) => `\`${path}\``).join(', ')}. `
-        + `Don't use what they say now. Read the approved copy of any page from ${journal.approvedRoot} instead.`;
+        + `The folder you read has the approved versions; don't use any other copy.`;
     } else if (drifted && !fromApproved) {
       index += `\n\nSome knowledge files changed and the owner hasn't approved them yet. Don't open pages to answer this: use only what this brief says.`;
     }
     const usable = [...audiences].filter(([, audience]) => mayUse(audience, visibility)).map(([path]) => path).sort();
-    if (visibility === 'owner') return { index, aboutMe, visibility, pages: usable, readDir: fromApproved ? journal.approvedRoot : root };
-    // Anyone else's worker reads a folder that holds only the pages they may hear, so an owner-only page isn't one
-    // `ls` away. The folder is a snapshot named after its contents and never changes: a page shared after a thread
-    // started never appears in that thread's folder, so what a worker could read is exactly `pages`.
+    // Every worker reads a snapshot folder named after its contents, which never changes: a page approved or shared
+    // after a thread started never appears in that thread's folder. Anyone but the owner gets only the pages they may
+    // hear. `read` records who could hear each version the worker could read, for later checks.
     const texts = new Map(pages.map(({ path, text }) => [path, text]));
     const files = new Map([['index.md', `${index}\n`], ...usable.map((path) => [path, texts.get(path)!] as const)]);
-    return { index, aboutMe, visibility, pages: usable, readDir: snapshot(audienceDir(root, visibility), files, now) };
+    const readable = Object.fromEntries(usable.map((path) => [path, audiences.get(path)!]));
+    return { index, aboutMe, visibility, pages: usable, read: readable, readDir: snapshot(audienceDir(root, visibility), files, now) };
   };
 
   /**
    * Start keeping the approved copy, from `knowledge/` as it is now, if it isn't kept yet. The daemon does this at
-   * start and the app when it shows Pages. Building a brief writes only the folder a non-owner's worker reads.
+   * start and the app when it shows Pages. Building a brief writes only the snapshot its worker reads.
    */
   const seedApproved = (): boolean => journal.seed();
 

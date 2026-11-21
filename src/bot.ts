@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import type { webApi } from '@slack/bolt';
 import { fillBrief, needsOwner, NO_THREAD } from './brief.ts';
 import type { BriefKnowledge } from './knowledge.ts';
-import type { Visibility } from './owner-model.ts';
+import { mayUse, type Visibility } from './owner-model.ts';
 import type { Config, MessageTrigger } from './config.ts';
 import { audienceOf, createBatcher, followUpMessage, isPing, mentionedUsers, NO_MENTION_HINT, ownerNotice, readable, speakerName, type Audience, type ThreadLine } from './conversation.ts';
 import { shareImages } from './images.ts';
@@ -406,7 +406,7 @@ export const createBot = ({
       lastPostedRunId: null,
       watching: true,
       ownerFollows: msg.user === config.owner,
-      ...(knowledge ? { visibility, knowledgePages: knowledge.pages } : {}),
+      ...(knowledge ? { visibility, knowledgeRead: knowledge.read } : {}),
       branch: input.branch,
       createdAt: new Date(now()).toISOString(),
       lastActivityAt: new Date(now()).toISOString(),
@@ -432,6 +432,10 @@ export const createBot = ({
     updateJob(key, () => ({ progress: undefined }));
   };
 
+  /** `text`, or the withheld notice when the thread's knowledge was taken back for who can see it now. */
+  const stillMayPost = async (job: Job, text: string): Promise<string> =>
+    text !== WITHHELD && (await revokedFor(job)).length > 0 ? WITHHELD : text;
+
   /**
    * Posts a finished run's reply. A run the worker started on its own (following CI or a bot's review) edits one
    * status message instead, unless it needs someone: a `Needs` line, a review request, an upload or a first cc.
@@ -454,15 +458,16 @@ export const createBot = ({
       .getPermalink({ channel: job.channel, message_ts: job.threadTs })
       .then((result) => result.permalink)
       .catch(() => undefined);
-    // A review request goes to another channel: only when everyone there may hear what this thread's worker was told.
-    // Otherwise it's the owner's to check and post.
-    const reviewAudience = config.reviewChannel && loadKnowledge
-      ? await replyVisibility({ channel: config.reviewChannel, threadTs: job.threadTs, messageTs: job.threadTs, user: config.owner, text: '', direct: false }, { fresh: true })
-      : null;
-    const reviewMayHear = !reviewAudience || (await revocation({ ...job, visibility: reviewAudience })).revoked.length === 0;
+    // A review request goes to another channel: only when everyone there may hear what this thread's worker was told,
+    // checked right before it's sent. Otherwise it's the owner's to check and post.
+    const reviewMayHear = async (): Promise<boolean> => {
+      if (!loadKnowledge || !config.reviewChannel) return true;
+      const audience = await replyVisibility({ channel: config.reviewChannel, threadTs: job.threadTs, messageTs: job.threadTs, user: config.owner, text: '', direct: false }, { fresh: true });
+      return (await revocation({ ...job, visibility: audience })).revoked.length === 0;
+    };
     const review = await reviewRequest(client, text, {
       channel: config.reviewChannel,
-      ...(reviewMayHear ? {} : { heldBack: 'it was written with knowledge some people in the review channel may not hear: check it and post it yourself' }),
+      mayPost: reviewMayHear,
       owner: config.owner,
       botName: config.name,
       repositories: config.reviewRepos,
@@ -470,10 +475,13 @@ export const createBot = ({
       alreadyPosted: job.reviewRequestedPrs ?? [],
       sourceLink: slackThread ?? thread.link,
     });
-    // Images go up first, so they sit in the thread just above the reply that refers to them.
-    const shared = await share(client, review.reply, { channel: job.channel, threadTs: job.threadTs });
-    const uploaded = shared !== review.reply;
-    const body = truncate(localLinksToText(shared, pathRoots).trim() || '(No reply text. Check the T3 thread.)');
+    // Images go up first, so they sit in the thread just above the reply that refers to them. Checked again right
+    // before uploading and before posting: who can see the thread, and what its worker was told, can change meanwhile.
+    const toShare = await stillMayPost(job, review.reply);
+    const shared = await share(client, toShare, { channel: job.channel, threadTs: job.threadTs });
+    const uploaded = shared !== toShare;
+    const prepared = truncate(localLinksToText(shared, pathRoots).trim() || '(No reply text. Check the T3 thread.)');
+    const body = await stillMayPost(job, prepared);
     // The owner is pinged for a new blocker, and cc'd once so they follow a thread someone else started. Not on every reply.
     const blocked = needsOwner(body, config.ownerName);
     const ownerFollows = job.ownerFollows ?? job.requester === config.owner;
@@ -556,18 +564,18 @@ export const createBot = ({
     if (now() - Date.parse(job.runSeen.at) < PROGRESS_AFTER_MS || !someoneWaits(runId, messages)) return;
     const note = latestNote(runId, messages);
     if (!note) return;
-    // A progress note is the worker's own words: none from a thread whose knowledge was taken back.
-    if ((await revokedFor(job)).length > 0) return;
     const text = `⏳ Still on it: ${oneParagraph(localLinksToText(note, pathRoots))}`;
     if (job.progress?.runId === runId && job.progress.text === text) return;
     const message = { channel: job.channel, text, blocks: [{ type: 'markdown', text }], unfurl_links: false };
+    if (job.progress && job.progress.runId !== runId) await clearProgress(key, job);
+    // A progress note is the worker's own words: none from a thread whose knowledge was taken back, checked last.
+    if ((await revokedFor(job)).length > 0) return;
     if (job.progress?.runId === runId) {
       const ts = job.progress.ts;
       await client.chat.update({ ...message, ts }).catch((error: unknown) => logger.debug(`Editing the progress line in ${key} failed: ${errorMessage(error)}`));
       updateJob(key, () => ({ progress: { ts, runId, text } }));
       return;
     }
-    if (job.progress) await clearProgress(key, job);
     const posted = await client.chat.postMessage({ ...message, thread_ts: job.threadTs });
     if (posted.ts) updateJob(key, () => ({ progress: { ts: posted.ts!, runId, text } }));
     // Posting any message clears Slack's native status, even when it is only a progress update.
@@ -577,16 +585,21 @@ export const createBot = ({
 
   const mayAnswer = (job: Job, user: string): boolean => config.allowed.has(user) && (user === config.owner || user === job.requester);
 
-  const clearQuestion = async (key: string, job: Job, answeredBy?: string, state = job.question, closed = false): Promise<void> => {
+  const clearQuestion = async (key: string, job: Job, answeredBy?: string, state = job.question, closed?: boolean): Promise<void> => {
     if (!state) return;
     updateJob(key, () => ({ question: undefined, waitingInT3: false }));
+    // However the card closes, a thread whose knowledge was taken back never shows its questions or answers again.
+    closed ??= (await revokedFor(job)).length > 0;
     // A card closed because its thread's knowledge was taken back gets fixed copy: the question is the worker's words.
     await client.chat.update({ channel: job.channel, ts: state.ts, ...(closed ? closedMessage() : answeredMessage(state, answeredBy)) })
       .catch((error: unknown) => logger.debug(`Updating the question in ${key} failed: ${errorMessage(error)}`));
   };
 
   const showQuestion = async (key: string, job: Job, thread: T3Thread, request: T3QuestionRequest): Promise<void> => {
-    // A question card is the worker's own words too: a thread whose knowledge was taken back gets a stop instead.
+    if (job.question?.requestId === request.requestId) return;
+    if (job.question) await clearQuestion(key, job);
+    // A question card is the worker's own words too: a thread whose knowledge was taken back gets a stop instead,
+    // checked right before the card would be posted.
     if ((await revokedFor(job)).length > 0) {
       await questions.answerQuestion(job.t3ThreadId, request.requestId, Object.fromEntries(request.questions.map((item) => [item.id, 'Stop here: some knowledge you used has been made private. Do nothing more.'])), config.t3Bin)
         .catch((error: unknown) => logger.warn(`Could not stop the question in ${job.t3ThreadId}: ${errorMessage(error)}`));
@@ -594,8 +607,6 @@ export const createBot = ({
       updateJob(key, () => ({ lastActivityAt: new Date(now()).toISOString() }));
       return;
     }
-    if (job.question?.requestId === request.requestId) return;
-    if (job.question) await clearQuestion(key, job);
     const state: SlackQuestion = { ...request, ts: '', index: 0, answers: {}, nonce: randomBytes(16).toString('hex'), runId: thread.activeRunId ?? thread.latestRunId };
     const recipient = config.allowed.has(job.requester) ? job.requester : config.owner;
     const posted = await client.chat.postMessage({ channel: job.channel, thread_ts: job.threadTs, ...questionMessage(state, recipient), unfurl_links: false });
@@ -623,7 +634,11 @@ export const createBot = ({
     // The next question is the worker's own words too: a thread whose knowledge was taken back shows none, and the
     // answers so far go to a fresh thread.
     const answered = typeof answer === 'string' ? answer : answer.join(', ');
-    if (await restartIfRevoked(key, job, [{ speaker: user === config.owner ? `${config.ownerName} (your owner)` : await displayName(user), text: `Answer to "${question.question ?? question.id}": ${answered}`, audience: 'bot', ts: messageTs ?? job.threadTs }])) {
+    // The fresh thread isn't told the question or the choice: both are the earlier worker's words, written with knowledge
+    // that's no longer available.
+    const typed = typeof answer === 'string' && !question.options.some((option) => (option.value ?? option.label) === answer);
+    const note = `Answered a question from the earlier session${typed ? `: "${answered}"` : ''}. The question isn't repeated here because it used knowledge that's no longer available: ask again if you still need it.`;
+    if (await restartIfRevoked(key, job, [{ speaker: user === config.owner ? `${config.ownerName} (your owner)` : await displayName(user), text: note, audience: 'bot', ts: messageTs ?? job.threadTs }])) {
       // The old session's question gets an answer that ends its turn, so it isn't left waiting.
       await questions.answerQuestion(job.t3ThreadId, state.requestId, Object.fromEntries(state.questions.map((item) => [item.id, 'Stop here: this thread moved to a fresh session. Do nothing more.'])), config.t3Bin)
         .catch((error: unknown) => logger.warn(`Could not close the question in the earlier T3 thread ${job.t3ThreadId}: ${errorMessage(error)}`));
@@ -760,8 +775,10 @@ export const createBot = ({
     const current = await replyVisibility({ channel: job.channel, threadTs: job.threadTs, messageTs: job.threadTs, user: job.requester, text: '', direct: false }, { fresh: true });
     const visibility = job.visibility && WIDTH[job.visibility] >= WIDTH[current] ? job.visibility : current;
     const knowledge = loadKnowledge!(visibility);
-    if (!job.knowledgePages) return { visibility, knowledge, revoked: visibility === 'owner' ? [] : ['(pages from before Serra recorded them)'] };
-    return { visibility, knowledge, revoked: job.knowledgePages.filter((page) => !knowledge.pages.includes(page)) };
+    if (!job.knowledgeRead) return { visibility, knowledge, revoked: visibility === 'owner' ? [] : ['(pages from before Serra recorded them)'] };
+    // A page is revoked for this audience when the version the worker read wasn't for them, or when the page as it is
+    // now isn't (narrowed, retired or removed since).
+    return { visibility, knowledge, revoked: Object.entries(job.knowledgeRead).filter(([page, audience]) => !mayUse(audience, visibility) || !knowledge.pages.includes(page)).map(([page]) => page) };
   };
 
   const revokedFor = async (job: Job): Promise<string[]> => (loadKnowledge ? (await revocation(job)).revoked : []);
@@ -780,7 +797,7 @@ export const createBot = ({
     if (!loadKnowledge) return false;
     const { visibility, knowledge, revoked } = await revocation(job);
     if (revoked.length === 0) {
-      if (!job.knowledgePages) updateJob(key, () => ({ visibility, knowledgePages: knowledge.pages }));
+      if (!job.knowledgeRead) updateJob(key, () => ({ visibility, knowledgeRead: knowledge.read }));
       return false;
     }
     const first = lines[0]!;
@@ -796,7 +813,7 @@ export const createBot = ({
       now: new Date(now()),
     });
     const t3ThreadId = await t3.startThread({ ...input, ...(job.branch ? { baseRef: job.branch } : {}) }, config.t3Bin);
-    updateJob(key, () => ({ t3ThreadId, visibility, knowledgePages: knowledge.pages, branch: input.branch, lastPostedRunId: null, watching: true, question: undefined, waitingInT3: false }));
+    updateJob(key, () => ({ t3ThreadId, visibility, knowledgeRead: knowledge.read, branch: input.branch, lastPostedRunId: null, watching: true, question: undefined, waitingInT3: false }));
     await reply(job.channel, job.threadTs, 'Some knowledge this thread used has changed, so I\'m carrying on in a fresh session.');
     logger.info(`Knowledge this thread used was taken back (${revoked.length} page(s)); continued ${key} in a fresh T3 thread ${t3ThreadId}`);
     events('knowledge_revoked', { key, t3ThreadId });

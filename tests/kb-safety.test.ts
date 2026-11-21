@@ -438,6 +438,7 @@ const botOn = async (profileDir: string) => {
   const started: string[] = []; const sent: string[] = []; const answered: unknown[] = []; const bases: string[] = []; const posted: string[] = []; const updated: string[] = [];
   const reviews: { heldBack?: string }[] = [];
   const outside = new Set<string>();
+  const hooks: { beforeShare?: () => void | Promise<void> } = {};
   let pendingQuestions: { requestId: string; questions: unknown[] }[] = [];
   let transcript: { role: string; runId: string; text: string }[] = [];
   let activeRunId: string | null = null;
@@ -459,8 +460,13 @@ const botOn = async (profileDir: string) => {
       showThread: async (id: string, _bin?: string, count = 1) => ({ thread: { threadId: id, link: 'https://t3/x', status: activeRunId ? 'running' : 'idle', latestRunId: activeRunId ?? (transcript.length ? 'run-1' : null), activeRunId, pendingRequestCount: pendingQuestions.length }, messages: transcript.slice(-count) }),
     } as never,
     questions: { listQuestions: async () => pendingQuestions as never, answerQuestion: async (...args: unknown[]) => { answered.push(args); } },
-    fetchBase: async () => {}, share: async (_c, text) => text,
-    reviewRequest: async (_c, text, opts) => { reviews.push(opts); return { reply: text, postedFor: null }; },
+    fetchBase: async () => {}, share: async (_c, text) => { await hooks.beforeShare?.(); return text; },
+    reviewRequest: async (_c, text, opts) => {
+      // As the real handler does, right before it would post to the review channel.
+      const ok = opts.mayPost ? await opts.mayPost() : true;
+      reviews.push(ok ? {} : { heldBack: 'some people in the review channel may not hear it' });
+      return { reply: text, postedFor: null };
+    },
     receive: async () => '', timing: { quietMs: 5, retryMs: 5 }, events: () => {},
   });
   const restrict = (page: string): void => {
@@ -476,12 +482,12 @@ const botOn = async (profileDir: string) => {
     activeRunId = 'run-2';
     transcript = [{ role: 'user', runId: 'run-2', text: 'brief' }, { role: 'assistant', runId: 'run-2', text: note }];
   };
-  return { bot, store, config, knowledge, started, sent, answered, bases, posted, updated, reviews, outside, restrict, finish, working, setQuestions: (list: typeof pendingQuestions) => { pendingQuestions = list; } };
+  return { bot, store, config, knowledge, started, sent, answered, bases, posted, updated, reviews, outside, hooks, restrict, finish, working, setQuestions: (list: typeof pendingQuestions) => { pendingQuestions = list; } };
 };
 
 test('the worker opens pages from the approved copy, and writes proposals to knowledge/proposals', async (t) => {
   const brief = await buildBrief(fixture(t), { via: 'dm', user: ROBIN, text: 'what are my rules?' });
-  assert.match(brief, /Notes are in [^\n]*\.knowledge-approved\. This is the index/);
+  assert.match(brief, /Notes are in [^\n]*\.knowledge-owner\/[0-9a-f]{16}\. This is the index/);
   assert.match(brief, /write it as a page under `[^`]*\/knowledge\/proposals\/`/);
 });
 
@@ -491,7 +497,7 @@ test('a thread from before audiences, and an answer to a pending question, also 
   await legacy.bot.handle({ channel: 'CTEAM', threadTs: '1.1', messageTs: '1.1', user: PRIYA, text: '<@UMOSS> how do I cut a release?', direct: true });
   const key = 'CTEAM:1.1';
   const job = legacy.store.getJob(key)!;
-  delete job.visibility; delete job.knowledgePages;
+  delete job.visibility; delete job.knowledgeRead;
   legacy.store.putJob(key, job);
   await legacy.bot.handle({ channel: 'CTEAM', threadTs: '1.1', messageTs: '1.2', user: PRIYA, text: '<@UMOSS> and after that?', direct: true });
   await new Promise((done) => setTimeout(done, 80));
@@ -510,7 +516,8 @@ test('a thread from before audiences, and an answer to a pending question, also 
   assert.equal(asked.answered.length, 1);
   assert.match(JSON.stringify(asked.answered[0]), /Stop here: this thread moved to a fresh session/, 'the old thread only gets told to stop, not the answer');
   assert.equal(asked.started.length, 2);
-  assert.match(asked.started[1]!, /Answer to "Which day\?": Tuesday/);
+  assert.match(asked.started[1]!, /Answered a question from the earlier session\. The question isn't repeated here/);
+  assert.doesNotMatch(asked.started[1]!, /Which day/, 'the earlier worker\'s question stays out of the fresh brief');
   assert.doesNotMatch(asked.started[1]!, /workflows\/release\.md/);
 });
 
@@ -587,7 +594,7 @@ test('round 7: one audience line per page, untagged pages stay owner-only throug
     .replace(/- Never promote, merge or undo a proposal[^\n]*\n/, '- When {{OWNER_NAME}} confirms a proposal in the thread, promote it: edit index.md.\n');
   writeFileSync(join(profileDir, 'brief.md'), old);
   const brief = await buildBrief(profileDir, { via: 'dm', user: ROBIN, text: 'what are my rules?' });
-  assert.match(brief, /Notes are in [^\n]*\.knowledge-approved\./);
+  assert.match(brief, /Notes are in [^\n]*\.knowledge-owner\/[0-9a-f]{16}\./);
   assert.match(brief, /write it as a page under `[^`]*\/knowledge\/proposals\/`/);
   assert.match(brief, /This overrides anything above about knowledge: never promote/);
 });
@@ -658,7 +665,7 @@ test('round 8: a thread whose knowledge was taken back posts no question card, n
   const older = await botOn(fixture(t));
   await older.bot.handle({ channel: 'CTEAM', threadTs: '8.1', messageTs: '8.1', user: PRIYA, text: '<@UMOSS> how do I cut a release?', direct: true });
   const job = older.store.getJob('CTEAM:8.1')!;
-  delete job.visibility; delete job.knowledgePages;
+  delete job.visibility; delete job.knowledgeRead;
   older.store.putJob('CTEAM:8.1', job);
   older.restrict('workflows/release.md');
   await older.finish('Run pnpm release:prepare, never on Thursday.');
@@ -678,7 +685,7 @@ test('round 8: accepting a hand edit validates it, and a custom brief without th
 
   writeFileSync(join(profileDir, 'brief.md'), 'You help {{OWNER_NAME}}. Notes are in {{KNOWLEDGE_DIR}}.\n\n{{KNOWLEDGE_INDEX}}\n\n{{THREAD_CONTEXT}}\n\n{{REQUEST}}\n');
   const brief = await buildBrief(profileDir, { via: 'dm', user: ROBIN, text: 'what are my rules?' });
-  assert.match(brief, /Notes are in [^\n]*\.knowledge-approved\./);
+  assert.match(brief, /Notes are in [^\n]*\.knowledge-owner\/[0-9a-f]{16}\./);
 });
 
 test('round 9: the next question of a form, a thread from before Serra recorded its pages, and the review channel never carry withheld knowledge', async (t) => {
@@ -704,7 +711,7 @@ test('round 9: the next question of a form, a thread from before Serra recorded 
   const older = await botOn(profileDir);
   await older.bot.handle({ channel: 'CTEAM', threadTs: '10.1', messageTs: '10.1', user: PRIYA, text: '<@UMOSS> how do I cut a release?', direct: true });
   const legacy = older.store.getJob('CTEAM:10.1')!;
-  delete legacy.visibility; delete legacy.knowledgePages;
+  delete legacy.visibility; delete legacy.knowledgeRead;
   older.store.putJob('CTEAM:10.1', legacy);
   rmSync(join(older.config.knowledgeDir, 'workflows/release.md'));
   older.knowledge.acceptDrift('workflows/release.md', null);
@@ -807,4 +814,45 @@ test('round 10: a channel shared outside since, an outside review channel, a pag
   await new Promise((done) => setTimeout(done, 50));
   assert.ok(form.updated.some((body) => /This question was closed/.test(body)));
   assert.ok(![...form.posted, ...form.updated].some((text) => /despite the freeze/.test(text)), 'the worker\'s question is never republished');
+});
+
+test('round 11: checks run right before each send, follow the version a worker read, and every closed form uses fixed copy', async (t) => {
+  // The channel is shared outside while the reply is being prepared (after the first check): it isn't posted.
+  const late = await botOn(fixture(t));
+  await late.bot.handle({ channel: 'CTEAM', threadTs: '19.1', messageTs: '19.1', user: PRIYA, text: '<@UMOSS> how do I cut a release?', direct: true });
+  late.hooks.beforeShare = () => { late.outside.add('CTEAM'); };
+  await late.finish('Run pnpm release:prepare, never on Thursday.');
+  assert.ok(!late.posted.some((text) => /release:prepare/.test(text)));
+  assert.ok(late.posted.some((text) => /made private, so I won't post it/.test(text)));
+
+  // The worker read a team-only version; the page is now replaced by one for outsiders. An outside review channel still
+  // can't get what the worker read.
+  const versions = await botOn(fixture(t));
+  (versions.config as { reviewChannel?: string }).reviewChannel = 'CREVIEW';
+  versions.outside.add('CREVIEW');
+  await versions.bot.handle({ channel: 'CTEAM', threadTs: '20.1', messageTs: '20.1', user: PRIYA, text: '<@UMOSS> open the PR for the release fix and ask for review', direct: true });
+  const release = join(versions.config.knowledgeDir, 'workflows/release.md');
+  versions.knowledge.savePage('workflows/release.md', readFileSync(release, 'utf8').replace('audience: team', 'audience: external'));
+  await versions.finish('Done. <review-request>Please review https://github.com/larchwood/moss/pull/5</review-request>');
+  assert.match(versions.reviews[0]?.heldBack ?? '', /may not hear/);
+
+  // The owner's thread reads a snapshot too: a page approved after it started isn't in it.
+  const owner = await botOn(fixture(t));
+  await owner.bot.handle({ channel: 'DROBIN', threadTs: '21.1', messageTs: '21.1', user: ROBIN, text: 'what are my rules?', direct: true });
+  const folder = /Notes are in ([^\s]+\.knowledge-owner\/[0-9a-f]{16})/.exec(owner.started[0]!)?.[1];
+  assert.ok(folder && existsSync(join(folder, 'owner/private-notes.md')));
+  const notes = join(owner.config.knowledgeDir, 'owner/private-notes.md');
+  owner.knowledge.savePage('owner/private-notes.md', `${readFileSync(notes, 'utf8')}- Added after the thread started.\n`);
+  assert.doesNotMatch(readFileSync(join(folder, 'owner/private-notes.md'), 'utf8'), /Added after/);
+
+  // A form answered in T3 meanwhile closes through polling: with the thread's knowledge taken back, fixed copy only.
+  const form = await botOn(fixture(t));
+  await form.bot.handle({ channel: 'CTEAM', threadTs: '22.1', messageTs: '22.1', user: PRIYA, text: '<@UMOSS> how do I cut a release?', direct: true });
+  const question = { id: 'q1', header: 'Day', question: 'Release on Thursday despite the freeze?', options: [{ label: 'Yes', description: '' }, { label: 'No', description: '' }] };
+  const job = form.store.getJob('CTEAM:22.1')!;
+  form.store.putJob('CTEAM:22.1', { ...job, question: { requestId: 'r22', questions: [question], ts: '22.5', nonce: 'n', index: 0, answers: { q1: 'Yes' }, runId: null } as never });
+  form.restrict('workflows/release.md');
+  await form.bot.poll();
+  assert.ok(form.updated.some((body) => /This question was closed/.test(body)));
+  assert.ok(!form.updated.some((body) => /despite the freeze/.test(body)));
 });
