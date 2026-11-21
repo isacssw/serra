@@ -127,7 +127,9 @@ test('the brief a task sends is the one the daemon sends for the same request, b
   const [start] = recorded();
   assert.equal(start!.input, daemon.brief
     .replace('Alex (your owner) asked (https://acme.slack.com/archives/D0123456789/p100):', 'Alex (your owner) asked:')
-    .replace('(None. The request started a new thread.)', appTaskThread('Alex')));
+    .replace('(None. The request started a new thread.)', appTaskThread('Alex'))
+    // Proposals go to a folder stamped with where they came from: the app's, or this Slack thread's.
+    .replace('proposals/from-slack/D0123456789-100-000/', 'proposals/from-app/'));
   assert.deepEqual(
     [start!.args[5], start!.args[7], start!.args[9], start!.args[11], start!.args.at(-2)],
     [daemon.branch, daemon.title, daemon.provider, daemon.model, daemon.project],

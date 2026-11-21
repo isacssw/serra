@@ -2,7 +2,7 @@ import { randomBytes } from 'node:crypto';
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { basename, dirname, join, relative, resolve, sep } from 'node:path';
 import { writeFileAtomic } from './config.ts';
-import type { Proposal, ProposalDiff } from './contracts.ts';
+import type { Proposal, ProposalDiff, ProposalSource } from './contracts.ts';
 import { approvalAudience, type Audience } from './owner-model.ts';
 import { insideKnowledge, knowledgePagePath, offlimitsBudgetAfter } from './knowledge.ts';
 import { createJournal } from './knowledge-journal.ts';
@@ -34,6 +34,20 @@ export interface FileChange {
 }
 
 /** What a promote, merge or discard did, and everything `undoProposalChange` needs to reverse it. */
+/** The file Serra writes in a thread's proposals folder to say who started that thread. Not a proposal. */
+export const PROPOSAL_SOURCE_FILE = '.from.json';
+
+/** The folder under knowledge/proposals/ a Slack thread's worker writes to. */
+export const threadProposalsFolder = (channel: string, threadTs: string): string => `from-slack/${channel}-${threadTs.replace(/\D/g, '-')}`;
+export const APP_PROPOSALS_FOLDER = 'from-app';
+
+/** Stamp a proposals folder with who started the thread that writes to it. Written by Serra, before the worker starts. */
+export const stampProposalsFolder = (knowledgeDir: string, folder: string, source: ProposalSource): void => {
+  const dir = join(knowledgeDir, PROPOSALS_DIR, folder);
+  mkdirSync(dir, { recursive: true, mode: 0o700 });
+  writeFileAtomic(join(dir, PROPOSAL_SOURCE_FILE), JSON.stringify(source, null, 2) + '\n', { mode: 0o600 });
+};
+
 export interface ProposalChange {
   /** Backup ID, the folder name under `backups/knowledge/`. */
   id: string;
@@ -199,6 +213,17 @@ export const createProposals = ({ knowledgeDir, backupDir, now = () => new Date(
 
   const pagePath = (relativePath: string, what: string): string => knowledgePagePath(root, relativePath, what);
 
+  /** Who started the thread whose worker wrote proposals in `id`'s folder, as Serra stamped it. */
+  const sourceOf = (id: string): ProposalSource | undefined => {
+    const folder = dirname(id);
+    if (folder === '.') return undefined;
+    try {
+      const stamp = JSON.parse(readFileSync(join(proposalsRoot, folder, PROPOSAL_SOURCE_FILE), 'utf8')) as Partial<ProposalSource>;
+      if (typeof stamp.who !== 'string' || typeof stamp.owner !== 'boolean' || (stamp.via !== 'slack' && stamp.via !== 'app')) return undefined;
+      return { who: stamp.who, owner: stamp.owner, via: stamp.via, ...(typeof stamp.link === 'string' ? { link: stamp.link } : {}) };
+    } catch { return undefined; }
+  };
+
   const describe = (id: string): Proposal => {
     const text = readFileSync(join(proposalsRoot, id), 'utf8');
     const fields = frontmatter(text);
@@ -214,8 +239,9 @@ export const createProposals = ({ knowledgeDir, backupDir, now = () => new Date(
       } catch { /* A target outside knowledge/ is ignored; the owner picks one when merging. */ }
     }
     const description = fields?.get('description')?.trim();
+    const from = sourceOf(id);
     return {
-      path: id, date: date && DATE.test(date) ? date : null, ...(description ? { description } : {}), target, ...(folder ? { folder } : {}),
+      path: id, date: date && DATE.test(date) ? date : null, ...(description ? { description } : {}), target, ...(folder ? { folder } : {}), ...(from ? { from } : {}),
     };
   };
 

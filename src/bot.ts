@@ -4,6 +4,7 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import type { webApi } from '@slack/bolt';
 import { fillBrief, needsOwner, NO_THREAD } from './brief.ts';
+import { stampProposalsFolder, threadProposalsFolder } from './proposals.ts';
 import type { BriefKnowledge } from './knowledge.ts';
 import { mayUse, type Visibility } from './owner-model.ts';
 import type { Config, MessageTrigger } from './config.ts';
@@ -47,6 +48,8 @@ const LOADING_REFRESH_MS = 60_000;
 const PING_THREAD_MS = 30 * 60_000;
 /** Posted instead of a reply written with knowledge the owner has since taken back. */
 const WITHHELD = 'Some of what I knew for this answer has since been made private, so I won\'t post it. Ask again and I\'ll answer with what I may share now.';
+/** Posted instead of a reply when Slack refuses, for good, to say who can see the thread: a setup problem. */
+const setupNotice = (code: string): string => `I can't check who can see this thread: my Slack app is missing a permission (${code}). I've told my owner how to fix it, and I'll answer here once it's done.`;
 /** Posted instead of a reply when Slack can't confirm who can see the thread right before posting. */
 const UNCONFIRMED = 'I couldn\'t confirm who can see this thread just now, so I haven\'t posted my answer here. Ask again in a minute and I\'ll try again.';
 /** Replies to "I'm here" that aren't a request. */
@@ -352,6 +355,18 @@ export const createBot = ({
    * Who can see a thread right now, asked of Slack twice, or null when Slack can't say. Before a post, null means
    * nothing goes out: not knowing isn't the same as knowing it's safe, and not the same as something made private.
    */
+  /**
+   * Slack errors that asking again won't fix: the app lacks a scope or its token is bad. A lookup that fails this way
+   * is a setup problem for the owner, not a blip to wait out, so a reply isn't held for ever.
+   */
+  const PERMANENT_SLACK_ERRORS = new Set(['missing_scope', 'not_allowed_token_type', 'not_authed', 'invalid_auth', 'account_inactive', 'token_revoked', 'no_permission']);
+  const setupProblems = new Map<string, string>();
+  const noteSetupProblem = (key: string, error: unknown): void => {
+    const code = (error as { data?: { error?: string } })?.data?.error ?? errorMessage(error);
+    if (PERMANENT_SLACK_ERRORS.has(code)) setupProblems.set(key, code); else setupProblems.delete(key);
+  };
+  const setupProblemFor = (job: Job): string | undefined => setupProblems.get(job.channel.startsWith('D') ? job.requester : job.channel);
+
   const visibilityNow = async (job: Job): Promise<Visibility | null> => {
     const msg = { channel: job.channel, threadTs: job.threadTs, messageTs: job.threadTs, user: job.requester, text: '', direct: false };
     if (msg.channel.startsWith('D')) {
@@ -372,9 +387,11 @@ export const createBot = ({
       // Team only on Slack's word: it says the channel isn't shared outside. Anything else counts as outside.
       const external = shared.is_ext_shared !== false || shared.is_pending_ext_shared === true;
       sharedChannels.set(msg.channel, { external, until: now() + VISIBILITY_TTL_MS });
+      setupProblems.delete(msg.channel);
       return external ? 'external' : 'team';
     } catch (error) {
       logger.debug(`Looking up ${msg.channel} failed: ${errorMessage(error)}`);
+      noteSetupProblem(msg.channel, error);
       return null;
     }
   };
@@ -401,6 +418,7 @@ export const createBot = ({
       return them?.team_id && home && them.team_id === home && !them.is_stranger ? 'team' : 'external';
     } catch (error) {
       logger.warn(`Could not tell where ${user} works, so their DM's brief carries only what outsiders may hear: ${errorMessage(error)}`);
+      noteSetupProblem(user, error);
       return null;
     }
   };
@@ -415,10 +433,19 @@ export const createBot = ({
 
     await fetchBase();
     const knowledge = loadKnowledge ? loadKnowledge(visibility) : null;
+    // Proposals this thread's worker writes land in a folder Serra stamps with who started the thread, so the owner sees
+    // where a proposal came from without taking the worker's word for it.
+    const proposalsFolder = loadKnowledge ? threadProposalsFolder(msg.channel, msg.threadTs) : undefined;
+    if (proposalsFolder) {
+      try {
+        stampProposalsFolder(config.knowledgeDir, proposalsFolder, { who: requester, owner: !trigger && msg.user === config.owner, via: 'slack', ...(permalink?.permalink ? { link: permalink.permalink } : {}) });
+      } catch (error) { logger.warn(`Could not record where ${msg.channel}:${msg.threadTs}'s proposals come from: ${errorMessage(error)}`); }
+    }
     const input = jobThreadInput(config, {
       // The branch and title come from what the person wrote, not the request with its attachment notes.
       summary,
       brief: fillBrief(config, knowledge ?? loadIndex(), { request, requester, permalink: permalink?.permalink ?? 'link unavailable', thread,
+        ...(proposalsFolder ? { proposalsFolder } : {}),
         ...(trigger ? { triggerInstructions: trigger.instructions } : {}) }),
       now: new Date(now()),
     });
@@ -472,7 +499,7 @@ export const createBot = ({
    * unconfirmed when Slack can't say who that is.
    */
   const stillMayPost = async (job: Job, text: string): Promise<string> => {
-    if (text === WITHHELD || text === UNCONFIRMED || !loadKnowledge) return text;
+    if (text === WITHHELD || text === UNCONFIRMED || text.startsWith('I can\'t check who can see this thread') || !loadKnowledge) return text;
     const { revoked, unknown } = await revocation(job);
     return unknown ? UNCONFIRMED : revoked.length > 0 ? WITHHELD : text;
   };
@@ -485,11 +512,17 @@ export const createBot = ({
     // A reply the worker wrote with knowledge the owner has since taken back isn't posted: it may repeat that text.
     // When Slack can't say who sees the thread, nothing is posted yet: the next poll tries again.
     const check = !QUIET.test(reply) && loadKnowledge ? await revocation(job) : null;
-    if (check?.unknown) {
+    const problem = check?.unknown ? setupProblemFor(job) : undefined;
+    if (check?.unknown && !problem) {
       logger.warn(`Could not confirm who can see ${key}; the reply waits for the next check.`);
       return;
     }
-    const text = check && check.revoked.length > 0 ? WITHHELD : reply;
+    if (problem) {
+      // Asking again won't help: the owner is told what to fix, and the thread gets a notice instead of the reply.
+      logger.error(`Slack won't say who can see ${key} (${problem}): update the Slack app's scopes (docs/configuration.md) and reinstall it.`);
+      events('failure', { key, error: `Slack won't say who can see this thread (${problem}). Update the Slack app's scopes and reinstall it; until then replies there are held.` });
+    }
+    const text = problem ? setupNotice(problem) : check && check.revoked.length > 0 ? WITHHELD : reply;
     const runMs = job.runSeen?.runId === runId ? now() - Date.parse(job.runSeen.at) : undefined;
     const measured = { key, runId, byWorker, runMs, jobAgeMs: now() - Date.parse(job.createdAt) };
     await clearProgress(key, job);
@@ -694,7 +727,8 @@ export const createBot = ({
       ? { answeredQuestionMessages: [...(latest.answeredQuestionMessages ?? []), messageTs].slice(-20) } : {};
     // When Slack can't say who sees the thread, the form doesn't move on: the next question is the worker's words.
     if (loadKnowledge && (await revocation(job)).unknown) {
-      await questionFeedback(job, 'I couldn\u2019t confirm who can see this thread just now, so I haven\u2019t taken that answer. Please answer again in a minute.');
+      const problem = setupProblemFor(job);
+      await questionFeedback(job, problem ? setupNotice(problem) : 'I couldn\u2019t confirm who can see this thread just now, so I haven\u2019t taken that answer. Please answer again in a minute.');
       return;
     }
     // The next question is the worker's own words too: a thread whose knowledge was taken back shows none, and the
@@ -890,7 +924,7 @@ export const createBot = ({
       : `\n\nThis thread started before Serra recorded branches, so earlier work may be on a branch this worktree doesn't start from: look for it with \`git branch --list '${config.id}/*'\` and its PR with \`gh pr list --author @me\`, and carry on from there.`;
     const input = jobThreadInput(config, {
       summary: 'continued with updated knowledge',
-      brief: fillBrief(config, knowledge, { request: `${followUpMessage(lines)}${earlier}\n\nThe thread's earlier messages from ${config.name} are left out here, because some knowledge they used is no longer available.`, requester: 'People in the thread', permalink: 'link unavailable', thread }),
+      brief: fillBrief(config, knowledge, { proposalsFolder: threadProposalsFolder(job.channel, job.threadTs), request: `${followUpMessage(lines)}${earlier}\n\nThe thread's earlier messages from ${config.name} are left out here, because some knowledge they used is no longer available.`, requester: 'People in the thread', permalink: 'link unavailable', thread }),
       now: new Date(now()),
     });
     const t3ThreadId = await t3.startThread({ ...input, ...(job.branch ? { baseRef: job.branch } : {}) }, config.t3Bin);

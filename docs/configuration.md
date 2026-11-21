@@ -165,13 +165,15 @@ Not covered yet: a worker on a linked remote T3 machine. Tools reads this Mac's 
 
 ## Brief placeholders
 
-The template supports BOT_NAME, BOT_ID, OWNER_NAME, OWNER_GITHUB, BASE_REF, PROJECT_PATH, REPOSITORIES, REQUESTER, PERMALINK, REQUEST, THREAD_CONTEXT, KNOWLEDGE_DIR, and KNOWLEDGE_INDEX, each enclosed in double braces. Unknown template placeholders fail before a worker is started. Values are replaced in one pass, so placeholders appearing inside Slack messages stay as text. A placeholder written in parentheses after a space, like ` ({{PERMALINK}})`, is left out with its parentheses when it is empty: a task started in the app has no Slack link, so its worker reads "Alex asked:".
+The template supports BOT_NAME, BOT_ID, OWNER_NAME, OWNER_GITHUB, BASE_REF, PROJECT_PATH, REPOSITORIES, REQUESTER, PERMALINK, REQUEST, THREAD_CONTEXT, KNOWLEDGE_DIR, KNOWLEDGE_INDEX, OWNER_PROFILE, VISIBILITY, PROPOSALS_DIR and POLICY_PATH, each enclosed in double braces. Unknown template placeholders fail before a worker is started. Values are replaced in one pass, so placeholders appearing inside Slack messages stay as text. A placeholder written in parentheses after a space, like ` ({{PERMALINK}})`, is left out with its parentheses when it is empty: a task started in the app has no Slack link, so its worker reads "Alex asked:".
 
 ## Slack names in the app
 
 The app's Jobs screen and notifications show who asked by their Slack display name (or real name) and channels as `#name`, instead of IDs like `U0EXAMPLE01`. The app looks them up with the bot token, through its configured source (Keychain, 1Password or `.env`), using `users.info` (scope `users:read`) and `conversations.info` (scopes `channels:read`, `groups:read` and `mpim:read`). DMs show as "DM" without a lookup. Names are kept for six hours; a lookup that fails shows the raw ID and is retried after ten minutes. Rows never wait for a lookup: names fill in when they arrive.
 
-The supplied manifests include these scopes. For an app created from an older manifest, add `channels:read`, `groups:read` and `mpim:read` under OAuth & Permissions and reinstall the app to the workspace. Until then, people still show by name and channels by ID.
+The supplied manifests include these scopes. For an app created from an older manifest, add `channels:read`, `groups:read` and `mpim:read` under OAuth & Permissions and reinstall the app to the workspace.
+
+**The bot needs them too.** Before it posts in a channel, the bot asks Slack who can see it, so a reply written with team-only knowledge never lands in a channel shared with another company. Without these scopes Slack won't say, so the bot posts a short notice instead of its reply in channels, and the app shows a failure naming the missing scope. DMs with you aren't affected.
 
 ## Incoming attachments
 

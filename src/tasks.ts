@@ -13,6 +13,7 @@ import { join, resolve } from 'node:path';
 import { fillBrief, renderBrief, type BriefInput } from './brief.ts';
 import { codeRoot, loadConfig, writeFileAtomic, type Config } from './config.ts';
 import { createKnowledge } from './knowledge.ts';
+import { APP_PROPOSALS_FOLDER, stampProposalsFolder } from './proposals.ts';
 import { jobThreadInput, run, showThread, startThread, threadPullRequest } from './t3.ts';
 import type { StartThreadInput } from './types.ts';
 
@@ -89,7 +90,7 @@ export const taskRequest = (value: unknown): string => {
 
 /** What `fillBrief` gets for a task: the owner asked, outside Slack, in no earlier thread. */
 export const taskBriefInput = (config: Pick<Config, 'ownerName'>, request: string): BriefInput =>
-  ({ request, requester: `${config.ownerName} (your owner)`, permalink: APP_TASK_PERMALINK, thread: appTaskThread(config.ownerName) });
+  ({ request, requester: `${config.ownerName} (your owner)`, permalink: APP_TASK_PERMALINK, thread: appTaskThread(config.ownerName), proposalsFolder: APP_PROPOSALS_FOLDER });
 
 /** The brief a task's worker gets: the daemon's `fillBrief` with the profile's brief and knowledge index. */
 export const taskBrief = (config: Config, request: string): string =>
@@ -122,6 +123,8 @@ export const previewTask = (profileDir: string, request: unknown): string => tas
 export const startTask = async (profileDir: string, request: unknown, deps: TaskDeps = {}): Promise<StartedTask> => {
   const text = taskRequest(request);
   const config = taskConfig(profileDir);
+  // A task is the owner's own: its proposals folder says so, as a Slack thread's says who started it.
+  stampProposalsFolder(config.knowledgeDir, APP_PROPOSALS_FOLDER, { who: config.ownerName, owner: true, via: 'app' });
   return startRecorded(profileDir, config, taskThreadInput(config, text, (deps.now ?? (() => new Date()))()), deps);
 };
 

@@ -71,6 +71,23 @@ export interface Proposal {
    * exist yet. The knowledge interview (APP-26) names one, so promoting into a fresh profile needs no folder first.
    */
   folder?: string;
+  /**
+   * Who started the thread whose worker wrote it, as Serra recorded when the thread started: not the worker's own
+   * `sources:` line. Absent for proposals written outside a recorded thread (the interview, an older brief).
+   */
+  from?: ProposalSource;
+}
+
+/** Where a proposal came from, stamped by Serra on the folder a thread's worker writes proposals to. */
+export interface ProposalSource {
+  /** The person who started the thread, as Slack names them, or the owner for an app task. */
+  who: string;
+  /** Whether that person is the owner. */
+  owner: boolean;
+  /** Where: "Slack" or "the app". */
+  via: 'slack' | 'app';
+  /** The Slack link to the thread's first message, when there is one. */
+  link?: string;
 }
 
 /** What the review screen shows side by side. */

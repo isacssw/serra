@@ -4,7 +4,7 @@
 // written to knowledge/proposals/, and the main process tells this screen as soon as a file lands.
 import { useCallback, useEffect, useId, useState, type ReactNode } from 'react';
 import { ChevronRight, FileText, Folder, LoaderCircle, MessagesSquare } from 'lucide-react';
-import type { Proposal, ProposalDiff } from '../../../src/contracts.ts';
+import type { Proposal, ProposalDiff, ProposalSource } from '../../../src/contracts.ts';
 import type { ProposalTargets } from '../../../src/proposals.ts';
 import type { UndoHandle } from '../../main/bridge.ts';
 import type { InterviewPreview } from '../../../src/tasks.ts';
@@ -260,7 +260,7 @@ export const Proposals = () => {
                   <h2 className="text-lg font-semibold tracking-tight">{title}</h2>
                   {diff.proposal.description && <p className="text-sm text-muted">{diff.proposal.description}</p>}
                   {diff.proposal.target && <p className="text-xs text-muted">Changes <code>{diff.proposal.target}</code></p>}
-                  <Sources text={diff.proposed} />
+                  <Sources text={diff.proposed} from={diff.proposal.from} />
                 </div>
                 <DiffView current={landing(diff, folder)} proposed={asWritten(diff, folder, picked)} />
                 {folders.length > 0 ? (
@@ -369,12 +369,23 @@ const sourcesOf = (text: string): string[] => {
   return items;
 };
 
-const Sources = ({ text }: { text: string }) => {
+const Sources = ({ text, from }: { text: string; from?: ProposalSource }) => {
   const sources = sourcesOf(text);
+  const opened = (href: string) => (event: { preventDefault: () => void }) => { event.preventDefault(); void serra()?.app.openExternal(href); };
   return (
-    <p className={cx('text-xs', sources.length ? 'text-muted' : 'text-warn')}>
-      {sources.length ? <>From {sources.join('; ')}. Check that it&rsquo;s what you said.</> : 'This proposal doesn\u2019t say where it came from.'}
-    </p>
+    <div className="flex flex-col gap-0.5 text-xs">
+      {from ? (
+        <p className={from.owner ? 'text-muted' : 'text-warn'}>
+          {from.owner
+            ? (from.via === 'app' ? 'From a task you started in the app.' : 'From a Slack thread you started.')
+            : `From a Slack thread ${from.who} started. Approve only what you said yourself.`}
+          {from.link && <>{' '}<a href={from.link} onClick={opened(from.link)} className="text-ink underline underline-offset-2 hover:no-underline focus-visible:outline-2 focus-visible:outline-focus">Open the thread</a></>}
+        </p>
+      ) : (
+        <p className="text-muted">Serra didn&rsquo;t record which thread wrote this (the interview and older briefs write here directly).</p>
+      )}
+      <p className="text-muted">{sources.length ? <>The worker&rsquo;s sources: {sources.join('; ')}.</> : 'The worker gave no sources.'}</p>
+    </div>
   );
 };
 

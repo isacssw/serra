@@ -17,7 +17,11 @@ export const renderBrief = (template: string, values: Record<string, string>): s
     return `${open ?? ''}${value}${close ?? ''}`;
   });
 
-export interface BriefInput { request: string; requester: string; permalink: string; thread: string; triggerInstructions?: string }
+export interface BriefInput {
+  request: string; requester: string; permalink: string; thread: string; triggerInstructions?: string;
+  /** The folder under knowledge/proposals/ this thread's worker writes proposals to, stamped with who started it. */
+  proposalsFolder?: string;
+}
 
 /** What a worker's thread context says when the request started a new Slack thread. */
 export const NO_THREAD = '(None. The request started a new thread.)';
@@ -70,7 +74,7 @@ export const fillBriefText = (template: string, config: Config, knowledge: strin
     // A brief that names where proposals go reads pages from the approved copy; an older one, from knowledge/ itself.
     // Workers read pages from the approved copy whatever the brief says; proposals have their own path above.
     KNOWLEDGE_DIR: readDir ?? config.knowledgeDir,
-    PROPOSALS_DIR: join(config.knowledgeDir, 'proposals'),
+    PROPOSALS_DIR: join(config.knowledgeDir, 'proposals', input.proposalsFolder ?? ''),
     POLICY_PATH: join(config.profileDir, 'policy.md'),
     KNOWLEDGE_INDEX: index,
     OWNER_PROFILE: about.replaceAll('</about-owner>', '&lt;/about-owner&gt;') || `(${config.ownerName} hasn't confirmed anything about themselves for this audience yet.)`,

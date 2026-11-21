@@ -446,6 +446,7 @@ const botOn = async (profileDir: string) => {
   const client = {
     users: { info: async ({ user }: { user: string }) => ({ user: { real_name: user, team_id: 'THOME' } }) },
     conversations: { replies: async () => ({ messages: hooks.history }), info: async ({ channel }: { channel: string }) => {
+      if (outside.has('SCOPE')) throw Object.assign(new Error('An API error occurred: missing_scope'), { data: { error: 'missing_scope' } });
       if (outside.has('FAIL') || outside.has(`FAIL:${channel}`)) throw new Error('ratelimited');
       return { channel: { id: channel, is_ext_shared: outside.has(channel), is_pending_ext_shared: false } };
     } },
@@ -500,7 +501,7 @@ const botOn = async (profileDir: string) => {
 test('the worker opens pages from the approved copy, and writes proposals to knowledge/proposals', async (t) => {
   const brief = await buildBrief(fixture(t), { via: 'dm', user: ROBIN, text: 'what are my rules?' });
   assert.match(brief, /Notes are in [^\n]*\.knowledge-owner\/[0-9a-f]{16}\. This is the index/);
-  assert.match(brief, /write it as a page under `[^`]*\/knowledge\/proposals\/`/);
+  assert.match(brief, /write it as a page under `[^`]*\/knowledge\/proposals\/from-slack\/[^`]+\/`/);
 });
 
 test('a thread from before audiences, and an answer to a pending question, also move to a fresh thread when knowledge is taken back', async (t) => {
@@ -607,7 +608,7 @@ test('one audience line per page, untagged pages stay owner-only through approva
   writeFileSync(join(profileDir, 'brief.md'), old);
   const brief = await buildBrief(profileDir, { via: 'dm', user: ROBIN, text: 'what are my rules?' });
   assert.match(brief, /Notes are in [^\n]*\.knowledge-owner\/[0-9a-f]{16}\./);
-  assert.match(brief, /write it as a page under `[^`]*\/knowledge\/proposals\/`/);
+  assert.match(brief, /write it as a page under `[^`]*\/knowledge\/proposals\/from-slack\/[^`]+\/`/);
   assert.match(brief, /This overrides anything above about knowledge: never promote/);
 });
 
@@ -1035,4 +1036,32 @@ test('during a Slack outage a form doesn\'t move on, a review request needs a co
   late.outside.delete('FAIL');
   await late.bot.poll();
   assert.equal(late.posted.filter((text) => /release:prepare/.test(text)).length, 1);
+});
+
+test('a Slack app without the scope to describe channels gets a setup notice in the thread, not a reply held for ever', async (t) => {
+  const run = await botOn(fixture(t));
+  await run.bot.handle({ channel: 'CTEAM', threadTs: '33.1', messageTs: '33.1', user: PRIYA, text: '<@UMOSS> how do I cut a release?', direct: true });
+  run.outside.add('SCOPE');
+  await run.finish('Run pnpm release:prepare.');
+  assert.ok(run.posted.some((text) => /missing a permission \(missing_scope\)/.test(text)), 'the thread hears why');
+  assert.ok(!run.posted.some((text) => /release:prepare/.test(text)));
+  const before = run.posted.length;
+  await run.bot.poll();
+  assert.equal(run.posted.length, before, 'posted once, not on every poll');
+});
+
+test('Serra stamps where a thread\'s proposals come from, and the worker is told to leave other proposals alone', async (t) => {
+  const profileDir = fixture(t);
+  const run = await botOn(profileDir);
+  await run.bot.handle({ channel: 'CTEAM', threadTs: '34.1', messageTs: '34.1', user: PRIYA, text: '<@UMOSS> remember that releases need two reviewers', direct: true });
+  const folder = /write it as a page under `([^`]+)\/`/.exec(run.started[0]!)?.[1];
+  assert.ok(folder && folder.endsWith(join('proposals', 'from-slack', 'CTEAM-34-1')), folder);
+  assert.match(run.started[0]!, /Don't open other files under `proposals\/`/);
+  writeFileSync(join(folder!, '2026-11-21-reviews.md'), '---\ntype: rule\ndescription: Reviews\nwritten: 2026-11-21\nverified: no\nsources:\n  - Owner in DM, 2026-11-21\n---\n# Reviews\n\n- Two reviewers.\n');
+  const listed = createProposals({ knowledgeDir: join(profileDir, 'knowledge') }).listProposals().find((item) => item.path.endsWith('2026-11-21-reviews.md'));
+  assert.deepEqual(listed?.from && { who: listed.from.who, owner: listed.from.owner, via: listed.from.via }, { who: PRIYA, owner: false, via: 'slack' }, 'the worker claims "Owner in DM"; Serra knows Priya started the thread');
+  // The owner's own thread is stamped as theirs.
+  await run.bot.handle({ channel: 'DROBIN', threadTs: '35.1', messageTs: '35.1', user: ROBIN, text: 'remember: no deploys on Friday', direct: true });
+  const own = JSON.parse(readFileSync(join(profileDir, 'knowledge', 'proposals', 'from-slack', 'DROBIN-35-1', '.from.json'), 'utf8'));
+  assert.equal(own.owner, true);
 });
