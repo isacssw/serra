@@ -8,8 +8,10 @@ Slack is the only chat channel in this alpha; others are planned. Each engineer 
 
 > **Alpha.** Expect rough edges and breaking changes between versions. Read [Alpha limits](#alpha-limits) before you point it at a repository that matters.
 
-**New here?** [What you need](#what-you-need) → [Get the app](#1-get-the-app) → [Install it](#2-install-it) → [First run](#3-first-run).
-**Already running Serra or another bot?** See [Update](#updating) or [Migrate](#migrating-from-an-older-setup).
+- **New here?** [What you need](#what-you-need) → [Get the app](#1-get-the-app) → [Install it](#2-install-it) → [First run](#3-first-run).
+- **On the Serra app, alpha.2 or older?** [Install alpha.3 by hand once](#updating).
+- **Running Serra from a checkout?** [Move to the app](#from-serra-run-from-a-checkout-pnpm-run-setup-pnpm-bot-activate).
+- **Coming from another self-hosted bot?** [Migrate](#from-another-self-hosted-bot-not-serra).
 
 - [What you need](#what-you-need)
 - [1. Get the app](#1-get-the-app) · [2. Install it](#2-install-it) · [3. First run](#3-first-run) · [4. Teach it how you work](#4-teach-it-how-you-work-optional)
@@ -24,9 +26,9 @@ Slack is the only chat channel in this alpha; others are planned. Each engineer 
 | What | Why | Check |
 |---|---|---|
 | A Mac with Apple silicon | The released app is Apple silicon only for now. On an Intel Mac, [build it yourself](CONTRIBUTING.md#build-the-app). | Apple menu › About This Mac |
-| [T3 Code](https://github.com/pingdotgg/t3code) running, with its `t3` command line | Serra starts and reads T3 threads through it. Default path `~/.t3/bin/t3`. | `~/.t3/bin/t3 thread list --json` |
+| [T3 Code](https://github.com/pingdotgg/t3code) running, with its `t3` command line | Serra starts and reads T3 threads through it. Default path `~/.t3/bin/t3`. | `~/.t3/bin/t3 thread list --project /path/to/repo --json` |
 | A coding provider signed in inside T3 Code (Claude, Codex, …) | T3 runs the actual agent. Serra doesn't ask for provider keys. | Start a thread in T3 by hand |
-| Node.js 24, or 22.18+, with pnpm or Corepack | The app builds and runs the background bot with your Node. Corepack ships with Node. | `node -v` |
+| Node.js 24+, or 22.18+ on the 22 line, with pnpm | The app builds and runs the background bot with your Node. Get pnpm with `corepack enable pnpm`, or `npm install -g pnpm@10` if your Node has no Corepack. | `node -v`, `pnpm -v` |
 | Git and the GitHub CLI, signed in | The agent commits, pushes and opens PRs as you. | `gh auth status` |
 | Permission to create a Slack app in your workspace | Each bot is its own Slack app. Ask an admin if app approval is required. | — |
 
@@ -78,18 +80,22 @@ Open **Knowledge › Proposals › Start interview**. A T3 thread interviews you
 
 ## Updating
 
-**On v0.1.0-alpha.3 or later:** Serra updates itself. **Settings › Updates** checks GitHub Releases (pre-releases included while you're on an alpha), shows the notes, downloads and verifies against `SHA256SUMS`. Click **Restart to update**. The background bot then moves to the new version on its own once no job is running; new requests wait (⌛) until it's back.
+**On v0.1.0-alpha.3 or later:** Serra updates itself from GitHub Releases (pre-releases included while you're on an alpha). It checks on its own every few hours.
 
-**On alpha.2 or older:** install alpha.3 by hand, once. Quit Serra (menubar icon › Quit), then do [Get the app](#1-get-the-app) and [Install it](#2-install-it) again, replacing the old copy. macOS asks to allow it once more. From then on, updates are automatic.
+1. **Settings › Updates** › **Check for updates** (or wait), then **Download**. The download is verified against `SHA256SUMS`.
+2. **Restart to update**. If Serra can't replace itself (for example it runs from the disk image), it offers **Open installer**: drag the new copy to Applications.
+3. The background bot moves to the new version on its own once no job is running. New requests wait (⌛) until it's back. A bot you stopped stays stopped: **Update now** on the same screen moves it.
 
-**What a reinstall or update keeps.** Everything about your bot lives outside the app, so replacing `Serra.app` loses nothing:
+**On alpha.2 or older:** install alpha.3 by hand, once. Open the Serra window and press **⌘Q**, then do [Get the app](#1-get-the-app) and [Install it](#2-install-it) again, replacing the old copy. macOS asks to allow it once more. From then on, updates are automatic. If you had set **Settings › Worker › Developer: update from a checkout** (alpha.2 called it Update source), clear **Checkout path** and **Branch**, or the bot keeps following that checkout instead of the app.
+
+**What a reinstall or update keeps.** Your bot's data lives outside the app, so replacing `Serra.app` keeps it. The bot keeps running while the app is replaced; its switch to the new version then rewrites the service file and removes all but the last two bot builds in `releases/`.
 
 | What | Where |
 |---|---|
 | Your bot's profile: settings, knowledge, brief and policy, job state, logs | `~/.local/share/serra/<bot-id>/` |
-| Slack tokens | macOS Keychain (service `dev.serra.<bot-id>`), your 1Password vault, or the profile's `.env` |
+| Slack tokens | macOS Keychain (by default service `dev.serra.<bot-id>`), your 1Password vault, or the profile's `.env` |
 | Which profile the app opens, window preferences | `~/Library/Application Support/serra/prefs.json` |
-| The background service | `~/Library/LaunchAgents/dev.serra.<bot-id>.plist`; it keeps running while the app is replaced |
+| The background service | `~/Library/LaunchAgents/dev.serra.<bot-id>.plist` (the default label) |
 
 ## Migrating from an older setup
 
@@ -98,13 +104,14 @@ Open **Knowledge › Proposals › Start interview**. A T3 thread interviews you
 Your profile already works with the app; there's nothing to copy.
 
 1. [Get](#1-get-the-app) and [install](#2-install-it) the app.
-2. Open it. If you have exactly one profile under `~/.local/share/serra/`, the app opens it. If you have several, or yours lives elsewhere, point the app at it once:
+2. Open it. If you have exactly one profile under `~/.local/share/serra/`, the app opens it. If you have several, or yours lives elsewhere, quit Serra (⌘Q) and start it once with your profile's absolute path:
 
    ```sh
-   open -a Serra --args --profile "$HOME/.local/share/serra/<bot-id>"
+   open -a Serra --args --profile "$HOME/.local/share/serra/friday"   # use your own bot ID or folder
    ```
 
-3. Your running service is kept. When no job is running, the app moves the bot onto the app's own code and version, and from then on it follows the app's updates. You no longer need `git pull` and `pnpm bot prepare`/`activate`.
+3. **Service already installed** (`pnpm bot activate`): it's kept. When no job is running, the app moves the bot onto the app's own code and version, and from then on it follows the app's updates. You no longer need `git pull` and `pnpm bot prepare`/`activate`. If the profile has an update source (`updates` in `profile.json`), clear **Settings › Worker › Developer: update from a checkout** first.
+4. **Only ran it in a terminal** (`pnpm start`): stop that copy (Ctrl-C), then finish the remaining steps in **Settings › Diagnostics › Setup guide**; the last one installs the service.
 
 To keep running the bot from your checkout instead (to work on Serra), set **Settings › Worker › Developer: update from a checkout**. See [CONTRIBUTING.md](CONTRIBUTING.md#update-a-bot-from-your-checkout).
 
@@ -114,11 +121,11 @@ There is no importer: Serra can't read another bot's config, state or memory. Se
 
 | What you had | How to bring it over |
 |---|---|
-| **Slack app** | Easiest: let the wizard create a **new** Slack app, then retire the old bot. To reuse your old app instead, replace its manifest (your app › **App Manifest**) with the profile's `manifest.json`, reinstall it, and paste its tokens in step 3. Stop the old bot first: two programs on one Socket Mode app split the messages between them. |
+| **Slack app** | Easiest: let the wizard create a **new** Slack app, then retire the old bot. To reuse your old app: stop the old bot first (two programs on one Socket Mode app split the messages between them). In wizard step 2, click **Copy manifest** instead of Open Slack, paste it over your app's manifest (your app › **App Manifest**), reinstall the app, then click **I have both tokens** and paste its tokens in step 3. |
 | **Owner, allowed users, repositories** | Enter them in the wizard, then **Settings › People** and **Settings › Repositories**. They are the `owner`, `allowedUsers` and `repositories` fields of `profile.json` ([all fields](docs/configuration.md#profile-format)). |
 | **Model and provider** | **Settings › Worker** (`worker.provider`, `worker.model`). |
 | **Instructions / system prompt** | Put your own rules in **Brief & policy** (`policy.md` in the profile). Keep the generated `brief.md`; it holds Serra's safety rules. |
-| **About-me / memory / knowledge notes** | Two ways. Run the [interview](#4-teach-it-how-you-work-optional) with your old notes at hand. Or save each note as a Markdown file in `<profile>/knowledge/proposals/`, with the page header described in [knowledge/README.md](templates/knowledge/README.md), and approve each one in **Knowledge › Proposals**. |
+| **About-me / memory / knowledge notes** | Two ways. Run the [interview](#4-teach-it-how-you-work-optional) with your old notes at hand. Or save each note as a Markdown file in `<profile>/knowledge/proposals/`, with the page header described in [knowledge/README.md](templates/knowledge/README.md) (start with `audience: owner`, so only you hear it), and click **Add page** on each one in **Knowledge › Proposals**. |
 | **Thread history, open conversations, scheduled jobs** | Not carried over. Serra starts with empty job state. |
 
 ## How it behaves in Slack
@@ -154,28 +161,30 @@ Every field and file: [docs/configuration.md](docs/configuration.md). Include th
 
 Start with **Settings › Diagnostics**: most problems show up as a FAIL with the fix.
 
-- **"Serra can't be opened" / "is damaged":** see [Install it](#2-install-it), or run `xattr -dr com.apple.quarantine /Applications/Serra.app`.
+- **"Serra can't be opened":** allow it once, as in [Install it](#2-install-it).
+- **"Serra is damaged":** download the `.dmg` again, [check it](#1-get-the-app), and copy Serra from it again. If it still says so, `xattr -dr com.apple.quarantine /Applications/Serra.app` clears the download flag.
 - **Tokens FAIL / `invalid_auth`:** both tokens must come from the same Slack app; the bot token starts `xoxb-`, the app token `xapp-` with `connections:write`. Reinstall the Slack app after changing scopes.
 - **No reply in Slack:** is the bot invited to the channel? Are you the owner or in **Settings › People**? Check `logs/bot.log` in the profile.
 - **T3 checks FAIL:** start T3 Code and add the exact repository folder from step 1 as a T3 project. If `t3` lives elsewhere, set its path in the wizard or `t3Bin` in `profile.json`.
-- **"No supported Node" or "neither pnpm nor corepack":** install Node 24 (or 22.18+) and run `corepack enable pnpm`.
+- **"No supported Node" or "neither pnpm nor corepack":** install Node 24+ (or 22.18+) and run `corepack enable pnpm`, or `npm install -g pnpm@10`.
 - **GitHub account FAIL:** `gh auth login` as the login in your profile.
 - **Service stops at start, naming `~/Documents`, `~/Desktop` or `~/Downloads`:** allow `node` under System Settings › Privacy & Security › Files and Folders, or keep the repository elsewhere (e.g. `~/code`).
 - **The app opened the wrong profile, or none:** `open -a Serra --args --profile "$HOME/.local/share/serra/<bot-id>"`.
 
 ## Uninstall
 
-1. Stop and remove the background service:
+Set your bot ID first (the profile's folder name), then:
 
-   ```sh
-   launchctl bootout "gui/$(id -u)/dev.serra.<bot-id>"
-   rm -f ~/Library/LaunchAgents/dev.serra.<bot-id>.plist
-   ```
+```sh
+BOT=friday                                                  # your bot ID
+launchctl bootout "gui/$(id -u)/dev.serra.$BOT"             # stop the background service
+rm -f "$HOME/Library/LaunchAgents/dev.serra.$BOT.plist"
+security delete-generic-password -s "dev.serra.$BOT" -a SLACK_BOT_TOKEN   # only if you used the Keychain
+security delete-generic-password -s "dev.serra.$BOT" -a SLACK_APP_TOKEN
+rm -rf "$HOME/.local/share/serra/$BOT"                      # the profile: settings, knowledge, state
+```
 
-2. Quit Serra, move it to the Trash, and remove `~/Library/Application Support/serra/`.
-3. Delete the profile (tokens in `.env`, knowledge, state): `rm -rf "$HOME/.local/share/serra/<bot-id>"`.
-4. If you used the Keychain: `security delete-generic-password -s dev.serra.<bot-id> -a SLACK_BOT_TOKEN` (and again with `SLACK_APP_TOKEN`).
-5. Delete the Slack app at [api.slack.com/apps](https://api.slack.com/apps).
+Then quit Serra (⌘Q), move it to the Trash, remove `~/Library/Application Support/serra/`, and delete the Slack app at [api.slack.com/apps](https://api.slack.com/apps). If you changed the service label (`serviceLabel` in `profile.json`), use that instead of `dev.serra.$BOT`.
 
 Worktrees the bot made stay in your repository: `git worktree list`, then `git worktree remove <path>`.
 

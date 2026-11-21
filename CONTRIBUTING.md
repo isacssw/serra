@@ -87,15 +87,18 @@ To try a change against a real bot, use a separate Slack app and profile from th
 Everything the app's wizard does is also a command. The examples use the bot ID `friday`.
 
 ```sh
-pnpm run setup                                                   # asks the same questions as the wizard, creates ~/.local/share/serra/<bot-id>
-pnpm run doctor --profile "$HOME/.local/share/serra/friday"      # PASS/FAIL per check; --offline skips Slack, GitHub and T3
-pnpm start --profile "$HOME/.local/share/serra/friday"           # run in the foreground; Ctrl-C stops it
-pnpm bot interview --profile "$HOME/.local/share/serra/friday"   # the knowledge interview
+pnpm run setup   # asks the same questions as the wizard, creates ~/.local/share/serra/<bot-id>
 ```
 
 Use `pnpm run setup` and `pnpm run doctor` with `run`: `pnpm setup` and `pnpm doctor` are pnpm's own commands. Setup can also read a file: copy [`examples/profile.json`](examples/profile.json), edit it, and run `pnpm run setup --config my-profile.json --profile "$HOME/.local/share/serra/friday"`.
 
-For the Slack app, paste the profile's `manifest.json` at [api.slack.com/apps](https://api.slack.com/apps) › **Create New App** › **From a manifest**, install it, and put the `xoxb-` and `xapp-` (`connections:write`) tokens in the profile's `.env`, or in the Keychain: `pbpaste | pnpm bot secrets set SLACK_BOT_TOKEN --keychain --profile …` ([tokens](docs/configuration.md#tokens-and-precedence)).
+Then the Slack app: paste the profile's `manifest.json` at [api.slack.com/apps](https://api.slack.com/apps) › **Create New App** › **From a manifest**, install it, and put the `xoxb-` and `xapp-` (`connections:write`) tokens in the profile's `.env`, or in the Keychain: `pbpaste | pnpm bot secrets set SLACK_BOT_TOKEN --keychain --profile …` ([tokens](docs/configuration.md#tokens-and-precedence)). Then:
+
+```sh
+pnpm run doctor --profile "$HOME/.local/share/serra/friday"      # PASS/FAIL per check; --offline skips the Slack, GitHub and T3 connections
+pnpm start --profile "$HOME/.local/share/serra/friday"           # run in the foreground; Ctrl-C stops it
+pnpm bot interview --profile "$HOME/.local/share/serra/friday"   # the knowledge interview
+```
 
 To run it in the background as a launchd service:
 
@@ -106,7 +109,7 @@ pnpm bot status   --profile "$HOME/.local/share/serra/friday"   # also: restart,
 tail -f "$HOME/.local/share/serra/friday/logs/bot.log"
 ```
 
-The service runs a copy from the profile's `releases/`, so you can keep changing the checkout. To move it to new code: `git pull`, `pnpm install --frozen-lockfile`, then `prepare` and `activate` again. Every `pnpm bot` command is in [docs/configuration.md](docs/configuration.md).
+The service runs a copy from the profile's `releases/`, so you can keep changing the checkout. To move it to new code: `git pull`, `pnpm install --frozen-lockfile`, then `prepare` and `activate` again. `pnpm bot --help` lists every command; [docs/configuration.md](docs/configuration.md) explains them.
 
 ### Update a bot from your checkout
 
