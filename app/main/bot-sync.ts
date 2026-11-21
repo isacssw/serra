@@ -51,7 +51,8 @@ export interface BotSyncInput {
  */
 export const botSyncDecision = (input: BotSyncInput): { sync: BotSync; action: BotSyncAction } => {
   if (input.mode === 'developer' || !input.follows) return { sync: { state: 'manual' }, action: 'none' };
-  if (input.activation === 'switching') return { sync: { state: 'interrupted' }, action: 'none' };
+  // A switch this app is running writes `switching` too; only one nobody is running is interrupted.
+  if (input.activation === 'switching' && !input.running) return { sync: { state: 'interrupted' }, action: 'none' };
   if (!input.active) return { sync: { state: 'not-installed' }, action: 'none' };
   const from = input.active.appVersion ?? null;
   const to = input.appVersion;

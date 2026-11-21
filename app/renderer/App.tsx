@@ -108,6 +108,7 @@ const Shell = () => {
       <FollowNavigation />
       <Shortcuts />
       <ScrollToTop />
+      <Rendered />
     </div>
   );
 };

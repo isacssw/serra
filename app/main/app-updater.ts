@@ -66,6 +66,10 @@ export interface AppUpdaterDeps {
   log?: (line: string) => void;
 }
 
+const helperAlive = (pid: number): boolean => {
+  try { process.kill(pid, 0); return true; } catch (error) { return (error as NodeJS.ErrnoException).code !== 'ESRCH'; }
+};
+
 /** The bundle identifier the update must carry (electron-builder.yml `appId`). */
 export const BUNDLE_ID = 'dev.serra.app';
 
@@ -127,6 +131,10 @@ shift 6
 # The rest are the arguments Serra was started with, so it opens again the same way.
 relaunch() { if [ "$#" -gt 0 ]; then open -n "$target" --args "$@"; else open -n "$target"; fi; }
 exec >>"$log" 2>&1
+# One swap at a time: the app refuses to start another while this lock names a live helper.
+lock="$(dirname "$log")/swap.lock"
+echo $$ > "$lock"
+trap 'rm -f "$lock"' EXIT
 echo "$(date) swap: waiting for $pid"
 # Quitting can wait for a bot restart to finish, so allow it ten minutes.
 for _ in $(seq 1 6000); do kill -0 "$pid" 2>/dev/null || break; sleep 0.1; done
@@ -300,6 +308,11 @@ export const createAppUpdater = (deps: AppUpdaterDeps) => {
       const release = phase.release;
       const staged = join(deps.dir, release.version, 'Serra.app');
       if (!existsSync(staged)) { set({ state: 'error', stage: 'install', message: 'The downloaded update is gone. Check again to download it.', release }); return view(); }
+      // A helper from an earlier click may still be waiting for Serra to quit: never start a second one.
+      try {
+        const helper = Number(readFileSync(join(deps.dir, 'swap.lock'), 'utf8'));
+        if (helper > 0 && helperAlive(helper)) { log('a swap is already waiting for Serra to quit'); deps.quit(); return view(); }
+      } catch { /* no helper */ }
       set({ state: 'installing', release });
       try {
         const script = join(deps.dir, 'swap.sh');
@@ -308,8 +321,6 @@ export const createAppUpdater = (deps: AppUpdaterDeps) => {
         launchSwap(script, [String(process.pid), deps.bundlePath, staged, join(deps.dir, 'swap.log'), startedPath, release.version, ...(deps.relaunchArgs ?? [])]);
         log(`installing ${release.version}; quitting so the swap can run`);
         deps.quit();
-        // Quitting waits for a bot restart under way; if Serra is still here a minute later, offer the button again.
-        setTimeout(() => { if (phase.state === 'installing') set({ state: 'ready', release, install: { kind: 'replace' } }); }, 60_000).unref();
       } catch (error) {
         rmSync(pendingPath, { force: true });
         set({ state: 'error', stage: 'install', message: message(error), release });

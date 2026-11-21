@@ -193,9 +193,12 @@ export const Updates = () => {
     if (!bridge) return;
     const offLog = bridge.on.releaseLog((line) => setLines((seen) => [...seen, line]));
     const offApp = bridge.on.appUpdate((app) => setStatus((current) => (current ? { ...current, app } : current)));
+    // The bot started or stopped (menu bar, launchd): reread, at most every two seconds.
+    let last = 0;
+    const offStatus = bridge.on.status(() => { const now = Date.now(); if (now - last > 2000) { last = now; void reload(); } });
     const refresh = () => { void reload(); };
     window.addEventListener('focus', refresh);
-    return () => { offLog(); offApp(); window.removeEventListener('focus', refresh); };
+    return () => { offLog(); offApp(); offStatus(); window.removeEventListener('focus', refresh); };
   }, [reload]);
 
   // While the bot is updating or waiting for jobs, follow it.
@@ -351,7 +354,7 @@ export const Updates = () => {
       )}
     >
       {/* One short line for screen readers when the state changes; the details stay on demand. */}
-      <p aria-live="polite" className="sr-only">{[card?.title, card?.body, bot?.text, bot?.tone === 'down' || bot?.action ? bot.detail : ''].filter(Boolean).map((part) => part!.replace(/\.$/, '')).join('. ')}</p>
+      <p aria-live="polite" className="sr-only">{[card?.title, app?.state === 'downloading' ? '' : card?.body, bot?.text, bot?.tone === 'down' || bot?.action ? bot.detail : ''].filter(Boolean).map((part) => part!.replace(/\.$/, '')).join('. ')}</p>
       {status.app?.updatedFrom && (
         <p role="status" className="flex items-center gap-2 text-[13px] text-muted">
           <CircleCheck size={16} aria-hidden className="text-up" />

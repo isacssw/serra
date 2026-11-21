@@ -321,6 +321,8 @@ export interface DeployOptions {
    * changed (the bot following the app uses it to recheck that no job started meanwhile).
    */
   beforeStop?: () => void | Promise<void>;
+  /** Checks the plan read under the deployment lock (the bot following the app: is it the app's build?). Throwing refuses. */
+  expect?: (plan: Prepared) => void;
   log?: DeployLog;
 }
 const defaults = (options: DeployOptions) => ({
@@ -384,6 +386,7 @@ export const activate = async (directory: string, options: DeployOptions = {}): 
     const problem = preparedProblems(directory)[0];
     if (problem) throw new Error(problem);
     const plan = readJson<Prepared>(join(directory, 'prepared.json'));
+    options.expect?.(plan);
     const activePath = join(directory, 'active.json');
     const previousActive = existsSync(activePath) ? readJson<Prepared>(activePath) : undefined;
     log('Running health checks');
@@ -481,6 +484,8 @@ export const pruneReleases = (directory: string): string[] => {
     if (!entry.isDirectory() || !RELEASE_ID.test(entry.name) || keep.has(path) || entry.name > activeId) continue;
     // A build still in progress (its prepare's process is alive) stays.
     try { if (processAlive(Number(readFileSync(`${path}${BUILDING}`, 'utf8')))) continue; } catch { /* no marker */ }
+    // Prepare names its build in prepared.json before removing its marker, so a fresh read catches one just finished.
+    if (read<Prepared>('prepared.json')?.release === path) continue;
     rmSync(path, { recursive: true, force: true });
     removed.push(path);
   }

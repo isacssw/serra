@@ -268,6 +268,13 @@ test('activation preflight lists running jobs, newest activity first, without wr
   assert.deepEqual(activationPreflight(f.directory).problems, ['No prepared release. Run prepare first.']);
 });
 
+test('expect checks the plan under the lock and refuses before anything changes', async (t) => {
+  const f = await fixture(t);
+  await assert.rejects(activate(f.directory, { ...f.opts, expect: (plan) => { if (!plan.fromApp) throw new Error('not the app build'); } }), /not the app build/);
+  assert.deepEqual(f.events, [], 'not even the health checks ran');
+  assert.equal(existsSync(join(f.directory, 'activation.json')), false);
+});
+
 test('activate streams its steps; a refused activation changes nothing', async (t) => {
   const f = await fixture(t);
   const lines: string[] = [];

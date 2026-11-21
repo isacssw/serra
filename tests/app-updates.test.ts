@@ -191,6 +191,7 @@ test('the bot follows the app only while no job runs, and never in developer mod
   assert.deepEqual(botSyncDecision(input({ serviceLoaded: false, active: { appVersion: '0.1.0-alpha.3', fromApp: true } })), { sync: { state: 'stopped', from: '0.1.0-alpha.3', to: null }, action: 'none' });
   assert.deepEqual(botSyncDecision(input({ active: null })), { sync: { state: 'not-installed' }, action: 'none' });
   assert.deepEqual(botSyncDecision(input({ activation: 'switching' })), { sync: { state: 'interrupted' }, action: 'none' });
+  assert.equal(botSyncDecision(input({ activation: 'switching', running: 'sync' })).sync.state, 'updating', 'a switch under way is not an interrupted one');
   // A failure isn't retried on its own; another action running makes it wait.
   assert.equal(botSyncDecision(input({ failed: { version: '0.1.0-alpha.3', message: 'x' } })).action, 'none');
   assert.equal(botSyncDecision(input({ failed: { version: '0.1.0-alpha.2', message: 'x' } })).action, 'prepare', 'a failure for another version does not block');

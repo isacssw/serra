@@ -97,7 +97,7 @@ export const appCard = (view: AppUpdateView, now = new Date()): AppCard => {
     case 'ready': return view.install.kind === 'replace'
       ? {
         ...base, tone: 'new', title: `Serra ${view.release.version} is ready`, meta: `You have ${view.current}`,
-        body: 'Serra closes, installs the new version and opens again. The bot keeps running.',
+        body: 'Serra closes, installs the new version and opens again.',
         primary: { action: 'install', label: 'Restart to update' },
       }
       : {

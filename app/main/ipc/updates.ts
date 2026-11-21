@@ -125,10 +125,15 @@ export const updatesService = (context: HandlerContext, deps: UpdatesDeps = {}) 
       const outcome = await activateRelease(profileDir, {
         ...deps.deploy, log: line,
         // The health checks take a few seconds: look again right before the bot stops.
+        // Only the app's own build of this version is switched to, as read under the deployment lock.
+        expect: (plan) => {
+          if (plan.appVersion !== target || plan.fromApp !== true) throw new Error(`The build waiting to run is ${plan.appVersion ?? 'unknown'}, not Serra ${target}'s own. Try again.`);
+        },
         beforeStop: async () => {
-          if (!force && runningJobs(profileDir).length > 0) throw new Error(jobStarted);
           // The owner may have stopped the bot while this was building: don't start it again on its own.
           if (!force && label && !await driver.loaded(label)) throw new Error(stopped);
+          // Last, as close to the stop as possible: a job that started meanwhile holds the restart.
+          if (!force && runningJobs(profileDir).length > 0) throw new Error(jobStarted);
           context.expectStop?.();
         },
       });
