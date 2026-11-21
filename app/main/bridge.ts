@@ -12,6 +12,7 @@
  */
 import type { Verdict } from '../../src/cleanup.ts';
 import type { SectionSetting } from '../../src/profile-settings.ts';
+import type { CliOverview } from '../../src/clis.ts';
 import type { McpOverview } from '../../src/mcp.ts';
 import type { ProposalTargets } from '../../src/proposals.ts';
 import type { ActivationOutcome, ReleaseOverview, RollbackOutcome, RunningJob } from '../../src/releases.ts';
@@ -164,10 +165,15 @@ export interface SerraApi {
     /** Resolves the token and runs Slack's `auth.test`. */
     check(name: SecretName): SecretStatus;
   };
-  /** Tools (MCP) (APP-23), read-only: the MCP servers the worker's provider loads in T3, by name, never their config. */
+  /** Tools (APP-23, SERRA-39), read-only: what the worker can use. MCP servers by name, never their config. */
   tools: {
-    /** The servers, and a warning for each tool an alert trigger needs that the worker won't surely have. */
+    /**
+     * The MCP servers each provider gives the worker, from `claude mcp list` / `codex mcp list` (or the config
+     * files when a CLI is missing), and a warning for each tool an alert trigger needs that the worker won't have.
+     */
     overview(): McpOverview;
+    /** The command-line tools Serra knows: installed, version, signed in. And why each recommendation fits. */
+    clis(): CliOverview;
   };
   /** Updates (APP-19, services from APP-18). Prepare/activate/rollback stream lines on `on.releaseLog`. */
   updates: {
@@ -267,7 +273,7 @@ export const bridgeMethods = {
   brief: methods<'brief'>()(['read', 'save', 'check', 'preview', 'listProposed', 'readProposed', 'applyProposed']),
   settings: methods<'settings'>()(['read', 'sections', 'saveSection', 'addPerson', 'removePerson']),
   secrets: methods<'secrets'>()(['list', 'setSource', 'check']),
-  tools: methods<'tools'>()(['overview']),
+  tools: methods<'tools'>()(['overview', 'clis']),
   updates: methods<'updates'>()(['status', 'runningJobs', 'prepare', 'activate', 'rollback']),
   diagnostics: methods<'diagnostics'>()(['run', 'logTail']),
   people: methods<'people'>()(['add']),

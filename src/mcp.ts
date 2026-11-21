@@ -22,8 +22,19 @@ export type McpTransport = 'stdio' | 'http' | 'sse';
  */
 export type McpLoad = 'loads' | 'disabled' | 'unsure';
 
-/** Where a server is defined: for every folder (`user`), in the project's checkout (`project`), or for one folder (`local`). */
-export type McpScope = 'user' | 'project' | 'local';
+/**
+ * Where a server comes from: for every folder (`user`), the project's checkout (`project`), one folder (`local`),
+ * a claude.ai connector (`connector`), a plugin (`plugin`), or the provider itself, outside the files Serra reads
+ * (`provider`: Codex's bundled servers, for example). The last three are only known from the provider's CLI.
+ */
+export type McpScope = 'user' | 'project' | 'local' | 'connector' | 'plugin' | 'provider';
+
+/**
+ * What the provider's own CLI said about a server: `connected` (it answered a health check), `needs-auth` (it
+ * needs a sign-in), `failed` (it didn't connect), `pending` (Claude waits for the project's approval). Null when
+ * there was no check: Codex lists servers without connecting, and the config files say nothing about health.
+ */
+export type McpHealth = 'connected' | 'needs-auth' | 'failed' | 'pending';
 
 export interface McpServer {
   name: string;
@@ -37,6 +48,7 @@ export interface McpServer {
   load: McpLoad;
   /** Why `load` is what it is, when that isn't obvious. */
   note: string | null;
+  health: McpHealth | null;
 }
 
 /** A tool the profile needs, by name, and the trigger channels that need it. */
@@ -71,6 +83,15 @@ export interface McpOverview {
   warnings: McpWarning[];
   /** Every config file looked at, so the owner can see where to make a change. */
   files: McpConfigFile[];
+  /** How each provider's servers were found: its CLI (`claude mcp list`), or only its config files, and why. */
+  listing: McpListing[];
+}
+
+export interface McpListing {
+  driver: WorkerDriver;
+  method: 'cli' | 'files';
+  /** Why the files were used instead of the CLI, in one short sentence. Null for the CLI. */
+  note: string | null;
 }
 
 /**
@@ -97,19 +118,19 @@ export const DRIVER_LABELS: Record<WorkerDriver, string> = { claude: 'Claude', c
 /** Which provider kinds a profile's `worker.provider` can mean. */
 export const workerDrivers = (provider: string | undefined): McpOverview['worker'] => {
   if (!provider) {
-    return { provider: null, drivers: ['claude', 'codex'], note: "The profile doesn't name a worker provider, so T3 uses the project's default. Servers for both are listed." };
+    return { provider: null, drivers: ['claude', 'codex'], note: 'Servers for both Claude and Codex are listed.' };
   }
   if (/claude/i.test(provider)) return { provider, drivers: ['claude'], note: null };
   if (/codex/i.test(provider)) return { provider, drivers: ['codex'], note: null };
-  return { provider, drivers: ['claude', 'codex'], note: `Serra can't tell whether the provider "${provider}" is Claude or Codex. Servers for both are listed.` };
+  return { provider, drivers: ['claude', 'codex'], note: `Serra can't tell whether "${provider}" is Claude or Codex, so servers for both are listed.` };
 };
 
 // ---------------------------------------------------------------------------------------------------------------
 // Reading configs
 // ---------------------------------------------------------------------------------------------------------------
 
-/** A server as read, with the text used to recognise a known tool. That text stays in this module. */
-interface ReadServer extends McpServer { fingerprint: string }
+/** A server as read, with the text used to recognise a known tool. That text stays in the main process. */
+export interface ReadServer extends McpServer { fingerprint: string }
 
 const record = (value: unknown): Record<string, unknown> | null =>
   value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : null;
@@ -141,7 +162,7 @@ const readText = (path: string): ReadResult<string> => {
 };
 
 /** One server entry from a Claude `mcpServers` object. */
-const claudeServer = (name: string, entry: unknown, base: Omit<McpServer, 'name' | 'transport' | 'host'>): ReadServer => {
+const claudeServer = (name: string, entry: unknown, base: Omit<McpServer, 'name' | 'transport' | 'host' | 'health'>): ReadServer => {
   const fields = record(entry) ?? {};
   const url = text(fields.url);
   const type = text(fields.type);
@@ -149,12 +170,12 @@ const claudeServer = (name: string, entry: unknown, base: Omit<McpServer, 'name'
     ? type
     : url ? 'http' : text(fields.command) ? 'stdio' : null;
   return {
-    name, ...base, transport, host: url ? hostOf(url) : null,
+    name, ...base, transport, host: url ? hostOf(url) : null, health: null,
     fingerprint: [name, url, text(fields.command), ...strings(fields.args)].join(' '),
   };
 };
 
-const claudeServers = (servers: unknown, base: Omit<McpServer, 'name' | 'transport' | 'host'>): ReadServer[] =>
+const claudeServers = (servers: unknown, base: Omit<McpServer, 'name' | 'transport' | 'host' | 'health'>): ReadServer[] =>
   Object.entries(record(servers) ?? {}).map(([name, entry]) => claudeServer(name, entry, base));
 
 /**
@@ -165,7 +186,7 @@ const claudeServers = (servers: unknown, base: Omit<McpServer, 'name' | 'transpo
  * - project scope: `.mcp.json` in the checkout, which Claude loads once the project's servers are approved
  *   (`enableAllProjectMcpServers` in a settings file, or per server for the folder in `~/.claude.json`).
  */
-const readClaude = (projectPath: string, home: string, env: McpOptions['env']): { servers: ReadServer[]; files: McpConfigFile[] } => {
+export const readClaude = (projectPath: string, home: string, env: McpOptions['env']): { servers: ReadServer[]; files: McpConfigFile[] } => {
   const configDir = env?.CLAUDE_CONFIG_DIR || null;
   const userFile = join(configDir ?? home, '.claude.json');
   const settingsFiles = [
@@ -231,14 +252,18 @@ const tomlKeys = (path: string): string[] => {
   return keys;
 };
 
-/** A TOML scalar: a basic or literal string, or a boolean. Anything else is kept as its raw text. */
-const tomlScalar = (raw: string): string | boolean => {
+/**
+ * A TOML scalar: a basic or literal string, or a boolean. Anything else is kept as its raw text. A comment after a
+ * bare value (`enabled = false # off for now`) isn't part of it.
+ */
+export const tomlScalar = (raw: string): string | boolean => {
   const value = raw.trim();
-  if (value === 'true') return true;
-  if (value === 'false') return false;
   const quoted = /^"((?:[^"\\]|\\.)*)"|^'([^']*)'/.exec(value);
   if (quoted) return quoted[1] !== undefined ? quoted[1].replace(/\\(.)/g, '$1') : quoted[2]!;
-  return value;
+  const bare = value.replace(/\s*#.*$/, '').trim();
+  if (bare === 'true') return true;
+  if (bare === 'false') return false;
+  return bare;
 };
 
 /** The `key = value` pairs of an inline table `{ a = "x", b = false }`, scalars only. */
@@ -312,7 +337,7 @@ export const parseCodexServers = (toml: string): Map<string, { command: string; 
  * Codex's MCP servers: `[mcp_servers.*]` in `$CODEX_HOME/config.toml` (default `~/.codex`), loaded everywhere unless
  * `enabled = false`, and in the checkout's `.codex/config.toml`, which Codex reads only for a trusted project.
  */
-const readCodex = (projectPath: string, home: string, env: McpOptions['env']): { servers: ReadServer[]; files: McpConfigFile[] } => {
+export const readCodex = (projectPath: string, home: string, env: McpOptions['env']): { servers: ReadServer[]; files: McpConfigFile[] } => {
   const codexHome = env?.CODEX_HOME || join(home, '.codex');
   const show = (path: string) => shortPath(path, home);
   const sources = [
@@ -331,7 +356,7 @@ const readCodex = (projectPath: string, home: string, env: McpOptions['env']): {
         name, driver: 'codex', scope: source.scope, source: show(source.path),
         transport: server.url ? 'http' : server.command ? 'stdio' : null,
         host: server.url ? hostOf(server.url) : null,
-        load,
+        load, health: null,
         note: load === 'disabled' ? 'Turned off with enabled = false.'
           : load === 'unsure' ? "Codex reads a project's config only when the project is trusted, and a T3 job runs in its own worktree." : null,
         fingerprint: [name, server.url, server.command, server.args].join(' '),
@@ -405,18 +430,23 @@ export const mcpOverview = (profile: Pick<Profile, 'project' | 'worker' | 'messa
   const warnings = missingToolWarnings(requiredTools(profile.messageTriggers), servers, worker.drivers);
   return {
     worker,
-    // Copy only the reported fields: the fingerprint holds commands and arguments, which can carry tokens.
-    servers: servers.map(({ name, driver, scope, source, transport, host, load, note }) => ({ name, driver, scope, source, transport, host, load, note })),
+    servers: servers.map(reported),
     warnings,
     files: read.flatMap((result) => result.files),
+    listing: worker.drivers.map((driver) => ({ driver, method: 'files', note: null })),
   };
 };
+
+/** Only the reported fields of a server: the fingerprint holds commands and arguments, which can carry tokens. */
+export const reported = ({ name, driver, scope, source, transport, host, load, note, health }: McpServer): McpServer =>
+  ({ name, driver, scope, source, transport, host, load, note, health });
 
 /** Plain text for `pnpm bot tools`. */
 export const formatMcpOverview = (overview: McpOverview): string => {
   const lines: string[] = [];
   lines.push(overview.worker.provider ? `Worker provider: ${overview.worker.provider}` : "Worker provider: T3's project default");
   if (overview.worker.note) lines.push(overview.worker.note);
+  for (const listing of overview.listing) if (listing.note) lines.push(`${DRIVER_LABELS[listing.driver]}: ${listing.note}`);
   for (const warning of overview.warnings) lines.push(`! ${warning.text}`);
   for (const driver of overview.worker.drivers) {
     lines.push('', `${DRIVER_LABELS[driver]}:`);
@@ -424,7 +454,8 @@ export const formatMcpOverview = (overview: McpOverview): string => {
     if (!servers.length) lines.push('  No MCP servers.');
     for (const server of servers) {
       const where = server.host ? `${server.transport ?? 'remote'} ${server.host}` : server.transport ?? 'unknown transport';
-      lines.push(`  ${server.name}  ${server.load}  ${server.scope}, ${where}, ${server.source}${server.note ? `\n    ${server.note}` : ''}`);
+      const state = server.load === 'disabled' ? 'off' : server.health ?? server.load;
+      lines.push(`  ${server.name}  ${state}  ${server.scope}, ${where}, ${server.source}${server.note ? `\n    ${server.note}` : ''}`);
     }
     for (const file of overview.files.filter((entry) => entry.driver === driver && entry.state === 'unreadable')) {
       lines.push(`  Couldn't read ${file.path}.`);

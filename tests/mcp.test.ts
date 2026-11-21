@@ -46,7 +46,7 @@ test('a Sentry alert trigger with a Sentry server for Claude has no warning, and
   assert.deepEqual(overview.warnings, []);
   const sentry = overview.servers.find((server) => server.name === 'sentry')!;
   assert.deepEqual(sentry, {
-    name: 'sentry', driver: 'claude', scope: 'user', source: '~/.claude.json', transport: 'http', host: 'mcp.sentry.example', load: 'loads', note: null,
+    name: 'sentry', driver: 'claude', scope: 'user', source: '~/.claude.json', transport: 'http', host: 'mcp.sentry.example', load: 'loads', note: null, health: null,
   });
   assert.equal(overview.servers.find((server) => server.name === 'files')!.transport, 'stdio');
   const serialized = JSON.stringify(overview) + formatMcpOverview(overview);
@@ -161,7 +161,7 @@ test('without a worker provider both kinds are listed and each is checked', (t) 
   f.write(join(f.home, '.claude.json'), { mcpServers: { sentry: sentryHttp } });
   const overview = f.overview(f.profile({ worker: undefined }));
   assert.deepEqual(overview.worker.drivers, ['claude', 'codex']);
-  assert.match(overview.worker.note!, /project's default/);
+  assert.match(overview.worker.note!, /both Claude and Codex/);
   assert.deepEqual(overview.warnings.map((warning) => warning.driver), ['codex']);
 });
 

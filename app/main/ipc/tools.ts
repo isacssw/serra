@@ -1,11 +1,25 @@
-// Tools (MCP) (APP-23): the MCP servers the profile's worker will load in T3, read from the provider configs by
-// src/mcp.ts. Read-only: MCP servers are configured in Claude or Codex, never here. The service reports a server by
-// name, scope, transport and host only, so tokens in a config's env, headers or arguments never reach the window.
+// Tools (APP-23, SERRA-39): read-only. The MCP servers each provider gives the worker (from `claude mcp list` and
+// `codex mcp list`, or their config files), and the command-line tools on this Mac. Serra never adds, removes or
+// signs in to anything here: servers are managed in Claude or Codex. Only names, transports, hosts, versions and
+// statuses reach the window; never a command, an environment, a header or a full URL.
 import { readProfileFile } from '../../../src/config.ts';
-import { mcpOverview, type McpOptions, type McpOverview } from '../../../src/mcp.ts';
+import { cliOverview, type CliOverview } from '../../../src/clis.ts';
+import type { Exec } from '../../../src/exec.ts';
+import { liveMcpOverview } from '../../../src/mcp-live.ts';
+import type { McpOptions, McpOverview } from '../../../src/mcp.ts';
 import type { Handlers } from '../bridge.ts';
 import type { HandlerContext } from './context.ts';
 
-export const toolsHandlers = (context: HandlerContext, options: McpOptions = {}): Handlers<'tools'> => ({
-  overview: (): McpOverview => mcpOverview(readProfileFile(context.profileDir()), options),
+/** Tests point these at a temp home, a fake PATH and fake commands. */
+export interface ToolsHandlerOptions extends McpOptions {
+  run?: Exec;
+  path?: string;
+}
+
+export const toolsHandlers = (context: HandlerContext, options: ToolsHandlerOptions = {}): Handlers<'tools'> => ({
+  overview: (): Promise<McpOverview> => liveMcpOverview(readProfileFile(context.profileDir()), options),
+  clis: (): Promise<CliOverview> => {
+    const profileDir = context.profileDir();
+    return cliOverview(readProfileFile(profileDir), profileDir, options);
+  },
 });

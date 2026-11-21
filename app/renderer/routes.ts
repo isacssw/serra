@@ -37,7 +37,7 @@ export const routes = [
   { id: 'settings-alerts', path: '/settings/alerts', label: 'Alerts', section: 'settings', ticket: 'APP-14' },
   { id: 'settings-worker', path: '/settings/worker', label: 'Worker', section: 'settings', ticket: 'APP-14' },
   { id: 'secrets', path: '/settings/secrets', label: 'Secrets', section: 'settings', ticket: 'APP-15' },
-  { id: 'tools', path: '/settings/tools', label: 'Tools (MCP)', section: 'settings', ticket: 'APP-23' },
+  { id: 'tools', path: '/settings/tools', label: 'Tools', section: 'settings', ticket: 'APP-23' },
   { id: 'updates', path: '/settings/updates', label: 'Updates', section: 'settings', ticket: 'APP-19' },
   { id: 'diagnostics', path: '/settings/diagnostics', label: 'Diagnostics', section: 'settings', ticket: 'APP-22' },
   { id: 'settings-appearance', path: '/settings/appearance', label: 'Appearance', section: 'settings', ticket: 'APP-28' },

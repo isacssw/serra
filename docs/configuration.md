@@ -133,9 +133,34 @@ Invite your engineering bot to the alert channel. The supplied manifest already 
 
 This uses the existing Socket Mode connection. Slack sends message events over that connection while the daemon and T3 are running; there is no polling of channel history or replay of old alerts on startup. [Socket Mode](https://docs.slack.dev/apis/events-api/using-socket-mode/) avoids a public HTTP receiver. HTTP Events API delivery is an alternative transport for a hosted service. [Slack incoming webhooks](https://docs.slack.dev/messaging/sending-messages-using-incoming-webhooks/) send messages into Slack and do not subscribe to messages received in a channel.
 
-## MCP servers for investigations
+## Tools: MCP servers and command-line tools
 
-The worker gets MCP servers (Sentry, Datadog and the like) from its T3 provider's own config, not from Serra. `pnpm bot tools --profile /absolute/profile` and the app's Tools (MCP) screen list them, read-only: Claude's user and project servers (`~/.claude.json`, the checkout's `.mcp.json`) and Codex's (`~/.codex/config.toml`), for the provider in `worker.provider` or both when it isn't set. A server is shown by name, scope, transport and host; its command, arguments, environment and headers are never read out. When a message trigger's instructions name Sentry, Datadog, PagerDuty or Grafana and the worker has no server for it, both warn. Servers added through claude.ai connectors or plugins aren't in those files and aren't listed.
+The worker gets MCP servers (Sentry, Datadog and the like) from its T3 provider, not from Serra. You add and remove them in Claude or Codex (`claude mcp add --scope user …`, `codex mcp add …`). Use user scope: T3 runs each job in its own worktree, which gets user-scope servers but not ones added for a single folder.
+
+The app's **Tools** screen and `pnpm bot tools --profile /absolute/profile` are read-only. They show:
+
+- **MCP servers**, for the provider in `worker.provider`, or for both when it isn't set:
+  - Claude's come from `claude mcp list`, run in the project's checkout. That covers claude.ai connectors and plugin servers, with Claude's own health check (Connected, Needs sign-in, Failed, Needs approval).
+  - Codex's come from `codex mcp list --json`, including servers Codex adds itself.
+  - When a CLI is missing or fails, the list falls back to the config files: `~/.claude.json`, the checkout's `.mcp.json`, and `~/.codex/config.toml`. The screen says so.
+  - A server is shown by name, origin, transport and host. Its command, arguments, environment, headers and full URL never leave the main process.
+  - T3 also gives every job its own `t3-code` server, which isn't in these lists.
+- **Command-line tools:** GitHub, Vercel, Atlassian (`acli`), Sentry, Docker, AWS, Google Cloud, Azure and Fly.io.
+  - Each shows whether it's installed, its version, and whether it's signed in (or, for Docker, running), where the tool has a cheap read-only check: `gh auth status`, `vercel whoami`, `aws sts get-caller-identity`, `gcloud auth list`, `az account show`, `fly auth whoami` and `docker info`.
+  - Serra looks on your login shell's `PATH`, plus `/opt/homebrew/bin`, `/usr/local/bin` and `~/.local/bin`. Set `SERRA_TOOLS_PATH` to replace that search path.
+  - Serra never installs or signs in to anything. It shows the vendor's install or sign-in command to copy.
+- **Recommended:**
+  - GitHub always.
+  - Sentry when an alert rule mentions it or the repo uses a Sentry SDK.
+  - Vercel when the repo has `vercel.json`.
+  - Atlassian when your brief or knowledge mentions Jira or Confluence.
+  - Linear when they link to `linear.app`.
+
+  Each shows whether it's ready, and the commands to set it up: the CLI's install, or the provider's `mcp add` for the vendor's MCP server. The list lives in `src/tool-catalog.ts` and changes by pull request; nothing is fetched.
+
+When a message trigger's instructions name Sentry, Datadog, PagerDuty or Grafana and the worker has no server for it, both the Tools screen and `pnpm bot tools` warn.
+
+Not covered yet: a worker on a linked remote T3 machine. Tools reads this Mac's provider CLIs, config files and `PATH`, which can differ from that machine's.
 
 ## Brief placeholders
 
