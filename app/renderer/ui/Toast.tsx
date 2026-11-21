@@ -26,7 +26,7 @@ export const useToast = (): ((toast: ToastOptions) => void) => {
 };
 
 const icons: Record<ToastTone, ReactNode> = {
-  info: <Info size={16} className="text-accent" />,
+  info: <Info size={16} className="text-muted" />,
   success: <CircleCheck size={16} className="text-up" />,
   error: <CircleAlert size={16} className="text-down" />,
 };
@@ -40,7 +40,7 @@ const ToastItem = ({ toast, onDismiss }: { toast: ToastEntry; onDismiss: (id: nu
     return () => clearTimeout(timer);
   }, [toast.id, duration, onDismiss]);
   return (
-    <div role={tone === 'error' ? 'alert' : 'status'} className={cx('flex items-center gap-3 rounded-lg border border-line bg-panel px-3.5 py-2.5 text-sm shadow-lg')}>
+    <div data-toast role={tone === 'error' ? 'alert' : 'status'} className={cx('flex items-center gap-3 rounded-xl border border-line bg-panel px-3.5 py-2.5 text-[13px] shadow-[0_12px_32px_-8px_rgb(0_0_0/0.35)]')}>
       {icons[tone]}
       <span className="flex-1">{toast.message}</span>
       {toast.action && (

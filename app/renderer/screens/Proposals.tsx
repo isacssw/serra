@@ -43,7 +43,7 @@ const Select = ({ label, value, onChange, options, icon }: {
           onChange={(event) => onChange(event.target.value)}
           className={cx(
             'h-9 w-full rounded-md border border-line bg-panel pr-3 text-sm text-ink',
-            'focus:outline-2 focus:outline-offset-1 focus:outline-accent',
+            'focus:outline-2 focus:outline-offset-1 focus:outline-focus',
             icon ? 'pl-9' : 'pl-3',
           )}
         >
@@ -70,8 +70,8 @@ const Queue = ({ proposals, selected, onSelect }: { proposals: Proposal[]; selec
               title={proposal.description ?? proposal.path}
               className={cx(
                 'flex items-center gap-2.5 rounded-lg border px-3 py-2.5 text-left text-sm',
-                'focus-visible:outline-2 focus-visible:outline-accent',
-                active ? 'border-accent bg-accent/15' : 'border-line bg-panel hover:bg-raised',
+                'focus-visible:outline-2 focus-visible:outline-focus',
+                active ? 'border-line-strong bg-selected' : 'border-line bg-panel hover:bg-raised',
               )}
             >
               <FileText size={16} aria-hidden className="shrink-0 text-muted" />
@@ -212,7 +212,7 @@ export const Proposals = () => {
             {diff && bridge && (
               <>
                 <div className="flex flex-col gap-1">
-                  <h2 className="text-xl font-bold tracking-tight">{title}</h2>
+                  <h2 className="text-lg font-semibold tracking-tight">{title}</h2>
                   {diff.proposal.description && <p className="text-sm text-muted">{diff.proposal.description}</p>}
                   {diff.proposal.target && <p className="text-xs text-muted">Changes <code>{diff.proposal.target}</code></p>}
                 </div>

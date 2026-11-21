@@ -30,7 +30,7 @@ const Triggers = ({ profile, settings, state }: { profile: Profile; settings: Se
             <label className="text-sm font-medium" htmlFor={`trigger-source-${index}`}>Messages from</label>
             <select
               id={`trigger-source-${index}`}
-              className="h-9 rounded-md border border-line bg-panel px-2 text-sm text-ink focus:outline-2 focus:outline-offset-1 focus:outline-accent"
+              className="h-9 rounded-md border border-line bg-panel px-2 text-sm text-ink focus:outline-2 focus:outline-offset-1 focus:outline-focus"
               value={row.source}
               onChange={(event) => list.update(index, { source: event.target.value as TriggerSource })}
             >

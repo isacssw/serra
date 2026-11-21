@@ -36,8 +36,8 @@ const PageList = ({ pages, selected, onSelect }: { pages: KnowledgePage[]; selec
               title={page.description ?? page.path}
               className={cx(
                 'flex items-center gap-2 rounded-md border px-2.5 py-2 text-left text-sm',
-                'focus-visible:outline-2 focus-visible:outline-accent',
-                active ? 'border-accent bg-accent/15' : 'border-transparent hover:bg-raised',
+                'focus-visible:outline-2 focus-visible:outline-focus',
+                active ? 'border-line-strong bg-selected' : 'border-transparent hover:bg-raised',
               )}
             >
               <FileText size={15} aria-hidden className="shrink-0 text-muted" />
@@ -163,7 +163,7 @@ export const Pages = () => {
                 onChange={(event) => setQuery(event.target.value)}
                 placeholder="Filter pages"
                 aria-label="Filter pages"
-                className="h-8 w-full rounded-md border border-line bg-panel pl-8 pr-2 text-sm text-ink placeholder:text-muted focus:outline-2 focus:outline-offset-1 focus:outline-accent"
+                className="h-8 w-full rounded-md border border-line bg-panel pl-8 pr-2 text-sm text-ink placeholder:text-muted focus:outline-2 focus:outline-offset-1 focus:outline-focus"
               />
             </div>
             <div role="group" aria-label="Show" className="flex flex-wrap gap-1">
@@ -174,8 +174,8 @@ export const Pages = () => {
                   aria-pressed={filter === option.value}
                   onClick={() => setFilter(option.value)}
                   className={cx(
-                    'h-7 rounded-md border px-2 text-xs tabular-nums focus-visible:outline-2 focus-visible:outline-accent',
-                    filter === option.value ? 'border-accent bg-accent/15 text-ink' : 'border-line text-muted hover:bg-raised',
+                    'h-7 rounded-md border px-2 text-xs tabular-nums focus-visible:outline-2 focus-visible:outline-focus',
+                    filter === option.value ? 'border-line-strong bg-selected text-ink' : 'border-line text-muted hover:bg-raised',
                   )}
                 >
                   {option.label} {counts[option.value]}
@@ -224,7 +224,7 @@ export const Pages = () => {
                   aria-describedby="page-editor-status"
                   className={cx(
                     'min-h-[28rem] w-full resize-y rounded-md border bg-panel p-3 font-mono text-[13px] leading-5 text-ink',
-                    'focus:outline-2 focus:outline-offset-1 focus:outline-accent',
+                    'focus:outline-2 focus:outline-offset-1 focus:outline-focus',
                     state.problems.length > 0 ? 'border-down' : 'border-line',
                   )}
                 />

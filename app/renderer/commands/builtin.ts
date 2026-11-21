@@ -19,16 +19,24 @@ export const appliesText = (when: AppliesWhen): string =>
 
 const sectionHeading = (id: string): string | undefined => sections.find((section) => section.id === id)?.heading ?? undefined;
 
-/** One "Go to" action per screen in the sidebar, so every screen is reachable from ⌘K. */
+/** Where a screen's button is: its sidebar item, or the Jobs tab or sidebar button that opens it. */
+export const navigationButton = (route: (typeof routes)[number]): string => {
+  if (route.id === 'new-task') return 'Sidebar › New task';
+  if (route.section === 'jobs') return `Sidebar › Jobs › ${route.label}`;
+  return `Sidebar › ${route.label}`;
+};
+
+/** One "Go to" action per screen, so every screen is reachable from ⌘K. */
 export const navigationActions: Action[] = routes.map((route) => {
-  const heading = sectionHeading(route.section);
+  const heading = route.section === 'jobs' ? (route.id === 'new-task' ? undefined : 'Jobs') : sectionHeading(route.section);
   return {
     id: `go:${route.id}`,
     title: route.label,
     group: 'Go to',
     ...(heading ? { hint: heading } : {}),
     keywords: ['go', 'open', 'show', ...(heading ? [heading] : [])],
-    button: `Sidebar › ${route.label}`,
+    button: navigationButton(route),
+    ...(route.id === 'new-task' ? { hint: '⌘N' } : route.id === 'settings-bot' ? { hint: 'Settings · ⌘,' } : {}),
     run: (context) => context.navigate(route.path),
   };
 });

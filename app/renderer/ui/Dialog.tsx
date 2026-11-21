@@ -29,7 +29,7 @@ export const Dialog = ({ open, onClose, title, description, children, actions }:
       aria-labelledby={titleId}
       onCancel={(event) => { event.preventDefault(); onClose(); }}
       onClick={(event) => { if (event.target === ref.current) onClose(); }}
-      className="m-auto w-[min(32rem,calc(100vw-2rem))] rounded-xl border border-line bg-panel p-0 text-ink shadow-xl backdrop:bg-black/50"
+      className="m-auto w-[min(32rem,calc(100vw-2rem))] rounded-2xl border border-line bg-panel p-0 text-ink shadow-[0_24px_64px_-12px_rgb(0_0_0/0.45)] backdrop:bg-black/45"
     >
       {open && (
         <div className="flex flex-col gap-4 p-5">

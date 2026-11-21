@@ -86,7 +86,7 @@ export const SecretCard = ({ status, now, onSaved, onChecked }: CardProps) => {
           value={draft.kind}
           disabled={busy !== null}
           onChange={(event) => { setDraft({ ...draft, kind: event.target.value as SourceKind }); setFormError(null); }}
-          className="h-9 w-60 rounded-md border border-line bg-panel px-2.5 text-sm text-ink focus:outline-2 focus:outline-offset-1 focus:outline-accent"
+          className="h-9 w-60 rounded-md border border-line bg-panel px-2.5 text-sm text-ink focus:outline-2 focus:outline-offset-1 focus:outline-focus"
         >
           {SOURCE_OPTIONS.map((option) => <option key={option.kind} value={option.kind}>{option.label}</option>)}
         </select>

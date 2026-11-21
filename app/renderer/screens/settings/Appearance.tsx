@@ -34,7 +34,7 @@ const ThemeControl = () => {
             key={value}
             className={cx(
               'relative flex h-8 cursor-pointer items-center gap-1.5 rounded px-3 text-sm font-medium',
-              'has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-1 has-[:focus-visible]:outline-accent',
+              'has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-1 has-[:focus-visible]:outline-focus',
               checked ? 'bg-panel text-ink shadow-sm' : 'text-muted hover:text-ink',
             )}
           >

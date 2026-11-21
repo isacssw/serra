@@ -7,13 +7,20 @@ import type { AppPrefs } from './bridge.ts';
  * The window runs web content only: no Node, no `require`, isolated from the preload, sandboxed.
  * `window.serra` from the preload is its only way to the main process.
  */
-export const windowOptions = (preload: string, bounds: AppPrefs['window']): BrowserWindowConstructorOptions => ({
+export const windowOptions = (
+  preload: string,
+  bounds: AppPrefs['window'],
+  platform: NodeJS.Platform = process.platform,
+): BrowserWindowConstructorOptions => ({
   width: bounds.width,
   height: bounds.height,
   ...(bounds.x !== undefined && bounds.y !== undefined ? { x: bounds.x, y: bounds.y } : {}),
   minWidth: 640,
   minHeight: 420,
   title: 'Serra',
+  // On macOS the title bar is the top of the window's own content: the traffic lights sit in the sidebar's first row
+  // (Sidebar.tsx keeps that row clear and draggable). Elsewhere the system frame stays.
+  ...(platform === 'darwin' ? { titleBarStyle: 'hiddenInset' as const, trafficLightPosition: { x: 16, y: 18 } } : {}),
   show: false,
   webPreferences: {
     preload,

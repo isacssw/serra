@@ -3,6 +3,7 @@ export { Badge, type BadgeTone } from './Badge.tsx';
 export { Button, type ButtonSize, type ButtonVariant } from './Button.tsx';
 export { cx } from './cx.ts';
 export { Dialog } from './Dialog.tsx';
+export { EmptyState } from './EmptyState.tsx';
 export { Input } from './Input.tsx';
 export { Page } from './Page.tsx';
 export { Table, TBody, Td, Th, THead, Tr } from './Table.tsx';

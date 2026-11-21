@@ -15,15 +15,19 @@ export interface Route {
   label: string;
   section: SidebarSection;
   badge?: BadgeKey;
+  /** The sidebar's name for the item when it differs from the screen's (Needs you is the sidebar's Jobs). */
+  navLabel?: string;
+  /** False for a screen reached from inside another (a Jobs tab, New task's button), not from its own sidebar item. */
+  nav?: false;
   /** The ticket that builds the screen, shown on its placeholder. */
   ticket: string;
 }
 
 export const routes = [
-  { id: 'jobs-needs-you', path: '/jobs/needs-you', label: 'Needs you', section: 'jobs', badge: 'needsYou', ticket: 'APP-12' },
-  { id: 'jobs-running', path: '/jobs/running', label: 'Running', section: 'jobs', badge: 'running', ticket: 'APP-12' },
-  { id: 'jobs-done', path: '/jobs/done', label: 'Done', section: 'jobs', ticket: 'APP-12' },
-  { id: 'new-task', path: '/jobs/new', label: 'New task', section: 'jobs', ticket: 'APP-25' },
+  { id: 'jobs-needs-you', path: '/jobs/needs-you', label: 'Needs you', navLabel: 'Jobs', section: 'jobs', badge: 'needsYou', ticket: 'APP-12' },
+  { id: 'jobs-running', path: '/jobs/running', label: 'Running', section: 'jobs', badge: 'running', nav: false, ticket: 'APP-12' },
+  { id: 'jobs-done', path: '/jobs/done', label: 'Done', section: 'jobs', nav: false, ticket: 'APP-12' },
+  { id: 'new-task', path: '/jobs/new', label: 'New task', section: 'jobs', nav: false, ticket: 'APP-25' },
   { id: 'proposals', path: '/knowledge/proposals', label: 'Proposals', section: 'knowledge', badge: 'proposals', ticket: 'APP-13' },
   { id: 'pages', path: '/knowledge/pages', label: 'Pages', section: 'knowledge', ticket: 'APP-20' },
   { id: 'brief', path: '/brief', label: 'Brief & policy', section: 'brief', ticket: 'APP-21' },
@@ -41,9 +45,9 @@ export const routes = [
 
 export type RouteId = (typeof routes)[number]['id'];
 
-/** Sidebar group headings, in order. `brief` has no heading of its own; a divider goes before `settings`. */
+/** Sidebar group headings, in order. Jobs is a single item under New task; `brief` sits with Knowledge. */
 export const sections: readonly { id: SidebarSection; heading: string | null }[] = [
-  { id: 'jobs', heading: 'Jobs' },
+  { id: 'jobs', heading: null },
   { id: 'knowledge', heading: 'Knowledge' },
   { id: 'brief', heading: null },
   { id: 'settings', heading: 'Settings' },

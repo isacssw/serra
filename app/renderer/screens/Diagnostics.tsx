@@ -176,7 +176,7 @@ export const Diagnostics = () => {
               id="log-lines"
               value={lines}
               onChange={(event) => setLines(Number(event.target.value))}
-              className="h-7 rounded-md border border-line bg-panel px-2 text-xs text-ink focus:outline-2 focus:outline-offset-1 focus:outline-accent"
+              className="h-7 rounded-md border border-line bg-panel px-2 text-xs text-ink focus:outline-2 focus:outline-offset-1 focus:outline-focus"
             >
               {LOG_LINE_CHOICES.map((choice) => <option key={choice} value={choice}>{choice}</option>)}
             </select>

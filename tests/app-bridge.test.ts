@@ -187,6 +187,17 @@ test('the window has no Node: context isolation, sandbox, no node integration, p
   });
 });
 
+test('on macOS the title bar is integrated: traffic lights inset in the sidebar; other systems keep their frame', () => {
+  const mac = windowOptions('/p.cjs', defaultPrefs.window, 'darwin');
+  assert.equal(mac.titleBarStyle, 'hiddenInset');
+  assert.deepEqual(mac.trafficLightPosition, { x: 16, y: 18 });
+  const linux = windowOptions('/p.cjs', defaultPrefs.window, 'linux');
+  assert.equal(linux.titleBarStyle, undefined);
+  assert.equal(linux.trafficLightPosition, undefined);
+  // The chrome change leaves the locked-down web preferences alone.
+  assert.deepEqual(mac.webPreferences, linux.webPreferences);
+});
+
 test('isAppUrl allows only the app folder and the dev server; isExternalUrl only web links', () => {
   const root = { fileRoot: '/Users/you/serra/app', devUrl: 'http://localhost:5173' };
   assert.ok(isAppUrl(APP_PAGE, root));

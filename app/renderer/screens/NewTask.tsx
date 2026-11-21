@@ -3,10 +3,10 @@
 // in T3: nobody posts them to Slack, since the task never came from there.
 import { useState } from 'react';
 import { useNavigate } from 'react-router';
-import { Eye, Layers, ListChecks, LoaderCircle, Play } from 'lucide-react';
+import { ArrowUp, Eye, GitBranch, Layers, ListChecks, LoaderCircle, User } from 'lucide-react';
 import type { StartedTask } from '../../../src/tasks.ts';
 import { serra } from '../bridge.ts';
-import { Button, Page, cx, useToast } from '../ui/index.ts';
+import { Button, cx, useToast } from '../ui/index.ts';
 import { canStart, requestProblem, startedText, taskLink } from './newTask.logic.ts';
 
 const message = (error: unknown): string => (error instanceof Error ? error.message : String(error));
@@ -64,51 +64,64 @@ export const NewTask = () => {
   const stalePreview = preview.state === 'ready' && preview.for !== request;
 
   return (
-    <Page
-      title="New task"
-      subtitle="Starts a T3 thread with the bot's brief and knowledge, as a chat request would, without going through chat."
-      actions={<Button icon={<ListChecks size={16} />} onClick={() => navigate('/jobs/running')}>Jobs</Button>}
-    >
+    <div data-screen-label="New task" className="mx-auto flex w-full max-w-[44rem] flex-col gap-6 px-8 pt-[14vh] pb-10">
+      <header className="flex flex-col items-center gap-2 text-center">
+        <h1 className="text-[28px] font-semibold tracking-tight">What should the bot do?</h1>
+        <p className="text-sm text-muted">The worker gets the bot's brief and knowledge, as it would for a request from chat.</p>
+      </header>
       <section className="flex flex-col gap-2">
-        <label htmlFor="new-task-request" className="text-sm font-medium">What should the bot do?</label>
-        <textarea
-          id="new-task-request"
-          value={request}
-          disabled={busy}
-          onChange={(event) => { setRequest(event.target.value); setError(null); }}
-          onKeyDown={(event) => {
-            if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') { event.preventDefault(); start(); }
-          }}
-          placeholder="Update the onboarding page for the new pricing, and open a PR."
-          aria-invalid={problem ? true : undefined}
-          aria-describedby="new-task-note"
-          className={cx(
-            'min-h-[10rem] resize-y rounded-md border bg-panel px-3 py-2 text-sm leading-6 text-ink placeholder:text-muted',
-            'focus:outline-2 focus:outline-offset-1 focus:outline-accent disabled:opacity-50',
-            problem ? 'border-down' : 'border-line',
-          )}
-        />
-        <p id="new-task-note" className={cx('text-xs', problem ? 'text-down' : 'text-muted')}>
-          {problem ?? 'The worker gets this as the request, with you as the requester. Its replies are in the T3 thread, not in chat. ⌘↩ starts it.'}
-        </p>
-        {error && <p role="alert" className="text-sm text-down">{error}</p>}
-        <div className="flex flex-wrap gap-2">
-          <Button
-            variant="primary"
-            disabled={!canStart(request, busy)}
-            onClick={start}
-            icon={busy ? <LoaderCircle size={16} className="animate-spin" /> : <Play size={16} />}
-          >
-            {busy ? 'Starting…' : 'Start task'}
-          </Button>
-          <Button icon={<Eye size={16} />} disabled={busy || !request.trim() || problem !== null} onClick={showPreview}>
-            {preview.state === 'ready' ? 'Refresh brief' : 'Show the brief'}
-          </Button>
+        <div className={cx('flex flex-col rounded-2xl border bg-panel shadow-[0_1px_2px_rgb(0_0_0/0.04),0_12px_32px_-16px_rgb(0_0_0/0.3)] transition-[border-color,box-shadow] duration-150 focus-within:ring-1', problem ? 'border-down focus-within:ring-down' : 'border-line focus-within:border-line-strong focus-within:ring-line-strong')}>
+          <label htmlFor="new-task-request" className="sr-only">What should the bot do?</label>
+          <textarea
+            id="new-task-request"
+            autoFocus
+            value={request}
+            disabled={busy}
+            onChange={(event) => { setRequest(event.target.value); setError(null); }}
+            onKeyDown={(event) => {
+              if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') { event.preventDefault(); start(); }
+            }}
+            placeholder="Update the onboarding page for the new pricing, and open a PR."
+            aria-invalid={problem ? true : undefined}
+            aria-describedby="new-task-note"
+            className="max-h-[40vh] min-h-[5.5rem] resize-none bg-transparent px-4 pt-3.5 text-[15px] leading-6 text-ink outline-none [field-sizing:content] placeholder:text-muted disabled:opacity-50"
+          />
+          <div className="flex items-center gap-2 px-3 pb-3">
+            <Button variant="ghost" size="sm" className="text-muted hover:text-ink" icon={<Eye size={14} strokeWidth={1.75} />} disabled={busy || !request.trim() || problem !== null} onClick={showPreview}>
+              {preview.state === 'ready' ? 'Refresh brief' : 'Preview brief'}
+            </Button>
+            <kbd className="ml-auto font-sans text-[11px] text-muted" aria-hidden>⌘↩</kbd>
+            <button
+              type="button"
+              aria-label="Start task"
+              aria-keyshortcuts="Meta+Enter"
+              title="Start task (⌘↩)"
+              disabled={!canStart(request, busy)}
+              onClick={start}
+              className={cx(
+                'grid size-8 place-items-center rounded-full bg-accent text-accent-ink transition-colors duration-150 hover:bg-accent/85',
+                'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus',
+                'disabled:bg-raised disabled:text-muted',
+              )}
+            >
+              {busy ? <LoaderCircle size={15} className="animate-spin" /> : <ArrowUp size={16} strokeWidth={2.25} />}
+            </button>
+          </div>
         </div>
+        <div id="new-task-note" className={cx('flex flex-wrap items-center gap-x-4 gap-y-1 px-3 text-xs [&>span]:whitespace-nowrap', problem ? 'text-down' : 'text-muted')}>
+          {problem ?? (
+            <>
+              <span className="flex items-center gap-1.5"><User size={13} strokeWidth={1.75} aria-hidden /> You're the requester</span>
+              <span className="flex items-center gap-1.5"><Layers size={13} strokeWidth={1.75} aria-hidden /> Replies in T3, not in chat</span>
+              <span className="ml-auto flex items-center gap-1.5"><GitBranch size={13} strokeWidth={1.75} aria-hidden /> Own worktree</span>
+            </>
+          )}
+        </div>
+        {error && <p role="alert" className="text-sm text-down">{error}</p>}
       </section>
 
       {started && (
-        <section className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-line bg-panel px-4 py-3" aria-live="polite">
+        <section className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-line bg-panel px-4 py-3" aria-live="polite">
           <div className="flex min-w-0 flex-col gap-0.5">
             <p className="truncate text-sm font-medium">{startedText(started)}</p>
             <p className="text-xs text-muted">It is listed in Jobs while it runs, and under Done once it finishes.</p>
@@ -124,7 +137,7 @@ export const NewTask = () => {
 
       {preview.state !== 'closed' && (
         <section className="flex flex-col gap-2">
-          <h2 className="text-lg font-bold">Brief the worker gets</h2>
+          <h2 className="text-[15px] font-semibold">Brief the worker gets</h2>
           {preview.state === 'loading' && <p className="flex items-center gap-2 text-sm text-muted"><LoaderCircle size={14} className="animate-spin" /> Filling the brief…</p>}
           {preview.state === 'error' && <p role="alert" className="text-sm text-down">{preview.message}</p>}
           {preview.state === 'ready' && (
@@ -135,6 +148,6 @@ export const NewTask = () => {
           )}
         </section>
       )}
-    </Page>
+    </div>
   );
 };

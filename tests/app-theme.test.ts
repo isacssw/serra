@@ -98,7 +98,7 @@ test('styles: data-theme overrides color-scheme, and every colour token is a lig
   assert.match(css, /:root\[data-theme="dark"\] \{ color-scheme: dark; \}/);
   const tokens = [...css.matchAll(/^\s*--color-[a-z-]+:\s*(.+);$/gm)].map((match) => match[1] ?? '');
   assert.ok(tokens.length >= 12);
-  for (const value of tokens) assert.match(value, /^light-dark\(#[0-9a-f]{6}, #[0-9a-f]{6}\)$/);
+  for (const value of tokens) assert.match(value, /^light-dark\(#[0-9a-f]{6}(?:[0-9a-f]{2})?, #[0-9a-f]{6}(?:[0-9a-f]{2})?\)$/);
 });
 
 test('renderer: no hard-coded white or black text or fills that ignore the theme', async () => {

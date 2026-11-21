@@ -5,15 +5,15 @@ export type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger';
 export type ButtonSize = 'sm' | 'md';
 
 const variants: Record<ButtonVariant, string> = {
-  primary: 'bg-accent text-accent-ink border-transparent hover:opacity-90',
-  secondary: 'bg-panel text-ink border-line hover:bg-raised',
-  ghost: 'bg-transparent text-ink border-transparent hover:bg-raised',
-  danger: 'bg-down text-status-ink border-transparent hover:opacity-90',
+  primary: 'bg-accent text-accent-ink border-transparent hover:bg-accent/85',
+  secondary: 'bg-panel text-ink border-line hover:bg-hover hover:border-line-strong',
+  ghost: 'bg-transparent text-ink border-transparent hover:bg-hover',
+  danger: 'bg-down text-status-ink border-transparent hover:bg-down/85',
 };
 
 const sizes: Record<ButtonSize, string> = {
   sm: 'h-7 px-2.5 text-xs gap-1.5',
-  md: 'h-9 px-3.5 text-sm gap-2',
+  md: 'h-8 px-3 text-[13px] gap-2',
 };
 
 export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
@@ -27,8 +27,8 @@ export const Button = ({ variant = 'secondary', size = 'md', icon, className, ch
   <button
     type={type}
     className={cx(
-      'inline-flex shrink-0 items-center justify-center rounded-md border font-medium whitespace-nowrap',
-      'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent',
+      'inline-flex shrink-0 items-center justify-center rounded-md border font-medium whitespace-nowrap transition-colors duration-150',
+      'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus',
       'disabled:pointer-events-none disabled:opacity-40',
       variants[variant], sizes[size], className,
     )}

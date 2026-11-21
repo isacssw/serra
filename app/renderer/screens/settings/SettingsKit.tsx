@@ -187,7 +187,7 @@ export const TextArea = ({ label, error, hint, className, ...rest }: TextareaHTM
         aria-describedby={note ? `${id}-note` : undefined}
         className={cx(
           'min-h-20 rounded-md border bg-panel px-3 py-2 text-sm text-ink placeholder:text-muted',
-          'focus:outline-2 focus:outline-offset-1 focus:outline-accent',
+          'focus:outline-2 focus:outline-offset-1 focus:outline-focus',
           error ? 'border-down' : 'border-line',
         )}
         {...rest}

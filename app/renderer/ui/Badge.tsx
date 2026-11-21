@@ -5,7 +5,7 @@ export type BadgeTone = 'neutral' | 'accent' | 'up' | 'warn' | 'down';
 
 const tones: Record<BadgeTone, string> = {
   neutral: 'bg-raised text-muted',
-  accent: 'bg-accent text-accent-ink',
+  accent: 'bg-selected text-ink',
   up: 'bg-up/15 text-up',
   warn: 'bg-warn text-status-ink',
   down: 'bg-down/15 text-down',

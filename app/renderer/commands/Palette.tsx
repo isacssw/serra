@@ -34,7 +34,7 @@ const messageOf = (error: unknown): string => (error instanceof Error ? error.me
 
 const Label = ({ text, indices }: { text: string; indices: number[] }) => (
   <span className="flex-1 truncate">
-    {highlightRuns(text, indices).map((run, i) => (run.match ? <mark key={i} className="bg-transparent font-semibold text-accent">{run.text}</mark> : <span key={i}>{run.text}</span>))}
+    {highlightRuns(text, indices).map((run, i) => (run.match ? <mark key={i} className="bg-transparent font-semibold text-ink">{run.text}</mark> : <span key={i}>{run.text}</span>))}
   </span>
 );
 
@@ -165,7 +165,7 @@ export const CommandPalette = () => {
       // reopened it. Only a dialog that is still shut means the palette closed.
       onClose={() => { if (!dialogRef.current?.open) setOpen(false); }}
       onClick={(event) => { if (event.target === dialogRef.current) close(); }}
-      className="mx-auto mt-[12vh] w-[min(36rem,calc(100vw-2rem))] overflow-hidden rounded-xl border border-line bg-panel p-0 text-ink shadow-2xl backdrop:bg-black/40"
+      className="mx-auto mt-[12vh] w-[min(36rem,calc(100vw-2rem))] overflow-hidden rounded-2xl border border-line bg-panel p-0 text-ink shadow-[0_24px_64px_-12px_rgb(0_0_0/0.45)] backdrop:bg-black/40"
     >
       {open && (
         <div className="flex flex-col">
@@ -219,7 +219,7 @@ export const CommandPalette = () => {
                     onMouseMove={() => { if (index !== active) setSelected(index); }}
                     onMouseDown={(event) => event.preventDefault()}
                     onClick={row.pick}
-                    className={cx('flex h-9 cursor-default items-center gap-3 rounded-md px-2.5 text-sm', index === active && 'bg-accent/15')}
+                    className={cx('flex h-9 cursor-default items-center gap-3 rounded-md px-2.5 text-sm', index === active && 'bg-selected')}
                   >
                     <Label text={row.label} indices={row.indices} />
                     {row.hint && <span className="shrink-0 text-xs text-muted">{row.hint}</span>}

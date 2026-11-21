@@ -26,7 +26,7 @@ export const Input = ({ label, error, hint, className, inputClassName, id, ...re
         aria-describedby={note ? noteId : undefined}
         className={cx(
           'h-9 rounded-md border bg-panel px-3 text-sm text-ink placeholder:text-muted',
-          'focus:outline-2 focus:outline-offset-1 focus:outline-accent',
+          'focus:outline-2 focus:outline-offset-1 focus:outline-focus',
           'disabled:opacity-50',
           error ? 'border-down' : 'border-line',
           inputClassName,

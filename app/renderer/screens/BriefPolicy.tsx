@@ -289,7 +289,7 @@ export const BriefPolicy = () => {
               placeholder={active === 'policy' ? '# Owner policy\n\nAdd your workflow choices here.' : undefined}
               className={cx(
                 'min-h-[24rem] resize-y rounded-md border bg-canvas px-3 py-2 font-mono text-xs leading-5 text-ink',
-                'focus:outline-2 focus:outline-offset-1 focus:outline-accent',
+                'focus:outline-2 focus:outline-offset-1 focus:outline-focus',
                 current.length ? 'border-down' : 'border-line',
               )}
             />

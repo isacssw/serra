@@ -1,22 +1,22 @@
 // The Jobs screen (APP-12): Needs you, Running and Done today, with links out to Slack, T3 and the PR, a channel
 // filter and worktree cleanup behind a dry run. It reads the profile's files through the bridge, so it works with the
 // daemon stopped, and reloads on every daemon event. No conversation view: that is read in T3.
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { useNavigate } from 'react-router';
 import {
   CircleCheck, CircleX, CirclePause, ChevronDown, GitBranch, GitPullRequest, Hash, Layers, LoaderCircle, Radio,
-  Plus, RefreshCw, TriangleAlert,
+  Play, Plus, RefreshCw, TriangleAlert,
 } from 'lucide-react';
 import { useSearchParams } from 'react-router';
 import type { CleanupVerdict, JobGroup } from '../../../src/contracts.ts';
 import { serra } from '../bridge.ts';
 import { routeForPath } from '../routes.ts';
 import { useBotStatus } from '../shell/live.ts';
-import { Button, Dialog, Page, cx, useToast } from '../ui/index.ts';
+import { Button, Dialog, EmptyState, Page, cx, useToast } from '../ui/index.ts';
 import { registerActions } from '../commands/registry.ts';
 import {
   ageLabel, channelChoices, CLEANUP_PARAM, cleanupView, cleanupWorktreesAction, EMPTY_TEXT, filterJobs, groupJobs, ICON_LABELS,
-  linkButtons, rowDetail, rowIcon, rowParts, verdictLabel, type JobRow, type LinkKind, type RowIcon,
+  linkButtons, rowDetail, rowIcon, rowParts, verdictLabel, type JobRow, type JobSection, type LinkKind, type RowIcon,
 } from './jobs.logic.ts';
 
 const unregister = registerActions([cleanupWorktreesAction]);
@@ -67,7 +67,7 @@ const useJobs = (statusState: string | undefined): { load: Load; reload: () => v
 const ROW_ICONS: Record<RowIcon, ReactNode> = {
   'needs-you': <TriangleAlert size={20} className="text-warn" />,
   failed: <CircleX size={20} className="text-down" />,
-  running: <LoaderCircle size={20} className="animate-spin text-accent" />,
+  running: <LoaderCircle size={20} className="animate-spin text-ink" />,
   paused: <CirclePause size={20} className="text-muted" />,
   done: <CircleCheck size={20} className="text-up" />,
 };
@@ -91,7 +91,7 @@ const JobRowView = ({ job, icon, now, onError, focused = false }: { job: JobRow;
     <li
       data-job-key={job.key}
       aria-current={focused ? 'true' : undefined}
-      className={cx('flex scroll-mt-6 flex-wrap items-center gap-x-4 gap-y-2 rounded-lg border bg-panel px-4 py-3', focused ? 'border-accent ring-2 ring-accent/40' : 'border-line')}
+      className={cx('flex scroll-mt-6 flex-wrap items-center gap-x-4 gap-y-2 rounded-lg border bg-panel px-4 py-3', focused ? 'border-line-strong ring-2 ring-focus/30' : 'border-line')}
     >
       <span className="shrink-0" role="img" aria-label={ICON_LABELS[icon]} title={ICON_LABELS[icon]}>{ROW_ICONS[icon]}</span>
       <div className="flex min-w-[16rem] flex-1 basis-0 flex-col gap-0.5">
@@ -194,22 +194,90 @@ const CleanupDialog = ({ cleanup, onClose, onApply }: { cleanup: Cleanup; onClos
 const ChannelFilter = ({ options, value, onChange }: { options: { value: string; label: string }[]; value: string | null; onChange: (channel: string | null) => void }) => (
   <label className="relative inline-flex items-center">
     <span className="sr-only">Channel</span>
-    <Radio size={16} className="pointer-events-none absolute left-3 text-muted" aria-hidden />
+    <Radio size={15} strokeWidth={1.75} className="pointer-events-none absolute left-2.5 text-muted" aria-hidden />
     <select
       value={value ?? ''}
       onChange={(event) => onChange(event.target.value || null)}
-      className="h-9 appearance-none rounded-md border border-line bg-panel pr-9 pl-9 text-sm text-ink focus:outline-2 focus:outline-offset-1 focus:outline-accent"
+      className="h-8 appearance-none rounded-md border border-line bg-panel pr-8 pl-8 text-[13px] text-ink transition-colors hover:border-line-strong focus:outline-2 focus:outline-offset-1 focus:outline-focus"
     >
       <option value="">All channels</option>
       {options.map((channel) => <option key={channel.value} value={channel.value}>{channel.label}</option>)}
     </select>
-    <ChevronDown size={16} className="pointer-events-none absolute right-3 text-muted" aria-hidden />
+    <ChevronDown size={15} strokeWidth={1.75} className="pointer-events-none absolute right-2.5 text-muted" aria-hidden />
   </label>
 );
 
-const PATHS: Record<JobGroup, string> = { 'needs you': '/jobs/needs-you', running: '/jobs/running', done: '/jobs/done' };
+/** Each tab's empty state: good news for Needs you, a way to start for Running, what to expect for Done. */
+const EMPTY_STATES: Record<JobGroup, { icon: ReactNode; title: string; body: string; start: boolean }> = {
+  'needs you': {
+    icon: <CircleCheck size={18} strokeWidth={1.75} className="text-up" />,
+    title: "You're all caught up",
+    body: 'When a worker needs a decision or an answer from you, it shows here, with a count in the sidebar.',
+    start: false,
+  },
+  running: {
+    icon: <Play size={16} strokeWidth={1.75} />,
+    title: 'Nothing running',
+    body: 'Ask the bot in a channel, or start a task here. Running workers show here, with a link to their T3 thread.',
+    start: true,
+  },
+  done: {
+    icon: <GitPullRequest size={18} strokeWidth={1.75} />,
+    title: 'Nothing finished today',
+    body: 'Jobs that finish today show here, with their pull request.',
+    start: false,
+  },
+};
 
-/** One screen for the three sidebar items: `group` is the one picked, scrolled to and marked current. */
+const PATHS: Record<JobGroup, string> = { 'needs you': '/jobs/needs-you', running: '/jobs/running', done: '/jobs/done' };
+const TAB_IDS: Record<JobGroup, string> = { 'needs you': 'jobs-tab-needs-you', running: 'jobs-tab-running', done: 'jobs-tab-done' };
+
+/** Needs you, Running and Done today as tabs: one is shown, each with its count. Arrow keys move between them. */
+const JobTabs = ({ sections, group, onPick }: { sections: JobSection[]; group: JobGroup; onPick: (group: JobGroup, focus: boolean) => void }) => {
+  const onKeyDown = (event: KeyboardEvent<HTMLDivElement>): void => {
+    const at = sections.findIndex((section) => section.group === group);
+    const to = event.key === 'ArrowRight' ? at + 1 : event.key === 'ArrowLeft' ? at - 1 : event.key === 'Home' ? 0 : event.key === 'End' ? sections.length - 1 : null;
+    if (to === null) return;
+    event.preventDefault();
+    const next = sections[(to + sections.length) % sections.length];
+    if (next) onPick(next.group, true);
+  };
+  return (
+    <div role="tablist" aria-label="Jobs by state" onKeyDown={onKeyDown} className="flex items-center gap-1 border-b border-line">
+      {sections.map((section) => {
+        const selected = section.group === group;
+        const urgent = section.group === 'needs you' && section.rows.length > 0;
+        return (
+          <button
+            key={section.group}
+            id={TAB_IDS[section.group]}
+            type="button"
+            role="tab"
+            aria-selected={selected}
+            aria-controls="jobs-panel"
+            tabIndex={selected ? 0 : -1}
+            onClick={() => onPick(section.group, false)}
+            className={cx(
+              '-mb-px flex h-9 items-center gap-2 rounded-t-md border-b-2 px-2.5 text-[13px] transition-colors duration-150',
+              'focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-focus',
+              selected ? 'border-ink font-medium text-ink' : 'border-transparent text-muted hover:text-ink',
+            )}
+          >
+            {section.title}
+            <span
+              aria-label={`${section.rows.length} ${section.rows.length === 1 ? 'job' : 'jobs'}`}
+              className={cx('min-w-5 rounded-full px-1.5 text-center text-[11px] leading-[18px] tabular-nums', urgent ? 'bg-warn/15 font-semibold text-warn' : 'bg-raised text-muted')}
+            >
+              {section.rows.length}
+            </span>
+          </button>
+        );
+      })}
+    </div>
+  );
+};
+
+/** One screen for every Jobs state: `group` is the tab shown. The sidebar's Jobs item opens Needs you. */
 export const Jobs = ({ group }: { group: JobGroup }) => {
   const status = useBotStatus();
   const navigate = useNavigate();
@@ -218,20 +286,25 @@ export const Jobs = ({ group }: { group: JobGroup }) => {
   const toast = useToast();
   const [channel, setChannel] = useState<string | null>(null);
   const [cleanup, setCleanup] = useState<Cleanup>({ step: 'closed' });
-  const sectionRefs = useRef<Partial<Record<JobGroup, HTMLElement | null>>>({});
   const ready = load.state === 'ready';
 
-  // `?job=<key>` (a clicked notification, APP-24) marks that job's row and scrolls to it instead of the section.
+  // `?job=<key>` (a clicked notification, APP-24) opens that job's tab, marks its row and scrolls to it.
   const [search, setSearch] = useSearchParams();
   const focusedKey = search.get('job');
   useEffect(() => { if (focusedKey) setChannel(null); }, [focusedKey]);
 
   useEffect(() => {
-    if (!ready) return;
-    const row = focusedKey ? [...document.querySelectorAll<HTMLElement>('[data-job-key]')].find((element) => element.dataset.jobKey === focusedKey) : undefined;
-    if (row) row.scrollIntoView({ block: 'start' });
-    else sectionRefs.current[group]?.scrollIntoView({ block: 'start' });
+    if (!ready || !focusedKey) return;
+    const job = load.rows.find((row) => row.key === focusedKey);
+    if (job && job.group !== group) { navigate(`${PATHS[job.group]}?job=${encodeURIComponent(focusedKey)}`, { replace: true }); return; }
+    const row = [...document.querySelectorAll<HTMLElement>('[data-job-key]')].find((element) => element.dataset.jobKey === focusedKey);
+    row?.scrollIntoView({ block: 'center' });
   }, [group, ready, focusedKey]);
+
+  const pick = (next: JobGroup, focus: boolean): void => {
+    navigate(PATHS[next]);
+    if (focus) requestAnimationFrame(() => document.getElementById(TAB_IDS[next])?.focus());
+  };
 
   const onLinkError = useCallback((text: string) => toast({ message: text, tone: 'error' }), [toast]);
 
@@ -274,48 +347,61 @@ export const Jobs = ({ group }: { group: JobGroup }) => {
 
   const rows = ready ? load.rows : [];
   const sections = groupJobs(filterJobs(rows, channel));
+  const current = sections.find((section) => section.group === group) ?? sections[0]!;
+  const empty = EMPTY_STATES[group];
 
   return (
-    <div data-screen-label={routeForPath(PATHS[group])?.label}>
+    <div data-screen-label="Jobs">
       <Page
         title="Jobs"
         actions={(
           <>
             <ChannelFilter options={channelChoices(rows, channel)} value={channel} onChange={setChannel} />
-            <Button icon={<GitBranch size={16} />} onClick={startCleanup}>Clean up worktrees</Button>
-            <Button variant="primary" icon={<Plus size={16} />} onClick={() => navigate('/jobs/new')}>New task</Button>
+            <Button icon={<GitBranch size={15} strokeWidth={1.75} />} onClick={startCleanup}>Clean up worktrees</Button>
           </>
         )}
       >
         {status?.state === 'stopped' && (
-          <p className="rounded-md border border-line bg-raised px-3 py-2 text-sm text-muted">
-            The bot is stopped. Jobs come from the profile's files, and nothing is running until it starts again.
+          <p className="-mt-2 flex items-center gap-2 text-[13px] text-muted">
+            <span className="size-1.5 shrink-0 rounded-full bg-down" aria-hidden />
+            The bot is stopped, so chat requests wait until it starts. This list comes from the profile's files.
           </p>
         )}
         {load.state === 'loading' && <p className="flex items-center gap-2 text-sm text-muted"><LoaderCircle size={14} className="animate-spin" /> Loading jobs…</p>}
         {load.state === 'error' && (
-          <div role="alert" className="flex items-center justify-between gap-4 rounded-md border border-down/40 px-3 py-2 text-sm text-down">
+          <div role="alert" className="flex items-center justify-between gap-4 rounded-lg border border-down/40 px-3 py-2 text-sm text-down">
             <span>{load.message}</span>
             <Button size="sm" icon={<RefreshCw size={14} />} onClick={reload}>Retry</Button>
           </div>
         )}
-        {ready && sections.map((section) => (
-          <section
-            key={section.group}
-            ref={(element) => { sectionRefs.current[section.group] = element; }}
-            aria-current={section.group === group ? 'true' : undefined}
-            className="flex scroll-mt-6 flex-col gap-2"
-          >
-            <h2 className="text-lg font-bold">{section.title} ({section.rows.length})</h2>
-            {section.rows.length === 0
-              ? <p className="text-sm text-muted">{EMPTY_TEXT[section.group]}</p>
-              : (
-                <ul className="flex flex-col gap-1.5">
-                  {section.rows.map((job) => <JobRowView key={job.key} job={job} icon={rowIcon(job, status)} now={now} onError={onLinkError} focused={job.key === focusedKey} />)}
-                </ul>
-              )}
-          </section>
-        ))}
+        {ready && (
+          <div className="flex flex-col gap-4">
+            <JobTabs sections={sections} group={group} onPick={pick} />
+            <div id="jobs-panel" role="tabpanel" aria-labelledby={TAB_IDS[current.group]} tabIndex={-1} className="outline-none">
+              {current.rows.length === 0
+                ? (channel
+                  ? (
+                    <EmptyState icon={<Radio size={16} strokeWidth={1.75} />} title={`Nothing here in ${channelChoices(rows, channel).find((c) => c.value === channel)?.label ?? 'this channel'}`} action={<Button size="sm" onClick={() => setChannel(null)}>Show all channels</Button>}>
+                      Other channels may have jobs in this state.
+                    </EmptyState>
+                  )
+                  : (
+                    <EmptyState
+                      icon={empty.icon}
+                      title={empty.title}
+                      action={empty.start ? <Button size="sm" variant="primary" icon={<Plus size={14} />} onClick={() => navigate('/jobs/new')}>New task</Button> : undefined}
+                    >
+                      {empty.body}
+                    </EmptyState>
+                  ))
+                : (
+                  <ul className="flex flex-col gap-1.5">
+                    {current.rows.map((job) => <JobRowView key={job.key} job={job} icon={rowIcon(job, status)} now={now} onError={onLinkError} focused={job.key === focusedKey} />)}
+                  </ul>
+                )}
+            </div>
+          </div>
+        )}
         <CleanupDialog cleanup={cleanup} onClose={() => setCleanup({ step: 'closed' })} onApply={applyCleanup} />
       </Page>
     </div>

@@ -3,27 +3,42 @@
 /*
  * Colour tokens. Each is one light-dark() pair, so a theme is just `color-scheme`: the system's by default, or the
  * one chosen in prefs (`data-theme` on <html>). Use these through Tailwind (`bg-panel`, `text-muted`, `border-line`),
- * never raw colours, so both themes stay readable. Status colours follow assets/brand/README.md, shifted where text
- * needs it: light up and dark down are a step deeper and lighter, so a green or red label on its 15% tint reads at
- * 4.5:1 or better. `electron . --smoke` measures every screen's text in both themes (APP-28).
+ * never raw colours, so both themes stay readable. `electron . --smoke` measures every screen's text in both themes
+ * (APP-28).
+ *
+ * The look is neutral: near-black (dark) or white (light) surfaces, the sidebar the same colour as the content and
+ * set apart by one hairline, borders as alpha (#rrggbbaa) on ink so they sit right on any surface, and colour only for meaning
+ * (status). The primary action is ink on canvas: near-white in dark mode, near-black in light mode.
  */
 @theme {
-  --color-canvas: light-dark(#ffffff, #1a1a1c);
-  --color-sidebar: light-dark(#f4f4f2, #151517);
-  --color-panel: light-dark(#ffffff, #202023);
-  --color-raised: light-dark(#f0f0ee, #2a2a2e);
-  --color-line: light-dark(#dcdcd8, #3a3a3f);
-  --color-ink: light-dark(#1a1a1c, #f2f1ec);
-  --color-muted: light-dark(#5f5f66, #a1a1aa);
-  --color-accent: light-dark(#4f5bd5, #8b93ff);
-  --color-accent-ink: light-dark(#ffffff, #14141a);
+  /* Surfaces, back to front. */
+  --color-canvas: light-dark(#ffffff, #0b0b0c);
+  --color-sidebar: light-dark(#ffffff, #0b0b0c);
+  --color-panel: light-dark(#ffffff, #121214);
+  --color-raised: light-dark(#f4f4f5, #1a1a1d);
+  /* Borders and interaction states. */
+  --color-line-subtle: light-dark(#0000000f, #ffffff0f);
+  --color-line: light-dark(#0000001a, #ffffff1a);
+  --color-line-strong: light-dark(#0000002e, #ffffff2e);
+  --color-hover: light-dark(#0000000a, #ffffff0d);
+  --color-selected: light-dark(#00000012, #ffffff17);
+  /* Text, strongest to weakest. `faint` still reads at 4.5:1 or better on canvas, panel and raised. */
+  --color-ink: light-dark(#18181b, #ededef);
+  --color-muted: light-dark(#5c5c64, #a3a3ab);
+  --color-faint: light-dark(#6b6b73, #8a8a93);
+  /* The primary action, selection and focus: ink, not a hue. */
+  --color-accent: light-dark(#18181b, #ededef);
+  --color-accent-ink: light-dark(#ffffff, #0b0b0c);
+  --color-focus: light-dark(#18181b, #ededef);
+  /* Status colours follow assets/brand/README.md, shifted where text needs it: light up and dark down are a step
+     deeper and lighter, so a green or red label on its 15% tint reads at 4.5:1 or better. */
   --color-up: light-dark(#166534, #22c55e);
   --color-warn: light-dark(#b45309, #f59e0b);
   --color-down: light-dark(#b91c1c, #f87171);
-  /* Text on a solid up, warn or down fill (the danger button, a warn badge). White on the light fills, near-black on
-     the brighter dark ones: white on dark-mode green or red is unreadable. */
+  /* Text on a solid up, warn or down fill (the danger button, a warn badge). */
   --color-status-ink: light-dark(#ffffff, #14141a);
-  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", system-ui, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, monospace;
 }
 
 :root { color-scheme: light dark; }
@@ -37,4 +52,30 @@ body {
   color: var(--color-ink);
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
+}
+
+/* The integrated macOS title bar (window-options.ts): `drag` areas move the window. Controls never do, wherever they
+   sit, so a button under a drag area still takes its click. */
+.drag { -webkit-app-region: drag; user-select: none; }
+button, a, input, select, textarea, summary, [role="tab"], [tabindex] { -webkit-app-region: no-drag; }
+
+/* Thin scrollbars that keep out of the way, like the system's overlay ones. */
+* { scrollbar-width: thin; scrollbar-color: var(--color-line-strong) transparent; }
+
+::selection { background: light-dark(rgb(0 0 0 / 0.12), rgb(255 255 255 / 0.2)); }
+
+/* Overlays fade in; nothing moves for people who asked for less motion (spinners stop too). */
+@keyframes serra-pop { from { opacity: 0; transform: scale(0.98); } }
+@keyframes serra-fade { from { opacity: 0; } }
+@keyframes serra-rise { from { opacity: 0; transform: translateY(6px); } }
+dialog[open] { animation: serra-pop 140ms ease-out; }
+dialog[open]::backdrop { animation: serra-fade 140ms ease-out; }
+[data-toast] { animation: serra-rise 160ms ease-out; }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after, *::backdrop {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

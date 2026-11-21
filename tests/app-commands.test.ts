@@ -8,7 +8,7 @@ import type { HandlerContext } from '../app/main/ipc/context.ts';
 import { createHandlers } from '../app/main/ipc/index.ts';
 import { memoryPrefs } from '../app/main/prefs.ts';
 import { stoppedStatusSource } from '../app/main/status.ts';
-import { addAllowedUser, appliesText, builtinActions, navigationActions, openProfileFolder, restartBot } from '../app/renderer/commands/builtin.ts';
+import { addAllowedUser, appliesText, builtinActions, navigationActions, navigationButton, openProfileFolder, restartBot } from '../app/renderer/commands/builtin.ts';
 import { fuzzyMatch } from '../app/renderer/commands/fuzzy.logic.ts';
 import { highlightRuns, isPaletteShortcut, moveSelection } from '../app/renderer/commands/palette.logic.ts';
 import { createActionRegistry, searchActions, searchChoices, type Action, type ActionContext } from '../app/renderer/commands/registry.ts';
@@ -165,7 +165,9 @@ test('built-ins: register cleanly, every one names its button, and every screen 
   registry.register(builtinActions);
   for (const builtin of registry.list()) assert.ok(builtin.button.trim().length > 0, builtin.id);
   assert.deepEqual(navigationActions.map((a) => a.id), routes.map((route) => `go:${route.id}`));
-  for (const route of routes) assert.equal(navigationActions.find((a) => a.id === `go:${route.id}`)?.button, `Sidebar › ${route.label}`);
+  for (const route of routes) assert.equal(navigationActions.find((a) => a.id === `go:${route.id}`)?.button, navigationButton(route));
+  assert.equal(navigationButton(routes.find((route) => route.id === 'jobs-running')!), 'Sidebar › Jobs › Running');
+  assert.equal(navigationButton(routes.find((route) => route.id === 'settings-people')!), 'Sidebar › People');
   assert.deepEqual(titles(registry.list(), '').slice(0, 3), ['Restart bot', 'Open profile folder', 'Add allowed user']);
 });
 

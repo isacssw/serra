@@ -67,7 +67,7 @@ const StepList = ({ progress, shown, onPick }: { progress: SetupProgress; shown:
             data-state={state}
             className={cx(
               'flex w-full items-start gap-3 rounded-md px-2.5 py-2 text-left',
-              'focus-visible:outline-2 focus-visible:outline-accent disabled:opacity-50',
+              'focus-visible:outline-2 focus-visible:outline-focus disabled:opacity-50',
               shown === step.id ? 'bg-raised' : 'hover:bg-raised',
             )}
           >
