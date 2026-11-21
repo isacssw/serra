@@ -26,7 +26,7 @@ export interface Route {
 export const routes = [
   { id: 'jobs-needs-you', path: '/jobs/needs-you', label: 'Needs you', navLabel: 'Jobs', section: 'jobs', badge: 'needsYou', ticket: 'APP-12' },
   { id: 'jobs-running', path: '/jobs/running', label: 'Running', section: 'jobs', badge: 'running', nav: false, ticket: 'APP-12' },
-  { id: 'jobs-done', path: '/jobs/done', label: 'Done', section: 'jobs', nav: false, ticket: 'APP-12' },
+  { id: 'jobs-done', path: '/jobs/done', label: 'Done today', section: 'jobs', nav: false, ticket: 'APP-12' },
   { id: 'new-task', path: '/jobs/new', label: 'New task', section: 'jobs', nav: false, ticket: 'APP-25' },
   { id: 'proposals', path: '/knowledge/proposals', label: 'Proposals', section: 'knowledge', badge: 'proposals', ticket: 'APP-13' },
   { id: 'pages', path: '/knowledge/pages', label: 'Pages', section: 'knowledge', ticket: 'APP-20' },

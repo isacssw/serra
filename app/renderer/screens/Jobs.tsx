@@ -15,7 +15,7 @@ import { useBotStatus } from '../shell/live.ts';
 import { Button, Dialog, EmptyState, Page, cx, useToast } from '../ui/index.ts';
 import { registerActions } from '../commands/registry.ts';
 import {
-  ageLabel, channelChoices, CLEANUP_PARAM, cleanupView, cleanupWorktreesAction, EMPTY_TEXT, filterJobs, groupJobs, ICON_LABELS,
+  ageLabel, channelChoices, CLEANUP_PARAM, cleanupView, cleanupWorktreesAction, filterJobs, groupJobs, ICON_LABELS,
   linkButtons, rowDetail, rowIcon, rowParts, verdictLabel, type JobRow, type JobSection, type LinkKind, type RowIcon,
 } from './jobs.logic.ts';
 
@@ -243,7 +243,7 @@ const JobTabs = ({ sections, group, onPick }: { sections: JobSection[]; group: J
     if (next) onPick(next.group, true);
   };
   return (
-    <div role="tablist" aria-label="Jobs by state" onKeyDown={onKeyDown} className="flex items-center gap-1 border-b border-line">
+    <div role="tablist" aria-label="Jobs by state" onKeyDown={onKeyDown} className="flex items-center gap-1 overflow-x-auto border-b border-line">
       {sections.map((section) => {
         const selected = section.group === group;
         const urgent = section.group === 'needs you' && section.rows.length > 0;
@@ -258,7 +258,7 @@ const JobTabs = ({ sections, group, onPick }: { sections: JobSection[]; group: J
             tabIndex={selected ? 0 : -1}
             onClick={() => onPick(section.group, false)}
             className={cx(
-              '-mb-px flex h-9 items-center gap-2 rounded-t-md border-b-2 px-2.5 text-[13px] transition-colors duration-150',
+              '-mb-px flex h-9 shrink-0 items-center gap-1.5 rounded-t-md border-b-2 px-2 text-[13px] whitespace-nowrap transition-colors duration-150',
               'focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-focus',
               selected ? 'border-ink font-medium text-ink' : 'border-transparent text-muted hover:text-ink',
             )}
@@ -362,8 +362,8 @@ export const Jobs = ({ group }: { group: JobGroup }) => {
         )}
       >
         {status?.state === 'stopped' && (
-          <p className="-mt-2 flex items-center gap-2 text-[13px] text-muted">
-            <span className="size-1.5 shrink-0 rounded-full bg-down" aria-hidden />
+          <p className="-mt-2 flex items-start gap-2 text-[13px] leading-5 text-muted">
+            <span className="mt-[7px] size-1.5 shrink-0 rounded-full bg-down" aria-hidden />
             The bot is stopped, so chat requests wait until it starts. This list comes from the profile's files.
           </p>
         )}
@@ -377,7 +377,14 @@ export const Jobs = ({ group }: { group: JobGroup }) => {
         {ready && (
           <div className="flex flex-col gap-4">
             <JobTabs sections={sections} group={group} onPick={pick} />
-            <div id="jobs-panel" role="tabpanel" aria-labelledby={TAB_IDS[current.group]} tabIndex={-1} className="outline-none">
+            <div
+              id="jobs-panel"
+              role="tabpanel"
+              aria-labelledby={TAB_IDS[current.group]}
+              // A panel with nothing to focus takes focus itself, so Tab from the tabs reaches its content.
+              tabIndex={current.rows.length === 0 && !channel && !empty.start ? 0 : -1}
+              className="rounded-xl focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
+            >
               {current.rows.length === 0
                 ? (channel
                   ? (
@@ -389,7 +396,7 @@ export const Jobs = ({ group }: { group: JobGroup }) => {
                     <EmptyState
                       icon={empty.icon}
                       title={empty.title}
-                      action={empty.start ? <Button size="sm" variant="primary" icon={<Plus size={14} />} onClick={() => navigate('/jobs/new')}>New task</Button> : undefined}
+                      action={empty.start ? <Button size="sm" icon={<Plus size={14} />} onClick={() => navigate('/jobs/new')}>New task</Button> : undefined}
                     >
                       {empty.body}
                     </EmptyState>

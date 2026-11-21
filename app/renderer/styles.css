@@ -33,7 +33,7 @@
   /* Status colours follow assets/brand/README.md, shifted where text needs it: light up and dark down are a step
      deeper and lighter, so a green or red label on its 15% tint reads at 4.5:1 or better. */
   --color-up: light-dark(#166534, #22c55e);
-  --color-warn: light-dark(#b45309, #f59e0b);
+  --color-warn: light-dark(#92400e, #f59e0b);
   --color-down: light-dark(#b91c1c, #f87171);
   /* Text on a solid up, warn or down fill (the danger button, a warn badge). */
   --color-status-ink: light-dark(#ffffff, #14141a);
@@ -57,7 +57,7 @@ body {
 /* The integrated macOS title bar (window-options.ts): `drag` areas move the window. Controls never do, wherever they
    sit, so a button under a drag area still takes its click. */
 .drag { -webkit-app-region: drag; user-select: none; }
-button, a, input, select, textarea, summary, [role="tab"], [tabindex] { -webkit-app-region: no-drag; }
+.no-drag, button, a, input, select, textarea, summary, [role="tab"], [tabindex] { -webkit-app-region: no-drag; }
 
 /* Thin scrollbars that keep out of the way, like the system's overlay ones. */
 * { scrollbar-width: thin; scrollbar-color: var(--color-line-strong) transparent; }

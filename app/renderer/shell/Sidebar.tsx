@@ -1,7 +1,7 @@
 // The sidebar: the title-bar row (traffic lights on macOS, then the bot's name and state), New task as the primary
 // action, search, then one item per screen. Same colour as the content, set apart by one hairline (styles.css).
 import { useEffect, useState, type ComponentType, type KeyboardEvent } from 'react';
-import { NavLink, useLocation } from 'react-router';
+import { Link, NavLink, useLocation } from 'react-router';
 import {
   Activity, Bell, BookOpen, Box, Cpu, Download, FileText, Inbox, KeyRound, Layers, ScrollText, Search, SquarePen,
   SquareTerminal, SunMoon, Users, type LucideProps,
@@ -53,11 +53,14 @@ const TitleRow = ({ status }: { status: BotStatus | null }) => {
   const view = statusView(status);
   const insetLights = isMac && !useFullScreen();
   return (
-    <div className={cx('drag flex h-[52px] shrink-0 items-center gap-2 pr-3', insetLights ? 'pl-[84px]' : 'pl-4')} title={view.detail}>
+    <div className={cx('drag flex h-[52px] shrink-0 items-center pr-3', insetLights ? 'pl-[84px]' : 'pl-4')}>
+      {/* The title row moves the window, which takes its mouse events; the name keeps its tooltip. */}
+      <div className="no-drag flex min-w-0 items-center gap-2" title={view.detail}>
       <img src={statusIcons[view.tone]} alt="" className={cx('size-[18px] rounded-[5px]', view.tone === 'unknown' && 'opacity-40 grayscale')} />
       <span className="min-w-0 truncate text-[13px]" role="status" aria-label={`Serra: ${view.detail}`} data-status-tone={view.tone}>
         <span className="font-semibold text-ink">Serra</span><span className="text-muted"> · {view.label}</span>
       </span>
+      </div>
     </div>
   );
 };
@@ -94,7 +97,7 @@ export const Sidebar = ({ status, counts }: { status: BotStatus | null; counts: 
   return (
     <aside data-serra-sidebar className="flex w-60 shrink-0 flex-col border-r border-line bg-sidebar">
       <TitleRow status={status} />
-      <nav aria-label="Screens" onKeyDown={moveFocus} className="flex min-h-0 flex-1 flex-col overflow-y-auto px-2 pb-3">
+      <nav aria-label="Screens" onKeyDown={moveFocus} className="flex min-h-0 flex-1 flex-col overflow-y-auto px-2 pt-1 pb-3">
         <div className="flex flex-col gap-0.5 pb-2">
           <NavLink
             to="/jobs/new"
@@ -126,7 +129,7 @@ export const Sidebar = ({ status, counts }: { status: BotStatus | null; counts: 
           const items = routes.filter((route) => route.section === section.id && !('nav' in route && route.nav === false));
           if (items.length === 0) return null;
           return (
-            <div key={section.id} className="flex flex-col gap-0.5" role="group" aria-labelledby={section.heading ? `nav-${section.id}` : undefined}>
+            <div key={section.id} className="flex flex-col gap-0.5" {...(section.heading ? { role: 'group', 'aria-labelledby': `nav-${section.id}` } : {})}>
               {section.heading && (
                 <h2 id={`nav-${section.id}`} className="flex items-center justify-between px-2 pt-4 pb-1 text-[11px] font-medium text-muted">
                   {section.heading}
@@ -139,14 +142,8 @@ export const Sidebar = ({ status, counts }: { status: BotStatus | null; counts: 
                 // Jobs shows what needs you; with nothing waiting, what's running.
                 const key: BadgeKey | undefined = route.id === 'jobs-needs-you' ? (counts.needsYou ? 'needsYou' : 'running') : 'badge' in route ? route.badge : undefined;
                 const text = key ? badgeText(counts[key]) : null;
-                return (
-                  <NavLink
-                    key={route.id}
-                    to={route.path}
-                    data-route={route.id}
-                    className={({ isActive }) => itemClass(isActive || (route.id === 'jobs-needs-you' && inJobs))}
-                    aria-current={route.id === 'jobs-needs-you' && inJobs ? 'page' : undefined}
-                  >
+                const inner = (
+                  <>
                     <Icon size={15} strokeWidth={1.75} aria-hidden className="shrink-0 text-muted group-hover:text-ink group-aria-[current=page]:text-ink" />
                     <span className="flex-1 truncate">{label}</span>
                     {key && text && (
@@ -157,6 +154,19 @@ export const Sidebar = ({ status, counts }: { status: BotStatus | null; counts: 
                         {text}
                       </span>
                     )}
+                  </>
+                );
+                // Jobs stands for all its tabs, so it is current on any of them, which NavLink can't express.
+                if (route.id === 'jobs-needs-you') {
+                  return (
+                    <Link key={route.id} to={route.path} data-route={route.id} className={itemClass(inJobs)} aria-current={inJobs ? 'page' : undefined}>
+                      {inner}
+                    </Link>
+                  );
+                }
+                return (
+                  <NavLink key={route.id} to={route.path} data-route={route.id} className={({ isActive }) => itemClass(isActive)}>
+                    {inner}
                   </NavLink>
                 );
               })}

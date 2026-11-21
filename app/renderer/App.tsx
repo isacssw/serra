@@ -1,6 +1,6 @@
 // The window's shell and router: the sidebar, a route per screen, last-screen memory and toasts.
 // Each screen lives in its own file under screens/.
-import { useEffect, useRef, type ReactElement } from 'react';
+import { useEffect, useLayoutEffect, useRef, type ReactElement } from 'react';
 import { HashRouter, Navigate, Route, Routes, useLocation } from 'react-router';
 import { serra } from './bridge.ts';
 import { CommandPalette } from './commands/Palette.tsx';
@@ -62,6 +62,13 @@ const RememberScreen = () => {
   return null;
 };
 
+/** Every screen (and every Jobs tab) opens at its top, not at the last screen's scroll position. */
+const ScrollToTop = () => {
+  const { pathname } = useLocation();
+  useLayoutEffect(() => { document.querySelector('[data-serra-main]')?.scrollTo({ top: 0 }); }, [pathname]);
+  return null;
+};
+
 const Shell = () => {
   const status = useBotStatus();
   const counts = useBadgeCounts(status);
@@ -84,6 +91,7 @@ const Shell = () => {
       <CommandPalette />
       <FollowNavigation />
       <Shortcuts />
+      <ScrollToTop />
     </div>
   );
 };

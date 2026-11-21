@@ -4,7 +4,7 @@ import { useCallback, useEffect, useId, useMemo, useRef, useState, type Keyboard
 import { useNavigate } from 'react-router';
 import { ArrowLeft, CornerDownLeft, LoaderCircle, Search } from 'lucide-react';
 import { serra } from '../bridge.ts';
-import { OPEN_COMMAND_PALETTE } from '../shell/events.ts';
+import { CLOSE_COMMAND_PALETTE, OPEN_COMMAND_PALETTE } from '../shell/events.ts';
 import { Button, cx, useToast } from '../ui/index.ts';
 import { builtinActions } from './builtin.ts';
 import { highlightRuns, isPaletteShortcut, moveSelection } from './palette.logic.ts';
@@ -69,7 +69,12 @@ export const CommandPalette = () => {
     };
     window.addEventListener('keydown', onKey);
     window.addEventListener(OPEN_COMMAND_PALETTE, show);
-    return () => { window.removeEventListener('keydown', onKey); window.removeEventListener(OPEN_COMMAND_PALETTE, show); };
+    window.addEventListener(CLOSE_COMMAND_PALETTE, close);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      window.removeEventListener(OPEN_COMMAND_PALETTE, show);
+      window.removeEventListener(CLOSE_COMMAND_PALETTE, close);
+    };
   }, [show, close]);
 
   useEffect(() => {

@@ -70,7 +70,7 @@ export const NewTask = () => {
         <p className="text-sm text-muted">The worker gets the bot's brief and knowledge, as it would for a request from chat.</p>
       </header>
       <section className="flex flex-col gap-2">
-        <div className={cx('flex flex-col rounded-2xl border bg-panel shadow-[0_1px_2px_rgb(0_0_0/0.04),0_12px_32px_-16px_rgb(0_0_0/0.3)] transition-[border-color,box-shadow] duration-150 focus-within:ring-1', problem ? 'border-down focus-within:ring-down' : 'border-line focus-within:border-line-strong focus-within:ring-line-strong')}>
+        <div className={cx('flex flex-col rounded-2xl border bg-panel shadow-[0_1px_2px_rgb(0_0_0/0.04),0_12px_32px_-16px_rgb(0_0_0/0.3)] transition-[border-color,box-shadow] duration-150 focus-within:ring-1', problem ? 'border-down focus-within:ring-down' : 'border-line focus-within:border-line-strong focus-within:ring-line-strong has-[textarea:focus-visible]:outline-2 has-[textarea:focus-visible]:-outline-offset-1 has-[textarea:focus-visible]:outline-focus/60')}>
           <label htmlFor="new-task-request" className="sr-only">What should the bot do?</label>
           <textarea
             id="new-task-request"
@@ -113,7 +113,7 @@ export const NewTask = () => {
             <>
               <span className="flex items-center gap-1.5"><User size={13} strokeWidth={1.75} aria-hidden /> You're the requester</span>
               <span className="flex items-center gap-1.5"><Layers size={13} strokeWidth={1.75} aria-hidden /> Replies in T3, not in chat</span>
-              <span className="ml-auto flex items-center gap-1.5"><GitBranch size={13} strokeWidth={1.75} aria-hidden /> Own worktree</span>
+              <span className="flex items-center gap-1.5"><GitBranch size={13} strokeWidth={1.75} aria-hidden /> Own worktree</span>
             </>
           )}
         </div>
@@ -124,7 +124,7 @@ export const NewTask = () => {
         <section className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-line bg-panel px-4 py-3" aria-live="polite">
           <div className="flex min-w-0 flex-col gap-0.5">
             <p className="truncate text-sm font-medium">{startedText(started)}</p>
-            <p className="text-xs text-muted">It is listed in Jobs while it runs, and under Done once it finishes.</p>
+            <p className="text-xs text-muted">It is listed in Jobs while it runs, and under Done today once it finishes.</p>
           </div>
           <div className="flex gap-2">
             <span title={startedLink ? 'Open the T3 thread' : "T3 didn't return a link for this thread yet"}>
