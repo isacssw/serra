@@ -143,8 +143,10 @@ export interface SerraApi {
     aboutMe(visibility: Visibility): AboutMe;
     /** Pages without an `audience:`, which only the owner's own replies use. */
     untagged(): { path: string; description: string; offlimits: boolean; preview: string; text: string }[];
-    /** Set who may hear these pages (saved like edits). All or nothing: a page that changed refuses the share. */
-    /** Each page with the text the owner previewed; refused, sharing nothing, when one changed since. */
+    /**
+     * Set who may hear these pages, each with the text the owner previewed (saved like edits). All or nothing: a page
+     * that changed since refuses the whole share.
+     */
     share(pages: { path: string; text: string }[], audience: Visibility): { shared: string[] };
   };
   /** Brief and policy (APP-21). */

@@ -14,7 +14,7 @@ import { NOT_PAGES, PROPOSALS_DIR } from './knowledge-rules.ts';
  *
  * What this catches: a worker that was talked into editing knowledge, and the owner's own hand edits, which they
  * accept in one click. What it doesn't: a worker determined to rewrite this copy too. That needs the worker kept out
- * of the profile folder altogether, which Serra can't do yet. Pages a worker opens on demand are read from disk.
+ * of the profile folder altogether, which Serra can't do yet. Workers open pages from a snapshot of this copy.
  */
 export interface KnowledgeDrift {
   /** Tracked files whose text differs from the approved copy, or that the approved copy doesn't have. */

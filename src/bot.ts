@@ -331,11 +331,27 @@ export const createBot = ({
    * Who will see the bot's reply in this thread. A DM is the owner's own, or a teammate's. A channel shared with
    * another company, or one Slack won't describe, counts as outside: the brief then carries only what may be said there.
    */
-  const replyVisibility = async (msg: IncomingMessage, { fresh = false }: { fresh?: boolean } = {}): Promise<Visibility> => {
-    if (msg.channel.startsWith('D')) return msg.user === config.owner ? 'owner' : dmVisibility(msg.user, fresh);
+  /**
+   * `fresh`: ask Slack again, whatever is cached. `ifUnknown`: before a post, a lookup that fails twice isn't news that
+   * the channel changed, so the audience the job was started with stands instead of hiding a finished reply.
+   */
+  const replyVisibility = async (msg: IncomingMessage, { fresh = false, ifUnknown }: { fresh?: boolean; ifUnknown?: Visibility } = {}): Promise<Visibility> => {
+    if (msg.channel.startsWith('D')) return msg.user === config.owner ? 'owner' : dmVisibility(msg.user, fresh, ifUnknown);
     const known = sharedChannels.get(msg.channel);
     // Before anything is posted, Slack is asked again: a channel can be shared outside a minute after the job started.
     if (!fresh && known && known.until > now()) return known.external ? 'external' : 'team';
+    const looked = await lookUpChannel(msg);
+    if (looked) return looked;
+    if (ifUnknown) {
+      const again = await lookUpChannel(msg);
+      if (again) return again;
+      logger.warn(`Could not tell who can see ${msg.channel} before posting; keeping the audience the thread started with (${ifUnknown}).`);
+      return ifUnknown;
+    }
+    logger.warn(`Could not tell who can see ${msg.channel}, so its brief carries only what outsiders may hear.`);
+    return 'external';
+  };
+  const lookUpChannel = async (msg: IncomingMessage): Promise<Visibility | null> => {
     try {
       const { channel } = await client.conversations.info({ channel: msg.channel });
       const shared = channel as { is_im?: boolean; is_ext_shared?: boolean; is_pending_ext_shared?: boolean } | undefined;
@@ -346,8 +362,8 @@ export const createBot = ({
       sharedChannels.set(msg.channel, { external, until: now() + VISIBILITY_TTL_MS });
       return external ? 'external' : 'team';
     } catch (error) {
-      logger.warn(`Could not tell who can see ${msg.channel}, so its brief carries only what outsiders may hear: ${errorMessage(error)}`);
-      return 'external';
+      logger.debug(`Looking up ${msg.channel} failed: ${errorMessage(error)}`);
+      return null;
     }
   };
 
@@ -357,13 +373,13 @@ export const createBot = ({
    */
   // Where someone works rarely changes: cached like a channel's while a brief is built. Checks before a post ask again.
   const dmPeople = new Map<string, { visibility: Visibility; until: number }>();
-  const dmVisibility = async (user: string, fresh = false): Promise<Visibility> => {
+  const dmVisibility = async (user: string, fresh = false, ifUnknown?: Visibility): Promise<Visibility> => {
     const known = dmPeople.get(user);
     if (!fresh && known && known.until > now()) return known.visibility;
-    const visibility = await lookUpDmVisibility(user);
-    // A failed lookup counts as outside and isn't cached: the next check asks again.
+    const visibility = await lookUpDmVisibility(user) ?? (ifUnknown ? await lookUpDmVisibility(user) : null);
+    // A failed lookup isn't cached: the next check asks again. Before a post, the thread's own audience stands.
     if (visibility) dmPeople.set(user, { visibility, until: now() + VISIBILITY_TTL_MS });
-    return visibility ?? 'external';
+    return visibility ?? ifUnknown ?? 'external';
   };
   const lookUpDmVisibility = async (user: string): Promise<Visibility | null> => {
     try {
@@ -773,7 +789,7 @@ export const createBot = ({
   const WIDTH: Record<Visibility, number> = { owner: 0, team: 1, external: 2 };
   const revocation = async (job: Job): Promise<{ visibility: Visibility; knowledge: BriefKnowledge; revoked: string[] }> => {
     // Who sees the thread now, not only when it started: a channel shared with another company since is outside.
-    const current = await replyVisibility({ channel: job.channel, threadTs: job.threadTs, messageTs: job.threadTs, user: job.requester, text: '', direct: false }, { fresh: true });
+    const current = await replyVisibility({ channel: job.channel, threadTs: job.threadTs, messageTs: job.threadTs, user: job.requester, text: '', direct: false }, { fresh: true, ...(job.visibility ? { ifUnknown: job.visibility } : {}) });
     const visibility = job.visibility && WIDTH[job.visibility] >= WIDTH[current] ? job.visibility : current;
     const knowledge = loadKnowledge!(visibility);
     if (!job.knowledgeRead) return { visibility, knowledge, revoked: visibility === 'owner' ? [] : ['(pages from before Serra recorded them)'] };
@@ -785,11 +801,6 @@ export const createBot = ({
   };
 
   const revokedFor = async (job: Job): Promise<string[]> => (loadKnowledge ? (await revocation(job)).revoked : []);
-
-  /**
-   * What people say in a thread the bot owns, waiting for the worker's next turn. Messages sent close together,
-   * or while the worker is busy, become one turn and one reply.
-   */
 
   /**
    * When a page this thread's brief allowed has since been restricted, retired or removed, the old T3 thread still has

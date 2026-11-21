@@ -445,7 +445,10 @@ const botOn = async (profileDir: string) => {
   const store = createStore(config.statePath);
   const client = {
     users: { info: async ({ user }: { user: string }) => ({ user: { real_name: user, team_id: 'THOME' } }) },
-    conversations: { replies: async () => ({ messages: [] }), info: async ({ channel }: { channel: string }) => ({ channel: { id: channel, is_ext_shared: outside.has(channel), is_pending_ext_shared: false } }) },
+    conversations: { replies: async () => ({ messages: [] }), info: async ({ channel }: { channel: string }) => {
+      if (outside.has('FAIL')) throw new Error('ratelimited');
+      return { channel: { id: channel, is_ext_shared: outside.has(channel), is_pending_ext_shared: false } };
+    } },
     chat: { getPermalink: async () => ({ permalink: 'https://x/p' }), postMessage: async (body: { text: string }) => { posted.push(body.text); return { ts: '9.1' }; }, update: async (body: unknown) => { updated.push(JSON.stringify(body)); return {}; }, delete: async () => ({}) },
     reactions: { add: async () => ({}), remove: async () => ({}) },
     assistant: { threads: { setStatus: async () => ({ ok: true }) } },
@@ -893,4 +896,14 @@ test('a snapshot in use is never cleaned up under a thread, a thread whose folde
   owner.knowledge.acceptDrift('workflows/release.md', null);
   await owner.finish('Run pnpm release:prepare.');
   assert.ok(owner.posted.some((text) => /release:prepare/.test(text)));
+});
+
+test('a Slack lookup that fails right before posting keeps the thread\'s audience instead of hiding the reply', async (t) => {
+  const run = await botOn(fixture(t));
+  await run.bot.handle({ channel: 'CTEAM', threadTs: '25.1', messageTs: '25.1', user: PRIYA, text: '<@UMOSS> how do I cut a release?', direct: true });
+  // From here on, Slack won't describe the channel.
+  run.outside.add('FAIL');
+  await run.finish('Run pnpm release:prepare.');
+  assert.ok(run.posted.some((text) => /release:prepare/.test(text)), 'the finished reply is posted');
+  assert.ok(!run.posted.some((text) => /made private/.test(text)));
 });

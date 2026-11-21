@@ -218,7 +218,8 @@ export const AboutMe = () => {
         <ul className="flex max-h-80 flex-col gap-1 overflow-y-auto">
           {untagged.map(({ path, description, offlimits, preview }) => (
             <li key={path}>
-              <label className="flex items-start gap-2 rounded-md px-1 py-1 text-sm hover:bg-hover">
+              <div className="flex items-start gap-2 rounded-md px-1 py-1 text-sm hover:bg-hover">
+                <label className="flex min-w-0 flex-1 items-start gap-2">
                 <input
                   type="checkbox"
                   checked={sharing?.has(path) ?? false}
@@ -234,15 +235,17 @@ export const AboutMe = () => {
                   {description && <span className="text-xs text-muted">{description}</span>}
                   {offlimits && shareTo !== 'owner' && <span className="text-xs text-warn">Off-limits rules: sharing puts their topics in {shareTo === 'team' ? 'teammates\u2019' : 'outsiders\u2019'} briefs.</span>}
                 </span>
+                </label>
                 <button
                   type="button"
                   aria-expanded={peek === path}
-                  onClick={(event) => { event.preventDefault(); setPeek(peek === path ? null : path); }}
+                  aria-label={`${peek === path ? 'Hide' : 'Preview'} ${path}`}
+                  onClick={() => setPeek(peek === path ? null : path)}
                   className="ml-auto shrink-0 rounded-md px-1.5 py-0.5 text-xs text-muted hover:bg-hover hover:text-ink focus-visible:outline-2 focus-visible:outline-focus"
                 >
                   {peek === path ? 'Hide' : 'Preview'}
                 </button>
-              </label>
+              </div>
               {peek === path && <pre className="ml-7 mt-1 max-h-60 overflow-y-auto whitespace-pre-wrap rounded-md bg-raised px-2 py-1.5 font-mono text-[11px] leading-5 text-ink">{preview}</pre>}
             </li>
           ))}
