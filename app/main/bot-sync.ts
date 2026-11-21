@@ -10,6 +10,8 @@ export type BotSync =
   /** No bot installed for this profile yet (setup isn't finished). */
   | { state: 'not-installed' }
   | { state: 'in-step'; version: string }
+  /** The owner stopped the bot: it isn't restarted on its own, only by Update now. */
+  | { state: 'stopped'; from: string | null; to: string }
   /** The bot runs an older version and waits for running jobs to finish before it restarts. */
   | { state: 'waiting'; from: string | null; to: string; jobs: number }
   | { state: 'updating'; from: string | null; to: string }
@@ -21,17 +23,21 @@ export type BotSyncAction = 'none' | 'prepare' | 'activate';
 
 export interface BotSyncInput {
   mode: 'release' | 'developer';
+  /** The app is a packaged build whose code the bot can follow. A copy run from source doesn't lead the bot. */
+  follows: boolean;
+  /** The bot's launchd service is loaded. A bot the owner stopped stays stopped. */
+  serviceLoaded: boolean;
   appVersion: string;
-  active: Pick<Prepared, 'appVersion'> | null;
+  active: Pick<Prepared, 'appVersion' | 'fromApp'> | null;
   /** A prepared release that isn't active yet, and whether it can be activated as it is. */
-  prepared: Pick<Prepared, 'appVersion'> | null;
+  prepared: Pick<Prepared, 'appVersion' | 'fromApp'> | null;
   preparedReady: boolean;
   activation: 'switching' | 'active' | 'rolled-back' | null;
   /** Jobs the bot is following now. */
   jobs: number;
   /** An update action this app is running now. */
   running: string | null;
-  /** The version the last automatic attempt failed for, so it isn't retried in a loop. */
+  /** The version the last automatic attempt failed for (in this profile), so it isn't retried in a loop. */
   failed: { version: string; message: string } | null;
 }
 
@@ -41,17 +47,19 @@ export interface BotSyncInput {
  * activated without preparing again.
  */
 export const botSyncDecision = (input: BotSyncInput): { sync: BotSync; action: BotSyncAction } => {
-  if (input.mode === 'developer') return { sync: { state: 'manual' }, action: 'none' };
+  if (input.mode === 'developer' || !input.follows) return { sync: { state: 'manual' }, action: 'none' };
   if (input.activation === 'switching') return { sync: { state: 'interrupted' }, action: 'none' };
   if (!input.active) return { sync: { state: 'not-installed' }, action: 'none' };
   const from = input.active.appVersion ?? null;
   const to = input.appVersion;
-  if (from === to) return { sync: { state: 'in-step', version: to }, action: 'none' };
+  // Same version from a checkout (developer mode earlier) isn't the app's build: it moves to the app's own code.
+  if (from === to && input.active.fromApp) return { sync: { state: 'in-step', version: to }, action: 'none' };
   if (input.running === 'sync') return { sync: { state: 'updating', from, to }, action: 'none' };
   if (input.failed?.version === to) return { sync: { state: 'failed', from, to, message: input.failed.message }, action: 'none' };
+  if (!input.serviceLoaded) return { sync: { state: 'stopped', from, to }, action: 'none' };
   if (input.jobs > 0) return { sync: { state: 'waiting', from, to, jobs: input.jobs }, action: 'none' };
   // Another action (a manual prepare or rollback) is running: wait for it.
   if (input.running) return { sync: { state: 'waiting', from, to, jobs: 0 }, action: 'none' };
-  const preparedForApp = input.prepared?.appVersion === to && input.preparedReady;
+  const preparedForApp = input.prepared?.appVersion === to && input.prepared.fromApp === true && input.preparedReady;
   return { sync: { state: 'updating', from, to }, action: preparedForApp ? 'activate' : 'prepare' };
 };

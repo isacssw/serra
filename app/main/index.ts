@@ -113,8 +113,11 @@ const start = async (): Promise<void> => {
   };
   // Look for a new release 15 seconds after launch, then every 6 hours. Nothing downloads without a click.
   every(15_000, 6 * 60 * 60_000, () => { void appUpdater.check(); });
+  const quitGuards: (() => Promise<unknown> | null)[] = [];
   const context: HandlerContext = {
     appUpdater,
+    botFollowsApp: app.isPackaged,
+    guardQuit: (pending) => { quitGuards.push(pending); },
     every,
     expectStop: () => notifications?.expectStop(),
     profileDirOrNull,
@@ -173,6 +176,14 @@ const start = async (): Promise<void> => {
     context.push?.('navigate', target);
   };
   app.on('second-instance', show);
+  // A bot switch stops the old bot before starting the new one: quitting halfway would leave none running.
+  app.on('before-quit', (event) => {
+    const pending = quitGuards.map((guard) => guard()).filter((p): p is Promise<unknown> => p !== null);
+    if (!pending.length) return;
+    event.preventDefault();
+    console.log('[serra] waiting for the bot switch to finish before quitting');
+    void Promise.allSettled(pending).then(() => app.quit());
+  });
   app.on('will-quit', () => {
     for (const timer of timers) clearTimeout(timer);
     stopToolChecks();
@@ -204,6 +215,8 @@ const start = async (): Promise<void> => {
   // macOS keeps the app open with no window; clicking the Dock icon brings one back.
   app.on('activate', () => { if (!window) void open(); });
   const first = await open();
+  // The window is up: if this launch finishes an update, the swap script can now drop the old copy.
+  appUpdater.started();
   if (smokeUserData) {
     const ok = await runSmokeChecks(first, () => resendStatus());
     // `app.exit` skips `will-quit`, so clean up here.

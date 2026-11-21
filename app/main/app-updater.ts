@@ -3,6 +3,7 @@
 // app's paths and `app.quit`, and tests pass fakes. The release logic itself is in `src/app-updates.ts`.
 import { spawn } from 'node:child_process';
 import { accessSync, constants, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import {
   download, downloadText, fetchReleases, includePrereleases, pickUpdate, verifyChecksum,
@@ -86,7 +87,8 @@ const canWrite = (path: string): boolean => {
 
 /** Mounts the disk image read-only, checks the app inside (bundle ID, version, intact signature) and copies it out. */
 export const stageFromDmg = async (dmg: string, expected: { version: string; bundleId: string }, into: string): Promise<string> => {
-  const mount = mkdtempSync(join(dirname(into), 'mount-'));
+  // Mounted outside the updates folder, so clearing that folder at launch never meets a disk image left mounted.
+  const mount = mkdtempSync(join(tmpdir(), 'serra-update-mount-'));
   await run('hdiutil', ['attach', '-nobrowse', '-readonly', '-noautoopen', '-mountpoint', mount, dmg], { timeoutMs: 120_000 });
   try {
     const app = readdirSync(mount).find((name) => name.endsWith('.app'));
@@ -103,28 +105,37 @@ export const stageFromDmg = async (dmg: string, expected: { version: string; bun
     return into;
   } finally {
     await run('hdiutil', ['detach', mount, '-quiet'], { timeoutMs: 60_000 }).catch(() => run('hdiutil', ['detach', mount, '-force', '-quiet']).catch(() => {}));
-    rmSync(mount, { recursive: true, force: true });
+    try { rmSync(mount, { recursive: true, force: true }); } catch { /* still mounted; the system clears tmp */ }
   }
 };
 
 /**
  * The swap, run by bash after Serra quits: wait for the old process to exit, move the old app aside, move the new one
- * in, open it. When the move fails the old app goes back and opens again. The old copy is kept as
- * `Serra.app.previous` until the new one starts (see `pending.json`).
+ * in and open it, then wait for the new version to say it started (it writes `started`). When a move fails, or the new
+ * version doesn't start within two minutes, the old app goes back and opens again. The old copy is removed only after
+ * the new one started.
  */
 export const SWAP_SCRIPT = `#!/bin/bash
 set -u
-pid="$1"; target="$2"; staged="$3"; log="$4"
+pid="$1"; target="$2"; staged="$3"; log="$4"; started="$5"
 exec >>"$log" 2>&1
 echo "$(date) swap: waiting for $pid"
 for _ in $(seq 1 600); do kill -0 "$pid" 2>/dev/null || break; sleep 0.1; done
 if kill -0 "$pid" 2>/dev/null; then echo "Serra is still running; not replacing it"; exit 1; fi
 previous="$target.previous"
-rm -rf "$previous"
+rm -rf "$previous" "$started"
 if ! mv "$target" "$previous"; then echo "couldn't move the old app aside"; open "$target"; exit 1; fi
 if ! mv "$staged" "$target"; then echo "couldn't move the new app in; restoring the old one"; mv "$previous" "$target"; open "$target"; exit 1; fi
 echo "$(date) swap: done, opening $target"
 open "$target"
+for _ in $(seq 1 1200); do [ -f "$started" ] && break; sleep 0.1; done
+if [ -f "$started" ]; then echo "$(date) swap: the new version started"; rm -rf "$previous" "$started"; exit 0; fi
+echo "$(date) swap: the new version didn't start; restoring the old one"
+pkill -f "$target/Contents/MacOS/" 2>/dev/null; sleep 2
+rm -rf "$target.failed"
+mv "$target" "$target.failed" && mv "$previous" "$target" && rm -rf "$target.failed"
+open "$target"
+exit 1
 `;
 
 interface Pending { from: string; to: string; target: string }
@@ -141,25 +152,36 @@ export const createAppUpdater = (deps: AppUpdaterDeps) => {
   let phase: AppUpdatePhase = deps.unavailable ? { state: 'unavailable', reason: deps.unavailable } : { state: 'idle' };
   let updatedFrom: string | null = null;
   let controller: AbortController | null = null;
+  let downloading: Promise<AppUpdateView> | null = null;
+  /** Written once this version's window is up, so the swap script keeps it (see `SWAP_SCRIPT`). */
+  const startedPath = join(deps.dir, 'started');
 
-  // The first launch after a swap: the new version started, so the old copy can go. Same version: it didn't apply.
+  // The first launch after a swap: this version opened, and `started()` confirms it once the window is up. Opened on
+  // the old version instead: the swap didn't take, or the script put the old app back.
+  let pendingSwap = false;
   if (existsSync(pendingPath)) {
     try {
       const pending = JSON.parse(readFileSync(pendingPath, 'utf8')) as Pending;
       if (pending.to === deps.current) {
         updatedFrom = pending.from;
-        rmSync(`${pending.target}.previous`, { recursive: true, force: true });
+        pendingSwap = true;
         log(`updated from ${pending.from} to ${pending.to}`);
       } else if (!deps.unavailable) {
         phase = { state: 'error', stage: 'install', message: `The update to ${pending.to} didn't finish, so Serra is still on ${deps.current}. Check again to retry.` };
       }
     } catch { /* a broken marker is dropped */ }
-    rmSync(pendingPath, { force: true });
+    if (!pendingSwap) rmSync(pendingPath, { force: true });
   }
   // Nothing is downloaded or staged at launch: earlier downloads and staged apps are left over, so they go.
-  if (existsSync(deps.dir)) {
-    for (const entry of readdirSync(deps.dir, { withFileTypes: true })) if (entry.isDirectory()) rmSync(join(deps.dir, entry.name), { recursive: true, force: true });
-  }
+  // A cleanup that fails (a file in use) never stops the app from starting.
+  try {
+    if (existsSync(deps.dir)) {
+      for (const entry of readdirSync(deps.dir, { withFileTypes: true })) {
+        if (!entry.isDirectory()) continue;
+        try { rmSync(join(deps.dir, entry.name), { recursive: true, force: true }); } catch (error) { log(`couldn't remove ${entry.name}: ${message(error)}`); }
+      }
+    }
+  } catch (error) { log(`couldn't clear old downloads: ${message(error)}`); }
 
   const view = (): AppUpdateView => {
     const choice = deps.getChoice();
@@ -190,16 +212,16 @@ export const createAppUpdater = (deps: AppUpdaterDeps) => {
   const startDownload = async (): Promise<AppUpdateView> => {
     if (phase.state !== 'available' && !(phase.state === 'error' && phase.release && phase.stage !== 'install')) return view();
     const release = phase.release!;
+    const aborted = controller = new AbortController();
     const folder = join(deps.dir, release.version);
     rmSync(folder, { recursive: true, force: true });
     mkdirSync(folder, { recursive: true });
     const dmg = join(folder, release.dmg.name);
-    controller = new AbortController();
     set({ state: 'downloading', release, received: 0, total: release.dmg.size || null });
     try {
       const sums = await downloadText(deps.fetch, release.sums.url);
       await download(deps.fetch, release.dmg.url, dmg, {
-        signal: controller.signal,
+        signal: aborted.signal,
         progress: ({ received, total }) => set({ state: 'downloading', release, received, total: total ?? (release.dmg.size || null) }),
       });
       set({ state: 'verifying', release });
@@ -214,7 +236,7 @@ export const createAppUpdater = (deps: AppUpdaterDeps) => {
       set({ state: 'ready', release, install: plan(deps.bundlePath) });
     } catch (error) {
       rmSync(folder, { recursive: true, force: true });
-      if (controller.signal.aborted) set({ state: 'available', release, checkedAt: now() });
+      if (aborted.signal.aborted) set({ state: 'available', release, checkedAt: now() });
       else set({ state: 'error', stage: 'download', message: `The download stopped: ${message(error)}`, release });
     } finally { controller = null; }
     return view();
@@ -226,12 +248,18 @@ export const createAppUpdater = (deps: AppUpdaterDeps) => {
     /** Starts the download and returns at once; progress arrives as pushes. */
     download: (): AppUpdateView => {
       if (phase.state === 'available' || (phase.state === 'error' && phase.release && phase.stage !== 'install')) {
-        void startDownload();
+        downloading = startDownload().finally(() => { downloading = null; });
         return view();
       }
       return view();
     },
     cancel: (): AppUpdateView => { controller?.abort(); return view(); },
+    /** The window is up: tells the swap script this version started, so it keeps it. */
+    started: (): void => {
+      if (!pendingSwap) return;
+      pendingSwap = false;
+      try { writeFileSync(startedPath, deps.current); rmSync(pendingPath, { force: true }); } catch (error) { log(`couldn't confirm the start: ${message(error)}`); }
+    },
     /** Replaces the app and relaunches it. Only for a `replace` plan; the installer plan uses `openInstaller`. */
     install: (): AppUpdateView => {
       if (phase.state !== 'ready' || phase.install.kind !== 'replace' || !deps.bundlePath) return view();
@@ -243,7 +271,7 @@ export const createAppUpdater = (deps: AppUpdaterDeps) => {
         const script = join(deps.dir, 'swap.sh');
         writeFileSync(script, SWAP_SCRIPT, { mode: 0o700 });
         writeFileSync(pendingPath, JSON.stringify({ from: deps.current, to: release.version, target: deps.bundlePath } satisfies Pending));
-        launchSwap(script, [String(process.pid), deps.bundlePath, staged, join(deps.dir, 'swap.log')]);
+        launchSwap(script, [String(process.pid), deps.bundlePath, staged, join(deps.dir, 'swap.log'), startedPath]);
         log(`installing ${release.version}; quitting so the swap can run`);
         deps.quit();
       } catch (error) {
@@ -261,10 +289,18 @@ export const createAppUpdater = (deps: AppUpdaterDeps) => {
     },
     setPrereleases: async (choice: boolean | null): Promise<AppUpdateView> => {
       deps.setChoice(choice);
-      // A different channel can change the answer, unless a download is under way or ready.
-      if (!busy() && phase.state !== 'ready' && phase.state !== 'unavailable' && phase.state !== 'idle') return check();
-      deps.push?.(view());
-      return view();
+      const on = includePrereleases(choice, deps.current);
+      // A pre-release on offer, downloading or downloaded no longer fits: drop it, then look again.
+      const offered = 'release' in phase ? phase.release : undefined;
+      if (offered?.prerelease && !on) {
+        controller?.abort();
+        await downloading;
+        try { rmSync(join(deps.dir, offered.version), { recursive: true, force: true }); } catch { /* cleared at the next launch */ }
+        phase = { state: 'idle' };
+        return check();
+      }
+      if (phase.state === 'unavailable' || phase.state === 'idle' || busy() || phase.state === 'ready') { deps.push?.(view()); return view(); }
+      return check();
     },
   };
 };

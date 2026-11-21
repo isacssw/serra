@@ -144,6 +144,7 @@ test('the bot line: in step, waiting for jobs, updating, failed, not installed, 
   assert.equal(failed.text, "The bot couldn't move to 0.1.0-alpha.3, so it still runs version 0.1.0-alpha.2.");
   assert.equal(failed.detail, 'No supported Node');
   assert.equal(botLine({ state: 'failed', from: null, to: '1.0.0', message: 'Slack account: invalid_auth; GitHub account: Expected alex' })!.detail, 'Slack account: invalid_auth (and 1 more)');
+  assert.deepEqual(botLine({ state: 'stopped', from: '0.1.0-alpha.2', to: '0.1.0-alpha.3' })!.action, { kind: 'sync', label: 'Update now' });
   assert.deepEqual(botLine({ state: 'not-installed' })!.action, { kind: 'setup', label: 'Open setup' });
   assert.deepEqual(botLine({ state: 'interrupted' })!.action, { kind: 'rollback', label: 'Roll back' });
   assert.equal(botLine({ state: 'manual' }), null);
@@ -155,7 +156,7 @@ test('the bot line: in step, waiting for jobs, updating, failed, not installed, 
 // ---------------------------------------------------------------------------------------------------------------
 
 const input = (patch: Partial<BotSyncInput> = {}): BotSyncInput => ({
-  mode: 'release', appVersion: '0.1.0-alpha.3', active: { appVersion: '0.1.0-alpha.2' }, prepared: null, preparedReady: false,
+  mode: 'release', follows: true, serviceLoaded: true, appVersion: '0.1.0-alpha.3', active: { appVersion: '0.1.0-alpha.2', fromApp: true }, prepared: null, preparedReady: false,
   activation: 'active', jobs: 0, running: null, failed: null, ...patch,
 });
 
@@ -164,10 +165,15 @@ test('the bot follows the app only while no job runs, and never in developer mod
   // A running job defers the restart: nothing is done, the screen says it waits.
   assert.deepEqual(botSyncDecision(input({ jobs: 1 })), { sync: { state: 'waiting', from: '0.1.0-alpha.2', to: '0.1.0-alpha.3', jobs: 1 }, action: 'none' });
   // A build already prepared for this version (a job started while preparing) is only activated.
-  assert.equal(botSyncDecision(input({ prepared: { appVersion: '0.1.0-alpha.3' }, preparedReady: true })).action, 'activate');
-  assert.equal(botSyncDecision(input({ prepared: { appVersion: '0.1.0-alpha.3' }, preparedReady: false })).action, 'prepare');
-  assert.deepEqual(botSyncDecision(input({ active: { appVersion: '0.1.0-alpha.3' } })), { sync: { state: 'in-step', version: '0.1.0-alpha.3' }, action: 'none' });
+  assert.equal(botSyncDecision(input({ prepared: { appVersion: '0.1.0-alpha.3', fromApp: true }, preparedReady: true })).action, 'activate');
+  assert.equal(botSyncDecision(input({ prepared: { appVersion: '0.1.0-alpha.3', fromApp: true }, preparedReady: false })).action, 'prepare');
+  assert.equal(botSyncDecision(input({ prepared: { appVersion: '0.1.0-alpha.3' }, preparedReady: true })).action, 'prepare', 'a checkout build is not the app’s');
+  assert.deepEqual(botSyncDecision(input({ active: { appVersion: '0.1.0-alpha.3', fromApp: true } })), { sync: { state: 'in-step', version: '0.1.0-alpha.3' }, action: 'none' });
+  assert.equal(botSyncDecision(input({ active: { appVersion: '0.1.0-alpha.3' } })).action, 'prepare', 'same version built from a checkout moves to the app’s build');
   assert.deepEqual(botSyncDecision(input({ mode: 'developer' })), { sync: { state: 'manual' }, action: 'none' });
+  assert.deepEqual(botSyncDecision(input({ follows: false })), { sync: { state: 'manual' }, action: 'none' }, 'a copy run from source does not lead the bot');
+  // A bot the owner stopped stays stopped.
+  assert.deepEqual(botSyncDecision(input({ serviceLoaded: false })), { sync: { state: 'stopped', from: '0.1.0-alpha.2', to: '0.1.0-alpha.3' }, action: 'none' });
   assert.deepEqual(botSyncDecision(input({ active: null })), { sync: { state: 'not-installed' }, action: 'none' });
   assert.deepEqual(botSyncDecision(input({ activation: 'switching' })), { sync: { state: 'interrupted' }, action: 'none' });
   // A failure isn't retried on its own; another action running makes it wait.
@@ -315,7 +321,7 @@ const followJob = (directory: string): void => writeFileSync(join(directory, 'st
 
 test('developer mode needs an update source: without one, status compares nothing with git and the bot follows the app', async (t) => {
   const f = await profileFixture(t);
-  const handlers = updatesHandlers(contextFor(f.directory, []), { echo: () => {} });
+  const handlers = updatesHandlers({ ...contextFor(f.directory, []), botFollowsApp: true }, { echo: () => {} });
   const release = await handlers.status();
   assert.equal(release.releases?.mode, 'release');
   assert.equal(release.releases?.commitsProblem, null, 'no git error about the packaged app');
@@ -338,13 +344,14 @@ test('after an app update the bot moves to the new version, but waits while a jo
     ...contextFor(f.directory, pushes),
     runtime: { version: '0.1.0-alpha.3', electron: '45.0.0', node: '22.20.0', platform: 'darwin' },
     every: (_first, _every, task) => { scheduled.push(task); },
+    botFollowsApp: true,
     expectStop: () => { pushes.push('expect-stop'); },
   };
   const deps = {
     findNode: async () => '/opt/homebrew/bin/node',
     // The release service installs no dependencies here, so mark them present as each release is prepared.
     prepare: { install: false },
-    deploy: { driver: f.driver, launchAgentsDir: f.agents, preflight: async () => {} },
+    deploy: { driver: f.driver, launchAgentsDir: f.agents, preflight: async (): Promise<void> => {} },
     echo: () => {},
   };
   const { handlers, tick } = updatesService(context, deps);
@@ -353,9 +360,11 @@ test('after an app update the bot moves to the new version, but waits while a jo
   // The bot runs a build from the previous app version.
   const old = await handlers.prepare();
   mkdirSync(join(old.release, 'node_modules/@slack/bolt'), { recursive: true });
-  writeFileSync(join(f.directory, 'prepared.json'), JSON.stringify({ ...old, appVersion: '0.1.0-alpha.2' }));
+  writeFileSync(join(f.directory, 'prepared.json'), JSON.stringify({ ...old, appVersion: '0.1.0-alpha.2', fromApp: true }));
   assert.equal((await handlers.activate()).ok, true);
   f.events.length = 0;
+  // The service runs; a stopped one would stay stopped.
+  f.driver.loaded = async () => true;
 
   followJob(f.directory);
   assert.deepEqual((await handlers.status()).bot, { state: 'waiting', from: '0.1.0-alpha.2', to: '0.1.0-alpha.3', jobs: 1 });
@@ -365,10 +374,18 @@ test('after an app update the bot moves to the new version, but waits while a jo
   // The new app's build was prepared earlier (a job started while preparing): once jobs finish, it is activated.
   const fresh = await handlers.prepare();
   mkdirSync(join(fresh.release, 'node_modules/@slack/bolt'), { recursive: true });
-  writeFileSync(join(f.directory, 'prepared.json'), JSON.stringify({ ...fresh, appVersion: '0.1.0-alpha.3' }));
+  writeFileSync(join(f.directory, 'prepared.json'), JSON.stringify({ ...fresh, appVersion: '0.1.0-alpha.3', fromApp: true }));
   await tick();
   assert.deepEqual(f.events, [], 'still waiting for the job');
 
+  // A job starts during the health checks: the bot isn't stopped, the update waits.
+  rmSync(join(f.directory, 'state.json'));
+  deps.deploy.preflight = async () => { followJob(f.directory); };
+  await tick();
+  assert.deepEqual(f.events, [], 'the recheck right before the stop held the restart');
+  assert.equal((await handlers.status()).bot.state, 'waiting');
+
+  deps.deploy.preflight = async () => {};
   rmSync(join(f.directory, 'state.json'));
   await tick();
   const after = await handlers.status();

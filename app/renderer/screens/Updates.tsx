@@ -80,7 +80,7 @@ const AppUpdateCard = ({ status, card, onAction, onLink, children }: {
             <h2 id="app-update-title" className="text-[15px] font-semibold">{card.title}</h2>
             {card.meta && <span className="text-xs text-muted">{card.meta}</span>}
           </div>
-          {card.body && <p className={cx('text-[13px]', card.tone === 'down' ? 'text-ink' : 'text-muted')} role={card.tone === 'down' ? 'alert' : undefined}>{card.body}</p>}
+          {card.body && <p className={cx('text-[13px]', card.tone === 'down' ? 'text-ink' : 'text-muted')}>{card.body}</p>}
         </div>
       </div>
       {status.state === 'downloading' && <Progress percent={progressPercent(status.received, status.total)} />}
@@ -139,7 +139,6 @@ const LogPanel = ({ lines, running, open, onToggle }: { lines: string[]; running
       </summary>
       <pre
         ref={ref}
-        aria-live="polite"
         aria-label="Details"
         tabIndex={0}
         className="mt-2 max-h-72 overflow-auto rounded-lg border border-line bg-panel px-4 py-3 font-mono text-xs leading-relaxed whitespace-pre-wrap text-ink focus-visible:outline-2 focus-visible:outline-focus"
@@ -356,6 +355,8 @@ export const Updates = () => {
         </>
       )}
     >
+      {/* One short line for screen readers when the state changes; the details stay on demand. */}
+      <p aria-live="polite" className="sr-only">{[card?.title, card?.tone === 'down' ? card.body : '', bot?.text].filter(Boolean).join('. ')}</p>
       {status.app?.updatedFrom && (
         <p role="status" className="flex items-center gap-2 text-[13px] text-muted">
           <CircleCheck size={16} aria-hidden className="text-up" />
@@ -368,7 +369,6 @@ export const Updates = () => {
           if (!bot?.action) return;
           if (bot.action.kind === 'setup') void navigate(WELCOME_PATH);
           else if (bot.action.kind === 'rollback') void ask('rollback');
-          else if (status.bot.state === 'failed') void run('sync');
           else void ask('sync');
         };
         const botSection = !developer && bot

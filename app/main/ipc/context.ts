@@ -26,6 +26,10 @@ export interface HandlerContext {
   every?(firstMs: number, everyMs: number, task: () => void): void;
   /** Tells notifications that the app is about to restart the bot itself, so the stop isn't reported. */
   expectStop?(): void;
+  /** The bot follows this app's version: a packaged build (release-source). A copy run from source doesn't lead it. */
+  botFollowsApp?: boolean;
+  /** Registers what quitting must wait for: a promise while a bot switch is under way, else null. */
+  guardQuit?(pending: () => Promise<unknown> | null): void;
 }
 
 /** The error a stub throws until its ticket fills it in. The window shows the message. */

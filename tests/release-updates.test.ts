@@ -224,7 +224,7 @@ test('turning prereleases off checks again and hides the alpha', async (t) => {
   assert.deepEqual(off.prereleases, { on: false, choice: false });
 });
 
-test('the first launch after a swap removes the old copy; a launch on the old version reports it did not apply', async (t) => {
+test('the first launch after a swap confirms the start for the swap script; a launch on the old version reports it did not apply', async (t) => {
   const dir = temp(t);
   const target = join(dir, 'Serra.app');
   mkdirSync(`${target}.previous`, { recursive: true });
@@ -235,15 +235,32 @@ test('the first launch after a swap removes the old copy; a launch on the old ve
   };
   const write = () => writeFileSync(join(dir, 'updates/pending.json'), JSON.stringify({ from: '0.1.0-alpha.2', to: '0.1.0-alpha.3', target }));
   write();
-  const updated = createAppUpdater({ ...base, current: '0.1.0-alpha.3' }).view();
-  assert.equal(updated.updatedFrom, '0.1.0-alpha.2');
-  assert.equal(existsSync(`${target}.previous`), false);
+  const updated = createAppUpdater({ ...base, current: '0.1.0-alpha.3' });
+  assert.equal(updated.view().updatedFrom, '0.1.0-alpha.2');
   assert.equal(existsSync(join(dir, 'updates/0.1.0-alpha.3')), false, 'leftover downloads are cleared');
+  assert.equal(existsSync(join(dir, 'updates/started')), false, 'not confirmed before the window is up');
+  updated.started();
+  assert.equal(readFileSync(join(dir, 'updates/started'), 'utf8'), '0.1.0-alpha.3', 'the swap script may now drop the old copy');
   assert.equal(existsSync(join(dir, 'updates/pending.json')), false);
   write();
-  const stuck = createAppUpdater({ ...base, current: '0.1.0-alpha.2' }).view();
-  assert.ok(stuck.state === 'error' && stuck.stage === 'install');
-  assert.match(stuck.state === 'error' ? stuck.message : '', /didn't finish, so Serra is still on 0\.1\.0-alpha\.2/);
+  const stuck = createAppUpdater({ ...base, current: '0.1.0-alpha.2' });
+  const view = stuck.view();
+  assert.ok(view.state === 'error' && view.stage === 'install');
+  assert.match(view.state === 'error' ? view.message : '', /didn't finish, so Serra is still on 0\.1\.0-alpha\.2/);
+  rmSync(join(dir, 'updates/started'));
+  stuck.started();
+  assert.equal(existsSync(join(dir, 'updates/started')), false, 'only a launch that finishes an update confirms');
+});
+
+test('turning pre-releases off drops a downloaded pre-release and checks again', async (t) => {
+  const f = await updaterFixture(t);
+  await f.updater.check();
+  f.updater.download();
+  await f.settle();
+  assert.equal(f.updater.view().state, 'ready');
+  const off = await f.updater.setPrereleases(false);
+  assert.equal(off.state, 'up-to-date');
+  assert.equal(existsSync(join(f.dir, 'updates/0.1.0-alpha.3')), false);
 });
 
 test('the installer plan opens the verified disk image instead of swapping', async (t) => {

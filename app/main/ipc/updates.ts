@@ -11,7 +11,7 @@ import {
   activateRelease, findNode, prepareNextRelease, releaseStatus, rollbackRelease, runningJobs,
   type StatusOptions,
 } from '../../../src/releases.ts';
-import { preparedProblems, type DeployOptions, type PrepareOptions } from '../../../src/deploy.ts';
+import { launchd, preparedProblems, type DeployOptions, type PrepareOptions } from '../../../src/deploy.ts';
 import type { Handlers } from '../bridge.ts';
 import { botSyncDecision, type BotSync } from '../bot-sync.ts';
 import type { HandlerContext } from './context.ts';
@@ -51,8 +51,12 @@ export const updatesService = (context: HandlerContext, deps: UpdatesDeps = {}) 
   const echo = deps.echo ?? ((line: string) => console.log(`[serra] ${line}`));
   let running: UpdateAction | null = null;
   let log: string[] = [];
-  /** The app version the last automatic bot update failed for; not retried until the owner asks or the app restarts. */
-  let failed: { version: string; message: string } | null = null;
+  /** The app version the last automatic bot update failed for, per profile; not retried until the owner asks or the app restarts. */
+  const failures = new Map<string, { version: string; message: string }>();
+  /** The bot switch under way (activate, rollback or the bot update), which quitting the app must not cut short. */
+  let cutover: Promise<unknown> | null = null;
+  context.guardQuit?.(() => cutover);
+  const driver = deps.deploy?.driver ?? launchd;
 
   const line = (text: string): void => {
     for (const part of text.split('\n')) {
@@ -64,13 +68,15 @@ export const updatesService = (context: HandlerContext, deps: UpdatesDeps = {}) 
   };
 
   /** Runs one action at a time: a second one while the first runs is refused before anything changes. */
-  const exclusive = async <T>(action: UpdateAction, work: (profileDir: string) => Promise<T>): Promise<T> => {
+  const exclusive = async <T>(action: UpdateAction, work: (profileDir: string) => Promise<T>, profile?: string): Promise<T> => {
     if (running) throw new Error(`${running === 'sync' ? 'The bot update' : `${running[0]!.toUpperCase()}${running.slice(1)}`} is still running. Wait for it to finish.`);
-    const profileDir = context.profileDir();
+    const profileDir = profile ?? context.profileDir();
     running = action;
     log = [];
-    try { return await work(profileDir); }
-    finally { running = null; }
+    const task = work(profileDir);
+    if (action !== 'prepare') cutover = task;
+    try { return await task; }
+    finally { running = null; cutover = null; }
   };
 
   const prepareWithNode = async (profileDir: string) => {
@@ -82,24 +88,28 @@ export const updatesService = (context: HandlerContext, deps: UpdatesDeps = {}) 
   };
 
   /** Where the bot stands against the app, and what the timer should do. Null without a profile. */
-  const decide = (profileDir: string | null, status?: Awaited<ReturnType<typeof releaseStatus>>) => {
+  const decide = async (profileDir: string | null, status?: Awaited<ReturnType<typeof releaseStatus>>) => {
     if (!profileDir || !status) return null;
+    let serviceLoaded = false;
+    try { serviceLoaded = status.active ? await driver.loaded(status.active.label) : false; } catch { /* launchd didn't answer: treat as stopped */ }
     let jobs = 0;
     try { jobs = runningJobs(profileDir).length; } catch { /* no state yet */ }
     let preparedReady = false;
     try { preparedReady = status.prepared !== null && preparedProblems(profileDir).length === 0; } catch { /* not ready */ }
     return botSyncDecision({
-      mode: status.mode, appVersion: context.runtime.version, active: status.active, prepared: status.prepared, preparedReady,
-      activation: status.activation, jobs, running, failed,
+      mode: status.mode, follows: context.botFollowsApp === true, serviceLoaded, appVersion: context.runtime.version,
+      active: status.active, prepared: status.prepared, preparedReady,
+      activation: status.activation, jobs, running, failed: failures.get(profileDir) ?? null,
     });
   };
 
   /** Brings the bot to the app's version: prepare (unless done already), then activate if still no job is running. */
-  const syncBot = (force: boolean) => exclusive('sync', async (profileDir) => {
+  const syncBot = (force: boolean, profile?: string) => exclusive('sync', async (profileDir) => {
     const target = context.runtime.version;
+    const fail = (message: string) => { failures.set(profileDir, { version: target, message }); };
     try {
       const status = await releaseStatus(profileDir);
-      const ready = status.prepared?.appVersion === target && preparedProblems(profileDir).length === 0;
+      const ready = status.prepared?.appVersion === target && status.prepared.fromApp === true && preparedProblems(profileDir).length === 0;
       if (!ready) {
         line(`Updating the bot to ${target}`);
         await prepareWithNode(profileDir);
@@ -109,36 +119,45 @@ export const updatesService = (context: HandlerContext, deps: UpdatesDeps = {}) 
         line('A job started while preparing. The bot restarts when no job is running.');
         return { ok: true as const, waiting: true };
       }
-      context.expectStop?.();
-      const outcome = await activateRelease(profileDir, { ...deps.deploy, log: line });
+      const jobStarted = 'A job started. The bot restarts when no job is running.';
+      const outcome = await activateRelease(profileDir, {
+        ...deps.deploy, log: line,
+        // The health checks take a few seconds: look again right before the bot stops.
+        beforeStop: () => {
+          if (!force && runningJobs(profileDir).length > 0) throw new Error(jobStarted);
+          context.expectStop?.();
+        },
+      });
+      if (!outcome.ok && outcome.error === jobStarted) { line(jobStarted); return { ok: true as const, waiting: true }; }
       if (!outcome.ok) {
-        failed = { version: target, message: outcome.error };
+        fail(outcome.error);
         line(`The bot couldn't start on ${target}: ${outcome.error}`);
         return { ok: false as const, error: outcome.error };
       }
       // The app's code and the app disagree on the version (a build mix-up): stop here rather than restart every minute.
       const now = (await releaseStatus(profileDir)).active?.appVersion;
       if (now !== target) {
-        failed = { version: target, message: `The bot's code is version ${now ?? 'unknown'}, not ${target}. Reinstall Serra.` };
-        line(failed.message);
-        return { ok: false as const, error: failed.message };
+        const message = `The bot's code is version ${now ?? 'unknown'}, not ${target}. Reinstall Serra.`;
+        fail(message);
+        line(message);
+        return { ok: false as const, error: message };
       }
-      failed = null;
+      failures.delete(profileDir);
       return { ok: true as const, waiting: false };
     } catch (error) {
-      failed = { version: target, message: errorText(error) };
+      fail(errorText(error));
       line(`The bot update failed: ${errorText(error)}`);
       return { ok: false as const, error: errorText(error) };
     }
-  });
+  }, profile);
 
   /** One look by the timer: starts the bot update when it is due. Never throws. */
   const tick = async (): Promise<void> => {
     const profileDir = context.profileDirOrNull();
     if (!profileDir || running) return;
     try {
-      const decision = decide(profileDir, await releaseStatus(profileDir));
-      if (decision && decision.action !== 'none') await syncBot(false);
+      const decision = await decide(profileDir, await releaseStatus(profileDir));
+      if (decision && decision.action !== 'none') await syncBot(false, profileDir);
     } catch (error) { echo(`bot update check failed: ${errorText(error)}`); }
   };
   context.every?.(SYNC_FIRST_MS, SYNC_EVERY_MS, () => { void tick(); });
@@ -152,7 +171,7 @@ export const updatesService = (context: HandlerContext, deps: UpdatesDeps = {}) 
     status: async (options) => {
       const profileDir = context.profileDirOrNull();
       const releases = profileDir ? await releaseStatus(profileDir, { ...deps.status, fetch: options?.fetch === true }) : null;
-      const bot: BotSync = decide(profileDir, releases ?? undefined)?.sync ?? { state: 'not-installed' };
+      const bot: BotSync = (await decide(profileDir, releases ?? undefined))?.sync ?? { state: 'not-installed' };
       return {
         appVersion: context.runtime.version,
         app: context.appUpdater?.view() ?? null,
@@ -179,11 +198,15 @@ export const updatesService = (context: HandlerContext, deps: UpdatesDeps = {}) 
       return outcome;
     }),
     // The owner asked: update now even with jobs running (the confirm dialog names them), and retry after a failure.
-    syncBot: () => { failed = null; return syncBot(true); },
+    syncBot: () => { const profileDir = context.profileDirOrNull(); if (profileDir) failures.delete(profileDir); return syncBot(true); },
     check: () => app().check(),
     download: () => app().download(),
     cancelDownload: () => app().cancel(),
-    install: () => app().install(),
+    // Quitting now would cut a bot switch short; the owner waits for it.
+    install: () => {
+      if (running && running !== 'prepare') throw new Error('The bot is restarting. Restart Serra once it has finished.');
+      return app().install();
+    },
     openInstaller: () => app().openInstaller(),
     setPrereleases: (choice) => {
       if (choice !== null && typeof choice !== 'boolean') throw new Error('Pre-releases must be on, off or the default.');

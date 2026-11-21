@@ -92,7 +92,7 @@ const codeCommit = async (root: string): Promise<{ commit?: string; dirty?: bool
  * `pnpm app:build` with the version and commit, since the copy itself has no git. Empty for a checkout.
  */
 export const RELEASE_INFO = 'release.json';
-const shippedBuild = (root: string): { appVersion?: string; commit?: string } => {
+const shippedBuild = (root: string): { appVersion?: string; commit?: string; fromApp?: boolean } => {
   const read = (name: string): Record<string, unknown> => {
     try { return JSON.parse(readFileSync(join(root, name), 'utf8')) as Record<string, unknown>; } catch { return {}; }
   };
@@ -100,6 +100,7 @@ const shippedBuild = (root: string): { appVersion?: string; commit?: string } =>
   const version = typeof info.version === 'string' ? info.version : read('package.json').version;
   return {
     ...(typeof version === 'string' ? { appVersion: version } : {}),
+    ...(existsSync(join(root, RELEASE_INFO)) ? { fromApp: true } : {}),
     ...(typeof info.commit === 'string' && /^[0-9a-f]{40}$/.test(info.commit) ? { commit: info.commit } : {}),
   };
 };
@@ -180,6 +181,8 @@ export interface Prepared {
   dirty?: boolean;
   /** The Serra version of the code (its package.json), like `0.1.0-alpha.2`. Absent on releases made before it was recorded. */
   appVersion?: string;
+  /** Made from the code a packaged app ships (`release-source`), not from a checkout. The bot follows the app only with these. */
+  fromApp?: boolean;
 }
 interface Activation {
   version: 1;
@@ -307,6 +310,11 @@ export interface DeployOptions {
   driver?: ServiceDriver;
   launchAgentsDir?: string;
   preflight?: (directory: string) => Promise<void>;
+  /**
+   * The last check before the bot is stopped, after the health checks. Throwing refuses the activation with nothing
+   * changed (the bot following the app uses it to recheck that no job started meanwhile).
+   */
+  beforeStop?: () => void | Promise<void>;
   log?: DeployLog;
 }
 const defaults = (options: DeployOptions) => ({
@@ -380,6 +388,7 @@ export const activate = async (directory: string, options: DeployOptions = {}): 
     const wasLoaded = await driver.loaded(plan.label);
     // A fresh installation must never take over another profile's existing service.
     if ((hadPlist || wasLoaded) && !previousActive) throw new Error(`Service ${plan.label} already exists. Choose another bot ID.`);
+    await options.beforeStop?.();
     const backup = join(directory, 'backups', new Date().toISOString().replace(/[:.]/g, '-'));
     mkdirSync(backup, { recursive: true, mode: 0o700 });
     if (hadPlist) copyPrivate(plist, join(backup, 'service.plist'));
@@ -454,10 +463,13 @@ export const pruneReleases = (directory: string): string[] => {
   const transaction = read<Activation>('activation.json');
   remember(transaction?.prepared);
   remember(transaction?.previousActive);
+  // A folder made after the active release may be a build still in progress (a prepare running in another process
+  // writes prepared.json only when it finishes), so only older ones go.
+  const activeId = read<Prepared>('active.json')?.release.split('/').pop() ?? '';
   const removed: string[] = [];
   for (const entry of readdirSync(root, { withFileTypes: true })) {
     const path = join(root, entry.name);
-    if (!entry.isDirectory() || !RELEASE_ID.test(entry.name) || keep.has(path)) continue;
+    if (!entry.isDirectory() || !RELEASE_ID.test(entry.name) || keep.has(path) || entry.name > activeId) continue;
     rmSync(path, { recursive: true, force: true });
     removed.push(path);
   }
