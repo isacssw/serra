@@ -137,6 +137,12 @@ export const typedAnswer = (question: T3Question, text: string): QuestionAnswer 
 };
 
 /** Plain text prevents provider text or a custom reply from creating Slack mentions or links. */
+/** A card closed because some knowledge its thread used was made private: fixed copy, none of the worker's words. */
+export const closedMessage = (): QuestionMessage => ({
+  text: 'This question was closed: some knowledge it used was made private.',
+  blocks: [{ type: 'section', text: plain('This question was closed: some knowledge it used was made private.') }],
+});
+
 export const answeredMessage = (state: SlackQuestion, answeredBy?: string): QuestionMessage => ({
   text: answeredBy ? 'Answer sent. Continuing…' : 'This question is no longer waiting for an answer.',
   blocks: [

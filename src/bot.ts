@@ -17,7 +17,7 @@ import { handleReviewRequest } from './review.ts';
 import { slackKey, type createStore } from './state.ts';
 import { jobThreadInput, run, sendToThread, showThread, startThread } from './t3.ts';
 import { answerQuestion, listQuestions, type T3QuestionRequest } from './t3-questions.ts';
-import { answeredMessage, canShowQuestion, choiceAnswer, questionMessage, typedAnswer, type QuestionAnswer, type QuestionInteraction, type SlackQuestion } from './questions.ts';
+import { answeredMessage, closedMessage, canShowQuestion, choiceAnswer, questionMessage, typedAnswer, type QuestionAnswer, type QuestionInteraction, type SlackQuestion } from './questions.ts';
 import type { IncomingFile, IncomingMessage, Job, T3Message, T3Thread } from './types.ts';
 
 type SlackClient = webApi.WebClient;
@@ -330,10 +330,11 @@ export const createBot = ({
    * Who will see the bot's reply in this thread. A DM is the owner's own, or a teammate's. A channel shared with
    * another company, or one Slack won't describe, counts as outside: the brief then carries only what may be said there.
    */
-  const replyVisibility = async (msg: IncomingMessage): Promise<Visibility> => {
-    if (msg.channel.startsWith('D')) return msg.user === config.owner ? 'owner' : dmVisibility(msg.user);
+  const replyVisibility = async (msg: IncomingMessage, { fresh = false }: { fresh?: boolean } = {}): Promise<Visibility> => {
+    if (msg.channel.startsWith('D')) return msg.user === config.owner ? 'owner' : dmVisibility(msg.user, fresh);
     const known = sharedChannels.get(msg.channel);
-    if (known && known.until > now()) return known.external ? 'external' : 'team';
+    // Before anything is posted, Slack is asked again: a channel can be shared outside a minute after the job started.
+    if (!fresh && known && known.until > now()) return known.external ? 'external' : 'team';
     try {
       const { channel } = await client.conversations.info({ channel: msg.channel });
       const shared = channel as { is_im?: boolean; is_ext_shared?: boolean; is_pending_ext_shared?: boolean } | undefined;
@@ -353,11 +354,11 @@ export const createBot = ({
    * A teammate's DM is team only when Slack says they're in the owner's workspace: a Slack Connect user from another
    * company, or one Slack won't describe, counts as outside.
    */
-  // Where someone works rarely changes: cached like a channel's, so checks before each post don't call Slack twice.
+  // Where someone works rarely changes: cached like a channel's while a brief is built. Checks before a post ask again.
   const dmPeople = new Map<string, { visibility: Visibility; until: number }>();
-  const dmVisibility = async (user: string): Promise<Visibility> => {
+  const dmVisibility = async (user: string, fresh = false): Promise<Visibility> => {
     const known = dmPeople.get(user);
-    if (known && known.until > now()) return known.visibility;
+    if (!fresh && known && known.until > now()) return known.visibility;
     const visibility = await lookUpDmVisibility(user);
     // A failed lookup counts as outside and isn't cached: the next check asks again.
     if (visibility) dmPeople.set(user, { visibility, until: now() + VISIBILITY_TTL_MS });
@@ -453,11 +454,15 @@ export const createBot = ({
       .getPermalink({ channel: job.channel, message_ts: job.threadTs })
       .then((result) => result.permalink)
       .catch(() => undefined);
-    // The review channel is the team's: a request written with pages the team may not hear is the owner's to post.
-    const teamMayHear = !loadKnowledge || (await revocation({ ...job, visibility: 'team' })).revoked.length === 0;
+    // A review request goes to another channel: only when everyone there may hear what this thread's worker was told.
+    // Otherwise it's the owner's to check and post.
+    const reviewAudience = config.reviewChannel && loadKnowledge
+      ? await replyVisibility({ channel: config.reviewChannel, threadTs: job.threadTs, messageTs: job.threadTs, user: config.owner, text: '', direct: false }, { fresh: true })
+      : null;
+    const reviewMayHear = !reviewAudience || (await revocation({ ...job, visibility: reviewAudience })).revoked.length === 0;
     const review = await reviewRequest(client, text, {
       channel: config.reviewChannel,
-      ...(teamMayHear ? {} : { heldBack: 'it was written with knowledge only you may hear: check it and post it yourself' }),
+      ...(reviewMayHear ? {} : { heldBack: 'it was written with knowledge some people in the review channel may not hear: check it and post it yourself' }),
       owner: config.owner,
       botName: config.name,
       repositories: config.reviewRepos,
@@ -572,10 +577,11 @@ export const createBot = ({
 
   const mayAnswer = (job: Job, user: string): boolean => config.allowed.has(user) && (user === config.owner || user === job.requester);
 
-  const clearQuestion = async (key: string, job: Job, answeredBy?: string, state = job.question): Promise<void> => {
+  const clearQuestion = async (key: string, job: Job, answeredBy?: string, state = job.question, closed = false): Promise<void> => {
     if (!state) return;
     updateJob(key, () => ({ question: undefined, waitingInT3: false }));
-    await client.chat.update({ channel: job.channel, ts: state.ts, ...answeredMessage(state, answeredBy) })
+    // A card closed because its thread's knowledge was taken back gets fixed copy: the question is the worker's words.
+    await client.chat.update({ channel: job.channel, ts: state.ts, ...(closed ? closedMessage() : answeredMessage(state, answeredBy)) })
       .catch((error: unknown) => logger.debug(`Updating the question in ${key} failed: ${errorMessage(error)}`));
   };
 
@@ -621,7 +627,7 @@ export const createBot = ({
       // The old session's question gets an answer that ends its turn, so it isn't left waiting.
       await questions.answerQuestion(job.t3ThreadId, state.requestId, Object.fromEntries(state.questions.map((item) => [item.id, 'Stop here: this thread moved to a fresh session. Do nothing more.'])), config.t3Bin)
         .catch((error: unknown) => logger.warn(`Could not close the question in the earlier T3 thread ${job.t3ThreadId}: ${errorMessage(error)}`));
-      await clearQuestion(key, job, user, { ...state, answers });
+      await clearQuestion(key, job, user, { ...state, answers }, true);
       updateJob(key, rememberReply);
       return;
     }
@@ -751,7 +757,7 @@ export const createBot = ({
   const WIDTH: Record<Visibility, number> = { owner: 0, team: 1, external: 2 };
   const revocation = async (job: Job): Promise<{ visibility: Visibility; knowledge: BriefKnowledge; revoked: string[] }> => {
     // Who sees the thread now, not only when it started: a channel shared with another company since is outside.
-    const current = await replyVisibility({ channel: job.channel, threadTs: job.threadTs, messageTs: job.threadTs, user: job.requester, text: '', direct: false });
+    const current = await replyVisibility({ channel: job.channel, threadTs: job.threadTs, messageTs: job.threadTs, user: job.requester, text: '', direct: false }, { fresh: true });
     const visibility = job.visibility && WIDTH[job.visibility] >= WIDTH[current] ? job.visibility : current;
     const knowledge = loadKnowledge!(visibility);
     if (!job.knowledgePages) return { visibility, knowledge, revoked: visibility === 'owner' ? [] : ['(pages from before Serra recorded them)'] };

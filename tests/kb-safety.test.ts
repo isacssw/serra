@@ -349,7 +349,7 @@ test('restricting a page a thread already used moves the next turn to a fresh th
   const started: string[] = []; const sent: string[] = [];
   const client = {
     users: { info: async ({ user }: { user: string }) => ({ user: { real_name: user, team_id: 'THOME' } }) },
-    conversations: { replies: async () => ({ messages: [] }), info: async () => ({ channel: { id: 'CTEAM', is_ext_shared: false, is_pending_ext_shared: false } }) },
+    conversations: { replies: async () => ({ messages: [] }), info: async ({ channel }: { channel: string }) => ({ channel: { id: channel, is_ext_shared: false, is_pending_ext_shared: false } }) },
     chat: { getPermalink: async () => ({ permalink: 'https://x/p' }), postMessage: async () => ({ ts: '9.1' }), update: async () => ({}), delete: async () => ({}) },
     reactions: { add: async () => ({}), remove: async () => ({}) },
     assistant: { threads: { setStatus: async () => ({ ok: true }) } },
@@ -437,14 +437,15 @@ const botOn = async (profileDir: string) => {
   knowledge.seedApproved();
   const started: string[] = []; const sent: string[] = []; const answered: unknown[] = []; const bases: string[] = []; const posted: string[] = []; const updated: string[] = [];
   const reviews: { heldBack?: string }[] = [];
+  const outside = new Set<string>();
   let pendingQuestions: { requestId: string; questions: unknown[] }[] = [];
   let transcript: { role: string; runId: string; text: string }[] = [];
   let activeRunId: string | null = null;
   const store = createStore(config.statePath);
   const client = {
     users: { info: async ({ user }: { user: string }) => ({ user: { real_name: user, team_id: 'THOME' } }) },
-    conversations: { replies: async () => ({ messages: [] }), info: async () => ({ channel: { id: 'CTEAM', is_ext_shared: false, is_pending_ext_shared: false } }) },
-    chat: { getPermalink: async () => ({ permalink: 'https://x/p' }), postMessage: async (body: { text: string }) => { posted.push(body.text); return { ts: '9.1' }; }, update: async (body: { text?: string }) => { updated.push(body.text ?? ''); return {}; }, delete: async () => ({}) },
+    conversations: { replies: async () => ({ messages: [] }), info: async ({ channel }: { channel: string }) => ({ channel: { id: channel, is_ext_shared: outside.has(channel), is_pending_ext_shared: false } }) },
+    chat: { getPermalink: async () => ({ permalink: 'https://x/p' }), postMessage: async (body: { text: string }) => { posted.push(body.text); return { ts: '9.1' }; }, update: async (body: unknown) => { updated.push(JSON.stringify(body)); return {}; }, delete: async () => ({}) },
     reactions: { add: async () => ({}), remove: async () => ({}) },
     assistant: { threads: { setStatus: async () => ({ ok: true }) } },
   } as never;
@@ -475,7 +476,7 @@ const botOn = async (profileDir: string) => {
     activeRunId = 'run-2';
     transcript = [{ role: 'user', runId: 'run-2', text: 'brief' }, { role: 'assistant', runId: 'run-2', text: note }];
   };
-  return { bot, store, config, knowledge, started, sent, answered, bases, posted, updated, reviews, restrict, finish, working, setQuestions: (list: typeof pendingQuestions) => { pendingQuestions = list; } };
+  return { bot, store, config, knowledge, started, sent, answered, bases, posted, updated, reviews, outside, restrict, finish, working, setQuestions: (list: typeof pendingQuestions) => { pendingQuestions = list; } };
 };
 
 test('the worker opens pages from the approved copy, and writes proposals to knowledge/proposals', async (t) => {
@@ -719,10 +720,12 @@ test('round 9: the next question of a form, a thread from before Serra recorded 
 
   // The owner's DM was briefed with owner-only pages: its review request is the owner's to post, not the bot's.
   const dm = await botOn(fixture(t));
+  (dm.config as { reviewChannel?: string }).reviewChannel = 'CREVIEW';
   await dm.bot.handle({ channel: 'DROBIN', threadTs: '12.1', messageTs: '12.1', user: ROBIN, text: 'open the PR and ask for review', direct: true });
   await dm.finish('Done. <review-request>Please review https://github.com/larchwood/moss/pull/1</review-request>');
-  assert.match(dm.reviews[0]?.heldBack ?? '', /only you may hear/);
+  assert.match(dm.reviews[0]?.heldBack ?? '', /may not hear/);
   const team = await botOn(fixture(t));
+  (team.config as { reviewChannel?: string }).reviewChannel = 'CREVIEW';
   await team.bot.handle({ channel: 'CTEAM', threadTs: '13.1', messageTs: '13.1', user: PRIYA, text: '<@UMOSS> open the PR and ask for review', direct: true });
   await team.finish('Done. <review-request>Please review https://github.com/larchwood/moss/pull/2</review-request>');
   assert.equal(team.reviews[0]?.heldBack, undefined, 'a teammate\'s thread posts as before');
@@ -732,8 +735,9 @@ test('round 9: a teammate\'s worker reads a folder with only the pages they may 
   const profileDir = fixture(t);
   createKnowledge(join(profileDir, 'knowledge')).seedApproved();
   const brief = await buildBrief(profileDir, { via: 'channel', user: PRIYA, text: 'what does Robin own?' });
-  const view = join(profileDir, '.knowledge-team');
-  assert.match(brief, /\.knowledge-team/);
+  const view = createKnowledge(join(profileDir, 'knowledge')).briefKnowledge('team').readDir;
+  assert.match(brief, /\.knowledge-team\/[0-9a-f]{16}/);
+  assert.ok(brief.includes(view), 'the brief points at the snapshot');
   assert.doesNotMatch(brief, /\.knowledge-approved/);
   assert.ok(existsSync(join(view, 'workflows/release.md')));
   assert.ok(!existsSync(join(view, 'owner/private-notes.md')), 'owner-only pages are not in the folder');
@@ -758,4 +762,49 @@ test('round 10: an approval keeps the page\'s own header order, and sharing can 
   knowledge.shareWith(['owner/private-notes.md'], 'owner');
   assert.ok(!knowledge.untaggedPages().includes('owner/private-notes.md'), 'kept for the owner, it leaves the list');
   assert.match(readFileSync(notes, 'utf8'), /^audience: owner$/m);
+});
+
+test('round 10: a channel shared outside since, an outside review channel, a page shared since, and a closed form never carry withheld knowledge', async (t) => {
+  // The channel becomes shared with another company while the worker runs: the team-only reply isn't posted.
+  const run = await botOn(fixture(t));
+  await run.bot.handle({ channel: 'CTEAM', threadTs: '14.1', messageTs: '14.1', user: PRIYA, text: '<@UMOSS> how do I cut a release?', direct: true });
+  run.outside.add('CTEAM');
+  await run.finish('Run pnpm release:prepare, never on Thursday.');
+  assert.ok(!run.posted.some((text) => /release:prepare/.test(text)));
+
+  // The review channel is shared outside: a request written with team pages is the owner's to post.
+  const review = await botOn(fixture(t));
+  (review.config as { reviewChannel?: string }).reviewChannel = 'CREVIEW';
+  review.outside.add('CREVIEW');
+  await review.bot.handle({ channel: 'CTEAM', threadTs: '15.1', messageTs: '15.1', user: PRIYA, text: '<@UMOSS> open the PR and ask for review', direct: true });
+  await review.finish('Done. <review-request>Please review https://github.com/larchwood/moss/pull/3</review-request>');
+  assert.match(review.reviews[0]?.heldBack ?? '', /review channel may not hear/);
+  const inside = await botOn(fixture(t));
+  (inside.config as { reviewChannel?: string }).reviewChannel = 'CREVIEW';
+  await inside.bot.handle({ channel: 'CTEAM', threadTs: '16.1', messageTs: '16.1', user: PRIYA, text: '<@UMOSS> open the PR and ask for review', direct: true });
+  await inside.finish('Done. <review-request>Please review https://github.com/larchwood/moss/pull/4</review-request>');
+  assert.equal(inside.reviews[0]?.heldBack, undefined, 'an internal review channel gets it as before');
+
+  // A page shared after the thread started never appears in the folder that thread's worker reads.
+  const profileDir = fixture(t);
+  const shared = await botOn(profileDir);
+  await shared.bot.handle({ channel: 'CTEAM', threadTs: '17.1', messageTs: '17.1', user: PRIYA, text: '<@UMOSS> what does Robin own?', direct: true });
+  const folder = /Notes are in ([^\s]+\.knowledge-team\/[0-9a-f]{16})/.exec(shared.started[0]!)?.[1];
+  assert.ok(folder && !existsSync(join(folder, 'owner/private-notes.md')));
+  shared.knowledge.shareWith(['owner/private-notes.md'], 'team');
+  assert.ok(!existsSync(join(folder, 'owner/private-notes.md')), 'the thread\'s folder never changes');
+  assert.ok(existsSync(join(shared.knowledge.briefKnowledge('team').readDir, 'owner/private-notes.md')), 'a new thread gets the shared page');
+
+  // Answering a form after its knowledge was taken back closes the card with fixed copy, not the worker's question.
+  const form = await botOn(fixture(t));
+  await form.bot.handle({ channel: 'CTEAM', threadTs: '18.1', messageTs: '18.1', user: PRIYA, text: '<@UMOSS> how do I cut a release?', direct: true });
+  const question = { id: 'q1', header: 'Day', question: 'Release on Thursday despite the freeze?', options: [{ label: 'Yes', description: '' }, { label: 'No', description: '' }] };
+  form.setQuestions([{ requestId: 'r18', questions: [question] }]);
+  const job = form.store.getJob('CTEAM:18.1')!;
+  form.store.putJob('CTEAM:18.1', { ...job, question: { requestId: 'r18', questions: [question], ts: '18.5', nonce: 'n', index: 0, answers: {}, runId: null } as never });
+  form.restrict('workflows/release.md');
+  await form.bot.handle({ channel: 'CTEAM', threadTs: '18.1', messageTs: '18.6', user: PRIYA, text: 'Yes', direct: false });
+  await new Promise((done) => setTimeout(done, 50));
+  assert.ok(form.updated.some((body) => /This question was closed/.test(body)));
+  assert.ok(![...form.posted, ...form.updated].some((text) => /despite the freeze/.test(text)), 'the worker\'s question is never republished');
 });

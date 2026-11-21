@@ -1,5 +1,5 @@
-import { randomBytes } from 'node:crypto';
-import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync } from 'node:fs';
+import { createHash, randomBytes } from 'node:crypto';
+import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync } from 'node:fs';
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { writeFileAtomic } from './config.ts';
 import { createJournal, type KnowledgeDrift } from './knowledge-journal.ts';
@@ -74,23 +74,36 @@ export interface BriefKnowledge {
 }
 
 /** Markdown files under `dir`, relative to it, skipping dot folders. */
-/** The folder a teammate's or an outsider's worker reads: `.knowledge-team/` or `.knowledge-external/`, next to `knowledge/`. */
+/** Where the snapshots a teammate's or an outsider's worker reads are kept: `.knowledge-team/` or `.knowledge-external/`. */
 export const audienceDir = (knowledgeDir: string, visibility: Exclude<Visibility, 'owner'>): string => {
   const root = resolve(knowledgeDir);
   return join(dirname(root), `.${basename(root)}-${visibility}`);
 };
 
-/** Makes `dir` hold exactly `files` (path → text): changed files rewritten, others removed. */
-const syncFolder = (dir: string, files: Map<string, string>): void => {
-  for (const path of existsSync(dir) ? markdownIn(dir) : []) {
-    if (!files.has(path)) rmSync(join(dir, path), { force: true });
+/** Snapshots older than this are removed when a new one is made: no thread waits that long between turns. */
+const SNAPSHOT_KEEP_MS = 30 * 24 * 60 * 60 * 1000;
+
+/**
+ * A folder under `base` holding exactly `files` (path → text), named after their hash: the same files give the same
+ * folder, made once and never changed. Written to a temporary folder first, then renamed into place.
+ */
+const snapshot = (base: string, files: Map<string, string>, now: Date): string => {
+  const hash = createHash('sha256');
+  for (const [path, text] of [...files].sort(([a], [b]) => a.localeCompare(b))) hash.update(`${path}\0${text}\0`);
+  const dir = join(base, hash.digest('hex').slice(0, 16));
+  if (existsSync(dir)) return dir;
+  mkdirSync(base, { recursive: true, mode: 0o700 });
+  for (const entry of readdirSync(base, { withFileTypes: true })) {
+    const old = join(base, entry.name);
+    if (entry.isDirectory() && now.getTime() - statSync(old).mtimeMs > SNAPSHOT_KEEP_MS) rmSync(old, { recursive: true, force: true });
   }
+  const temp = `${dir}.tmp-${randomBytes(4).toString('hex')}`;
   for (const [path, text] of files) {
-    const file = join(dir, path);
-    if (existsSync(file) && readFileSync(file, 'utf8') === text) continue;
-    mkdirSync(dirname(file), { recursive: true, mode: 0o700 });
-    writeFileAtomic(file, text, { mode: 0o600 });
+    mkdirSync(dirname(join(temp, path)), { recursive: true, mode: 0o700 });
+    writeFileAtomic(join(temp, path), text, { mode: 0o600 });
   }
+  try { renameSync(temp, dir); } catch { rmSync(temp, { recursive: true, force: true }); }
+  return dir;
 };
 
 const markdownIn = (dir: string, relativeDir = ''): string[] => {
@@ -204,11 +217,11 @@ export const createKnowledge = (knowledgeDir: string, { backupDir }: KnowledgeOp
     const usable = [...audiences].filter(([, audience]) => mayUse(audience, visibility)).map(([path]) => path).sort();
     if (visibility === 'owner') return { index, aboutMe, visibility, pages: usable, readDir: fromApproved ? journal.approvedRoot : root };
     // Anyone else's worker reads a folder that holds only the pages they may hear, so an owner-only page isn't one
-    // `ls` away. It's rebuilt from the approved text on every brief.
-    const view = audienceDir(root, visibility);
+    // `ls` away. The folder is a snapshot named after its contents and never changes: a page shared after a thread
+    // started never appears in that thread's folder, so what a worker could read is exactly `pages`.
     const texts = new Map(pages.map(({ path, text }) => [path, text]));
-    syncFolder(view, new Map([['index.md', `${index}\n`], ...usable.map((path) => [path, texts.get(path)!] as const)]));
-    return { index, aboutMe, visibility, pages: usable, readDir: view };
+    const files = new Map([['index.md', `${index}\n`], ...usable.map((path) => [path, texts.get(path)!] as const)]);
+    return { index, aboutMe, visibility, pages: usable, readDir: snapshot(audienceDir(root, visibility), files, now) };
   };
 
   /**
