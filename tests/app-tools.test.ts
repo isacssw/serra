@@ -44,7 +44,7 @@ const fakeRun: Exec = async (command, args) => {
   const out = (stdout: string) => ({ code: 0, stdout, stderr: '', missing: false, timedOut: false });
   if (key === 'claude mcp list') return out(`github: https://api.github.example/mcp?token=${TOKEN} (HTTP) - ✔ Connected\nclaude.ai Gmail: https://gmailmcp.googleapis.com/mcp/v1 - ✔ Connected`);
   if (key === 'gh --version') return out('gh version 2.83.0');
-  if (key === 'gh auth status') return out('Logged in to github.com account alex');
+  if (key.startsWith('gh auth status')) return out('Logged in to github.com account alex');
   return { code: null, stdout: '', stderr: '', missing: true, timedOut: false };
 };
 

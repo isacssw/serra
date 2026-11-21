@@ -8,7 +8,7 @@
 import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import type { Profile } from './config.ts';
-import { exec, findExecutable, type Exec, type ExecResult } from './exec.ts';
+import { exec, findExecutable, toolEnv, type Exec, type ExecResult } from './exec.ts';
 import {
   missingToolWarnings, readClaude, readCodex, reported, requiredTools, workerDrivers,
   type McpHealth, type McpListing, type McpOptions, type McpOverview, type McpScope, type McpTransport, type ReadServer, type WorkerDriver,
@@ -28,32 +28,40 @@ const hostOf = (url: string): string | null => {
   try { return new URL(url).host || null; } catch { return null; }
 };
 
-const claudeHealth = (status: string): { health: McpHealth | null; disabled: boolean } => {
-  if (/disabled/i.test(status)) return { health: null, disabled: true };
-  if (/pending|approval/i.test(status)) return { health: 'pending', disabled: false };
-  if (/auth/i.test(status)) return { health: 'needs-auth', disabled: false };
-  if (/fail|error|✘/i.test(status)) return { health: 'failed', disabled: false };
-  if (/connected|✔/i.test(status)) return { health: 'connected', disabled: false };
-  return { health: null, disabled: false };
-};
+/** The statuses `claude mcp list` prints after ` - `. A line ending in anything else isn't a server row. */
+const CLAUDE_STATUSES: readonly [RegExp, { health: McpHealth | null; disabled: boolean }][] = [
+  [/^[✔✓] Connected$/, { health: 'connected', disabled: false }],
+  [/^[✘✗] Failed to connect$/, { health: 'failed', disabled: false }],
+  [/^! Needs authentication$/, { health: 'needs-auth', disabled: false }],
+  [/^⏸ Pending approval$/, { health: 'pending', disabled: false }],
+  [/^⏸ Disabled$|^○ Disabled$|^Disabled$/, { health: null, disabled: true }],
+];
 
-/** The servers in `claude mcp list` output. Lines that aren't a server (the "Checking…" header) are skipped. */
-export const parseClaudeMcpList = (text: string): ClaudeListEntry[] => {
+/** A server name worth showing: letters, digits, spaces and a little punctuation, never a line of arbitrary output. */
+const SERVER_NAME = /^[\w .:@/+-]{1,100}$/;
+
+/**
+ * The servers in `claude mcp list` output, or null when the output has neither a server row nor Claude's "no
+ * servers" sentence: that's output Serra doesn't understand, and the caller falls back to the config files.
+ */
+export const parseClaudeMcpList = (text: string): ClaudeListEntry[] | null => {
   const entries: ClaudeListEntry[] = [];
   for (const raw of text.split(/\r?\n/)) {
     const line = raw.trim();
     const colon = line.indexOf(': ');
     const dash = line.lastIndexOf(' - ');
     if (colon <= 0 || dash <= colon) continue;
+    const status = CLAUDE_STATUSES.find(([pattern]) => pattern.test(line.slice(dash + 3).trim()))?.[1];
     const name = line.slice(0, colon).trim();
+    if (!status || !SERVER_NAME.test(name)) continue;
     let target = line.slice(colon + 2, dash).trim();
     const kind = /\s\((HTTP|SSE)\)$/i.exec(target);
     if (kind) target = target.slice(0, kind.index).trim();
     const remote = /^https?:\/\//i.test(target);
     const transport: McpTransport = remote ? (kind?.[1]?.toUpperCase() === 'SSE' ? 'sse' : 'http') : 'stdio';
-    entries.push({ name, target, transport, ...claudeHealth(line.slice(dash + 3)) });
+    entries.push({ name, target, transport, ...status });
   }
-  return entries;
+  return entries.length || /no mcp servers configured/i.test(text) ? entries : null;
 };
 
 /** One server from `codex mcp list --json`. */
@@ -63,13 +71,14 @@ const record = (value: unknown): Record<string, unknown> =>
   value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
 const text = (value: unknown): string => (typeof value === 'string' ? value : '');
 
-/** The servers in `codex mcp list --json`. Throws when the output isn't the JSON array Codex prints. */
+/** The servers in `codex mcp list --json`. Throws when the output isn't the JSON array of servers Codex prints. */
 export const parseCodexMcpList = (json: string): CodexListEntry[] => {
   const value: unknown = JSON.parse(json);
   if (!Array.isArray(value)) throw new Error('Not a server list');
   return value.map((item) => {
     const fields = record(item);
     const transport = record(fields.transport);
+    if (!SERVER_NAME.test(text(fields.name)) || typeof transport.type !== 'string') throw new Error('Not a server row');
     const type = text(transport.type);
     return {
       name: text(fields.name),
@@ -89,21 +98,18 @@ const claudeOrigin = (name: string): { scope: McpScope; source: string } =>
     : name.startsWith('plugin:') ? { scope: 'plugin', source: 'Claude plugin' }
       : { scope: 'provider', source: 'Claude' };
 
-/** The file entry for a name, preferring user scope (what a worktree job surely gets). */
+/** Claude's precedence when one name is defined in several places: local, then project, then user. */
+const PRECEDENCE: Record<string, number> = { local: 0, project: 1, user: 2 };
+
+/** The file entry the CLI's row stands for: the one with the same name that wins in Claude's precedence. */
 const fileMatch = (servers: readonly ReadServer[], name: string): ReadServer | undefined =>
-  servers.find((server) => server.name === name && server.scope === 'user') ?? servers.find((server) => server.name === name);
+  servers.filter((server) => server.name === name).sort((a, b) => (PRECEDENCE[a.scope] ?? 9) - (PRECEDENCE[b.scope] ?? 9))[0];
 
 const loadFor = (health: McpHealth | null, file: ReadServer | undefined, disabled: boolean): Pick<ReadServer, 'load' | 'note'> => {
   if (disabled) return { load: 'disabled', note: file?.note ?? null };
   if (health === 'pending') return { load: 'unsure', note: file?.note ?? "Claude waits for this project's approval, and a T3 job can't give it." };
   if (file?.load === 'unsure') return { load: 'unsure', note: file.note };
   return { load: 'loads', note: null };
-};
-
-const merge = (listed: ReadServer[], files: readonly ReadServer[]): ReadServer[] => {
-  const names = new Set(listed.map((server) => server.name));
-  // Servers in the files that the CLI didn't list (a project server it skipped, a local one for another folder).
-  return [...listed, ...files.filter((server) => !names.has(server.name))];
 };
 
 type Read = { servers: ReadServer[]; files: McpOverview['files']; listing: McpListing };
@@ -120,13 +126,15 @@ const runCli = async (name: string, args: string[], run: Exec, env: NodeJS.Proce
   return run(bin, args, { cwd, env, timeoutMs });
 };
 
+const unreadable = (cli: string): string => `Serra couldn't read \`${cli} mcp list\`, so this list is from the config files.`;
+
 const listClaude = async (projectPath: string, home: string, options: LiveMcpOptions, run: Exec, env: NodeJS.ProcessEnv): Promise<Read> => {
   const fromFiles = readClaude(projectPath, home, options.env ?? process.env);
   // `claude mcp list` health-checks every server, so it gets time, but not forever. It runs in the project's
   // checkout so project servers show; a job's worktree is a copy of the same repository.
   const result = await runCli('claude', ['mcp', 'list'], run, env, existsSync(projectPath) ? projectPath : home, 45_000);
   const entries = result.code === 0 ? parseClaudeMcpList(result.stdout) : null;
-  if (!entries) return { ...fromFiles, listing: { driver: 'claude', method: 'files', note: failure('claude', result) } };
+  if (!entries) return { ...fromFiles, listing: { driver: 'claude', method: 'files', note: result.code === 0 ? unreadable('claude') : failure('claude', result) } };
   const listed = entries.map((entry): ReadServer => {
     const file = fileMatch(fromFiles.servers, entry.name);
     const origin = file ? { scope: file.scope, source: file.source } : claudeOrigin(entry.name);
@@ -137,7 +145,8 @@ const listClaude = async (projectPath: string, home: string, options: LiveMcpOpt
       fingerprint: [entry.name, entry.target, file?.fingerprint ?? ''].join(' '),
     };
   });
-  return { servers: merge(listed, fromFiles.servers), files: fromFiles.files, listing: { driver: 'claude', method: 'cli', note: null } };
+  // The CLI is the authority: a server only in the files (turned off by policy, or for another folder) isn't shown.
+  return { servers: listed, files: fromFiles.files, listing: { driver: 'claude', method: 'cli', note: null } };
 };
 
 const listCodex = async (projectPath: string, home: string, options: LiveMcpOptions, run: Exec, env: NodeJS.ProcessEnv): Promise<Read> => {
@@ -145,7 +154,7 @@ const listCodex = async (projectPath: string, home: string, options: LiveMcpOpti
   const result = await runCli('codex', ['mcp', 'list', '--json'], run, env, existsSync(projectPath) ? projectPath : home, 20_000);
   let entries: CodexListEntry[] | null = null;
   if (result.code === 0) { try { entries = parseCodexMcpList(result.stdout); } catch { entries = null; } }
-  if (!entries) return { ...fromFiles, listing: { driver: 'codex', method: 'files', note: failure('codex', result) } };
+  if (!entries) return { ...fromFiles, listing: { driver: 'codex', method: 'files', note: result.code === 0 ? unreadable('codex') : failure('codex', result) } };
   const listed = entries.map((entry): ReadServer => {
     const file = fileMatch(fromFiles.servers, entry.name);
     const health: McpHealth | null = entry.needsAuth ? 'needs-auth' : null;
@@ -157,7 +166,7 @@ const listCodex = async (projectPath: string, home: string, options: LiveMcpOpti
       fingerprint: [entry.name, entry.url, entry.command, entry.args].join(' '),
     };
   });
-  return { servers: merge(listed, fromFiles.servers), files: fromFiles.files, listing: { driver: 'codex', method: 'cli', note: null } };
+  return { servers: listed, files: fromFiles.files, listing: { driver: 'codex', method: 'cli', note: null } };
 };
 
 /**
@@ -171,7 +180,7 @@ export const liveMcpOverview = async (
   const home = options.home ?? homedir();
   const run = options.run ?? exec;
   const path = options.path ?? await toolSearchPath({ home });
-  const env: NodeJS.ProcessEnv = { ...process.env, ...options.env, PATH: path, NO_COLOR: '1' };
+  const env = toolEnv(path, { ...process.env, ...options.env });
   const worker = workerDrivers(profile.worker?.provider);
   const reads = await Promise.all(worker.drivers.map((driver: WorkerDriver) =>
     (driver === 'claude' ? listClaude : listCodex)(profile.project.path, home, options, run, env)));

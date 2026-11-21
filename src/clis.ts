@@ -6,7 +6,7 @@ import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import type { Profile } from './config.ts';
-import { exec, findExecutable, type Exec } from './exec.ts';
+import { exec, findExecutable, toolEnv, type Exec } from './exec.ts';
 import { requiredTools } from './mcp.ts';
 import { toolSearchPath } from './shell-path.ts';
 import { CLI_CATALOG, type CliSpec, type Recommendation } from './tool-catalog.ts';
@@ -50,7 +50,7 @@ const account = (spec: CliSpec, output: string): string | null => {
 export const detectCli = async (spec: CliSpec, { path, run = exec, home = homedir() }: { path: string; run?: Exec; home?: string }): Promise<CliStatus> => {
   const bin = spec.bins.map((name) => findExecutable(name, path)).find(Boolean) ?? null;
   if (!bin) return { id: spec.id, path: null, version: null, check: null };
-  const env: NodeJS.ProcessEnv = { ...process.env, PATH: path, NO_COLOR: '1', GH_PROMPT_DISABLED: '1' };
+  const env = toolEnv(path);
   const [version, check] = await Promise.all([
     run(bin, spec.versionArgs, { env, timeoutMs: 8_000 }),
     spec.check ? run(bin, spec.check.args, { env, timeoutMs: 10_000 }) : Promise.resolve(null),

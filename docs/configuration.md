@@ -146,14 +146,14 @@ The app's **Tools** screen and `pnpm bot tools --profile /absolute/profile` are 
   - A server is shown by name, origin, transport and host. Its command, arguments, environment, headers and full URL never leave the main process.
   - T3 also gives every job its own `t3-code` server, which isn't in these lists.
 - **Command-line tools:** GitHub, Vercel, Atlassian (`acli`), Sentry, Docker, AWS, Google Cloud, Azure and Fly.io.
-  - Each shows whether it's installed, its version, and whether it's signed in (or, for Docker, running), where the tool has a cheap read-only check: `gh auth status`, `vercel whoami`, `aws sts get-caller-identity`, `gcloud auth list`, `az account show`, `fly auth whoami` and `docker info`.
+  - Each shows whether it's installed, its version, and whether it's signed in (or, for Docker, running), where the tool has a cheap read-only check: `gh auth status`, `vercel whoami`, `acli jira auth status`, `gcloud auth list`, `az account show`, `fly auth whoami` and `docker info`. AWS isn't checked, because its check can run credential helpers.
   - Serra looks on your login shell's `PATH`, plus `/opt/homebrew/bin`, `/usr/local/bin` and `~/.local/bin`. Set `SERRA_TOOLS_PATH` to replace that search path.
   - Serra never installs or signs in to anything. It shows the vendor's install or sign-in command to copy.
-- **Recommended:**
+- **Recommended** (on the screen only):
   - GitHub always.
   - Sentry when an alert rule mentions it or the repo uses a Sentry SDK.
   - Vercel when the repo has `vercel.json`.
-  - Atlassian when your brief or knowledge mentions Jira or Confluence.
+  - Atlassian when your brief, knowledge or alert rules mention Jira, Confluence or `atlassian.net`.
   - Linear when they link to `linear.app`.
 
   Each shows whether it's ready, and the commands to set it up: the CLI's install, or the provider's `mcp add` for the vendor's MCP server. The list lives in `src/tool-catalog.ts` and changes by pull request; nothing is fetched.

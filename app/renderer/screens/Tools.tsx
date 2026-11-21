@@ -15,7 +15,8 @@ import {
 
 const errorText = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
-const DOT: Record<Status['tone'], string> = { up: 'bg-up', warn: 'bg-warn', down: 'bg-down', off: 'bg-faint' };
+/** A filled dot for a checked state, a hollow one for "enabled but not checked", grey for off. */
+const DOT: Record<Status['tone'], string> = { up: 'bg-up', warn: 'bg-warn', down: 'bg-down', neutral: 'border border-faint', off: 'bg-faint' };
 
 /** A status as a dot and a word, the same width in every list so they line up. */
 const StatusPill = ({ status }: { status: Status }) => (
@@ -68,7 +69,7 @@ const Row = ({ icon, title, sub, meta, status, badge, more, moreLabel }: {
   const panel = useId();
   return (
     <li className="px-4 py-3">
-      <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 sm:grid-cols-[auto_minmax(0,1fr)_minmax(0,15rem)_6.5rem_8.5rem]">
+      <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 @2xl:grid-cols-[auto_minmax(0,1fr)_minmax(0,15rem)_6.5rem_8.5rem]">
         {icon}
         <div className="flex min-w-0 flex-col">
           <span className="flex min-w-0 items-center gap-2">
@@ -77,11 +78,11 @@ const Row = ({ icon, title, sub, meta, status, badge, more, moreLabel }: {
           </span>
           {sub && <span className="truncate text-xs text-muted">{sub}</span>}
         </div>
-        <span className="hidden truncate text-xs text-muted sm:block">{meta}</span>
-        <span className="hidden justify-end sm:flex">
+        <span className="hidden truncate text-xs text-muted @2xl:block">{meta}</span>
+        <span className="hidden justify-end @2xl:flex">
           {more && (
             <Button
-              size="sm" variant="ghost" aria-expanded={open} aria-controls={panel}
+              size="sm" variant="ghost" aria-expanded={open} aria-controls={panel} aria-label={`${moreLabel}: ${title}`}
               icon={<ChevronDown size={13} aria-hidden className={cx('transition-transform', open && 'rotate-180')} />}
               onClick={() => setOpen((value) => !value)}
             >
@@ -89,11 +90,11 @@ const Row = ({ icon, title, sub, meta, status, badge, more, moreLabel }: {
             </Button>
           )}
         </span>
-        <span className="col-start-3 flex justify-end sm:col-start-auto"><StatusPill status={status} /></span>
+        <span className="col-start-3 flex justify-end @2xl:col-start-auto"><StatusPill status={status} /></span>
       </div>
       {more && (
-        <div className="mt-2 flex pl-10 sm:hidden">
-          <Button size="sm" variant="ghost" aria-expanded={open} aria-controls={panel} onClick={() => setOpen((value) => !value)}>{moreLabel}</Button>
+        <div className="mt-2 flex pl-10 @2xl:hidden">
+          <Button size="sm" variant="ghost" aria-expanded={open} aria-controls={panel} aria-label={`${moreLabel}: ${title}`} onClick={() => setOpen((value) => !value)}>{moreLabel}</Button>
         </div>
       )}
       {more && open && <div id={panel} className="mt-3 flex flex-col gap-2 pl-10">{more}</div>}
@@ -115,7 +116,7 @@ const Section = ({ title, aside, children }: { title: string; aside?: ReactNode;
 };
 
 const List = ({ label, children }: { label: string; children: ReactNode }) => (
-  <ul aria-label={label} className="divide-y divide-line-subtle rounded-xl border border-line">{children}</ul>
+  <ul aria-label={label} className="@container divide-y divide-line-subtle rounded-xl border border-line">{children}</ul>
 );
 
 const Pending = ({ text }: { text: string }) => <p className="rounded-xl border border-line px-4 py-5 text-sm text-muted">{text}</p>;
@@ -183,7 +184,7 @@ const ProviderGroup = ({ group, onError }: { group: DriverGroup; onError: (messa
       {group.unreadable.map((path) => <p key={path} className="text-xs text-warn">Couldn&apos;t read {path}.</p>)}
       {group.servers.length === 0
         ? <p className="rounded-xl border border-dashed border-line px-4 py-4 text-sm text-muted">No MCP servers in {group.title} yet.</p>
-        : <ul aria-labelledby={id} className="divide-y divide-line-subtle rounded-xl border border-line">{group.servers.map((server) => <ServerItem key={`${server.scope}:${server.name}`} server={server} />)}</ul>}
+        : <ul aria-labelledby={id} className="@container divide-y divide-line-subtle rounded-xl border border-line">{group.servers.map((server) => <ServerItem key={`${server.scope}:${server.name}`} server={server} />)}</ul>}
     </div>
   );
 };
@@ -195,12 +196,17 @@ export const Tools = () => {
   const [mcpError, setMcpError] = useState<string | null>(null);
   const [cliError, setCliError] = useState<string | null>(null);
   const [loading, setLoading] = useState(0);
+  const [announce, setAnnounce] = useState('');
 
   const load = useCallback(() => {
     const bridge = serra();
     if (!bridge) { setMcpError('The Serra bridge is not available in this window.'); return; }
     setLoading(2);
-    const done = () => setLoading((count) => Math.max(0, count - 1));
+    setAnnounce('Checking tools…');
+    const done = () => setLoading((count) => {
+      if (count <= 1) setAnnounce('Tools checked.');
+      return Math.max(0, count - 1);
+    });
     bridge.tools.overview().then((value) => { setMcp(value); setMcpError(null); }, (failure: unknown) => setMcpError(errorText(failure))).finally(done);
     bridge.tools.clis().then((value) => { setClis(value); setCliError(null); }, (failure: unknown) => setCliError(errorText(failure))).finally(done);
   }, []);
@@ -225,7 +231,7 @@ export const Tools = () => {
         </Button>
       )}
     >
-      <div aria-live="polite" className="sr-only">{loading > 0 ? 'Checking tools…' : 'Tools checked.'}</div>
+      <div aria-live="polite" className="sr-only">{announce}</div>
 
       {mcp?.warnings.map((warning) => (
         <p key={`${warning.driver}:${warning.tool}`} role="alert" data-missing-tool={warning.tool} className="flex items-start gap-3 rounded-xl border border-warn/50 px-4 py-3 text-sm">
@@ -261,7 +267,7 @@ export const Tools = () => {
               <ChevronDown size={14} aria-hidden className="-rotate-90 transition-transform group-open:rotate-0" />
               Not installed <span className="text-faint">· {notInstalled.length}</span>
             </summary>
-            <ul aria-label="Command-line tools not installed" className="divide-y divide-line-subtle border-t border-line">{notInstalled.map((row) => <CliItem key={row.spec.id} row={row} />)}</ul>
+            <ul aria-label="Command-line tools not installed" className="@container divide-y divide-line-subtle border-t border-line">{notInstalled.map((row) => <CliItem key={row.spec.id} row={row} />)}</ul>
           </details>
         )}
       </Section>

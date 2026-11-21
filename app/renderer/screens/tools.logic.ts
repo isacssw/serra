@@ -8,7 +8,7 @@ import type { BrandId } from '../ui/brand-icons.ts';
 export const DRIVER_NAMES: Record<WorkerDriver, string> = { claude: 'Claude', codex: 'Codex' };
 
 /** A status pill's colour. `off` is a quiet grey dot. */
-export type StatusTone = 'up' | 'warn' | 'down' | 'off';
+export type StatusTone = 'up' | 'warn' | 'down' | 'neutral' | 'off';
 export interface Status { tone: StatusTone; text: string }
 
 export const SCOPE_LABELS: Record<McpScope, string> = {
@@ -20,15 +20,17 @@ const SCOPE_ORDER: Record<McpScope, number> = { user: 0, connector: 1, plugin: 2
 /** One status for a server: what its provider's health check said, else whether it loads. */
 export const serverStatus = (server: Pick<McpServer, 'load' | 'health'>): Status => {
   if (server.load === 'disabled') return { tone: 'off', text: 'Off' };
+  // Before health: a server that connects from the checkout may still not reach a job's worktree.
+  if (server.load === 'unsure') return { tone: 'warn', text: 'May not load' };
   if (server.health === 'connected') return { tone: 'up', text: 'Connected' };
   if (server.health === 'needs-auth') return { tone: 'warn', text: 'Needs sign-in' };
   if (server.health === 'failed') return { tone: 'down', text: 'Failed' };
   if (server.health === 'pending') return { tone: 'warn', text: 'Needs approval' };
-  if (server.load === 'unsure') return { tone: 'warn', text: 'May not load' };
-  return { tone: 'up', text: 'On' };
+  // Turned on, but nobody checked it answers (Codex lists servers without connecting).
+  return { tone: 'neutral', text: 'Enabled' };
 };
 
-const STATUS_ORDER: Record<StatusTone, number> = { down: 0, warn: 1, up: 2, off: 3 };
+const STATUS_ORDER: Record<StatusTone, number> = { down: 0, warn: 1, up: 2, neutral: 3, off: 4 };
 
 /** "HTTP · mcp.example.com", "Local command" or "Unknown transport". */
 export const transportLabel = (server: Pick<McpServer, 'transport' | 'host'>): string => {
@@ -147,14 +149,19 @@ export const recommendationRows = (
     const spec = rec.cli ? catalog.find((entry) => entry.id === rec.cli) : undefined;
     const cli = spec ? clis?.clis.find((entry) => entry.id === spec.id) : undefined;
     const cliState = spec && clis ? cliStatus(cli) : null;
-    const answered = servers.find((server) => server.health === 'connected' || (server.health === null && server.load === 'loads'));
+    // Ready means checked: a CLI that's signed in (or has no sign-in check), or an MCP server that answered Claude's
+    // health check. A server nobody checked (Codex lists without connecting) is only Configured.
+    const cliReady = cliState?.tone === 'up';
+    const connected = !rec.needsCli && servers.some((server) => server.health === 'connected' && server.load === 'loads');
+    const configured = !rec.needsCli && servers.some((server) => server.health === null && server.load === 'loads');
     let state: Status;
-    if ((cliState && cliState.tone === 'up') || answered) state = { tone: 'up', text: 'Ready' };
-    else if (servers.some((server) => server.health === 'needs-auth')) state = { tone: 'warn', text: 'Needs sign-in' };
+    if (cliReady || connected) state = { tone: 'up', text: 'Ready' };
+    else if (!rec.needsCli && servers.some((server) => server.health === 'needs-auth')) state = { tone: 'warn', text: 'Needs sign-in' };
     else if (cliState?.text === 'Not signed in') state = { tone: 'warn', text: 'Not signed in' };
+    else if (configured) state = { tone: 'neutral', text: 'Configured' };
     else state = { tone: 'off', text: 'Not set up' };
     const setup: RecommendationRow['setup'] = [];
-    if (state.tone !== 'up') {
+    if (state.text !== 'Ready') {
       if (spec && !cli?.path) setup.push({ label: `Install ${spec.label}`, command: spec.install });
       else if (spec?.login && cliState?.text === 'Not signed in') setup.push({ label: 'Sign in', command: spec.login });
       if (rec.mcp) {

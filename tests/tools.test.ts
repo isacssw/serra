@@ -8,7 +8,7 @@ import test, { type TestContext } from 'node:test';
 import { cliOverview, detectCli, formatCliOverview, recommendationSignals } from '../src/clis.ts';
 import type { Profile } from '../src/config.ts';
 import type { Exec, ExecResult } from '../src/exec.ts';
-import { findExecutable } from '../src/exec.ts';
+import { exec, findExecutable, toolEnv } from '../src/exec.ts';
 import { liveMcpOverview, parseClaudeMcpList, parseCodexMcpList } from '../src/mcp-live.ts';
 import { formatMcpOverview, mcpOverview, parseCodexServers, tomlScalar, type McpOverview } from '../src/mcp.ts';
 import { loginShellPath, mergePaths } from '../src/shell-path.ts';
@@ -94,7 +94,7 @@ const CLAUDE_LIST = [
 ].join('\n');
 
 test('parseClaudeMcpList reads names, transports and health, and skips the header', () => {
-  const entries = parseClaudeMcpList(CLAUDE_LIST);
+  const entries = parseClaudeMcpList(CLAUDE_LIST)!;
   assert.deepEqual(entries.map((entry) => [entry.name, entry.transport, entry.health]), [
     ['claude.ai Gmail', 'http', 'connected'],
     ['claude.ai Miro', 'http', 'needs-auth'],
@@ -104,6 +104,13 @@ test('parseClaudeMcpList reads names, transports and health, and skips the heade
     ['plugin:docs:search', 'stdio', 'connected'],
     ['team', 'http', 'pending'],
   ]);
+});
+
+test('parseClaudeMcpList trusts only known statuses and names; unknown output is null, "no servers" is empty', () => {
+  assert.deepEqual(parseClaudeMcpList('weird: thing - Disconnected\nWarning: x - y'), null);
+  assert.deepEqual(parseClaudeMcpList('ok: https://a.example/mcp - ✔ Connected\nfoo: bar - Disconnected')!.map((entry) => entry.name), ['ok']);
+  assert.deepEqual(parseClaudeMcpList('<script>: https://a.example - ✔ Connected'), null);
+  assert.deepEqual(parseClaudeMcpList('No MCP servers configured. Use `claude mcp add` to add a server.'), []);
 });
 
 test('parseCodexMcpList reads the JSON list', () => {
@@ -116,6 +123,7 @@ test('parseCodexMcpList reads the JSON list', () => {
     ['node_repl', true, 'stdio', false], ['tracker', true, 'http', true], ['off', false, 'stdio', false],
   ]);
   assert.throws(() => parseCodexMcpList('{}'));
+  assert.throws(() => parseCodexMcpList('[{"name":"x"}]'), /Not a server row/);
 });
 
 test('liveMcpOverview lists Claude from `claude mcp list`, connectors included, and never leaks a command or URL', async (t) => {
@@ -150,6 +158,39 @@ test('liveMcpOverview falls back to the config files when a CLI is missing or fa
   assert.match(overview.listing[1]!.note!, /failed \(exit 2\)/);
   assert.deepEqual(overview.servers.map((server) => server.name), ['github', 'repl']);
   assert.ok(!JSON.stringify(overview).includes(TOKEN), 'stderr never reaches the overview');
+});
+
+test('with a working CLI, a server only in the files is not shown, and the winning definition is the local one', async (t) => {
+  const f = fixture(t);
+  f.write(join(f.home, '.claude.json'), JSON.stringify({
+    mcpServers: { hidden: { command: 'x' }, both: { type: 'http', url: 'https://user.example/mcp' } },
+    projects: { [f.project]: { mcpServers: { both: { type: 'http', url: 'https://local.example/mcp' } } } },
+  }));
+  f.install('claude');
+  const run = fakeRun({ 'claude mcp list': { stdout: 'both: https://local.example/mcp (HTTP) - ✔ Connected' } });
+  const overview = await liveMcpOverview(f.profile(), { home: f.home, env: {}, run, path: f.bin });
+  assert.deepEqual(overview.servers.map((server) => [server.name, server.scope, server.load]), [['both', 'local', 'unsure']]);
+});
+
+test('output Claude prints with exit 0 that Serra can\'t read falls back to the files', async (t) => {
+  const f = fixture(t);
+  f.write(join(f.home, '.claude.json'), JSON.stringify({ mcpServers: { github: { type: 'http', url: 'https://api.github.example/mcp' } } }));
+  f.install('claude');
+  const overview = await liveMcpOverview(f.profile(), { home: f.home, env: {}, run: fakeRun({ 'claude mcp list': { stdout: 'Something new happened' } }), path: f.bin });
+  assert.equal(overview.listing[0]!.method, 'files');
+  assert.match(overview.listing[0]!.note!, /couldn't read/);
+  assert.deepEqual(overview.servers.map((server) => server.name), ['github']);
+});
+
+test('exec settles at the deadline even when a grandchild holds the pipes open', async () => {
+  const started = Date.now();
+  const outcome = await exec('/bin/sh', ['-c', 'sleep 5 & sleep 5'], { timeoutMs: 150 });
+  assert.equal(outcome.timedOut, true);
+  assert.ok(Date.now() - started < 2_000, `took ${Date.now() - started}ms`);
+  const missing = await exec('/definitely/not/here', []);
+  assert.equal(missing.missing, true);
+  const ok = await exec('/bin/sh', ['-c', 'printf hi; exit 3']);
+  assert.deepEqual([ok.code, ok.stdout, ok.timedOut], [3, 'hi', false]);
 });
 
 test('liveMcpOverview reads Codex from `codex mcp list --json`, with servers Codex adds itself', async (t) => {
@@ -209,9 +250,10 @@ test('detectCli: a check that times out is unknown; empty output with needsOutpu
 
 test('a tool without a trusted sign-in check reports none', async (t) => {
   const f = fixture(t);
-  f.install('acli');
-  const acli = await detectCli(spec('acli'), { path: f.bin, home: f.home, run: fakeRun({ 'acli --version': { stdout: 'acli version 1.3.4' } }) });
-  assert.deepEqual([acli.version, acli.check], ['1.3.4', null]);
+  f.install('sentry-cli');
+  const sentry = await detectCli(spec('sentry-cli'), { path: f.bin, home: f.home, run: fakeRun({ 'sentry-cli --version': { stdout: 'sentry-cli 2.58.1' } }) });
+  assert.deepEqual([sentry.version, sentry.check], ['2.58.1', null]);
+  assert.equal(spec('aws').check, undefined, 'aws sts can run credential helpers, so it is not checked');
 });
 
 test('findExecutable needs an executable file', (t) => {
@@ -234,6 +276,15 @@ test('cliOverview checks the whole catalogue and formats it for the command line
   const text = formatCliOverview(overview);
   assert.match(text, /GitHub CLI {2}2\.83\.0 {2}signed in as alex/);
   assert.match(text, /Vercel CLI {2}not installed {2}\(npm i -g vercel\)/);
+});
+
+test('toolEnv passes only the allowlist, the PATH and the quiet switches', () => {
+  const env = toolEnv('/bin', { HOME: '/h', SLACK_BOT_TOKEN: TOKEN, GITHUB_TOKEN: TOKEN, CODEX_HOME: '/c', HTTPS_PROXY: 'http://proxy' });
+  assert.equal(env.HOME, '/h');
+  assert.equal(env.CODEX_HOME, '/c');
+  assert.equal(env.PATH, '/bin');
+  assert.equal(env.VERCEL_TELEMETRY_DISABLED, '1');
+  assert.ok(!JSON.stringify(env).includes(TOKEN));
 });
 
 test('loginShellPath reads PATH between markers; mergePaths keeps order without repeats', async () => {
@@ -279,7 +330,8 @@ test('server and CLI statuses', () => {
   assert.deepEqual(serverStatus({ load: 'loads', health: 'needs-auth' }), { tone: 'warn', text: 'Needs sign-in' });
   assert.deepEqual(serverStatus({ load: 'loads', health: 'failed' }), { tone: 'down', text: 'Failed' });
   assert.deepEqual(serverStatus({ load: 'unsure', health: null }), { tone: 'warn', text: 'May not load' });
-  assert.deepEqual(serverStatus({ load: 'loads', health: null }), { tone: 'up', text: 'On' });
+  assert.deepEqual(serverStatus({ load: 'unsure', health: 'connected' }), { tone: 'warn', text: 'May not load' }, 'connected from the checkout, not surely in a job');
+  assert.deepEqual(serverStatus({ load: 'loads', health: null }), { tone: 'neutral', text: 'Enabled' });
   assert.deepEqual(cliStatus(undefined), { tone: 'off', text: 'Not installed' });
   assert.deepEqual(cliStatus({ id: 'docker', path: '/x', version: '1', check: { kind: 'running', state: 'no', account: null } }), { tone: 'warn', text: 'Not running' });
   assert.equal(serverLabel({ name: 'claude.ai Gmail', scope: 'connector' }), 'Gmail');
@@ -327,6 +379,15 @@ test('recommendations: GitHub always, others only with a signal or a server; rea
   rows = recommendationRows(emptyMcp({ servers: [linear] }), clis);
   assert.equal(rows.find((row) => row.rec.id === 'linear')!.state.text, 'Needs sign-in');
   assert.deepEqual([...recommendedCliIds(rows)], ['gh']);
+
+  // A Codex server nobody health-checked is only Configured; a GitHub MCP server never makes GitHub ready without gh.
+  rows = recommendationRows(emptyMcp({ servers: [{ ...linear, driver: 'codex', health: null }, { ...linear, name: 'github', host: 'api.githubcopilot.com', health: 'connected' }] }), { clis: [], signals: {} });
+  assert.equal(rows.find((row) => row.rec.id === 'linear')!.state.text, 'Configured');
+  rows = recommendationRows(emptyMcp({ servers: [{ ...linear, scope: 'local', load: 'unsure', health: 'connected' }] }), { clis: [], signals: {} });
+  assert.equal(rows.find((row) => row.rec.id === 'linear')!.state.text, 'Not set up', 'a local-scope server is not Ready');
+  const github = rows.find((row) => row.rec.id === 'github')!;
+  assert.equal(github.state.text, 'Not set up');
+  assert.deepEqual(github.setup.map((step) => step.command), ['brew install gh']);
 });
 
 test('cliRows: installed first, recommended next, and the one command each needs', () => {

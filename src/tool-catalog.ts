@@ -29,7 +29,7 @@ export interface CliSpec {
 export const CLI_CATALOG: readonly CliSpec[] = [
   {
     id: 'gh', label: 'GitHub CLI', icon: 'github', bins: ['gh'], versionArgs: ['--version'],
-    check: { args: ['auth', 'status'], kind: 'signed-in', account: 'gh' },
+    check: { args: ['auth', 'status', '--active', '--hostname', 'github.com'], kind: 'signed-in', account: 'gh' },
     install: 'brew install gh', login: 'gh auth login', docs: 'https://cli.github.com',
   },
   {
@@ -39,6 +39,7 @@ export const CLI_CATALOG: readonly CliSpec[] = [
   },
   {
     id: 'acli', label: 'Atlassian CLI', icon: 'atlassian', bins: ['acli'], versionArgs: ['--version'],
+    check: { args: ['jira', 'auth', 'status'], kind: 'signed-in' },
     install: 'brew tap atlassian/homebrew-acli && brew install acli', docs: 'https://developer.atlassian.com/cloud/acli/guides/install-macos/',
   },
   {
@@ -52,7 +53,6 @@ export const CLI_CATALOG: readonly CliSpec[] = [
   },
   {
     id: 'aws', label: 'AWS CLI', icon: 'cloud', bins: ['aws'], versionArgs: ['--version'],
-    check: { args: ['sts', 'get-caller-identity', '--output', 'json'], kind: 'signed-in' },
     install: 'brew install awscli', login: 'aws configure sso', docs: 'https://docs.aws.amazon.com/cli/',
   },
   {
@@ -81,6 +81,8 @@ export interface Recommendation {
   icon: ToolIcon;
   /** Recommended for every profile (GitHub), or only when a signal in the repo, knowledge or alert rules says so. */
   always: boolean;
+  /** Ready only when its CLI is (GitHub: Serra itself needs `gh`), whatever MCP server there is. */
+  needsCli?: boolean;
   /** Why, when `always`. */
   reason?: string;
   /** The CLI from CLI_CATALOG that covers it, if any. */
@@ -91,7 +93,7 @@ export interface Recommendation {
 }
 
 export const RECOMMENDATIONS: readonly Recommendation[] = [
-  { id: 'github', label: 'GitHub', icon: 'github', always: true, reason: 'Serra opens pull requests with gh', cli: 'gh', server: /github/i },
+  { id: 'github', label: 'GitHub', icon: 'github', always: true, needsCli: true, reason: 'Serra opens pull requests with gh', cli: 'gh', server: /github/i },
   {
     id: 'sentry', label: 'Sentry', icon: 'sentry', always: false, cli: 'sentry-cli', server: /sentry/i,
     mcp: { name: 'sentry', url: 'https://mcp.sentry.dev/mcp', docs: 'https://docs.sentry.io/product/sentry-mcp/' },
@@ -115,11 +117,11 @@ export const PROVIDER_MCP = {
   claude: {
     docs: 'https://code.claude.com/docs/en/mcp',
     add: (name: string, url: string) => `claude mcp add --scope user --transport http ${name} ${url}`,
-    example: 'claude mcp add --scope user <name> -- <command>',
+    example: 'claude mcp add --scope user <name> <url>',
   },
   codex: {
     docs: 'https://developers.openai.com/codex/mcp',
     add: (name: string, url: string) => `codex mcp add ${name} --url ${url}`,
-    example: 'codex mcp add <name> -- <command>',
+    example: 'codex mcp add <name> --url <url>',
   },
 } as const;

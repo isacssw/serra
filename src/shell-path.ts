@@ -26,7 +26,7 @@ export const mergePaths = (...paths: (string | null | undefined)[]): string => {
 
 const INSTALL_DIRS = (home: string) => ['/opt/homebrew/bin', '/usr/local/bin', join(home, '.local/bin')].join(delimiter);
 
-let cached: { path: string; at: number } | null = null;
+let cached: { path: Promise<string>; at: number } | null = null;
 const CACHE_MS = 5 * 60_000;
 
 /**
@@ -37,8 +37,9 @@ export const toolSearchPath = async (options: { run?: Exec; home?: string; fresh
   // An explicit PATH wins: tests use it so they never find the real `claude` or `gh`.
   if (process.env.SERRA_TOOLS_PATH !== undefined) return process.env.SERRA_TOOLS_PATH;
   if (!options.fresh && cached && Date.now() - cached.at < CACHE_MS) return cached.path;
-  const shell = await loginShellPath({ run: options.run }).catch(() => null);
-  const path = mergePaths(shell, process.env.PATH, INSTALL_DIRS(options.home ?? homedir()));
+  // The promise is cached, so the MCP and CLI checks that start together share one login shell.
+  const path = loginShellPath({ run: options.run }).catch(() => null)
+    .then((shell) => mergePaths(shell, process.env.PATH, INSTALL_DIRS(options.home ?? homedir())));
   cached = { path, at: Date.now() };
   return path;
 };
