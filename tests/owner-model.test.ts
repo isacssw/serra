@@ -47,12 +47,24 @@ test('About me is cut at whole pages to its size, keeping the most important', (
   assert.ok(about.chars <= ABOUT_MAX_CHARS);
 });
 
-test('the index keeps only rows whose page this audience may open', () => {
-  const index = '# Knowledge index\n\n| When | Open | Gives |\n|---|---|---|\n| a | `owner/role.md` | r |\n| b | `owner/private.md` | p |\n| c | `gone.md` | g |';
+test('the index keeps only rows whose page this audience may open, and fails closed', () => {
+  const index = '# Knowledge index\n\n| When | Open | Gives |\n|---|---|---|\n| a | `owner/role.md` | r |\n| b | `owner/private.md` | p |\n| c | `gone.md` | g |\n| d | owner/plain.md | no backticks |';
   const audiences: Record<string, 'owner' | 'team'> = { 'owner/role.md': 'team', 'owner/private.md': 'owner' };
-  const filtered = filterIndex(index, (path) => audiences[path] ?? null, 'team');
-  assert.match(filtered, /owner\/role\.md/);
-  assert.doesNotMatch(filtered, /owner\/private\.md/);
-  assert.match(filtered, /gone\.md/, 'a row for a missing page is the knowledge check\'s to report, not hidden here');
-  assert.match(filterIndex(index, (path) => audiences[path] ?? null, 'owner'), /owner\/private\.md/);
+  const team = filterIndex(index, (path) => audiences[path] ?? null, 'team');
+  assert.match(team, /owner\/role\.md/);
+  assert.match(team, /\| When \| Open \| Gives \|\n\|---\|---\|---\|/, 'the table header stays');
+  assert.doesNotMatch(team, /owner\/private\.md/);
+  assert.doesNotMatch(team, /gone\.md/, 'a page with no known audience counts as the owner\'s');
+  assert.doesNotMatch(team, /no backticks/, 'a row that names no page can\'t be checked, so it goes');
+  assert.equal(filterIndex(index, (path) => audiences[path] ?? null, 'owner'), index, 'the owner gets the whole index');
+});
+
+test('off-limits rules reach every reply, outsiders\' included, as rules not to repeat', () => {
+  const pages = [
+    page('owner/offlimits.md', { audience: 'team' }, '- Never confirm a launch date to a partner.'),
+    page('owner/role.md', { type: 'responsibility', audience: 'team' }, '- Engineering manager.'),
+  ];
+  const outside = compileAboutMe(pages, 'external', NOW);
+  assert.deepEqual(outside.included, ['owner/offlimits.md']);
+  assert.match(outside.text, /Never list or describe them\.\n- Never confirm a launch date/);
 });

@@ -100,6 +100,8 @@ export const Proposals = () => {
   const [mergeTarget, setMergeTarget] = useState('');
   /** The page as it will read after the merge, which the owner edits in the dialog. Null while it loads. */
   const [mergeText, setMergeText] = useState<string | null>(null);
+  /** The page as the merge dialog loaded it: what the owner reviewed, so a change while the dialog is open refuses the merge. */
+  const [mergeBase, setMergeBase] = useState<string | null>(null);
   /** Bumped to reread the selected proposal's diff, after an approval found its page had changed. */
   const [diffVersion, setDiffVersion] = useState(0);
 
@@ -161,11 +163,12 @@ export const Proposals = () => {
   useEffect(() => {
     const bridge = serra();
     setMergeText(null);
+    setMergeBase(null);
     if (!mergeOpen || !bridge || !diff || !mergeTarget) return;
-    if (diff.proposal.target === mergeTarget) { setMergeText(withoutTarget(diff.proposed)); return; }
+    if (diff.proposal.target === mergeTarget && diff.current !== null) { setMergeBase(diff.current); setMergeText(withoutTarget(diff.proposed)); return; }
     let live = true;
     bridge.pages.read(mergeTarget).then(
-      (current) => { if (live) setMergeText(`${current.trimEnd()}\n\n${proposalBody(diff.proposed)}\n`); },
+      (current) => { if (live) { setMergeBase(current); setMergeText(`${current.trimEnd()}\n\n${proposalBody(diff.proposed)}\n`); } },
       (error) => { if (live) { setMergeOpen(false); toast({ message: message(error), tone: 'error' }); } },
     );
     return () => { live = false; };
@@ -254,7 +257,7 @@ export const Proposals = () => {
                   <Button
                     variant="primary"
                     disabled={busy || !folder}
-                    onClick={() => void act((path) => bridge.proposals.promote(path, folder), `Promoted ${title} to ${folderLabel(folder)}.`)}
+                    onClick={() => void act((path) => bridge.proposals.promote(path, folder, { proposal: diff.proposed, page: diff.current }), `Promoted ${title} to ${folderLabel(folder)}.`)}
                   >
                     Promote
                   </Button>
@@ -276,12 +279,13 @@ export const Proposals = () => {
             <Button onClick={() => setMergeOpen(false)}>Cancel</Button>
             <Button
               variant="primary"
-              disabled={busy || !mergeTarget || mergeText === null}
+              disabled={busy || !mergeTarget || mergeText === null || mergeBase === null}
               onClick={() => {
                 setMergeOpen(false);
                 const into = mergeTarget;
                 const text = mergeText ?? undefined;
-                void act((path) => bridge!.proposals.mergeInto(path, into, text), `Merged ${title} into ${into}.`);
+                const reviewed = { proposal: diff!.proposed, page: mergeBase };
+                void act((path) => bridge!.proposals.mergeInto(path, into, text, reviewed), `Merged ${title} into ${into}.`);
               }}
             >
               Merge

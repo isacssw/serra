@@ -1,4 +1,4 @@
-import { createHash, randomBytes } from 'node:crypto';
+import { randomBytes } from 'node:crypto';
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { basename, dirname, join, relative, resolve, sep } from 'node:path';
 import { writeFileAtomic } from './config.ts';
@@ -47,7 +47,15 @@ export interface ProposalChange {
   undoneAt?: string;
 }
 
+/** What the owner was shown when they approved: the proposal's text, and the page it changes (null for a new page). */
+export interface Reviewed {
+  proposal: string;
+  page: string | null;
+}
+
 export interface PromoteOptions {
+  /** What the owner reviewed. Required: an approval nobody looked at, or one whose files changed since, is refused. */
+  reviewed: Reviewed;
   /** Folder under `knowledge/` the page moves into, like `owner` or `product/billing`. */
   folder: string;
   /** File name in that folder. Defaults to the proposal's name without its date, like `deploys.md`. */
@@ -59,6 +67,8 @@ export interface PromoteOptions {
 }
 
 export interface MergeOptions {
+  /** What the owner reviewed: the proposal, and the page `into` as the merge dialog showed it. */
+  reviewed: Reviewed;
   /** Existing page under `knowledge/` the proposal goes into, like `owner/role.md`. */
   into: string;
   /**
@@ -145,11 +155,6 @@ export const createProposals = ({ knowledgeDir, backupDir, now = () => new Date(
   const root = resolve(knowledgeDir);
   const proposalsRoot = join(root, PROPOSALS_DIR);
   const backups = resolve(backupDir ?? join(dirname(root), 'backups', 'knowledge'));
-  /**
-   * The text of each proposal's target page when the owner last looked at the proposal. An approval applies only
-   * while the page still reads that way, so the owner never approves a replacement for a page that changed since.
-   */
-  const basesFile = join(dirname(root), '.proposal-bases.json');
 
   const inside = (relativePath: string, what: string): string => insideKnowledge(root, relativePath, what);
 
@@ -202,47 +207,35 @@ export const createProposals = ({ knowledgeDir, backupDir, now = () => new Date(
     });
   };
 
-  const hash = (text: string | null): string => (text === null ? 'none' : createHash('sha256').update(text).digest('hex'));
-  const readBases = (): Record<string, { target: string; hash: string }> => {
-    try { return JSON.parse(readFileSync(basesFile, 'utf8')) as Record<string, { target: string; hash: string }>; } catch { return {}; }
-  };
-  const writeBases = (bases: Record<string, { target: string; hash: string }>): void => writeFileAtomic(basesFile, JSON.stringify(bases, null, 2) + '\n');
-  /** Remember the target page as the owner sees it now. `onlyNew`: keep what was remembered when the proposal was first seen. */
-  const rememberBase = (proposal: Proposal, onlyNew = false): void => {
-    if (!proposal.target) return;
-    const bases = readBases();
-    if (onlyNew && bases[proposal.path]?.target === proposal.target) return;
-    bases[proposal.path] = { target: proposal.target, hash: hash(readText(proposal.target)) };
-    writeBases(bases);
-  };
-  /** Refuse to change `page` for proposal `id` when it no longer reads as it did when the owner last saw the proposal. */
-  const checkBase = (id: string, page: string): void => {
-    const base = readBases()[id];
-    if (!base || base.target !== page) return;
-    if (base.hash !== hash(readText(page))) {
+  /**
+   * Refuse an approval unless the owner saw exactly what it would apply: the proposal's text, and the page it
+   * replaces or merges into, as they are now. A worker or an editor that changes either in between makes the owner
+   * look again. Approving also never writes over a file that changed outside Serra: that is reviewed in Pages first.
+   */
+  const checkReviewed = (source: string, reviewed: Reviewed | undefined, page: string | null, current: string | null): void => {
+    if (!reviewed) throw new Error('Review the proposal in the app before approving it.');
+    if (readText(source) !== reviewed.proposal) throw new Error('The proposal changed since you reviewed it. Look at it again, then approve it.');
+    if (page !== null && current !== null && current !== reviewed.page) {
       throw new Error(`${page} changed since you reviewed this proposal. Look at the refreshed diff, then approve it again.`);
     }
   };
-  const forgetBase = (id: string): void => {
-    const bases = readBases();
-    if (!(id in bases)) return;
-    delete bases[id];
-    writeBases(bases);
+  const checkNoDrift = (paths: string[]): void => {
+    const { changed, removed } = journal.drift();
+    const drifted = paths.filter((path) => changed.includes(path) || removed.includes(path));
+    if (drifted.length) {
+      throw new Error(`${drifted.join(', ')} changed outside Serra. Accept or restore ${drifted.length === 1 ? 'it' : 'them'} in Knowledge › Pages first.`);
+    }
   };
 
   /** Every proposal waiting for the owner, newest date first, undated ones last. */
-  const listProposals = (): Proposal[] => {
-    const proposals = proposalIds().map(describe).sort((a, b) =>
+  const listProposals = (): Proposal[] =>
+    proposalIds().map(describe).sort((a, b) =>
       (b.date ?? '').localeCompare(a.date ?? '') || a.path.localeCompare(b.path));
-    for (const proposal of proposals) rememberBase(proposal, true);
-    return proposals;
-  };
 
   /** The proposal's text next to the page it would change (its `target`), or null when it is a new page. */
   const readProposal = (id: string): ProposalDiff => {
     const path = proposalPath(id);
     const proposal = describe(id);
-    rememberBase(proposal);
     return {
       proposal,
       current: proposal.target ? readText(proposal.target) : null,
@@ -295,7 +288,7 @@ export const createProposals = ({ knowledgeDir, backupDir, now = () => new Date(
    * Refuses a destination outside `knowledge/`, any other existing page (merge into it instead), a page that would
    * fail `pnpm knowledge`, and an index that would go over its cap. The `target:` line is dropped from the page.
    */
-  const promoteProposal = (id: string, { folder, name, when, gives }: PromoteOptions): ProposalChange => {
+  const promoteProposal = (id: string, { folder, name, when, gives, reviewed }: PromoteOptions): ProposalChange => {
     const source = proposalPath(id);
     const cleanFolder = folder.trim().replace(/\/+$/, '');
     if (!cleanFolder) throw new Error('Pick a folder under knowledge/ to promote into, like owner.');
@@ -308,7 +301,7 @@ export const createProposals = ({ knowledgeDir, backupDir, now = () => new Date(
     if (current !== null && destination !== target) {
       throw new Error(`${destination} already exists. Merge the proposal into it instead.`);
     }
-    if (current !== null) checkBase(id, destination);
+    checkReviewed(source, reviewed, destination, current);
 
     const at = today(now());
     const proposed = readFileSync(join(root, source), 'utf8');
@@ -327,7 +320,7 @@ export const createProposals = ({ knowledgeDir, backupDir, now = () => new Date(
       throw new Error(`index.md would be ${lineCount(indexAfter)} lines; the cap is ${INDEX_MAX_LINES}. Merge into an existing page instead.`);
     }
 
-    forgetBase(id);
+    checkNoDrift([destination, ...(indexed ? [] : ['index.md'])]);
     return apply('promote', id, destination, [
       { path: destination, before: current, after: page },
       ...(indexed ? [] : [{ path: 'index.md', before: indexBefore, after: indexAfter }]),
@@ -342,7 +335,7 @@ export const createProposals = ({ knowledgeDir, backupDir, now = () => new Date(
    * Fold a proposal into an existing page and remove it from `proposals/`. Refuses a page outside `knowledge/`,
    * a page that doesn't exist (promote instead), and a result that would fail `pnpm knowledge`.
    */
-  const mergeProposal = (id: string, { into, text }: MergeOptions): ProposalChange => {
+  const mergeProposal = (id: string, { into, text, reviewed }: MergeOptions): ProposalChange => {
     const source = proposalPath(id);
     const target = pagePath(into, 'Target');
     const current = readText(target);
@@ -354,7 +347,7 @@ export const createProposals = ({ knowledgeDir, backupDir, now = () => new Date(
     if (text === undefined && named !== target) {
       throw new Error(`The proposal isn't a whole page for ${target}. Edit the page as it should read, then merge.`);
     }
-    checkBase(id, target);
+    checkReviewed(source, reviewed, target, current);
     const page = text ?? removeHeaderField(proposed, 'target');
     // The page keeps where every rule came from: the old page's sources, then the new text's and the proposal's.
     const sources = [...new Set([...sourceItems(current), ...sourceItems(page), ...sourceItems(proposed)])];
@@ -362,7 +355,7 @@ export const createProposals = ({ knowledgeDir, backupDir, now = () => new Date(
     const problems = pageProblems(target, merged, frontmatter(merged));
     if (problems.length > 0) throw new Error(`The merged page would fail the knowledge check:\n${problems.join('\n')}`);
 
-    forgetBase(id);
+    checkNoDrift([target]);
     return apply('merge', id, target, [
       { path: target, before: current, after: merged },
       logLine(at, `merged \`${source}\` into \`${target}\`, confirmed by the owner in the app.`),
@@ -390,6 +383,7 @@ export const createProposals = ({ knowledgeDir, backupDir, now = () => new Date(
   const undoProposalChange = (changeId: string): ProposalChange => {
     const change = readChange(changeId);
     if (change.undoneAt) throw new Error(`${changeId} was already undone at ${change.undoneAt}.`);
+    checkNoDrift(change.files.map(({ path }) => path));
     const changed = change.files.filter(({ path, after }) => readText(path) !== after).map(({ path }) => path);
     if (changed.length > 0) {
       throw new Error(`Can't undo: changed since then: ${changed.join(', ')}. Restore by hand from ${join(backups, changeId, 'change.json')}.`);

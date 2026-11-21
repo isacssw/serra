@@ -4,14 +4,16 @@
 // owner from evals/persona.md (the same invented Robin as the fixture). They talk for up to --turns answers. Then the
 // proposals the interview wrote are graded, with no model in the loop:
 //
-//   people     the three colleagues and customer are recorded (a person page each counts fully, a mention half)
-//   voice      a voice page with the owner's style rules, and one of their real messages as a sample
+//   people     each colleague and the customer is recorded with who they are (their own page 1, a mention 0.5)
+//   voice      a voice page with at least three of the owner's style rules
+//   samples    the owner's choice on samples is kept: their real message when they gave one, none when they declined
 //   offlimits  pay and hiring, and customer dates, are recorded as off-limits
-//   audience   every proposal says who may hear it (audience: owner, team or external)
-//   team       what a teammate's About me would carry from these pages once approved (4 owner pages = full marks)
-//   private    the unannounced move, if recorded at all, is only in an owner-only page
+//   audience   each page has the audience the owner chose: role, working style, voice, off-limits and colleagues
+//              for the team; the unannounced move only for the owner
+//   team       the facts a teammate's About me would carry once approved: role, the Tuesday rule, a voice rule, Priya
+//   private    the unannounced move, when recorded, is only in an owner-only page (left out when it isn't recorded)
 //
-//   node evals/interview.ts --label my-change [--runs 2] [--turns 14] [--template path/to/interview.md]
+//   node evals/interview.ts --label my-change [--runs 2] [--turns 14] [--template path] [--persona evals/persona-no-samples.md]
 import { spawn } from 'node:child_process';
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -30,6 +32,9 @@ const { values: args } = parseArgs({
     turns: { type: 'string', default: '14' },
     model: { type: 'string', default: 'sonnet' },
     template: { type: 'string' },
+    persona: { type: 'string', default: 'evals/persona.md' },
+    /** The starter knowledge folder the new profile gets (its README tells the interviewer the page format). */
+    knowledge: { type: 'string', default: 'templates/knowledge' },
   },
 });
 
@@ -51,16 +56,17 @@ const claude = (prompt: string, { cwd, tools, resume, system }: { cwd: string; t
     });
   });
 
-const persona = readFileSync(join(root, 'evals/persona.md'), 'utf8');
+const persona = readFileSync(join(root, args.persona!), 'utf8');
+const offersSamples = /if asked for samples/i.test(persona);
 const TIME = 'This is an evaluation run: Robin has about fifteen minutes, so keep moving. When a topic is confirmed, write its proposal straight away.';
 
-interface Graded { run: number; scores: Record<string, number>; proposals: string[]; turns: number }
+interface Graded { run: number; scores: Record<string, number | null>; proposals: string[]; turns: number }
 
 const runOne = async (run: number): Promise<Graded> => {
   const dir = mkdtempSync(join(tmpdir(), 'serra-interview-'));
   try {
     const profileDir = join(dir, 'profile'); const project = join(dir, 'project');
-    cpSync(join(root, 'templates/knowledge'), join(profileDir, 'knowledge'), { recursive: true });
+    cpSync(args.knowledge!.startsWith('/') ? args.knowledge! : join(root, args.knowledge!), join(profileDir, 'knowledge'), { recursive: true });
     cpSync(join(root, 'evals/fixture/project'), project, { recursive: true });
     writeFileSync(join(profileDir, 'profile.json'), readFileSync(join(root, 'evals/fixture/profile.json'), 'utf8').replace('PROJECT_PATH', project));
     writeFileSync(join(profileDir, 'brief.md'), readFileSync(join(root, 'templates/brief.md'), 'utf8'));
@@ -91,18 +97,26 @@ const runOne = async (run: number): Promise<Graded> => {
     const all = proposals.map((p) => p.text).join('\n');
     const targetOf = (text: string): string => frontmatter(text)?.get('target')?.trim() ?? '';
 
-    const person = (name: string): number => {
-      const own = proposals.some((p) => /^people\//.test(targetOf(p.text)) && new RegExp(name, 'i').test(p.text));
-      return own ? 1 : new RegExp(name, 'i').test(all) ? 0.5 : 0;
+    const person = (name: string, fact: RegExp): number => {
+      const own = proposals.some((p) => /^people\//.test(targetOf(p.text)) && new RegExp(name, 'i').test(p.text) && fact.test(p.text));
+      return own ? 1 : new RegExp(`${name}[\\s\\S]{0,200}`, 'i').test(all) && fact.test(all) ? 0.5 : 0;
     };
     const voicePage = proposals.find((p) => /voice/i.test(targetOf(p.text)) || /voice/i.test(p.file))?.text ?? '';
     const styleRules = [/exclamation/i, /British/i, /lead with|answer first|answer up front/i, /emoji/i, /hope this helps/i].filter((rule) => rule.test(voicePage)).length;
-    const sample = /EUR and GBP are live|Webhook retries are fixed/.test(voicePage) ? 1 : 0;
+    const sampleGiven = /EUR and GBP are live|Webhook retries are fixed/.test(voicePage);
     const offlimits = (/(pay|salar|hiring|performance)/i.test(all) ? 0.5 : 0) + (/customer[\s\S]{0,80}date|date[\s\S]{0,80}customer|promise[\s\S]{0,40}date/i.test(all) ? 0.5 : 0);
-    const tagged = proposals.length ? proposals.filter((p) => /^audience:\s*(owner|team|external)\s*$/m.test(p.text)).length / proposals.length : 0;
+    const audienceOf = (p: { text: string }): string => /^audience:\s*(owner|team|external)\s*$/m.exec(p.text)?.[1] ?? 'none';
+    const expected = proposals.flatMap((p) => {
+      if (/Platform team/i.test(p.text)) return [{ p, want: ['owner'] }];
+      const target = targetOf(p.text);
+      if (/^owner\/(role|working-style|voice|offlimits|decisions|priorities|goals)/.test(target)) return [{ p, want: ['team', 'external'] }];
+      if (/^people\//.test(target) && /Priya|Jonas/i.test(p.text)) return [{ p, want: ['team', 'external'] }];
+      return [];
+    });
     const asPages = proposals.map((p) => ({ path: targetOf(p.text) || `owner/${p.file.replace(/^\d{4}-\d{2}-\d{2}-/, '')}`, text: p.text.replace(/^verified: no$/m, 'verified: 2026-11-21') }));
-    const team = Math.min(1, compileAboutMe(asPages, 'team', new Date('2026-11-21T10:00:00Z')).included.length / 4);
-    const privateLeak = proposals.some((p) => /Platform team/i.test(p.text) && pageAudience(frontmatter(p.text)) !== 'owner');
+    const teamAbout = compileAboutMe(asPages, 'team', new Date('2026-11-21T10:00:00Z')).text;
+    const teamFacts = [/staff engineer|tech lead/i, /Tuesday/, /exclamation/i, /Priya/].filter((fact) => fact.test(teamAbout)).length;
+    const privateCaptured = proposals.filter((p) => /Platform team/i.test(p.text));
 
     mkdirSync(join(root, 'evals/results/interviews'), { recursive: true });
     writeFileSync(join(root, 'evals/results/interviews', `${args.label}-${run}.md`), [
@@ -111,12 +125,13 @@ const runOne = async (run: number): Promise<Graded> => {
     return {
       run, turns, proposals: proposals.map((p) => `${p.file} → ${targetOf(p.text) || '(no target)'}`),
       scores: {
-        people: (person('Priya') + person('Jonas') + person('Dana')) / 3,
-        voice: (Math.min(styleRules, 3) / 3) * 0.6 + sample * 0.4,
+        people: (person('Priya', /product manager|scope/i) + person('Jonas', /reliability|SRE|on-?call|sign/i) + person('Dana', /Brightmoor|finance/i)) / 3,
+        voice: Math.min(styleRules, 3) / 3,
+        samples: offersSamples ? (sampleGiven ? 1 : 0) : (sampleGiven ? 0 : 1),
         offlimits,
-        audience: tagged,
-        team,
-        private: privateLeak ? 0 : 1,
+        audience: expected.length ? expected.filter(({ p, want }) => want.includes(audienceOf(p))).length / expected.length : 0,
+        team: teamFacts / 4,
+        private: privateCaptured.length ? (privateCaptured.every((p) => pageAudience(frontmatter(p.text)) === 'owner') ? 1 : 0) : null,
       },
     };
   } finally {
@@ -126,12 +141,18 @@ const runOne = async (run: number): Promise<Graded> => {
 
 const results = await Promise.all(Array.from({ length: Number(args.runs) }, (_, run) => runOne(run + 1)));
 const keys = Object.keys(results[0]!.scores);
-const mean = (key: string): number => Math.round(100 * results.reduce((sum, r) => sum + r.scores[key]!, 0) / results.length);
+/** A category's mean over the runs where it applies (private is left out of runs that never recorded the fact). */
+const mean = (key: string): number | null => {
+  const values = results.map((r) => r.scores[key]).filter((value): value is number => typeof value === 'number');
+  return values.length ? Math.round((100 * values.reduce((a, b) => a + b, 0)) / values.length) : null;
+};
+const shown = keys.map((key) => ({ key, value: mean(key) }));
+const counted = shown.filter((item): item is { key: string; value: number } => item.value !== null);
 const lines = [
   `# Interview eval: ${args.label}`, '',
-  `Interviewer and owner ${args.model}, ${args.runs} runs of up to ${args.turns} answers, ${new Date().toISOString().slice(0, 10)}.`, '',
-  '| Category | Score |', '|---|---|', ...keys.map((key) => `| ${key} | ${mean(key)} |`),
-  `| **overall** | **${Math.round(keys.reduce((sum, key) => sum + mean(key), 0) / keys.length)}** |`, '',
+  `Interviewer and owner ${args.model}, persona ${args.persona}, ${args.runs} runs of up to ${args.turns} answers, ${new Date().toISOString().slice(0, 10)}.`, '',
+  '| Category | Score |', '|---|---|', ...shown.map(({ key, value }) => `| ${key} | ${value ?? 'n/a (not recorded)'} |`),
+  `| **overall** | **${Math.round(counted.reduce((sum, item) => sum + item.value, 0) / Math.max(counted.length, 1))}** |`, '',
   ...results.flatMap((r) => [`Run ${r.run}: ${r.proposals.length} proposals. ${r.proposals.join('; ')}`]),
 ];
 writeFileSync(join(root, 'evals/results', `${args.label}.md`), lines.join('\n') + '\n');

@@ -5,7 +5,7 @@ import { ArrowUpRight, Building2, User, Users } from 'lucide-react';
 import { useNavigate } from 'react-router';
 import { ABOUT_MAX_CHARS, type AboutMe as AboutMeData, type Visibility } from '../../../src/owner-model.ts';
 import { serra } from '../bridge.ts';
-import { cx, Page } from '../ui/index.ts';
+import { Button, cx, Dialog, Page, useToast } from '../ui/index.ts';
 
 const AUDIENCES: { value: Visibility; label: string; icon: typeof User; hint: string }[] = [
   { value: 'owner', label: 'You', icon: User, hint: 'Your DMs with the bot and tasks you start in the app.' },
@@ -14,6 +14,9 @@ const AUDIENCES: { value: Visibility; label: string; icon: typeof User; hint: st
 ];
 
 const message = (error: unknown): string => (error instanceof Error ? error.message : String(error));
+
+/** Pages whose names suggest they're private start unchecked when sharing with the team. */
+const PRIVATE_NAME = /private|personal|notes|secret|salar|1-?1|one-on-one|hr\b/i;
 
 /** A page's Markdown as plain lines: headings, bullets and paragraphs, without the blank lines between them. */
 const PageBody = ({ text }: { text: string }) => (
@@ -33,12 +36,18 @@ export const AboutMe = () => {
   const [visibility, setVisibility] = useState<Visibility>('team');
   const [about, setAbout] = useState<AboutMeData | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [untagged, setUntagged] = useState<string[]>([]);
+  const [sharing, setSharing] = useState<Set<string> | null>(null);
+  const [busy, setBusy] = useState(false);
+  const toast = useToast();
 
   const load = useCallback(async (audience: Visibility) => {
     const bridge = serra();
     if (!bridge) { setError('The Serra bridge is missing: open this screen in the Serra app.'); return; }
     try {
-      setAbout(await bridge.pages.aboutMe(audience));
+      const [next, unset] = await Promise.all([bridge.pages.aboutMe(audience), bridge.pages.untagged()]);
+      setAbout(next);
+      setUntagged(unset);
       setError(null);
     } catch (failure) {
       setError(message(failure));
@@ -53,12 +62,47 @@ export const AboutMe = () => {
   }, [load, visibility]);
 
   const edit = (path: string) => navigate(`/knowledge/pages?page=${encodeURIComponent(path)}`);
+
+  const share = async () => {
+    const bridge = serra();
+    if (!bridge || !sharing || busy) return;
+    setBusy(true);
+    try {
+      const { shared, skipped } = await bridge.pages.share([...sharing], 'team');
+      setSharing(null);
+      toast({
+        message: `Shared ${shared.length} page${shared.length === 1 ? '' : 's'} with your team.${skipped.length ? ` Skipped ${skipped.join(', ')}: review it in Pages first.` : ''}`,
+        tone: skipped.length ? 'info' : 'success',
+      });
+      await load(visibility);
+    } catch (failure) {
+      toast({ message: message(failure), tone: 'error' });
+    } finally {
+      setBusy(false);
+    }
+  };
   const used = about ? Math.min(100, Math.round((100 * about.chars) / ABOUT_MAX_CHARS)) : 0;
   const hint = AUDIENCES.find((option) => option.value === visibility)?.hint;
 
   return (
     <Page title="About me" subtitle="What every job knows about you, built from your confirmed pages in owner/.">
       {error && <p role="alert" className="text-sm text-down">{error}</p>}
+      {untagged.length > 0 && (
+        <section aria-labelledby="untagged-title" className="flex gap-3 rounded-lg border border-line bg-panel p-4">
+          <Users size={16} aria-hidden className="mt-0.5 shrink-0 text-muted" />
+          <div className="flex min-w-0 flex-1 flex-col gap-1">
+            <h2 id="untagged-title" className="text-sm font-semibold">
+              {untagged.length === 1 ? '1 page is only for you' : `${untagged.length} pages are only for you`}
+            </h2>
+            <p className="text-sm text-muted">
+              {untagged.length === 1 ? 'It doesn\u2019t say who may hear it, so teammates\u2019 briefs leave it out.' : 'They don\u2019t say who may hear them, so teammates\u2019 briefs leave them out.'}
+            </p>
+            <div className="mt-2">
+              <Button onClick={() => setSharing(new Set(untagged.filter((path) => !PRIVATE_NAME.test(path))))}>Choose what your team can hear</Button>
+            </div>
+          </div>
+        </section>
+      )}
       <div className="flex flex-col gap-2">
         <div role="group" aria-label="Seen by" className="flex flex-wrap gap-1">
           {AUDIENCES.map(({ value, label, icon: Icon }) => (
@@ -141,6 +185,40 @@ export const AboutMe = () => {
           </aside>
         </div>
       )}
+      <Dialog
+        open={sharing !== null}
+        onClose={() => setSharing(null)}
+        title="Share pages with your team"
+        description="Checked pages go into your teammates' briefs. Leave anything private unchecked. You can change a page later in Pages."
+        actions={(
+          <>
+            <Button onClick={() => setSharing(null)}>Cancel</Button>
+            <Button variant="primary" disabled={busy || !sharing?.size} onClick={() => void share()}>
+              {sharing?.size ? `Share ${sharing.size} page${sharing.size === 1 ? '' : 's'}` : 'Share'}
+            </Button>
+          </>
+        )}
+      >
+        <ul className="flex max-h-80 flex-col gap-1 overflow-y-auto">
+          {untagged.map((path) => (
+            <li key={path}>
+              <label className="flex items-center gap-2 rounded-md px-1 py-1 text-sm hover:bg-hover">
+                <input
+                  type="checkbox"
+                  checked={sharing?.has(path) ?? false}
+                  onChange={(event) => setSharing((current) => {
+                    const next = new Set(current ?? []);
+                    if (event.target.checked) next.add(path); else next.delete(path);
+                    return next;
+                  })}
+                  className="size-4 accent-[var(--color-accent)]"
+                />
+                <span className="font-mono text-xs">{path}</span>
+              </label>
+            </li>
+          ))}
+        </ul>
+      </Dialog>
     </Page>
   );
 };

@@ -20,7 +20,7 @@ const config = loadConfig();
 mkdirSync(dirname(config.statePath), { recursive: true, mode: 0o700 });
 const releaseProfileLock = acquireLock(`${config.statePath}.lock`);
 process.on('exit', releaseProfileLock);
-const { checkKnowledge, loadIndex, briefKnowledge } = createKnowledge(config.knowledgeDir);
+const { checkKnowledge, loadIndex, briefKnowledge, seedApproved } = createKnowledge(config.knowledgeDir);
 
 const logger = timestampedLogger(LogLevel.INFO);
 // Under launchd, macOS may block the repository (Documents, Desktop, Downloads). Find out now, not on the first job.
@@ -77,6 +77,8 @@ app.message(async ({ message }) => {
 
 // A missing index stops the daemon here instead of failing the first request. An index over its cap and page problems only warn.
 loadIndex();
+// From here on, briefs use the knowledge as the owner approved it: a file changed outside Serra waits for them in Pages.
+if (seedApproved()) app.logger.info('Keeping an approved copy of knowledge/ from now on.');
 if (proposeBriefUpdate(config.profileDir)) {
   app.logger.info('The shipped brief has new knowledge rules: review it in Brief & policy (proposed/knowledge-update).');
 }

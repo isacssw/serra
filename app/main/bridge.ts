@@ -14,7 +14,7 @@ import type { Verdict } from '../../src/cleanup.ts';
 import type { SectionSetting } from '../../src/profile-settings.ts';
 import type { CliOverview } from '../../src/clis.ts';
 import type { McpOverview } from '../../src/mcp.ts';
-import type { ProposalTargets } from '../../src/proposals.ts';
+import type { ProposalTargets, Reviewed } from '../../src/proposals.ts';
 import type { AboutMe, Visibility } from '../../src/owner-model.ts';
 import type { ActivationOutcome, ReleaseOverview, RollbackOutcome, RunningJob } from '../../src/releases.ts';
 import type { Prepared } from '../../src/deploy.ts';
@@ -120,9 +120,10 @@ export interface SerraApi {
     /** Folders to promote into and pages to merge into, for the screen's pickers. */
     targets(): ProposalTargets;
     /** Moves the proposal into `folder` (relative to `knowledge/`; defaults to its target page's folder) and indexes it. */
-    promote(path: string, folder?: string): UndoHandle;
+    /** `reviewed`: the proposal and page text the screen showed; refused when either changed since. */
+    promote(path: string, folder: string | undefined, reviewed: Reviewed): UndoHandle;
     /** Replaces `target` with `text` (the page as the owner edited it), or with the proposal when it is the whole page for `target`. */
-    mergeInto(path: string, target: string, text?: string): UndoHandle;
+    mergeInto(path: string, target: string, text: string | undefined, reviewed: Reviewed): UndoHandle;
     discard(path: string): UndoHandle;
     undo(undoId: string): void;
   };
@@ -131,14 +132,18 @@ export interface SerraApi {
     list(): KnowledgePage[];
     read(path: string): string;
     save(path: string, text: string): KnowledgePage;
-    /** Files under `knowledge/` that changed outside Serra since the owner last approved them. Workers don't use them. */
-    drift(): { changed: string[]; removed: string[] };
-    /** The owner made those changes: they become the approved knowledge. */
-    acceptDrift(): void;
-    /** Put back the approved text, keeping a backup of what was there. */
-    restoreDrift(): void;
+    /** Each file under `knowledge/` that changed outside Serra since the owner approved it: its approved text and its text now (null: none). */
+    drift(): { path: string; approved: string | null; current: string | null }[];
+    /** The owner made this change: the file, exactly as they reviewed it (`current`), becomes approved. */
+    acceptDrift(path: string, current: string | null): void;
+    /** Put back the approved text of one file, keeping a backup of what was there. */
+    restoreDrift(path: string): void;
     /** What every brief carries about the owner for a reply this audience sees, and the owner pages left out. */
     aboutMe(visibility: Visibility): AboutMe;
+    /** Pages without an `audience:`, which only the owner's own replies use. */
+    untagged(): string[];
+    /** Set who may hear these pages (saved like edits). Pages changed outside Serra are skipped and returned. */
+    share(paths: string[], audience: Visibility): { shared: string[]; skipped: string[] };
   };
   /** Brief and policy (APP-21). */
   brief: {
@@ -279,7 +284,7 @@ export const bridgeMethods = {
   bot: methods<'bot'>()(['status', 'start', 'stop', 'restart']),
   jobs: methods<'jobs'>()(['list', 'cleanupWorktrees']),
   proposals: methods<'proposals'>()(['list', 'diff', 'targets', 'promote', 'mergeInto', 'discard', 'undo']),
-  pages: methods<'pages'>()(['list', 'read', 'save', 'drift', 'acceptDrift', 'restoreDrift', 'aboutMe']),
+  pages: methods<'pages'>()(['list', 'read', 'save', 'drift', 'acceptDrift', 'restoreDrift', 'aboutMe', 'untagged', 'share']),
   brief: methods<'brief'>()(['read', 'save', 'check', 'preview', 'listProposed', 'readProposed', 'applyProposed']),
   settings: methods<'settings'>()(['read', 'sections', 'saveSection', 'addPerson', 'removePerson']),
   secrets: methods<'secrets'>()(['list', 'setSource', 'check']),

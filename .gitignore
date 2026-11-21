@@ -18,3 +18,6 @@ release/
 
 # QA screenshots show local paths and account names
 docs/app/qa/screenshots/
+
+# The approved copy of an eval fixture's knowledge, kept when something seeds it (profiles live outside the checkout).
+.knowledge-approved/

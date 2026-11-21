@@ -22,18 +22,31 @@ export const pagesHandlers = (context: HandlerContext): Handlers<'pages'> => {
     }
   };
   return {
-    list: () => service().listPages({ roots: roots() }),
+    list: () => {
+      const knowledge = service();
+      // Opening Pages starts the approved copy for a profile that has none yet (one from before it existed).
+      knowledge.seedApproved();
+      return knowledge.listPages({ roots: roots() });
+    },
     read: (path) => service().readPage(pagePath(path)),
     save: (path, text) => {
       if (typeof text !== 'string') throw new Error('A page is text.');
       return service().savePage(pagePath(path), text, { roots: roots() }).page;
     },
-    drift: () => service().drift(),
-    acceptDrift: () => { service().acceptDrift(); },
-    restoreDrift: () => { service().restoreDrift(); },
+    drift: () => service().driftDetails(),
+    acceptDrift: (path, current) => {
+      if (current !== null && typeof current !== 'string') throw new Error('Accept the file as you reviewed it.');
+      service().acceptDrift(pagePath(path), current);
+    },
+    restoreDrift: (path) => { service().restoreDrift(pagePath(path)); },
     aboutMe: (visibility) => {
       if (visibility !== 'owner' && visibility !== 'team' && visibility !== 'external') throw new Error('Pick who sees the reply: owner, team or external.');
       return service().briefKnowledge(visibility).aboutMe;
+    },
+    untagged: () => service().untaggedPages(),
+    share: (paths, audience) => {
+      if (!Array.isArray(paths) || paths.some((path) => typeof path !== 'string')) throw new Error('Pick the pages to share.');
+      return service().shareWith(paths as string[], audience, { roots: roots() });
     },
   };
 };

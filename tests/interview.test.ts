@@ -173,7 +173,8 @@ test('a proposal the interview writes reaches the queue without a restart, and p
   assert.deepEqual(folders, []);
   assert.deepEqual(folderChoices(listed!, folders), ['owner']);
   assert.equal(defaultFolder(listed!, folders), 'owner');
-  await proposals.promote(listed!.path);
+  const { proposed, current } = await proposals.diff(listed!.path);
+  await proposals.promote(listed!.path, undefined, { proposal: proposed, page: current });
   assert.ok(existsSync(join(knowledgeDir, 'owner', 'role.md')));
   assert.match(readFileSync(join(knowledgeDir, 'index.md'), 'utf8'), /`owner\/role\.md`/);
 });

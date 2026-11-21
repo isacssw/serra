@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "bot": {
+    "id": "fern",
+    "name": "Fern"
+  },
+  "owner": {
+    "name": "Sam",
+    "slackUserId": "USAM000001",
+    "githubLogin": "sam-okafor"
+  },
+  "project": {
+    "path": "PROJECT_PATH",
+    "remote": "origin",
+    "baseRef": "origin/main",
+    "githubRepo": "pinewell/routeway"
+  },
+  "allowedUsers": [
+    "UKENJI0001",
+    "ULENA00001",
+    "UOMAR00001"
+  ]
+}

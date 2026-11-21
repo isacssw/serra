@@ -36,7 +36,9 @@ const Side = ({ title, rows, side, empty }: { title: string; rows: DiffRow[]; si
 );
 
 /** `current` is null when the proposal is a new page. */
-export const DiffView = ({ current, proposed }: { current: string | null; proposed: string }) => {
+export const DiffView = ({ current, proposed, labels = ['Current', 'Proposed'], emptyCurrent = 'No page yet: promoting creates it.' }: {
+  current: string | null; proposed: string; labels?: [string, string]; emptyCurrent?: string;
+}) => {
   const rows = useMemo(() => diffRows(current, proposed), [current, proposed]);
   const stats = diffStats(rows);
   return (
@@ -45,8 +47,8 @@ export const DiffView = ({ current, proposed }: { current: string | null; propos
         {current === null ? `New page, ${stats.added} lines.` : `${stats.removed} lines removed, ${stats.added} added.`}
       </p>
       <div className="flex gap-2">
-        <Side title="Current" rows={rows} side="current" empty={current === null ? 'No page yet: promoting creates it.' : undefined} />
-        <Side title="Proposed" rows={rows} side="proposed" />
+        <Side title={labels[0]} rows={rows} side="current" empty={current === null ? emptyCurrent : undefined} />
+        <Side title={labels[1]} rows={rows} side="proposed" />
       </div>
     </div>
   );

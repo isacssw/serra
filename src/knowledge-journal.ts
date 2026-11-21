@@ -93,17 +93,24 @@ export const createJournal = (knowledgeDir: string) => {
   /** The approved text of a tracked file, or null when it has none. */
   const approvedText = (path: string): string | null => (seeded() ? read(approved, path) : read(root, path));
 
-  /** The owner made these changes: the files on disk become the approved copy. */
-  const accept = (): KnowledgeDrift => {
+  /** Each drifted file with its approved text and its text on disk now (null: not there). */
+  const details = (): { path: string; approved: string | null; current: string | null }[] => {
     const { changed, removed } = drift();
-    record([...changed, ...removed]);
-    return { changed, removed };
+    return [...changed, ...removed].sort().map((path) => ({ path, approved: approvedText(path), current: read(root, path) }));
   };
 
-  /** Put the approved copy back over the drifted files. Returns what each file held before, for undo. */
-  const restore = (): { path: string; before: string | null; after: string | null }[] => {
+  /** The owner made this change: the file as they reviewed it (`current`) becomes approved. Refused if it moved since. */
+  const accept = (path: string, current: string | null): void => {
+    const entry = details().find((item) => item.path === path);
+    if (!entry) throw new Error(`${path} hasn't changed outside Serra.`);
+    if (entry.current !== current) throw new Error(`${path} changed again since you reviewed it. Look at it again.`);
+    record([path]);
+  };
+
+  /** Put the approved copy back over drifted files (all of them, or `only`). Returns what each held before, for undo. */
+  const restore = (only?: string[]): { path: string; before: string | null; after: string | null }[] => {
     const { changed, removed } = drift();
-    return [...changed, ...removed].map((path) => {
+    return [...changed, ...removed].filter((path) => !only || only.includes(path)).map((path) => {
       const before = read(root, path);
       const after = read(approved, path);
       const file = join(root, path);
@@ -116,5 +123,5 @@ export const createJournal = (knowledgeDir: string) => {
     });
   };
 
-  return { seed, seeded, record, drift, approvedText, accept, restore, approvedRoot: approved };
+  return { seed, seeded, record, drift, details, approvedText, accept, restore, approvedRoot: approved };
 };

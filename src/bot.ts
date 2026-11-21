@@ -335,7 +335,8 @@ export const createBot = ({
     try {
       const { channel } = await client.conversations.info({ channel: msg.channel });
       const shared = channel as { is_im?: boolean; is_ext_shared?: boolean; is_pending_ext_shared?: boolean } | undefined;
-      if (shared?.is_im) return msg.user === config.owner ? 'owner' : 'team';
+      if (!shared) throw new Error('Slack returned no channel');
+      if (shared.is_im) return msg.user === config.owner ? 'owner' : 'team';
       const external = Boolean(shared?.is_ext_shared || shared?.is_pending_ext_shared);
       sharedChannels.set(msg.channel, { external, until: now() + VISIBILITY_TTL_MS });
       return external ? 'external' : 'team';

@@ -18,11 +18,14 @@ export interface EvalCase {
   history?: { user: string; text: string }[];
   /** Display names to use instead of the fixture's, as a chat app would report them. */
   names?: Record<string, string>;
+  /** The chat app says nothing about the channel (a failed or empty lookup). */
+  noChannelInfo?: boolean;
 }
 
 const BOT_USER = 'UMOSS00001';
 const NAMES: Record<string, string> = {
   UROBIN0001: 'Robin Vale', UPRIYA0001: 'Priya Nair', UJONAS0001: 'Jonas Berg', UDANA0001: 'Dana Ruiz (Brightmoor)',
+  USAM000001: 'Sam Okafor', UKENJI0001: 'Kenji Sato', ULENA00001: 'Lena Fischer', UOMAR00001: 'Omar Haddad', UHOLLIS001: 'Priscilla Hollis (Hollis Freight)',
 };
 const CHANNELS = { dm: 'DMOSS00001', channel: 'CTEAM00001', shared: 'CSHARED001' } as const;
 let calls = 0;
@@ -44,7 +47,7 @@ export const buildBrief = async (profileDir: string, item: EvalCase): Promise<st
     users: { info: async ({ user }: { user: string }) => ({ user: { real_name: item.names?.[user] ?? NAMES[user] ?? user } }) },
     conversations: {
       replies: async () => ({ messages: thread }),
-      info: async () => ({ channel: { id: channel, is_im: item.via === 'dm', is_ext_shared: item.via === 'shared', is_shared: item.via === 'shared' } }),
+      info: async () => (item.noChannelInfo ? {} : { channel: { id: channel, is_im: item.via === 'dm', is_ext_shared: item.via === 'shared', is_shared: item.via === 'shared' } }),
     },
     chat: {
       getPermalink: async () => ({ permalink: `https://larchwood.slack.test/archives/${channel}/p1` }),

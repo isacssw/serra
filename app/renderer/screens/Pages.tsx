@@ -2,10 +2,13 @@
 // and a Markdown editor. The editor checks the header and the line cap as the owner types, with the same rules and
 // message the service refuses a save with, so Save stays disabled until the page would pass `pnpm knowledge`.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AlertTriangle, CheckCircle2, FileText, Search } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, ChevronRight, FileText, Search } from 'lucide-react';
 import { useSearchParams } from 'react-router';
 import type { KnowledgePage } from '../../../src/contracts.ts';
 import { serra } from '../bridge.ts';
+import { frontmatter, setHeaderField } from '../../../src/knowledge-rules.ts';
+import { pageAudience, type Audience } from '../../../src/owner-model.ts';
+import { DiffView } from './proposals/DiffView.tsx';
 import { Badge, Button, cx, Dialog, Page, useToast } from '../ui/index.ts';
 import {
   badgeCounts, badgeLabel, badgeTitle, badgeTone, editorState, filterPages, groupByFolder, keepSelection, localDate, markVerified,
@@ -14,28 +17,83 @@ import {
 
 const message = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
-/**
- * Files under knowledge/ that changed outside Serra (by hand, or a worker in a thread). Workers keep getting the
- * approved version until the owner accepts the change as theirs or puts the approved text back.
- */
-const DriftNotice = ({ files, busy, onAccept, onRestore }: { files: string[]; busy: boolean; onAccept: () => void; onRestore: () => void }) => (
-  <section aria-labelledby="drift-title" className="flex gap-3 rounded-lg border border-warn/40 bg-panel p-4">
-    <AlertTriangle size={16} aria-hidden className="mt-0.5 shrink-0 text-warn" />
-    <div className="flex min-w-0 flex-1 flex-col gap-1">
-      <h2 id="drift-title" className="text-sm font-semibold">
-        {files.length === 1 ? '1 file changed outside Serra' : `${files.length} files changed outside Serra`}
-      </h2>
-      <p className="text-sm text-muted">The bot keeps using the version you approved until you review these.</p>
-      <ul className="mt-1 flex flex-wrap gap-x-3 gap-y-1">
-        {files.map((file) => <li key={file} className="font-mono text-xs text-ink">{file}</li>)}
-      </ul>
-      <div className="mt-2 flex flex-wrap gap-2">
-        <Button variant="primary" disabled={busy} onClick={onAccept}>Accept as mine</Button>
-        <Button disabled={busy} onClick={onRestore}>Restore approved</Button>
+const AUDIENCE_OPTIONS: { value: Audience; label: string }[] = [
+  { value: 'owner', label: 'Only you' }, { value: 'team', label: 'Your team' }, { value: 'external', label: 'Outside too' },
+];
+
+/** Who may hear the page, set in its header as the owner types. A page without one is the owner's only. Save to keep it. */
+const AudiencePicker = ({ text, disabled, onChange }: { text: string; disabled: boolean; onChange: (text: string) => void }) => {
+  const current = pageAudience(frontmatter(text));
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <span id="audience-label" className="text-xs text-muted">Who may hear it</span>
+      <div role="radiogroup" aria-labelledby="audience-label" className="flex gap-1">
+        {AUDIENCE_OPTIONS.map((option) => (
+          <button
+            key={option.value}
+            type="button"
+            role="radio"
+            aria-checked={current === option.value}
+            disabled={disabled || frontmatter(text) === null}
+            onClick={() => onChange(setHeaderField(text, 'audience', option.value))}
+            className={cx(
+              'h-7 rounded-md border px-2 text-xs focus-visible:outline-2 focus-visible:outline-focus disabled:opacity-50',
+              current === option.value ? 'border-line-strong bg-selected text-ink' : 'border-line text-muted hover:bg-raised hover:text-ink',
+            )}
+          >
+            {option.label}
+          </button>
+        ))}
       </div>
     </div>
-  </section>
-);
+  );
+};
+
+type Drifted = { path: string; approved: string | null; current: string | null };
+
+/**
+ * Files under knowledge/ that changed outside Serra (by hand, or a worker in a thread). Workers keep getting the
+ * approved version until the owner looks at each change and accepts it as theirs or puts the approved text back.
+ */
+const DriftNotice = ({ files, busy, onAccept, onRestore }: {
+  files: Drifted[]; busy: boolean; onAccept: (file: Drifted) => void; onRestore: (file: Drifted) => void;
+}) => {
+  const [open, setOpen] = useState<string | null>(files.length === 1 ? files[0]!.path : null);
+  return (
+    <section aria-labelledby="drift-title" className="flex gap-3 rounded-lg border border-warn/40 bg-panel p-4">
+      <AlertTriangle size={16} aria-hidden className="mt-0.5 shrink-0 text-warn" />
+      <div className="flex min-w-0 flex-1 flex-col gap-1">
+        <h2 id="drift-title" className="text-sm font-semibold">
+          {files.length === 1 ? '1 file changed outside Serra' : `${files.length} files changed outside Serra`}
+        </h2>
+        <p className="text-sm text-muted">The bot keeps using the version you approved. Review each change.</p>
+        <ul className="mt-2 flex flex-col divide-y divide-line-subtle border-t border-line-subtle">
+          {files.map((file) => (
+            <li key={file.path} className="flex flex-col gap-2 py-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  aria-expanded={open === file.path}
+                  onClick={() => setOpen(open === file.path ? null : file.path)}
+                  className="inline-flex min-w-0 items-center gap-1 rounded-md px-1 text-left font-mono text-xs text-ink hover:bg-hover focus-visible:outline-2 focus-visible:outline-focus"
+                >
+                  <ChevronRight size={13} aria-hidden className={cx('shrink-0 transition-transform', open === file.path && 'rotate-90')} />
+                  <span className="truncate">{file.path}</span>
+                </button>
+                <span className="text-xs text-muted">{file.current === null ? 'deleted' : file.approved === null ? 'new' : 'edited'}</span>
+                <div className="ml-auto flex gap-2">
+                  <Button size="sm" variant="primary" disabled={busy} onClick={() => onAccept(file)}>Accept</Button>
+                  <Button size="sm" disabled={busy} onClick={() => onRestore(file)}>Restore</Button>
+                </div>
+              </div>
+              {open === file.path && <DiffView current={file.approved} proposed={file.current ?? ''} labels={['Approved', 'Now']} emptyCurrent="Not in the approved knowledge." />}
+            </li>
+          ))}
+        </ul>
+      </div>
+    </section>
+  );
+};
 
 const FILTERS: { value: PageFilter; label: string }[] = [
   { value: 'all', label: 'All' },
@@ -91,7 +149,7 @@ export const Pages = () => {
   const [saving, setSaving] = useState(false);
   /** A page the owner clicked while the draft had unsaved changes; the discard dialog asks first. */
   const [pendingSelect, setPendingSelect] = useState<string | null>(null);
-  const [drifted, setDrifted] = useState<string[]>([]);
+  const [drifted, setDrifted] = useState<Drifted[]>([]);
   const [resolving, setResolving] = useState(false);
 
   // `?page=<path>` (About me's Edit) opens that page, once.
@@ -109,7 +167,7 @@ export const Pages = () => {
     try {
       const [list, drift] = await Promise.all([bridge.pages.list(), bridge.pages.drift()]);
       setPages(list);
-      setDrifted([...drift.changed, ...drift.removed]);
+      setDrifted(drift);
       setLoadError(null);
       setSelected((current) => keepSelection(list, current));
     } catch (error) {
@@ -144,18 +202,19 @@ export const Pages = () => {
   const visible = useMemo(() => filterPages(pages ?? [], filter, query), [pages, filter, query]);
   const counts = useMemo(() => badgeCounts(pages ?? []), [pages]);
 
-  const resolveDrift = async (accept: boolean) => {
+  const resolveDrift = async (file: Drifted, accept: boolean) => {
     const bridge = serra();
     if (!bridge || resolving) return;
     setResolving(true);
     try {
-      if (accept) await bridge.pages.acceptDrift();
-      else await bridge.pages.restoreDrift();
-      toast({ message: accept ? 'Accepted. The bot uses these files now.' : 'Restored the approved version. The replaced text is in backups/knowledge/.', tone: 'success' });
+      if (accept) await bridge.pages.acceptDrift(file.path, file.current);
+      else await bridge.pages.restoreDrift(file.path);
+      toast({ message: accept ? `Accepted ${file.path}. The bot uses it now.` : `Restored ${file.path}. The replaced text is in backups/knowledge/.`, tone: 'success' });
       await reload();
-      if (!accept && selected) setSelected(null);
+      if (!accept && selected === file.path) setSelected(null);
     } catch (error) {
       toast({ message: message(error), tone: 'error' });
+      await reload();
     } finally {
       setResolving(false);
     }
@@ -203,7 +262,7 @@ export const Pages = () => {
     <Page title="Pages" subtitle={pages ? pagesSummary(pages) : loadError ? undefined : 'Loading…'}>
       {loadError && <p role="alert" className="text-sm text-down">{loadError}</p>}
       {drifted.length > 0 && (
-        <DriftNotice files={drifted} busy={resolving} onAccept={() => void resolveDrift(true)} onRestore={() => void resolveDrift(false)} />
+        <DriftNotice files={drifted} busy={resolving} onAccept={(file) => void resolveDrift(file, true)} onRestore={(file) => void resolveDrift(file, false)} />
       )}
       {pages && pages.length === 0 && (
         <p className="text-sm text-muted">No pages yet. Pages come in through Proposals: promote one and it shows up here.</p>
@@ -271,6 +330,7 @@ export const Pages = () => {
             {page && saved === null && !readError && <p className="text-sm text-muted">Loading…</p>}
             {page && state && (
               <>
+                <AudiencePicker text={draft} disabled={saving} onChange={setDraft} />
                 <textarea
                   value={draft}
                   onChange={(event) => setDraft(event.target.value)}

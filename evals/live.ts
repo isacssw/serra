@@ -10,7 +10,7 @@
 //
 // Results go to evals/results/<label>.json (every reply, for audit) and <label>.md (the table).
 import { spawn } from 'node:child_process';
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { parseArgs } from 'node:util';
@@ -36,10 +36,13 @@ const { values: args } = parseArgs({
     judge: { type: 'string', default: 'sonnet' },
     only: { type: 'string' },
     concurrency: { type: 'string', default: '6' },
+    fixture: { type: 'string', default: 'evals/fixture' },
+    cases: { type: 'string', default: 'evals/cases.json' },
+    untagged: { type: 'boolean', default: false },
   },
 });
 
-const cases = (JSON.parse(readFileSync(join(root, 'evals/cases.json'), 'utf8')) as { cases: Case[] }).cases
+const cases = (JSON.parse(readFileSync(join(root, args.cases!), 'utf8')) as { cases: Case[] }).cases
   .filter((item) => !args.only || args.only.split(',').includes(item.id));
 
 /** Runs `claude -p` with no user settings, memory, MCP servers or tools beyond `tools`, and returns its final text. */
@@ -100,9 +103,16 @@ const grade = async (item: Case, run: number, reply: string): Promise<Graded> =>
 const scratch = (): { dir: string; profileDir: string; project: string } => {
   const dir = mkdtempSync(join(tmpdir(), 'serra-eval-'));
   const profileDir = join(dir, 'profile'); const project = join(dir, 'project');
-  cpSync(join(root, 'evals/fixture/knowledge'), join(profileDir, 'knowledge'), { recursive: true });
-  cpSync(join(root, 'evals/fixture/project'), project, { recursive: true });
-  const profile = readFileSync(join(root, 'evals/fixture/profile.json'), 'utf8').replace('PROJECT_PATH', project);
+  cpSync(join(root, args.fixture!, 'knowledge'), join(profileDir, 'knowledge'), { recursive: true });
+  cpSync(join(root, args.fixture!, 'project'), project, { recursive: true });
+  // --untagged: the profile as it was before audiences existed, with no page saying who may hear it.
+  if (args.untagged) {
+    for (const file of readdirSync(join(profileDir, 'knowledge'), { recursive: true }).map(String).filter((name) => name.endsWith('.md'))) {
+      const path = join(profileDir, 'knowledge', file);
+      writeFileSync(path, readFileSync(path, 'utf8').replace(/^audience:.*\n/m, ''));
+    }
+  }
+  const profile = readFileSync(join(root, args.fixture!, 'profile.json'), 'utf8').replace('PROJECT_PATH', project);
   writeFileSync(join(profileDir, 'profile.json'), profile);
   writeFileSync(join(profileDir, 'brief.md'), readFileSync(join(root, 'templates/brief.md'), 'utf8'));
   writeFileSync(join(profileDir, '.env'), 'SLACK_APP_TOKEN=xapp-eval\nSLACK_BOT_TOKEN=xoxb-eval\n');
@@ -148,7 +158,7 @@ const meta = { label: args.label, model: args.model, judge: args.judge, runs: Nu
 writeFileSync(join(outDir, `${args.label}.json`), JSON.stringify({ meta, byCategory, overall, results }, null, 2) + '\n');
 const lines = [
   `# Live eval: ${args.label}`, '',
-  `Worker ${args.model}, judge ${args.judge}, ${args.runs} runs of ${cases.length} cases, ${meta.at.slice(0, 10)}.${results.length > graded.length ? ` ${results.length - graded.length} runs failed in the harness and are left out.` : ''}`, '',
+  `Worker ${args.model}, judge ${args.judge}, ${args.runs} runs of ${cases.length} cases (${args.cases}, ${args.fixture}${args.untagged ? ', audiences removed' : ''}), ${meta.at.slice(0, 10)}.${results.length > graded.length ? ` ${results.length - graded.length} runs failed in the harness and are left out.` : ''}`, '',
   '| Category | Score |', '|---|---|',
   ...categories.map((category) => `| ${category} | ${byCategory[category]} |`),
   `| **overall** | **${overall}** |`, '',

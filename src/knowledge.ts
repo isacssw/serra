@@ -3,11 +3,11 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync } from '
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { writeFileAtomic } from './config.ts';
 import { createJournal, type KnowledgeDrift } from './knowledge-journal.ts';
-import { compileAboutMe, filterIndex, pageAudience, type AboutMe, type Visibility } from './owner-model.ts';
+import { AUDIENCES, compileAboutMe, filterIndex, pageAudience, type AboutMe, type Audience, type Visibility } from './owner-model.ts';
 import type { KnowledgePage, Profile } from './contracts.ts';
 import {
   DATE, daysSince, frontmatter, INDEX_MAX_LINES, lineCount, normalizePageText, NOT_PAGES, pageBadge, pageProblems, PROPOSALS_DIR,
-  saveProblems, saveRefusal, STALE_DAYS,
+  saveProblems, saveRefusal, setHeaderField, STALE_DAYS,
 } from './knowledge-rules.ts';
 
 // The page rules live in knowledge-rules.ts (no Node imports, so the app's editor can use them); re-exported here so
@@ -150,7 +150,6 @@ export const createKnowledge = (knowledgeDir: string, { backupDir }: KnowledgeOp
    */
   const briefKnowledge = (visibility: Visibility, now: Date = new Date()): BriefKnowledge => {
     const current = read('index.md');
-    journal.seed();
     const { changed, removed } = journal.drift();
     const drifted = changed.length > 0 || removed.length > 0;
     const approved = (path: string): string | null => (drifted ? journal.approvedText(path) : existsSync(join(root, path)) ? read(path) : null);
@@ -160,28 +159,39 @@ export const createKnowledge = (knowledgeDir: string, { backupDir }: KnowledgeOp
     const aboutMe = compileAboutMe(pages, visibility, now);
     let index = filterIndex((drifted ? journal.approvedText('index.md') ?? current : current).trim(), (page) => audiences.get(page) ?? null, visibility);
     if (drifted) {
-      const files = [...changed, ...removed].map((path) => `\`${path}\``).join(', ');
-      index += `\n\nThese files changed outside Serra and the owner hasn't approved them yet (unreviewed changes): ${files}. `
+      // Only the owner hears which files: a page's name can say more than a teammate may know.
+      const files = visibility === 'owner' ? `: ${[...changed, ...removed].map((path) => `\`${path}\``).join(', ')}` : '';
+      index += `\n\nSome knowledge files changed outside Serra and the owner hasn't approved them yet (unreviewed changes)${files}. `
         + `Don't use what they say now. Read the approved copy of any page from ${journal.approvedRoot} instead.`;
     }
     return { index, aboutMe, visibility };
   };
 
+  /**
+   * Start keeping the approved copy, from `knowledge/` as it is now, if it isn't kept yet. The daemon does this at
+   * start and the app when it shows Pages; building a brief never writes anything.
+   */
+  const seedApproved = (): boolean => journal.seed();
+
   /** Files that changed outside Serra since the owner last approved the knowledge. */
   const drift = (): KnowledgeDrift => journal.drift();
 
-  /** The owner accepts what changed outside Serra as theirs: the files on disk become the approved copy. */
-  const acceptDrift = (): KnowledgeDrift => journal.accept();
+  /** Each file that changed outside Serra, with its approved text and its text now, for the owner to review. */
+  const driftDetails = () => journal.details();
 
-  /** Put back the approved text of every file that changed outside Serra, keeping a backup of what was there. */
-  const restoreDrift = ({ now = new Date() }: { now?: Date } = {}): string | null => {
+  /** The owner accepts one file's change as theirs, as they reviewed it. */
+  const acceptDrift = (path: string, current: string | null): void => journal.accept(path, current);
+
+  /** Put back the approved text of `path` (or every changed file), keeping a backup of what was there. */
+  const restoreDrift = (path?: string, { now = new Date() }: { now?: Date } = {}): string | null => {
     const { changed, removed } = journal.drift();
-    if (changed.length === 0 && removed.length === 0) return null;
+    const paths = [...changed, ...removed].filter((item) => !path || item === path);
+    if (paths.length === 0) return null;
     const backupId = `${now.toISOString().replace(/[-:]/g, '').replace(/\.\d+Z$/, 'Z')}-restore-${randomBytes(3).toString('hex')}`;
-    const files = [...changed, ...removed].map((path) => ({ path, before: existsSync(join(root, path)) ? read(path) : null, after: journal.approvedText(path) }));
+    const files = paths.map((item) => ({ path: item, before: existsSync(join(root, item)) ? read(item) : null, after: journal.approvedText(item) }));
     mkdirSync(join(backups, backupId), { recursive: true, mode: 0o700 });
     writeFileAtomic(join(backups, backupId, 'change.json'), JSON.stringify({ id: backupId, action: 'restore', at: now.toISOString(), files }, null, 2) + '\n');
-    journal.restore();
+    journal.restore(paths);
     return backupId;
   };
 
@@ -344,5 +354,25 @@ export const createKnowledge = (knowledgeDir: string, { backupDir }: KnowledgeOp
     return { page: describePage(page, after, readIndexed(), { now, roots }), backupId };
   };
 
-  return { loadIndex, briefKnowledge, checkKnowledge, listPages, readPage, savePage, drift, acceptDrift, restoreDrift };
+  /** Pages whose header doesn't say who may hear them, so only the owner's own replies use them. */
+  const untaggedPages = (): string[] => pageFiles().sort().filter((page) => !frontmatter(read(page))?.has('audience'));
+
+  /**
+   * Set who may hear each page, as the owner chose in the app. Each page is saved like an edit, with a backup.
+   * A page that changed outside Serra is skipped and returned: the owner reviews it in Pages first.
+   */
+  const shareWith = (pages: string[], audience: Audience, options: CheckOptions = {}): { shared: string[]; skipped: string[] } => {
+    if (!AUDIENCES.includes(audience)) throw new Error(`Pick who may hear the pages: ${AUDIENCES.join(', ')}.`);
+    const { changed, removed } = journal.drift();
+    const shared: string[] = []; const skipped: string[] = [];
+    for (const path of pages) {
+      const page = existingPage(path);
+      if (changed.includes(page) || removed.includes(page)) { skipped.push(page); continue; }
+      savePage(page, setHeaderField(read(page), 'audience', audience), options);
+      shared.push(page);
+    }
+    return { shared, skipped };
+  };
+
+  return { untaggedPages, shareWith, loadIndex, briefKnowledge, checkKnowledge, listPages, readPage, savePage, seedApproved, drift, driftDetails, acceptDrift, restoreDrift };
 };
