@@ -64,6 +64,8 @@ export const buildBrief = async (profileDir: string, item: EvalCase): Promise<st
 
   let brief = '';
   const knowledge = createKnowledge(config.knowledgeDir);
+  // As the daemon does at start: from here on, briefs and the worker read the approved copy.
+  knowledge.seedApproved();
   const bot = createBot({
     config, client, botUserId: () => BOT_USER, store: createStore(config.statePath), loadIndex: () => knowledge.loadIndex(), loadKnowledge: (visibility) => knowledge.briefKnowledge(visibility),
     logger: { info: quiet, warn: (m: string) => process.stderr.write(`warn: ${m}\n`), error: (m: string) => process.stderr.write(`error: ${m}\n`), debug: quiet },

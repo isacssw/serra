@@ -423,3 +423,95 @@ test('sharing pages is all or nothing, and a refusal names the page', (t) => {
   assert.throws(() => knowledge.shareWith(['owner/private-notes.md', 'people/dana.md'], 'team'), /Nothing was shared\. people\/dana\.md needs fixing/);
   assert.match(readFileSync(join(knowledgeDir, 'owner/private-notes.md'), 'utf8'), /^audience: owner$/m, 'the first page wasn\'t shared either');
 });
+
+/** A bot on the fixture, with T3 recorded: what it started, sent and answered. */
+const botOn = async (profileDir: string) => {
+  const { createBot } = await import('../src/bot.ts');
+  const { loadConfig } = await import('../src/config.ts');
+  const { createStore } = await import('../src/state.ts');
+  const config = loadConfig({ profileDir, env: { SLACK_BOT_TOKEN: 'xoxb-t', SLACK_APP_TOKEN: 'xapp-t' } });
+  const knowledge = createKnowledge(config.knowledgeDir);
+  knowledge.seedApproved();
+  const started: string[] = []; const sent: string[] = []; const answered: unknown[] = [];
+  let pendingQuestions: { requestId: string; questions: unknown[] }[] = [];
+  const store = createStore(config.statePath);
+  const client = {
+    users: { info: async ({ user }: { user: string }) => ({ user: { real_name: user, team_id: 'THOME' } }) },
+    conversations: { replies: async () => ({ messages: [] }), info: async () => ({ channel: { id: 'CTEAM', is_ext_shared: false, is_pending_ext_shared: false } }) },
+    chat: { getPermalink: async () => ({ permalink: 'https://x/p' }), postMessage: async () => ({ ts: '9.1' }), update: async () => ({}), delete: async () => ({}) },
+    reactions: { add: async () => ({}), remove: async () => ({}) },
+    assistant: { threads: { setStatus: async () => ({ ok: true }) } },
+  } as never;
+  const quiet = (): void => {};
+  const bot = createBot({
+    config, client, botUserId: () => 'UMOSS', store, loadIndex: () => knowledge.loadIndex(),
+    loadKnowledge: (visibility) => knowledge.briefKnowledge(visibility), logger: { info: quiet, warn: quiet, error: quiet, debug: quiet },
+    t3: {
+      startThread: async (input: { brief: string }) => { started.push(input.brief); return `t3-${started.length}`; },
+      sendToThread: async (_id: string, message: string) => { sent.push(message); },
+      showThread: async (id: string) => ({ thread: { threadId: id, link: 'https://t3/x', status: 'idle', latestRunId: null, activeRunId: null, pendingRequestCount: 0 }, messages: [] }),
+    } as never,
+    questions: { listQuestions: async () => pendingQuestions as never, answerQuestion: async (...args: unknown[]) => { answered.push(args); } },
+    fetchBase: async () => {}, share: async (_c, text) => text, reviewRequest: async (_c, text) => ({ reply: text, postedFor: null }),
+    receive: async () => '', timing: { quietMs: 5, retryMs: 5 }, events: () => {},
+  });
+  const restrict = (page: string): void => {
+    const file = join(config.knowledgeDir, page);
+    knowledge.savePage(page, readFileSync(file, 'utf8').replace('audience: team', 'audience: owner'));
+  };
+  return { bot, store, config, knowledge, started, sent, answered, restrict, setQuestions: (list: typeof pendingQuestions) => { pendingQuestions = list; } };
+};
+
+test('the worker opens pages from the approved copy, and writes proposals to knowledge/proposals', async (t) => {
+  const brief = await buildBrief(fixture(t), { via: 'dm', user: ROBIN, text: 'what are my rules?' });
+  assert.match(brief, /Notes are in [^\n]*\.knowledge-approved\. This is the index/);
+  assert.match(brief, /write it as a page under `[^`]*\/knowledge\/proposals\/`/);
+});
+
+test('a thread from before audiences, and an answer to a pending question, also move to a fresh thread when knowledge is taken back', async (t) => {
+  const profileDir = fixture(t);
+  const legacy = await botOn(profileDir);
+  await legacy.bot.handle({ channel: 'CTEAM', threadTs: '1.1', messageTs: '1.1', user: PRIYA, text: '<@UMOSS> how do I cut a release?', direct: true });
+  const key = 'CTEAM:1.1';
+  const job = legacy.store.getJob(key)!;
+  delete job.visibility; delete job.knowledgePages;
+  legacy.store.putJob(key, job);
+  await legacy.bot.handle({ channel: 'CTEAM', threadTs: '1.1', messageTs: '1.2', user: PRIYA, text: '<@UMOSS> and after that?', direct: true });
+  await new Promise((done) => setTimeout(done, 80));
+  assert.equal(legacy.started.length, 2, 'an old thread had every page, and some are owner-only now');
+  assert.equal(legacy.sent.length, 0);
+
+  const asked = await botOn(fixture(t));
+  await asked.bot.handle({ channel: 'CTEAM', threadTs: '2.1', messageTs: '2.1', user: PRIYA, text: '<@UMOSS> how do I cut a release?', direct: true });
+  const question = { id: 'q1', header: 'Day', question: 'Which day?', options: [{ label: 'Tuesday', description: '' }, { label: 'Thursday', description: '' }] };
+  asked.setQuestions([{ requestId: 'r1', questions: [question] }]);
+  const withQuestion = asked.store.getJob('CTEAM:2.1')!;
+  asked.store.putJob('CTEAM:2.1', { ...withQuestion, question: { requestId: 'r1', questions: [question], ts: '2.5', nonce: 'n', index: 0, answers: {}, runId: null } as never });
+  asked.restrict('workflows/release.md');
+  await asked.bot.handle({ channel: 'CTEAM', threadTs: '2.1', messageTs: '2.6', user: PRIYA, text: 'Tuesday', direct: false });
+  await new Promise((done) => setTimeout(done, 50));
+  assert.equal(asked.answered.length, 0, 'the old thread, which read the page, isn\'t resumed');
+  assert.equal(asked.started.length, 2);
+  assert.match(asked.started[1]!, /Answer to "Which day\?": Tuesday/);
+  assert.doesNotMatch(asked.started[1]!, /workflows\/release\.md/);
+});
+
+test('saves, shares and accepts apply only to what the owner saw, and accepting keeps the off-limits budget', (t) => {
+  const profileDir = fixture(t);
+  const knowledgeDir = join(profileDir, 'knowledge');
+  const knowledge = createKnowledge(knowledgeDir);
+  knowledge.seedApproved();
+  const page = join(knowledgeDir, 'owner/working-style.md');
+  const loaded = readFileSync(page, 'utf8');
+  knowledge.savePage('owner/working-style.md', loaded.replace('audience: team', 'audience: owner'));
+  assert.throws(() => knowledge.savePage('owner/working-style.md', `${loaded}- Old draft.\n`, { expected: loaded }), /changed since you opened it/);
+  const notes = join(knowledgeDir, 'owner/private-notes.md');
+  const seen = readFileSync(notes, 'utf8').replace(/^audience:.*\n/m, '');
+  writeFileSync(notes, seen); knowledge.acceptDrift('owner/private-notes.md', seen);
+  writeFileSync(notes, `${seen}- Added after the preview.\n`); knowledge.acceptDrift('owner/private-notes.md', `${seen}- Added after the preview.\n`);
+  assert.throws(() => knowledge.shareWith(['owner/private-notes.md'], 'team', { seen: { 'owner/private-notes.md': seen } }), /changed since you looked at it/);
+  const offlimits = join(knowledgeDir, 'owner/offlimits.md');
+  const huge = `${readFileSync(offlimits, 'utf8')}${'- Never discuss the internal roadmap with anyone outside the payments team.\n'.repeat(19)}`;
+  writeFileSync(offlimits, huge);
+  assert.throws(() => knowledge.acceptDrift('owner/offlimits.md', huge), /Not accepted\. Off-limits/);
+});

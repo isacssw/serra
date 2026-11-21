@@ -109,6 +109,8 @@ export const Proposals = () => {
   const [mergeBase, setMergeBase] = useState<string | null>(null);
   /** The text the merge dialog started from when it put the proposal under another page: merging it unchanged would keep both. */
   const [mergeStart, setMergeStart] = useState<string | null>(null);
+  /** Who may hear the merged page: the destination's own audience until the owner changes it. */
+  const [mergeAudience, setMergeAudience] = useState<Audience>('owner');
   /** Bumped to reread the selected proposal's diff, after an approval found its page had changed. */
   const [diffVersion, setDiffVersion] = useState(0);
 
@@ -173,13 +175,16 @@ export const Proposals = () => {
     setMergeBase(null);
     setMergeStart(null);
     if (!mergeOpen || !bridge || !diff || !mergeTarget) return;
-    if (diff.proposal.target === mergeTarget && diff.current !== null) { setMergeBase(diff.current); setMergeText(withoutTarget(diff.proposed)); return; }
+    if (diff.proposal.target === mergeTarget && diff.current !== null) {
+      setMergeBase(diff.current); setMergeText(withoutTarget(diff.proposed)); setMergeAudience(pageAudience(frontmatter(diff.current)));
+      return;
+    }
     let live = true;
     bridge.pages.read(mergeTarget).then(
       (current) => {
         if (!live) return;
         const start = `${current.trimEnd()}\n\n${proposalBody(diff.proposed)}\n`;
-        setMergeBase(current); setMergeText(start); setMergeStart(start);
+        setMergeBase(current); setMergeText(start); setMergeStart(start); setMergeAudience(pageAudience(frontmatter(current)));
       },
       (error) => { if (live) { setMergeOpen(false); toast({ message: message(error), tone: 'error' }); } },
     );
@@ -304,7 +309,7 @@ export const Proposals = () => {
                 const into = mergeTarget;
                 const text = mergeText ?? undefined;
                 const reviewed = { proposal: diff!.proposed, path: into, page: mergeBase };
-                void act((path) => bridge!.proposals.mergeInto(path, into, text, reviewed, audience), `Merged ${title} into ${into}.`);
+                void act((path) => bridge!.proposals.mergeInto(path, into, text, reviewed, mergeAudience), `Merged ${title} into ${into}.`);
               }}
             >
               Merge
@@ -327,10 +332,20 @@ export const Proposals = () => {
             className="w-full resize-y rounded-md border border-line bg-panel p-2 font-mono text-xs leading-5 text-ink focus:outline-2 focus:outline-offset-1 focus:outline-focus disabled:opacity-60"
           />
         </label>
+        <div className="mt-3 flex flex-col gap-1">
+          <AudienceChoice id="merge-audience" value={mergeAudience} disabled={mergeBase === null} onChange={setMergeAudience} />
+          {mergeBase !== null && widens(pageAudience(frontmatter(mergeBase)), mergeAudience) && (
+            <span className="text-xs text-warn">This shares {mergeTarget}&rsquo;s existing text more widely than now.</span>
+          )}
+        </div>
       </Dialog>
     </Page>
   );
 };
+
+const AUDIENCE_RANK: Record<Audience, number> = { owner: 0, team: 1, external: 2 };
+/** Whether `to` lets more people hear a page than `from`. */
+const widens = (from: Audience, to: Audience): boolean => AUDIENCE_RANK[to] > AUDIENCE_RANK[from];
 
 /** Whether approving into `folder` replaces the page the proposal names, rather than adding a new one. */
 const replaces = (diff: ProposalDiff, folder: string): boolean =>

@@ -601,6 +601,13 @@ export const createBot = ({
       updateJob(key, (latest) => ({ question: next, ...rememberReply(latest) }));
       return;
     }
+    // The thread asking was briefed with knowledge the owner has since taken back: the answer goes to a fresh thread.
+    const answered = typeof answer === 'string' ? answer : answer.join(', ');
+    if (await restartIfRevoked(key, job, [{ speaker: user === config.owner ? `${config.ownerName} (your owner)` : await displayName(user), text: `Answer to "${question.question ?? question.id}": ${answered}`, audience: 'bot', ts: messageTs ?? job.threadTs }])) {
+      await clearQuestion(key, job, user, { ...state, answers });
+      updateJob(key, rememberReply);
+      return;
+    }
     await questions.answerQuestion(job.t3ThreadId, state.requestId, answers, config.t3Bin);
     updateJob(key, rememberReply);
     await clearQuestion(key, job, user, { ...state, answers });
@@ -713,10 +720,17 @@ export const createBot = ({
    * chat thread so far as context. Returns true when it did.
    */
   const restartIfRevoked = async (key: string, job: Job, lines: Heard[]): Promise<boolean> => {
-    if (!loadKnowledge || !job.visibility || !job.knowledgePages) return false;
-    const knowledge = loadKnowledge(job.visibility);
-    const revoked = job.knowledgePages.filter((page) => !knowledge.pages.includes(page));
-    if (revoked.length === 0) return false;
+    if (!loadKnowledge) return false;
+    // A thread from before audiences was briefed with every page: it's revoked if anything is now off-limits to it.
+    const visibility = job.visibility ?? await replyVisibility({ channel: job.channel, threadTs: job.threadTs, messageTs: job.threadTs, user: job.requester, text: '', direct: false });
+    const knowledge = loadKnowledge(visibility);
+    const revoked = job.knowledgePages
+      ? job.knowledgePages.filter((page) => !knowledge.pages.includes(page))
+      : loadKnowledge('owner').pages.filter((page) => !knowledge.pages.includes(page));
+    if (revoked.length === 0) {
+      if (!job.knowledgePages) updateJob(key, () => ({ visibility, knowledgePages: knowledge.pages }));
+      return false;
+    }
     const first = lines[0]!;
     const thread = await threadContext({ channel: job.channel, threadTs: job.threadTs, messageTs: first.ts, user: job.requester, text: '', direct: false });
     await fetchBase();
@@ -725,7 +739,7 @@ export const createBot = ({
       brief: fillBrief(config, knowledge, { request: followUpMessage(lines), requester: 'People in the thread', permalink: 'link unavailable', thread }),
       now: new Date(now()),
     }), config.t3Bin);
-    updateJob(key, () => ({ t3ThreadId, knowledgePages: knowledge.pages, lastPostedRunId: null, watching: true }));
+    updateJob(key, () => ({ t3ThreadId, visibility, knowledgePages: knowledge.pages, lastPostedRunId: null, watching: true, question: undefined, waitingInT3: false }));
     logger.info(`Knowledge this thread used was taken back (${revoked.length} page(s)); continued ${key} in a fresh T3 thread ${t3ThreadId}`);
     events('knowledge_revoked', { key, t3ThreadId });
     return true;

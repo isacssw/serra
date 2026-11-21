@@ -131,7 +131,8 @@ export interface SerraApi {
   pages: {
     list(): KnowledgePage[];
     read(path: string): string;
-    save(path: string, text: string): KnowledgePage;
+    /** `expected`: the text the editor loaded; refused when the page changed since. */
+    save(path: string, text: string, expected?: string): KnowledgePage;
     /** Each file under `knowledge/` that changed outside Serra since the owner approved it: its approved text and its text now (null: none). */
     drift(): { path: string; approved: string | null; current: string | null }[];
     /** The owner made this change: the file, exactly as they reviewed it (`current`), becomes approved. */
@@ -141,9 +142,10 @@ export interface SerraApi {
     /** What every brief carries about the owner for a reply this audience sees, and the owner pages left out. */
     aboutMe(visibility: Visibility): AboutMe;
     /** Pages without an `audience:`, which only the owner's own replies use. */
-    untagged(): { path: string; description: string; offlimits: boolean; preview: string }[];
+    untagged(): { path: string; description: string; offlimits: boolean; preview: string; text: string }[];
     /** Set who may hear these pages (saved like edits). Pages changed outside Serra are skipped and returned. */
-    share(paths: string[], audience: Visibility): { shared: string[]; skipped: string[] };
+    /** Each page with the text the owner previewed; refused, sharing nothing, when one changed since. */
+    share(pages: { path: string; text: string }[], audience: Visibility): { shared: string[]; skipped: string[] };
   };
   /** Brief and policy (APP-21). */
   brief: {

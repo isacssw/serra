@@ -135,6 +135,8 @@ export const Pages = () => {
   const [pendingSelect, setPendingSelect] = useState<string | null>(null);
   const [drifted, setDrifted] = useState<Drifted[]>([]);
   const [resolving, setResolving] = useState(false);
+  /** Bumped after an outside change is accepted or restored, so the open page shows its text as it is now. */
+  const [readVersion, setReadVersion] = useState(0);
 
   // `?page=<path>` (About me's Edit) opens that page, once.
   const [search, setSearch] = useSearchParams();
@@ -179,7 +181,7 @@ export const Pages = () => {
       (error) => { if (live) setReadError(message(error)); },
     );
     return () => { live = false; };
-  }, [selected]);
+  }, [selected, readVersion]);
 
   const page = pages?.find((entry) => entry.path === selected) ?? null;
   const state = useMemo(() => (selected && saved !== null ? editorState(selected, saved, draft) : null), [selected, saved, draft]);
@@ -195,7 +197,7 @@ export const Pages = () => {
       else await bridge.pages.restoreDrift(file.path);
       toast({ message: accept ? `Accepted ${file.path}. The bot uses it now.` : `Restored ${file.path}. The replaced text is in backups/knowledge/.`, tone: 'success' });
       await reload();
-      if (!accept && selected === file.path) setSelected(null);
+      setReadVersion((version) => version + 1);
     } catch (error) {
       toast({ message: message(error), tone: 'error' });
       await reload();
@@ -215,7 +217,7 @@ export const Pages = () => {
     if (!bridge || !selected || !state?.canSave || saving) return;
     setSaving(true);
     try {
-      const updated = await bridge.pages.save(selected, draft);
+      const updated = await bridge.pages.save(selected, draft, saved ?? undefined);
       const text = await bridge.pages.read(selected);
       setSaved(text);
       setDraft(text);

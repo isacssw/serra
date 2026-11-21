@@ -69,6 +69,8 @@ export interface BriefKnowledge {
   visibility: Visibility;
   /** Every page this brief let the worker use or open, so a later restriction can be noticed. */
   pages: string[];
+  /** Where the worker opens pages: the approved copy once it exists, so an unreviewed edit is never read. */
+  readDir: string;
 }
 
 /** Markdown files under `dir`, relative to it, skipping dot folders. */
@@ -181,7 +183,7 @@ export const createKnowledge = (knowledgeDir: string, { backupDir }: KnowledgeOp
           : `Don't open pages to answer this: use only what this brief says.`);
     }
     const usable = [...audiences].filter(([, audience]) => mayUse(audience, visibility)).map(([path]) => path).sort();
-    return { index, aboutMe, visibility, pages: usable };
+    return { index, aboutMe, visibility, pages: usable, readDir: fromApproved ? journal.approvedRoot : root };
   };
 
   /**
@@ -197,7 +199,12 @@ export const createKnowledge = (knowledgeDir: string, { backupDir }: KnowledgeOp
   const driftDetails = () => journal.details();
 
   /** The owner accepts one file's change as theirs, as they reviewed it. */
-  const acceptDrift = (path: string, current: string | null): void => journal.accept(path, current);
+  const acceptDrift = (path: string, current: string | null): void => {
+    // Accepting is approving: the same off-limits budget applies as for a save or a proposal.
+    const budget = current !== null && isOfflimits(path, frontmatter(current)) ? offlimitsBudgetAfter(root, path, current) : null;
+    if (budget) throw new Error(`Not accepted. ${budget}`);
+    journal.accept(path, current);
+  };
 
   /** Put back the approved text of `path` (or every changed file), keeping a backup of what was there. */
   const restoreDrift = (path?: string, { now = new Date() }: { now?: Date } = {}): string | null => {
@@ -352,9 +359,14 @@ export const createKnowledge = (knowledgeDir: string, { backupDir }: KnowledgeOp
    * owner save. Before writing, the old and new text go to a backup under `backups/knowledge/`; the page itself is
    * written atomically. Saving unchanged text writes nothing.
    */
-  const savePage = (path: string, text: string, { now = new Date(), roots = [] }: CheckOptions = {}): PageSave => {
+  const savePage = (path: string, text: string, { now = new Date(), roots = [], expected }: CheckOptions & { expected?: string } = {}): PageSave => {
     if (typeof text !== 'string') throw new Error('A page is text.');
     const page = existingPage(path);
+    // The editor's save applies to the version it loaded: a page that moved since (an accepted change, another save)
+    // is never overwritten with an older draft.
+    if (expected !== undefined && read(page) !== expected) {
+      throw new Error(`${page} changed since you opened it. Reopen it to see the current text, then make your edit again.`);
+    }
     // Saving a page that changed outside Serra would approve that change along with the owner's edit, unseen.
     const { changed, removed } = journal.drift();
     if (changed.includes(page) || removed.includes(page)) {
@@ -384,18 +396,18 @@ export const createKnowledge = (knowledgeDir: string, { backupDir }: KnowledgeOp
   const untaggedPages = (): string[] => pageFiles().sort().filter((page) => !frontmatter(read(page))?.has('audience'));
 
   /** The same, with each page's description, for the app's list. */
-  const untaggedDetails = (): { path: string; description: string; offlimits: boolean; preview: string }[] =>
+  const untaggedDetails = (): { path: string; description: string; offlimits: boolean; preview: string; text: string }[] =>
     untaggedPages().map((path) => {
       const text = read(path);
       const fields = frontmatter(text);
-      return { path, description: fields?.get('description')?.trim() ?? '', offlimits: isOfflimits(path, fields), preview: pageBody(text).split('\n').slice(0, 8).join('\n') };
+      return { path, description: fields?.get('description')?.trim() ?? '', offlimits: isOfflimits(path, fields), preview: pageBody(text), text };
     });
 
   /**
    * Set who may hear each page, as the owner chose in the app. Each page is saved like an edit, with a backup.
    * A page that changed outside Serra is skipped and returned: the owner reviews it in Pages first.
    */
-  const shareWith = (pages: string[], audience: Audience, options: CheckOptions = {}): { shared: string[]; skipped: string[] } => {
+  const shareWith = (pages: string[], audience: Audience, options: CheckOptions & { seen?: Record<string, string> } = {}): { shared: string[]; skipped: string[] } => {
     if (!AUDIENCES.includes(audience)) throw new Error(`Pick who may hear the pages: ${AUDIENCES.join(', ')}.`);
     const { changed, removed } = journal.drift();
     const skipped: string[] = [];
@@ -403,6 +415,8 @@ export const createKnowledge = (knowledgeDir: string, { backupDir }: KnowledgeOp
     const ready = pages.flatMap((path) => {
       const page = existingPage(path);
       if (changed.includes(page) || removed.includes(page)) { skipped.push(page); return []; }
+      // Shared as the owner previewed it: a page that changed since is refused, and nothing is shared.
+      if (options.seen && options.seen[page] !== read(page)) throw new Error(`Nothing was shared. ${page} changed since you looked at it: open the list again.`);
       const text = setHeaderField(read(page), 'audience', audience);
       const problems = saveProblems(page, normalizePageText(text));
       if (problems.length > 0) throw new Error(`Nothing was shared. ${page} needs fixing first:\n${problems.join('\n')}`);

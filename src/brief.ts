@@ -45,9 +45,9 @@ Your reply will be seen by {{VISIBILITY}}.`;
 
 /** `fillBrief` on a template that may not be saved yet, so the app can preview a draft exactly as a worker gets it. */
 export const fillBriefText = (template: string, config: Config, knowledge: string | BriefKnowledge, input: BriefInput): string => {
-  const { index, about, visibility } = typeof knowledge === 'string'
-    ? { index: knowledge, about: '', visibility: 'owner' as Visibility }
-    : { index: knowledge.index, about: knowledge.aboutMe.text, visibility: knowledge.visibility };
+  const { index, about, visibility, readDir } = typeof knowledge === 'string'
+    ? { index: knowledge, about: '', visibility: 'owner' as Visibility, readDir: null }
+    : { index: knowledge.index, about: knowledge.aboutMe.text, visibility: knowledge.visibility, readDir: knowledge.readDir };
   const text = template.includes('{{OWNER_PROFILE}}') ? template : `${template.trimEnd()}\n\n${ABOUT_SECTION}\n`;
   return renderBrief(text, {
     BOT_NAME: config.name, BOT_ID: config.id, OWNER_NAME: config.ownerName,
@@ -56,7 +56,10 @@ export const fillBriefText = (template: string, config: Config, knowledge: strin
     REPOSITORIES: config.repositories.length ? config.repositories.map((repo) =>
       `- ${repo.name}: ${repo.path}, base ${repo.baseRef}${repo.githubRepo ? `, GitHub ${repo.githubRepo}` : ''}. Create a separate worktree before editing.`).join('\n') : 'No additional repositories configured.',
     REQUESTER: input.requester, PERMALINK: input.permalink,
-    KNOWLEDGE_DIR: config.knowledgeDir, KNOWLEDGE_INDEX: index,
+    // A brief that names where proposals go reads pages from the approved copy; an older one, from knowledge/ itself.
+    KNOWLEDGE_DIR: readDir && template.includes('{{PROPOSALS_DIR}}') ? readDir : config.knowledgeDir,
+    PROPOSALS_DIR: join(config.knowledgeDir, 'proposals'),
+    KNOWLEDGE_INDEX: index,
     OWNER_PROFILE: about.replaceAll('</about-owner>', '&lt;/about-owner&gt;') || `(${config.ownerName} hasn't confirmed anything about themselves for this audience yet.)`,
     VISIBILITY: visibilityText(visibility, config.ownerName),
     THREAD_CONTEXT: input.thread,
@@ -98,7 +101,8 @@ export const BRIEF_PLACEHOLDERS = {
   REPOSITORIES: 'The other repositories, one line each',
   REQUESTER: 'Who asked',
   PERMALINK: "The Slack link to the request (empty for a task started in the app, so ` ({{PERMALINK}})` is left out)",
-  KNOWLEDGE_DIR: 'The knowledge folder',
+  KNOWLEDGE_DIR: 'Where the worker reads pages: the approved copy of the knowledge folder',
+  PROPOSALS_DIR: 'Where the worker writes proposals: knowledge/proposals',
   KNOWLEDGE_INDEX: "The knowledge index's text: only the rows the people who will see the reply may open",
   OWNER_PROFILE: 'About the owner: their confirmed owner/ pages for this audience, capped in size',
   VISIBILITY: 'Who will see the reply: only the owner, their teammates, or people outside their company too',
@@ -252,7 +256,7 @@ export const proposeBriefUpdate = (profileDir: string): boolean => {
   const briefFile = join(profileDir, 'brief.md');
   if (!existsSync(briefFile)) return false;
   const brief = readFileSync(briefFile, 'utf8');
-  const outdated = !brief.includes('{{OWNER_PROFILE}}') || /promote it:/i.test(brief);
+  const outdated = !brief.includes('{{OWNER_PROFILE}}') || !brief.includes('{{PROPOSALS_DIR}}') || /promote it:/i.test(brief);
   const dir = join(profileDir, 'proposed', KNOWLEDGE_BRIEF_UPDATE);
   if (!outdated || existsSync(dir)) return false;
   mkdirSync(dir, { recursive: true });

@@ -35,7 +35,7 @@ export const AboutMe = () => {
   const [visibility, setVisibility] = useState<Visibility>('team');
   const [about, setAbout] = useState<AboutMeData | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [untagged, setUntagged] = useState<{ path: string; description: string; offlimits: boolean; preview: string }[]>([]);
+  const [untagged, setUntagged] = useState<{ path: string; description: string; offlimits: boolean; preview: string; text: string }[]>([]);
   const [peek, setPeek] = useState<string | null>(null);
   const [sharing, setSharing] = useState<Set<string> | null>(null);
   const [busy, setBusy] = useState(false);
@@ -68,7 +68,7 @@ export const AboutMe = () => {
     if (!bridge || !sharing || busy) return;
     setBusy(true);
     try {
-      const { shared, skipped } = await bridge.pages.share([...sharing], 'team');
+      const { shared, skipped } = await bridge.pages.share(untagged.filter((page) => sharing.has(page.path)).map(({ path, text }) => ({ path, text })), 'team');
       setSharing(null);
       toast({
         message: `Shared ${shared.length} page${shared.length === 1 ? '' : 's'} with your team.${skipped.length ? ` Skipped ${skipped.join(', ')}: review it in Pages first.` : ''}`,
@@ -239,7 +239,7 @@ export const AboutMe = () => {
                   {peek === path ? 'Hide' : 'Preview'}
                 </button>
               </label>
-              {peek === path && <pre className="ml-7 mt-1 whitespace-pre-wrap rounded-md bg-raised px-2 py-1.5 font-mono text-[11px] leading-5 text-ink">{preview}</pre>}
+              {peek === path && <pre className="ml-7 mt-1 max-h-60 overflow-y-auto whitespace-pre-wrap rounded-md bg-raised px-2 py-1.5 font-mono text-[11px] leading-5 text-ink">{preview}</pre>}
             </li>
           ))}
         </ul>
