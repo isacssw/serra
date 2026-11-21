@@ -47,6 +47,8 @@ const LOADING_REFRESH_MS = 60_000;
 const PING_THREAD_MS = 30 * 60_000;
 /** Posted instead of a reply written with knowledge the owner has since taken back. */
 const WITHHELD = 'Some of what I knew for this answer has since been made private, so I won\'t post it. Ask again and I\'ll answer with what I may share now.';
+/** Posted instead of a reply when Slack can't confirm who can see the thread right before posting. */
+const UNCONFIRMED = 'I couldn\'t confirm who can see this thread just now, so I haven\'t posted my answer here. Ask again in a minute and I\'ll try again.';
 /** Replies to "I'm here" that aren't a request. */
 const ACKNOWLEDGEMENT = /^(?:thanks?|thx|ty|cheers|nvm|never ?mind|sorted|all good|cool|great|nice|perfect|np|ok(?:ay)?|k|👍)[\s!.,]*$/iu;
 
@@ -217,7 +219,8 @@ export const createBot = ({
    * The messages before the mention when the bot is called into an existing thread, so a brainstorm or a review
    * request arrives with its discussion. When too long, the oldest are dropped and the cut is stated.
    */
-  const threadContext = async (msg: IncomingMessage): Promise<string> => {
+  /** `withoutBot`: leave out this bot's own messages (a fresh session after knowledge was taken back). */
+  const threadContext = async (msg: IncomingMessage, { withoutBot = false }: { withoutBot?: boolean } = {}): Promise<string> => {
     if (msg.threadTs === msg.messageTs) return NO_THREAD;
     const replies = await client.conversations
       .replies({ channel: msg.channel, ts: msg.threadTs, limit: 200 })
@@ -236,6 +239,8 @@ export const createBot = ({
     const context: { preview: string; text: string; files: IncomingFile[] }[] = [];
     for (const m of replies.messages) {
       if (!m.ts || Number(m.ts) >= Number(msg.messageTs)) continue;
+      // The earlier worker's replies, cards and files may carry what was taken back: a fresh session doesn't get them.
+      if (withoutBot && (m.user === botUserId() || (m.bot_id && !m.user))) continue;
       const text = await toReadable(m.text ?? '');
       const files = incomingFiles(m.files);
       if (!text && !files.length) continue;
@@ -331,26 +336,33 @@ export const createBot = ({
    * Who will see the bot's reply in this thread. A DM is the owner's own, or a teammate's. A channel shared with
    * another company, or one Slack won't describe, counts as outside: the brief then carries only what may be said there.
    */
-  /**
-   * `fresh`: ask Slack again, whatever is cached. `ifUnknown`: before a post, a lookup that fails twice isn't news that
-   * the channel changed, so the audience the job was started with stands instead of hiding a finished reply.
-   */
-  const replyVisibility = async (msg: IncomingMessage, { fresh = false, ifUnknown }: { fresh?: boolean; ifUnknown?: Visibility } = {}): Promise<Visibility> => {
-    if (msg.channel.startsWith('D')) return msg.user === config.owner ? 'owner' : dmVisibility(msg.user, fresh, ifUnknown);
+  /** `fresh`: ask Slack again, whatever is cached. */
+  const replyVisibility = async (msg: IncomingMessage, { fresh = false }: { fresh?: boolean } = {}): Promise<Visibility> => {
+    if (msg.channel.startsWith('D')) return msg.user === config.owner ? 'owner' : dmVisibility(msg.user, fresh);
     const known = sharedChannels.get(msg.channel);
     // Before anything is posted, Slack is asked again: a channel can be shared outside a minute after the job started.
     if (!fresh && known && known.until > now()) return known.external ? 'external' : 'team';
     const looked = await lookUpChannel(msg);
     if (looked) return looked;
-    if (ifUnknown) {
-      const again = await lookUpChannel(msg);
-      if (again) return again;
-      logger.warn(`Could not tell who can see ${msg.channel} before posting; keeping the audience the thread started with (${ifUnknown}).`);
-      return ifUnknown;
-    }
     logger.warn(`Could not tell who can see ${msg.channel}, so its brief carries only what outsiders may hear.`);
     return 'external';
   };
+
+  /**
+   * Who can see a thread right now, asked of Slack twice, or null when Slack can't say. Before a post, null means
+   * nothing goes out: not knowing isn't the same as knowing it's safe, and not the same as something made private.
+   */
+  const visibilityNow = async (job: Job): Promise<Visibility | null> => {
+    const msg = { channel: job.channel, threadTs: job.threadTs, messageTs: job.threadTs, user: job.requester, text: '', direct: false };
+    if (msg.channel.startsWith('D')) {
+      if (msg.user === config.owner) return 'owner';
+      const looked = await lookUpDmVisibility(msg.user) ?? await lookUpDmVisibility(msg.user);
+      if (looked) dmPeople.set(msg.user, { visibility: looked, until: now() + VISIBILITY_TTL_MS });
+      return looked;
+    }
+    return await lookUpChannel(msg) ?? await lookUpChannel(msg);
+  };
+
   const lookUpChannel = async (msg: IncomingMessage): Promise<Visibility | null> => {
     try {
       const { channel } = await client.conversations.info({ channel: msg.channel });
@@ -373,13 +385,13 @@ export const createBot = ({
    */
   // Where someone works rarely changes: cached like a channel's while a brief is built. Checks before a post ask again.
   const dmPeople = new Map<string, { visibility: Visibility; until: number }>();
-  const dmVisibility = async (user: string, fresh = false, ifUnknown?: Visibility): Promise<Visibility> => {
+  const dmVisibility = async (user: string, fresh = false): Promise<Visibility> => {
     const known = dmPeople.get(user);
     if (!fresh && known && known.until > now()) return known.visibility;
-    const visibility = await lookUpDmVisibility(user) ?? (ifUnknown ? await lookUpDmVisibility(user) : null);
-    // A failed lookup isn't cached: the next check asks again. Before a post, the thread's own audience stands.
+    const visibility = await lookUpDmVisibility(user);
+    // A failed lookup counts as outside and isn't cached: the next check asks again.
     if (visibility) dmPeople.set(user, { visibility, until: now() + VISIBILITY_TTL_MS });
-    return visibility ?? ifUnknown ?? 'external';
+    return visibility ?? 'external';
   };
   const lookUpDmVisibility = async (user: string): Promise<Visibility | null> => {
     try {
@@ -450,12 +462,20 @@ export const createBot = ({
   };
 
   /** A status message's fields, swapped for the withheld notice when the thread's knowledge was taken back since. */
-  const withheldIfRevoked = async (job: Job, body: string): Promise<{ text?: string; blocks?: unknown[] }> =>
-    ((await stillMayPost(job, body)) === WITHHELD ? { text: WITHHELD, blocks: [{ type: 'markdown', text: WITHHELD }] } : {});
+  const withheldIfRevoked = async (job: Job, body: string): Promise<{ text?: string; blocks?: unknown[] }> => {
+    const checked = await stillMayPost(job, body);
+    return checked === body ? {} : { text: checked, blocks: [{ type: 'markdown', text: checked }] };
+  };
 
-  /** `text`, or the withheld notice when the thread's knowledge was taken back for who can see it now. */
-  const stillMayPost = async (job: Job, text: string): Promise<string> =>
-    text !== WITHHELD && (await revokedFor(job)).length > 0 ? WITHHELD : text;
+  /**
+   * `text`, or a notice in its place: withheld when the thread's knowledge was taken back for who can see it now,
+   * unconfirmed when Slack can't say who that is.
+   */
+  const stillMayPost = async (job: Job, text: string): Promise<string> => {
+    if (text === WITHHELD || text === UNCONFIRMED || !loadKnowledge) return text;
+    const { revoked, unknown } = await revocation(job);
+    return unknown ? UNCONFIRMED : revoked.length > 0 ? WITHHELD : text;
+  };
 
   /**
    * Posts a finished run's reply. A run the worker started on its own (following CI or a bot's review) edits one
@@ -463,7 +483,13 @@ export const createBot = ({
    */
   const postRunResult = async (key: string, job: Job, thread: T3Thread, reply: string, byWorker: boolean, runId: string): Promise<void> => {
     // A reply the worker wrote with knowledge the owner has since taken back isn't posted: it may repeat that text.
-    const text = !QUIET.test(reply) && (await revokedFor(job)).length > 0 ? WITHHELD : reply;
+    // When Slack can't say who sees the thread, nothing is posted yet: the next poll tries again.
+    const check = !QUIET.test(reply) && loadKnowledge ? await revocation(job) : null;
+    if (check?.unknown) {
+      logger.warn(`Could not confirm who can see ${key}; the reply waits for the next check.`);
+      return;
+    }
+    const text = check && check.revoked.length > 0 ? WITHHELD : reply;
     const runMs = job.runSeen?.runId === runId ? now() - Date.parse(job.runSeen.at) : undefined;
     const measured = { key, runId, byWorker, runMs, jobAgeMs: now() - Date.parse(job.createdAt) };
     await clearProgress(key, job);
@@ -621,8 +647,10 @@ export const createBot = ({
     if (job.question?.requestId === request.requestId) return;
     if (job.question) await clearQuestion(key, job);
     // A question card is the worker's own words too: a thread whose knowledge was taken back gets a stop instead,
-    // checked right before the card would be posted.
-    if ((await revokedFor(job)).length > 0) {
+    // checked right before the card would be posted. When Slack can't say who sees the thread, the card waits.
+    const check = loadKnowledge ? await revocation(job) : null;
+    if (check?.unknown) return;
+    if (check && check.revoked.length > 0) {
       await questions.answerQuestion(job.t3ThreadId, request.requestId, Object.fromEntries(request.questions.map((item) => [item.id, 'Stop here: some knowledge you used has been made private. Do nothing more.'])), config.t3Bin)
         .catch((error: unknown) => logger.warn(`Could not stop the question in ${job.t3ThreadId}: ${errorMessage(error)}`));
       await reply(job.channel, job.threadTs, WITHHELD);
@@ -794,17 +822,20 @@ export const createBot = ({
    * checked: unless only the owner sees it, it counts as revoked. Every path that shows worker text checks this first.
    */
   const WIDTH: Record<Visibility, number> = { owner: 0, team: 1, external: 2 };
-  const revocation = async (job: Job): Promise<{ visibility: Visibility; knowledge: BriefKnowledge; revoked: string[] }> => {
+  const revocation = async (job: Job): Promise<{ visibility: Visibility; knowledge: BriefKnowledge; revoked: string[]; unknown: boolean }> => {
     // Who sees the thread now, not only when it started: a channel shared with another company since is outside.
-    const current = await replyVisibility({ channel: job.channel, threadTs: job.threadTs, messageTs: job.threadTs, user: job.requester, text: '', direct: false }, { fresh: true, ...(job.visibility ? { ifUnknown: job.visibility } : {}) });
-    const visibility = job.visibility && WIDTH[job.visibility] >= WIDTH[current] ? job.visibility : current;
+    const current = await visibilityNow(job);
+    const unknown = current === null;
+    const visibility = current === null ? job.visibility ?? 'external' : job.visibility && WIDTH[job.visibility] >= WIDTH[current] ? job.visibility : current;
     const knowledge = loadKnowledge!(visibility);
-    if (!job.knowledgeRead) return { visibility, knowledge, revoked: visibility === 'owner' ? [] : ['(pages from before Serra recorded them)'] };
     // The owner may hear anything they ever had, removed pages included: nothing of theirs is withheld from them.
-    if (visibility === 'owner') return { visibility, knowledge, revoked: [] };
+    if (visibility === 'owner') return { visibility, knowledge, revoked: [], unknown: false };
+    // Slack can't say who sees the thread: nothing the worker wrote goes out until it can.
+    if (unknown) return { visibility, knowledge, revoked: ['(who can see this thread is unknown)'], unknown };
+    if (!job.knowledgeRead) return { visibility, knowledge, revoked: ['(pages from before Serra recorded them)'], unknown };
     // A page is revoked for this audience when the version the worker read wasn't for them, or when the page as it is
     // now isn't (narrowed, retired or removed since).
-    return { visibility, knowledge, revoked: Object.entries(job.knowledgeRead).filter(([page, audience]) => !mayUse(audience, visibility) || !knowledge.pages.includes(page)).map(([page]) => page) };
+    return { visibility, knowledge, revoked: Object.entries(job.knowledgeRead).filter(([page, audience]) => !mayUse(audience, visibility) || !knowledge.pages.includes(page)).map(([page]) => page), unknown };
   };
 
   const revokedFor = async (job: Job): Promise<string[]> => (loadKnowledge ? (await revocation(job)).revoked : []);
@@ -816,7 +847,9 @@ export const createBot = ({
    */
   const restartIfRevoked = async (key: string, job: Job, lines: Heard[]): Promise<boolean> => {
     if (!loadKnowledge) return false;
-    const { visibility, knowledge, revoked } = await revocation(job);
+    const { visibility, knowledge, revoked, unknown } = await revocation(job);
+    // Not knowing who sees the thread is no reason to restart: what's said to the worker isn't posted anywhere.
+    if (unknown) return false;
     // A snapshot folder cleaned up after a long pause leaves the worker nothing to open: that thread starts fresh too.
     const folderGone = job.knowledgeDir !== undefined && !existsSync(job.knowledgeDir);
     if (revoked.length === 0 && !folderGone) {
@@ -833,7 +866,7 @@ export const createBot = ({
       await clearQuestion(key, job, undefined, open, true);
     }
     const first = lines[0]!;
-    const thread = await threadContext({ channel: job.channel, threadTs: job.threadTs, messageTs: first.ts, user: job.requester, text: '', direct: false });
+    const thread = await threadContext({ channel: job.channel, threadTs: job.threadTs, messageTs: first.ts, user: job.requester, text: '', direct: false }, { withoutBot: true });
     await fetchBase();
     // The fresh thread starts from the old thread's branch, so committed work carries on, and is told where it was.
     const earlier = job.branch
@@ -841,7 +874,7 @@ export const createBot = ({
       : `\n\nThis thread started before Serra recorded branches, so earlier work may be on a branch this worktree doesn't start from: look for it with \`git branch --list '${config.id}/*'\` and its PR with \`gh pr list --author @me\`, and carry on from there.`;
     const input = jobThreadInput(config, {
       summary: 'continued with updated knowledge',
-      brief: fillBrief(config, knowledge, { request: followUpMessage(lines) + earlier, requester: 'People in the thread', permalink: 'link unavailable', thread }),
+      brief: fillBrief(config, knowledge, { request: `${followUpMessage(lines)}${earlier}\n\nThe thread's earlier messages from ${config.name} are left out here, because some knowledge they used is no longer available.`, requester: 'People in the thread', permalink: 'link unavailable', thread }),
       now: new Date(now()),
     });
     const t3ThreadId = await t3.startThread({ ...input, ...(job.branch ? { baseRef: job.branch } : {}) }, config.t3Bin);

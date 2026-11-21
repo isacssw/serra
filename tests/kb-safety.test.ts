@@ -438,7 +438,7 @@ const botOn = async (profileDir: string) => {
   const started: string[] = []; const sent: string[] = []; const answered: unknown[] = []; const bases: string[] = []; const posted: string[] = []; const updated: string[] = [];
   const reviews: { heldBack?: string }[] = [];
   const outside = new Set<string>();
-  const hooks: { beforeShare?: () => void | Promise<void>; history: { ts: string; user?: string; bot_id?: string; text: string }[] } = { history: [] };
+  const hooks: { beforeShare?: () => void | Promise<void>; onUpdate?: () => void; failUpdates?: boolean; history: { ts: string; user?: string; bot_id?: string; text: string }[] } = { history: [] };
   let pendingQuestions: { requestId: string; questions: unknown[] }[] = [];
   let transcript: { role: string; runId: string; text: string }[] = [];
   let activeRunId: string | null = null;
@@ -450,6 +450,8 @@ const botOn = async (profileDir: string) => {
       return { channel: { id: channel, is_ext_shared: outside.has(channel), is_pending_ext_shared: false } };
     } },
     chat: { getPermalink: async () => ({ permalink: 'https://x/p' }), postMessage: async (body: { text: string }) => { posted.push(body.text); return { ts: '9.1' }; }, update: async (body: { ts?: string; text?: string }) => {
+      hooks.onUpdate?.();
+      if (hooks.failUpdates) throw Object.assign(new Error('message_not_found'), { data: { error: 'message_not_found' } });
       updated.push(JSON.stringify(body));
       // As Slack does: the thread's history shows a message as it was last edited.
       const line = hooks.history.find((message) => message.ts === body.ts);
@@ -904,14 +906,18 @@ test('a snapshot in use is never cleaned up under a thread, a thread whose folde
   assert.ok(owner.posted.some((text) => /release:prepare/.test(text)));
 });
 
-test('a Slack lookup that fails right before posting keeps the thread\'s audience instead of hiding the reply', async (t) => {
+test('when Slack can\'t say who sees a thread right before posting, nothing goes out: the reply waits and posts once Slack answers', async (t) => {
   const run = await botOn(fixture(t));
   await run.bot.handle({ channel: 'CTEAM', threadTs: '25.1', messageTs: '25.1', user: PRIYA, text: '<@UMOSS> how do I cut a release?', direct: true });
   // From here on, Slack won't describe the channel.
   run.outside.add('FAIL');
   await run.finish('Run pnpm release:prepare.');
-  assert.ok(run.posted.some((text) => /release:prepare/.test(text)), 'the finished reply is posted');
-  assert.ok(!run.posted.some((text) => /made private/.test(text)));
+  assert.ok(!run.posted.some((text) => /release:prepare/.test(text)), 'nothing posts while the audience is unknown');
+  assert.ok(!run.posted.some((text) => /made private/.test(text)), 'and nothing claims a page was made private');
+  // Slack answers again: the waiting reply posts.
+  run.outside.delete('FAIL');
+  await run.bot.poll();
+  assert.ok(run.posted.some((text) => /release:prepare/.test(text)));
 });
 
 test('a fresh session never sees the old question through Slack history, an older owner thread is never given a record it didn\'t earn, and the policy path survives the snapshot', async (t) => {
@@ -951,4 +957,43 @@ test('a fresh session never sees the old question through Slack history, an olde
   assert.doesNotMatch(brief, /knowledge-team\/[0-9a-f]{16}\/\.\.\/policy/);
   writeFileSync(join(profileDir, 'brief.md'), readFileSync(join(profileDir, 'brief.md'), 'utf8').replace('{{POLICY_PATH}}', '{{KNOWLEDGE_DIR}}/../policy.md'));
   assert.ok((await buildBrief(profileDir, { via: 'channel', user: PRIYA, text: 'what does Robin own?' })).includes(join(profileDir, 'policy.md')));
+});
+
+test('a fresh session leaves out the earlier worker\'s messages even when Slack keeps the old card unchanged', async (t) => {
+  const form = await botOn(fixture(t));
+  await form.bot.handle({ channel: 'CTEAM', threadTs: '28.1', messageTs: '28.1', user: PRIYA, text: '<@UMOSS> how do I cut a release?', direct: true });
+  const question = { id: 'q1', header: 'Day', question: 'Release on Thursday despite the freeze?', options: [{ label: 'Yes', description: '' }, { label: 'No', description: '' }] };
+  form.hooks.history.push(
+    { ts: '28.1', user: PRIYA, text: '<@UMOSS> how do I cut a release?' },
+    { ts: '28.3', user: 'UMOSS', text: 'Run pnpm release:prepare, never on Thursday.' },
+    { ts: '28.5', bot_id: 'BMOSS', text: question.question },
+  );
+  form.hooks.failUpdates = true;
+  form.setQuestions([{ requestId: 'r28', questions: [question] }]);
+  const job = form.store.getJob('CTEAM:28.1')!;
+  form.store.putJob('CTEAM:28.1', { ...job, question: { requestId: 'r28', questions: [question], ts: '28.5', nonce: 'n', index: 0, answers: {}, runId: null } as never });
+  form.restrict('workflows/release.md');
+  form.hooks.history.push({ ts: '28.6', user: PRIYA, text: 'next Tuesday instead' });
+  await form.bot.handle({ channel: 'CTEAM', threadTs: '28.1', messageTs: '28.6', user: PRIYA, text: 'next Tuesday instead', direct: false });
+  await new Promise((done) => setTimeout(done, 50));
+  assert.equal(form.started.length, 2);
+  assert.doesNotMatch(form.started[1]!, /despite the freeze|release:prepare|never on Thursday/);
+  assert.match(form.started[1]!, /earlier messages from Moss are left out/);
+});
+
+test('a new card in place of a failed edit is checked again: knowledge taken back during the edit stops it', async (t) => {
+  const form = await botOn(fixture(t));
+  await form.bot.handle({ channel: 'CTEAM', threadTs: '29.1', messageTs: '29.1', user: PRIYA, text: '<@UMOSS> how do I cut a release?', direct: true });
+  const questions = [
+    { id: 'q1', header: 'Day', question: 'Which day?', options: [{ label: 'Tuesday', description: '' }, { label: 'Wednesday', description: '' }] },
+    { id: 'q2', header: 'Freeze', question: 'Release on Thursday despite the freeze?', options: [{ label: 'Yes', description: '' }, { label: 'No', description: '' }] },
+  ];
+  form.setQuestions([{ requestId: 'r29', questions }]);
+  const job = form.store.getJob('CTEAM:29.1')!;
+  form.store.putJob('CTEAM:29.1', { ...job, question: { requestId: 'r29', questions, ts: '29.5', nonce: 'n', index: 0, answers: {}, runId: null } as never });
+  // The owner takes the page back while Slack is failing to edit the card.
+  form.hooks.onUpdate = () => { form.hooks.onUpdate = undefined; form.restrict('workflows/release.md'); form.hooks.failUpdates = true; };
+  await form.bot.handle({ channel: 'CTEAM', threadTs: '29.1', messageTs: '29.6', user: PRIYA, text: 'Tuesday', direct: false });
+  await new Promise((done) => setTimeout(done, 50));
+  assert.ok(!form.posted.some((text) => /despite the freeze/.test(text)), 'no new card with the next question');
 });
