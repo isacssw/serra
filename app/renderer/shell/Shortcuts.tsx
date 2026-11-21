@@ -3,16 +3,21 @@
 import { useEffect } from 'react';
 import { useNavigate } from 'react-router';
 import { CLOSE_COMMAND_PALETTE } from './events.ts';
+import { isMac } from './keys.ts';
 import { NEW_TASK_PATH, shortcutPath } from './shortcuts.logic.ts';
 
-const isMac = /Mac/.test(navigator.userAgent);
 
 /** Focuses the screen's composer, or its heading, once the route has rendered (a few frames at most). */
-const focusScreen = (path: string, tries = 10): void => {
-  const target = path === NEW_TASK_PATH
+/** The screen's heading now, so focusScreen can wait for the next screen's instead of taking the outgoing one. */
+export const currentHeading = (): Element | null => document.querySelector('[data-serra-main] h1');
+
+export const focusScreen = (path: string, before: Element | null = null, tries = 20): void => {
+  const found = path === NEW_TASK_PATH
     ? document.getElementById('new-task-request')
     : document.querySelector<HTMLElement>('[data-serra-main] h1');
-  if (!target) { if (tries > 0) requestAnimationFrame(() => focusScreen(path, tries - 1)); return; }
+  // The outgoing screen's heading is only right when the route didn't change (already there); give the new one time.
+  const target = found && (found !== before || tries === 0) && found.isConnected ? found : null;
+  if (!target) { if (tries > 0) requestAnimationFrame(() => focusScreen(path, before, tries - 1)); return; }
   if (target.tagName === 'H1') target.tabIndex = -1;
   target.focus();
 };
@@ -24,10 +29,11 @@ export const Shortcuts = () => {
       const path = shortcutPath(event, isMac);
       if (!path || event.defaultPrevented) return;
       event.preventDefault();
+      const before = currentHeading();
       window.dispatchEvent(new Event(CLOSE_COMMAND_PALETTE));
       navigate(path);
       // The palette gives focus back as it closes; take it after that, on the new screen.
-      requestAnimationFrame(() => requestAnimationFrame(() => focusScreen(path)));
+      requestAnimationFrame(() => requestAnimationFrame(() => focusScreen(path, before)));
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);

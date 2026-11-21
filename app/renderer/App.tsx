@@ -24,7 +24,7 @@ import { Welcome } from './screens/Welcome/Welcome.tsx';
 import { WELCOME_PATH } from './screens/Welcome/welcome.logic.ts';
 import { useBadgeCounts, useBotStatus } from './shell/live.ts';
 import { FollowNavigation } from './shell/navigate.ts';
-import { Shortcuts } from './shell/Shortcuts.tsx';
+import { focusScreen, Shortcuts } from './shell/Shortcuts.tsx';
 import { Sidebar } from './shell/Sidebar.tsx';
 import { ToastProvider } from './ui/index.ts';
 
@@ -74,6 +74,13 @@ const Shell = () => {
   const counts = useBadgeCounts(status);
   return (
     <div className="flex h-full">
+      <button
+        type="button"
+        onClick={() => focusScreen(location.hash.replace(/^#/, ''), null, 0)}
+        className="sr-only z-50 rounded-md bg-accent px-3 py-1.5 text-[13px] font-medium text-accent-ink focus:not-sr-only focus:fixed focus:top-3 focus:left-[84px] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
+      >
+        Skip to content
+      </button>
       <Sidebar status={status} counts={counts} />
       <div className="flex min-w-0 flex-1 flex-col bg-canvas">
         {/* The title bar's height across the content side: it moves the window, and screens start below it. */}

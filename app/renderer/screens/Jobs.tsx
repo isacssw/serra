@@ -216,7 +216,7 @@ const EMPTY_STATES: Record<JobGroup, { icon: ReactNode; title: string; body: str
     start: false,
   },
   running: {
-    icon: <Play size={16} strokeWidth={1.75} />,
+    icon: <Play size={18} strokeWidth={1.75} />,
     title: 'Nothing running',
     body: 'Ask the bot in a channel, or start a task here. Running workers show here, with a link to their T3 thread.',
     start: true,

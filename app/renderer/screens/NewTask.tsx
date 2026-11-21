@@ -7,6 +7,7 @@ import { ArrowUp, Eye, GitBranch, Layers, ListChecks, LoaderCircle, User } from 
 import type { StartedTask } from '../../../src/tasks.ts';
 import { serra } from '../bridge.ts';
 import { Button, cx, useToast } from '../ui/index.ts';
+import { ariaMod, mod } from '../shell/keys.ts';
 import { canStart, requestProblem, startedText, taskLink } from './newTask.logic.ts';
 
 const message = (error: unknown): string => (error instanceof Error ? error.message : String(error));
@@ -70,7 +71,7 @@ export const NewTask = () => {
         <p className="text-sm text-muted">The worker gets the bot's brief and knowledge, as it would for a request from chat.</p>
       </header>
       <section className="flex flex-col gap-2">
-        <div className={cx('flex flex-col rounded-2xl border bg-panel shadow-[0_1px_2px_rgb(0_0_0/0.04),0_12px_32px_-16px_rgb(0_0_0/0.3)] transition-[border-color,box-shadow] duration-150 focus-within:ring-1', problem ? 'border-down focus-within:ring-down' : 'border-line focus-within:border-line-strong focus-within:ring-line-strong has-[textarea:focus-visible]:outline-2 has-[textarea:focus-visible]:-outline-offset-1 has-[textarea:focus-visible]:outline-focus/60')}>
+        <div className={cx('flex flex-col rounded-2xl border bg-panel shadow-[0_1px_2px_rgb(0_0_0/0.04),0_12px_32px_-16px_rgb(0_0_0/0.3)] transition-[border-color,box-shadow] duration-150 focus-within:ring-1', problem ? 'border-down focus-within:ring-down' : 'border-line focus-within:border-focus/50 focus-within:ring-focus/10')}>
           <label htmlFor="new-task-request" className="sr-only">What should the bot do?</label>
           <textarea
             id="new-task-request"
@@ -90,12 +91,12 @@ export const NewTask = () => {
             <Button variant="ghost" size="sm" className="text-muted hover:text-ink" icon={<Eye size={14} strokeWidth={1.75} />} disabled={busy || !request.trim() || problem !== null} onClick={showPreview}>
               {preview.state === 'ready' ? 'Refresh brief' : 'Preview brief'}
             </Button>
-            <kbd className="ml-auto font-sans text-[11px] text-muted" aria-hidden>⌘↩</kbd>
+            <kbd className="ml-auto font-sans text-[11px] text-muted" aria-hidden>{mod}↩</kbd>
             <button
               type="button"
               aria-label="Start task"
-              aria-keyshortcuts="Meta+Enter"
-              title="Start task (⌘↩)"
+              aria-keyshortcuts={`${ariaMod}+Enter`}
+              title={`Start task (${mod}↩)`}
               disabled={!canStart(request, busy)}
               onClick={start}
               className={cx(
@@ -108,7 +109,7 @@ export const NewTask = () => {
             </button>
           </div>
         </div>
-        <div id="new-task-note" className={cx('flex flex-wrap items-center gap-x-4 gap-y-1 px-3 text-xs [&>span]:whitespace-nowrap', problem ? 'text-down' : 'text-muted')}>
+        <div id="new-task-note" className={cx('flex flex-wrap items-center justify-center gap-x-4 gap-y-1 px-3 text-xs [&>span]:whitespace-nowrap', problem ? 'text-down' : 'text-muted')}>
           {problem ?? (
             <>
               <span className="flex items-center gap-1.5"><User size={13} strokeWidth={1.75} aria-hidden /> You're the requester</span>

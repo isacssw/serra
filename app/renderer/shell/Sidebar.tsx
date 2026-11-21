@@ -12,6 +12,8 @@ import { routes, sections, type BadgeKey, type RouteId } from '../routes.ts';
 import { statusView, type StatusTone } from '../status.logic.ts';
 import { cx } from '../ui/index.ts';
 import { OPEN_COMMAND_PALETTE } from './events.ts';
+import { ariaMod, isMac, mod } from './keys.ts';
+import { currentHeading, focusScreen } from './Shortcuts.tsx';
 import downIcon from '../../../assets/brand/serra-status-down.png';
 import needsYouIcon from '../../../assets/brand/serra-status-needs-you.png';
 import upIcon from '../../../assets/brand/serra-status-up.png';
@@ -37,10 +39,6 @@ const icons: Partial<Record<RouteId, ComponentType<LucideProps>>> = {
 const statusIcons: Record<StatusTone, string> = { up: upIcon, 'needs-you': needsYouIcon, down: downIcon, unknown: downIcon };
 
 /** macOS draws the traffic lights over the sidebar's first row, except in full screen, where they're hidden. */
-const isMac = typeof navigator !== 'undefined' && /Mac/.test(navigator.userAgent);
-/** Shortcut hints in the platform's words: ⌘N on macOS, Ctrl+N elsewhere (shortcuts.logic.ts follows the same rule). */
-const mod = isMac ? '⌘' : 'Ctrl+';
-const ariaMod = isMac ? 'Meta' : 'Control';
 const useFullScreen = (): boolean => {
   const check = (): boolean => window.outerWidth === screen.width && window.outerHeight === screen.height;
   const [full, setFull] = useState(check);
@@ -81,8 +79,18 @@ const itemClass = (active: boolean): string => cx(
   active ? 'bg-selected font-medium text-ink' : 'text-ink/80 hover:bg-hover hover:text-ink',
 );
 
-/** Arrow keys move between the sidebar's links (Tab still goes through them one by one). */
-const moveFocus = (event: KeyboardEvent<HTMLElement>): void => {
+/**
+ * Arrow keys move between the sidebar's links (Tab still goes through them one by one). Enter on a link opens its
+ * screen and moves focus there (the composer, or the screen's heading), so the next Tab lands in the content.
+ */
+const onNavKey = (event: KeyboardEvent<HTMLElement>): void => {
+  const link = (event.target as HTMLElement).closest<HTMLAnchorElement>('a[data-route]');
+  if (event.key === 'Enter' && link) {
+    const path = link.getAttribute('href')?.replace(/^#/, '') ?? '';
+    const before = currentHeading();
+    requestAnimationFrame(() => requestAnimationFrame(() => focusScreen(path, before)));
+    return;
+  }
   if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;
   const links = [...event.currentTarget.querySelectorAll<HTMLElement>('a[data-route], button[data-nav]')];
   const at = links.indexOf(document.activeElement as HTMLElement);
@@ -100,8 +108,9 @@ export const Sidebar = ({ status, counts }: { status: BotStatus | null; counts: 
   return (
     <aside data-serra-sidebar className="flex w-60 shrink-0 flex-col border-r border-line bg-sidebar">
       <TitleRow status={status} />
-      <nav aria-label="Screens" onKeyDown={moveFocus} className="flex min-h-0 flex-1 flex-col overflow-y-auto px-2 pt-1.5 pb-3">
-        <div className="flex flex-col gap-0.5 pb-2">
+      <nav aria-label="Screens" onKeyDown={onNavKey} className="flex min-h-0 flex-1 flex-col">
+        {/* New task and Search stay in view; only the screens below scroll in a short window. */}
+        <div className="flex shrink-0 flex-col gap-0.5 px-2 pt-1.5 pb-2">
           <NavLink
             to="/jobs/new"
             data-route="new-task"
@@ -118,6 +127,7 @@ export const Sidebar = ({ status, counts }: { status: BotStatus | null; counts: 
           <button
             type="button"
             data-nav
+            aria-haspopup="dialog"
             aria-keyshortcuts={`${ariaMod}+K`}
             onClick={() => window.dispatchEvent(new Event(OPEN_COMMAND_PALETTE))}
             className={itemClass(false)}
@@ -127,54 +137,56 @@ export const Sidebar = ({ status, counts }: { status: BotStatus | null; counts: 
             <kbd className="font-sans text-[11px] text-muted" aria-hidden>{mod}K</kbd>
           </button>
         </div>
-        {sections.map((section) => {
-          const items = routes.filter((route) => route.section === section.id && !('nav' in route && route.nav === false));
-          if (items.length === 0) return null;
-          return (
-            <div key={section.id} className="flex flex-col gap-0.5" {...(section.heading ? { role: 'group', 'aria-labelledby': `nav-${section.id}` } : {})}>
-              {section.heading && (
-                <h2 id={`nav-${section.id}`} className="flex items-center justify-between px-2 pt-4 pb-1 text-[11px] font-medium text-muted">
-                  {section.heading}
-                  {section.id === 'settings' && <kbd className="font-sans font-normal" aria-hidden>{mod},</kbd>}
-                </h2>
-              )}
-              {items.map((route) => {
-                const Icon = icons[route.id] ?? Inbox;
-                const label = 'navLabel' in route ? route.navLabel : route.label;
-                // Jobs shows what needs you; with nothing waiting, what's running.
-                const key: BadgeKey | undefined = route.id === 'jobs-needs-you' ? (counts.needsYou ? 'needsYou' : 'running') : 'badge' in route ? route.badge : undefined;
-                const text = key ? badgeText(counts[key]) : null;
-                const inner = (
-                  <>
-                    <Icon size={15} strokeWidth={1.75} aria-hidden className="shrink-0 text-muted group-hover:text-ink group-aria-[current=page]:text-ink" />
-                    <span className="flex-1 truncate">{label}</span>
-                    {key && text && (
-                      <span
-                        aria-label={countLabels[key](text)}
-                        className={cx('min-w-4 text-right text-[11px] tabular-nums', key === 'needsYou' ? 'font-semibold text-warn' : 'text-muted')}
-                      >
-                        {text}
-                      </span>
-                    )}
-                  </>
-                );
-                // Jobs stands for all its tabs, so it is current on any of them, which NavLink can't express.
-                if (route.id === 'jobs-needs-you') {
-                  return (
-                    <Link key={route.id} to={route.path} data-route={route.id} className={itemClass(inJobs)} aria-current={inJobs ? 'page' : undefined}>
-                      {inner}
-                    </Link>
+        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-2 pb-3">
+          {sections.map((section) => {
+            const items = routes.filter((route) => route.section === section.id && !('nav' in route && route.nav === false));
+            if (items.length === 0) return null;
+            return (
+              <div key={section.id} className="flex flex-col gap-0.5" {...(section.heading ? { role: 'group', 'aria-labelledby': `nav-${section.id}` } : {})}>
+                {section.heading && (
+                  <h2 id={`nav-${section.id}`} className="flex items-center justify-between px-2 pt-4 pb-1 text-[11px] font-medium text-muted">
+                    {section.heading}
+                    {section.id === 'settings' && <kbd className="font-sans font-normal" aria-hidden>{mod},</kbd>}
+                  </h2>
+                )}
+                {items.map((route) => {
+                  const Icon = icons[route.id] ?? Inbox;
+                  const label = 'navLabel' in route ? route.navLabel : route.label;
+                  // Jobs shows what needs you; with nothing waiting, what's running.
+                  const key: BadgeKey | undefined = route.id === 'jobs-needs-you' ? (counts.needsYou ? 'needsYou' : 'running') : 'badge' in route ? route.badge : undefined;
+                  const text = key ? badgeText(counts[key]) : null;
+                  const inner = (
+                    <>
+                      <Icon size={15} strokeWidth={1.75} aria-hidden className="shrink-0 text-muted group-hover:text-ink group-aria-[current=page]:text-ink" />
+                      <span className="flex-1 truncate">{label}</span>
+                      {key && text && (
+                        <span
+                          aria-label={countLabels[key](text)}
+                          className={cx('min-w-4 text-right text-[11px] tabular-nums', key === 'needsYou' ? 'font-semibold text-warn' : 'text-muted')}
+                        >
+                          {text}
+                        </span>
+                      )}
+                    </>
                   );
-                }
-                return (
-                  <NavLink key={route.id} to={route.path} data-route={route.id} className={({ isActive }) => itemClass(isActive)}>
-                    {inner}
-                  </NavLink>
-                );
-              })}
-            </div>
-          );
-        })}
+                  // Jobs stands for all its tabs, so it is current on any of them, which NavLink can't express.
+                  if (route.id === 'jobs-needs-you') {
+                    return (
+                      <Link key={route.id} to={route.path} data-route={route.id} className={itemClass(inJobs)} aria-current={inJobs ? 'page' : undefined}>
+                        {inner}
+                      </Link>
+                    );
+                  }
+                  return (
+                    <NavLink key={route.id} to={route.path} data-route={route.id} className={({ isActive }) => itemClass(isActive)}>
+                      {inner}
+                    </NavLink>
+                  );
+                })}
+              </div>
+            );
+          })}
+        </div>
       </nav>
     </aside>
   );
