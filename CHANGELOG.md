@@ -4,6 +4,8 @@ Serra follows [Semantic Versioning](https://semver.org) once it reaches 1.0. Unt
 
 ## Unreleased
 
+## 0.1.0-alpha.2 (2026-11-21)
+
 First public alpha, for trying Serra locally on macOS. Serra bridges a chat app to your local coding agents; this alpha supports one chat channel, Slack.
 
 - Slack channel: mentions and DMs become T3 Code threads in fresh Git worktrees; replies, clarifying questions (with buttons), images and files go back to the Slack thread.
