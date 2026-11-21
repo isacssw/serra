@@ -42,7 +42,7 @@ const prProblem = async (url: string, expectedLogin: string | undefined, command
 export const handleReviewRequest = async (
   client: SlackClient,
   text: string,
-  opts: { channel?: string; owner: string; botName: string; repositories: string[]; githubLogin?: string; alreadyPosted: string[]; sourceLink: string },
+  opts: { channel?: string; heldBack?: string; owner: string; botName: string; repositories: string[]; githubLogin?: string; alreadyPosted: string[]; sourceLink: string },
   command: typeof run = run,
 ): Promise<ReviewRequestOutcome> => {
   const match = BLOCK.exec(text);
@@ -55,6 +55,7 @@ export const handleReviewRequest = async (
   });
 
   if (!opts.channel) return blocked('review posting is disabled; configure a review channel to enable it');
+  if (opts.heldBack) return blocked(opts.heldBack);
   const prs = [...new Set(message.match(PR_URL) ?? [])];
   const pr = prs[0];
   if (!pr) return blocked('it has no GitHub PR link');

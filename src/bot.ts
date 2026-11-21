@@ -443,8 +443,11 @@ export const createBot = ({
       .getPermalink({ channel: job.channel, message_ts: job.threadTs })
       .then((result) => result.permalink)
       .catch(() => undefined);
+    // The review channel is the team's: a request written with pages the team may not hear is the owner's to post.
+    const teamMayHear = !loadKnowledge || (await revocation({ ...job, visibility: 'team' })).revoked.length === 0;
     const review = await reviewRequest(client, text, {
       channel: config.reviewChannel,
+      ...(teamMayHear ? {} : { heldBack: 'it was written with knowledge only you may hear: check it and post it yourself' }),
       owner: config.owner,
       botName: config.name,
       repositories: config.reviewRepos,
@@ -601,6 +604,17 @@ export const createBot = ({
     const answers = { ...state.answers, [question.id]: answer };
     const rememberReply = (latest: Job): Partial<Job> => messageTs
       ? { answeredQuestionMessages: [...(latest.answeredQuestionMessages ?? []), messageTs].slice(-20) } : {};
+    // The next question is the worker's own words too: a thread whose knowledge was taken back shows none, and the
+    // answers so far go to a fresh thread.
+    const answered = typeof answer === 'string' ? answer : answer.join(', ');
+    if (await restartIfRevoked(key, job, [{ speaker: user === config.owner ? `${config.ownerName} (your owner)` : await displayName(user), text: `Answer to "${question.question ?? question.id}": ${answered}`, audience: 'bot', ts: messageTs ?? job.threadTs }])) {
+      // The old session's question gets an answer that ends its turn, so it isn't left waiting.
+      await questions.answerQuestion(job.t3ThreadId, state.requestId, Object.fromEntries(state.questions.map((item) => [item.id, 'Stop here: this thread moved to a fresh session. Do nothing more.'])), config.t3Bin)
+        .catch((error: unknown) => logger.warn(`Could not close the question in the earlier T3 thread ${job.t3ThreadId}: ${errorMessage(error)}`));
+      await clearQuestion(key, job, user, { ...state, answers });
+      updateJob(key, rememberReply);
+      return;
+    }
     if (state.index + 1 < state.questions.length) {
       const next = { ...state, answers, index: state.index + 1, nonce: randomBytes(16).toString('hex') };
       const recipient = config.allowed.has(job.requester) ? job.requester : config.owner;
@@ -615,16 +629,6 @@ export const createBot = ({
         next.ts = posted.ts;
       }
       updateJob(key, (latest) => ({ question: next, ...rememberReply(latest) }));
-      return;
-    }
-    // The thread asking was briefed with knowledge the owner has since taken back: the answer goes to a fresh thread.
-    const answered = typeof answer === 'string' ? answer : answer.join(', ');
-    if (await restartIfRevoked(key, job, [{ speaker: user === config.owner ? `${config.ownerName} (your owner)` : await displayName(user), text: `Answer to "${question.question ?? question.id}": ${answered}`, audience: 'bot', ts: messageTs ?? job.threadTs }])) {
-      // The old session's question gets an answer that ends its turn, so it isn't left waiting.
-      await questions.answerQuestion(job.t3ThreadId, state.requestId, Object.fromEntries(state.questions.map((item) => [item.id, 'Stop here: this thread moved to a fresh session. Do nothing more.'])), config.t3Bin)
-        .catch((error: unknown) => logger.warn(`Could not close the question in the earlier T3 thread ${job.t3ThreadId}: ${errorMessage(error)}`));
-      await clearQuestion(key, job, user, { ...state, answers });
-      updateJob(key, rememberReply);
       return;
     }
     await questions.answerQuestion(job.t3ThreadId, state.requestId, answers, config.t3Bin);
@@ -729,15 +733,19 @@ export const createBot = ({
     updateJob(key, () => ({ watching: false, waitingInT3: false }));
   };
 
-  /** Pages this thread's brief allowed that the owner has since restricted, retired or removed. */
-  // A thread from before audiences has no record of its pages: it was briefed with every page, so it counts as revoked
-  // whenever anything is now off-limits to it. Every path that shows worker text checks this first.
-  const revokedFor = async (job: Job): Promise<string[]> => {
-    if (!loadKnowledge) return [];
+  /**
+   * Pages this thread's brief allowed that the owner has since restricted, retired or removed. A thread from before
+   * Serra recorded its pages was briefed with every page there was, including any removed since, which can't be
+   * checked: unless only the owner sees it, it counts as revoked. Every path that shows worker text checks this first.
+   */
+  const revocation = async (job: Job): Promise<{ visibility: Visibility; knowledge: BriefKnowledge; revoked: string[] }> => {
     const visibility = job.visibility ?? await replyVisibility({ channel: job.channel, threadTs: job.threadTs, messageTs: job.threadTs, user: job.requester, text: '', direct: false });
-    const now = loadKnowledge(visibility).pages;
-    return (job.knowledgePages ?? loadKnowledge('owner').pages).filter((page) => !now.includes(page));
+    const knowledge = loadKnowledge!(visibility);
+    if (!job.knowledgePages) return { visibility, knowledge, revoked: visibility === 'owner' ? [] : ['(pages from before Serra recorded them)'] };
+    return { visibility, knowledge, revoked: job.knowledgePages.filter((page) => !knowledge.pages.includes(page)) };
   };
+
+  const revokedFor = async (job: Job): Promise<string[]> => (loadKnowledge ? (await revocation(job)).revoked : []);
 
   /**
    * What people say in a thread the bot owns, waiting for the worker's next turn. Messages sent close together,
@@ -751,12 +759,7 @@ export const createBot = ({
    */
   const restartIfRevoked = async (key: string, job: Job, lines: Heard[]): Promise<boolean> => {
     if (!loadKnowledge) return false;
-    // A thread from before audiences was briefed with every page: it's revoked if anything is now off-limits to it.
-    const visibility = job.visibility ?? await replyVisibility({ channel: job.channel, threadTs: job.threadTs, messageTs: job.threadTs, user: job.requester, text: '', direct: false });
-    const knowledge = loadKnowledge(visibility);
-    const revoked = job.knowledgePages
-      ? job.knowledgePages.filter((page) => !knowledge.pages.includes(page))
-      : loadKnowledge('owner').pages.filter((page) => !knowledge.pages.includes(page));
+    const { visibility, knowledge, revoked } = await revocation(job);
     if (revoked.length === 0) {
       if (!job.knowledgePages) updateJob(key, () => ({ visibility, knowledgePages: knowledge.pages }));
       return false;

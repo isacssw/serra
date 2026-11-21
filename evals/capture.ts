@@ -5,7 +5,9 @@ import { createBot } from '../src/bot.ts';
 import { loadConfig } from '../src/config.ts';
 import { createKnowledge } from '../src/knowledge.ts';
 import { createStore } from '../src/state.ts';
-import { taskBrief } from '../src/tasks.ts';
+import { fillBrief } from '../src/brief.ts';
+import type { BriefKnowledge } from '../src/knowledge.ts';
+import { taskBriefInput } from '../src/tasks.ts';
 import type { webApi } from '@slack/bolt';
 
 export interface EvalCase {
@@ -35,10 +37,23 @@ const NAMES: Record<string, string> = {
 const CHANNELS = { dm: 'DMOSS00001', channel: 'CTEAM00001', shared: 'CSHARED001' } as const;
 let calls = 0;
 
+/**
+ * The ablation's knowledge: About me without the owner's pages. The built-in rules for teammates and outsiders stay,
+ * since they belong to audience filtering, not to About me.
+ */
+const withoutOwnerPages = (known: BriefKnowledge): BriefKnowledge => ({
+  ...known,
+  aboutMe: { ...known.aboutMe, text: known.aboutMe.sections.filter((section) => section.path === 'outsiders' || section.path === 'private topics').map((section) => `From ${section.path} (confirmed ${section.verified}):\n${section.body}`).join('\n\n') },
+});
+
 /** `noAbout`: the ablation that leaves About me out of the brief, to measure what it adds over audiences alone. */
 export const buildBrief = async (profileDir: string, item: EvalCase, { noAbout = false }: { noAbout?: boolean } = {}): Promise<string> => {
   const config = loadConfig({ profileDir, env: { SLACK_BOT_TOKEN: 'xoxb-eval', SLACK_APP_TOKEN: 'xapp-eval' } });
-  if (item.via === 'app') return taskBrief(config, item.text);
+  if (item.via === 'app') {
+    // As `taskBrief` builds it, so the ablation reaches app tasks too.
+    const known = createKnowledge(config.knowledgeDir).briefKnowledge('owner');
+    return fillBrief(config, noAbout ? withoutOwnerPages(known) : known, taskBriefInput(config, item.text));
+  }
 
   const channel = CHANNELS[item.via];
   // A new thread per call, so a second brief from the same profile is a new job, not a follow-up.
@@ -70,7 +85,7 @@ export const buildBrief = async (profileDir: string, item: EvalCase, { noAbout =
   const bot = createBot({
     config, client, botUserId: () => BOT_USER, store: createStore(config.statePath), loadIndex: () => knowledge.loadIndex(), loadKnowledge: (visibility) => {
       const known = knowledge.briefKnowledge(visibility);
-      return noAbout ? { ...known, aboutMe: { ...known.aboutMe, text: '' } } : known;
+      return noAbout ? withoutOwnerPages(known) : known;
     },
     logger: { info: quiet, warn: (m: string) => process.stderr.write(`warn: ${m}\n`), error: (m: string) => process.stderr.write(`error: ${m}\n`), debug: quiet },
     t3: {

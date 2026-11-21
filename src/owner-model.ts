@@ -113,8 +113,10 @@ export const compileAboutMe = (pages: { path: string; text: string }[], visibili
   const roster = pages.filter((page) => page.path.startsWith(`${PEOPLE_FOLDER}/`)).flatMap((page) => {
     const fields = frontmatter(page.text);
     const verified = fields?.get('verified')?.trim() ?? '';
-    if (!DATE.test(verified) || !mayUse(pageAudience(fields), visibility)) return [];
-    const line = rosterLine(page.text);
+    const expires = fields?.get('expires')?.trim() ?? '';
+    if (!DATE.test(verified) || (DATE.test(expires) && expires < today) || !mayUse(pageAudience(fields), visibility)) return [];
+    // Like owner pages: what sits under `## Replaced` isn't current, so the card's line never comes from there.
+    const line = rosterLine(currentBody(page.text));
     return line ? [{ path: page.path, verified, line }] : [];
   }).sort((a, b) => a.path.localeCompare(b.path));
   let rosterBody = '';

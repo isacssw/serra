@@ -435,7 +435,8 @@ const botOn = async (profileDir: string) => {
   const config = loadConfig({ profileDir, env: { SLACK_BOT_TOKEN: 'xoxb-t', SLACK_APP_TOKEN: 'xapp-t' } });
   const knowledge = createKnowledge(config.knowledgeDir);
   knowledge.seedApproved();
-  const started: string[] = []; const sent: string[] = []; const answered: unknown[] = []; const bases: string[] = []; const posted: string[] = [];
+  const started: string[] = []; const sent: string[] = []; const answered: unknown[] = []; const bases: string[] = []; const posted: string[] = []; const updated: string[] = [];
+  const reviews: { heldBack?: string }[] = [];
   let pendingQuestions: { requestId: string; questions: unknown[] }[] = [];
   let transcript: { role: string; runId: string; text: string }[] = [];
   let activeRunId: string | null = null;
@@ -443,7 +444,7 @@ const botOn = async (profileDir: string) => {
   const client = {
     users: { info: async ({ user }: { user: string }) => ({ user: { real_name: user, team_id: 'THOME' } }) },
     conversations: { replies: async () => ({ messages: [] }), info: async () => ({ channel: { id: 'CTEAM', is_ext_shared: false, is_pending_ext_shared: false } }) },
-    chat: { getPermalink: async () => ({ permalink: 'https://x/p' }), postMessage: async (body: { text: string }) => { posted.push(body.text); return { ts: '9.1' }; }, update: async () => ({}), delete: async () => ({}) },
+    chat: { getPermalink: async () => ({ permalink: 'https://x/p' }), postMessage: async (body: { text: string }) => { posted.push(body.text); return { ts: '9.1' }; }, update: async (body: { text?: string }) => { updated.push(body.text ?? ''); return {}; }, delete: async () => ({}) },
     reactions: { add: async () => ({}), remove: async () => ({}) },
     assistant: { threads: { setStatus: async () => ({ ok: true }) } },
   } as never;
@@ -457,7 +458,8 @@ const botOn = async (profileDir: string) => {
       showThread: async (id: string, _bin?: string, count = 1) => ({ thread: { threadId: id, link: 'https://t3/x', status: activeRunId ? 'running' : 'idle', latestRunId: activeRunId ?? (transcript.length ? 'run-1' : null), activeRunId, pendingRequestCount: pendingQuestions.length }, messages: transcript.slice(-count) }),
     } as never,
     questions: { listQuestions: async () => pendingQuestions as never, answerQuestion: async (...args: unknown[]) => { answered.push(args); } },
-    fetchBase: async () => {}, share: async (_c, text) => text, reviewRequest: async (_c, text) => ({ reply: text, postedFor: null }),
+    fetchBase: async () => {}, share: async (_c, text) => text,
+    reviewRequest: async (_c, text, opts) => { reviews.push(opts); return { reply: text, postedFor: null }; },
     receive: async () => '', timing: { quietMs: 5, retryMs: 5 }, events: () => {},
   });
   const restrict = (page: string): void => {
@@ -473,7 +475,7 @@ const botOn = async (profileDir: string) => {
     activeRunId = 'run-2';
     transcript = [{ role: 'user', runId: 'run-2', text: 'brief' }, { role: 'assistant', runId: 'run-2', text: note }];
   };
-  return { bot, store, config, knowledge, started, sent, answered, bases, posted, restrict, finish, working, setQuestions: (list: typeof pendingQuestions) => { pendingQuestions = list; } };
+  return { bot, store, config, knowledge, started, sent, answered, bases, posted, updated, reviews, restrict, finish, working, setQuestions: (list: typeof pendingQuestions) => { pendingQuestions = list; } };
 };
 
 test('the worker opens pages from the approved copy, and writes proposals to knowledge/proposals', async (t) => {
@@ -676,4 +678,52 @@ test('round 8: accepting a hand edit validates it, and a custom brief without th
   writeFileSync(join(profileDir, 'brief.md'), 'You help {{OWNER_NAME}}. Notes are in {{KNOWLEDGE_DIR}}.\n\n{{KNOWLEDGE_INDEX}}\n\n{{THREAD_CONTEXT}}\n\n{{REQUEST}}\n');
   const brief = await buildBrief(profileDir, { via: 'dm', user: ROBIN, text: 'what are my rules?' });
   assert.match(brief, /Notes are in [^\n]*\.knowledge-approved\./);
+});
+
+test('round 9: the next question of a form, a thread from before Serra recorded its pages, and the review channel never carry withheld knowledge', async (t) => {
+  // A two-question form: after the first answer, the second is not shown once the thread's knowledge was taken back.
+  const form = await botOn(fixture(t));
+  await form.bot.handle({ channel: 'CTEAM', threadTs: '9.1', messageTs: '9.1', user: PRIYA, text: '<@UMOSS> how do I cut a release?', direct: true });
+  const questions = [
+    { id: 'q1', header: 'Day', question: 'Which day?', options: [{ label: 'Tuesday', description: '' }, { label: 'Wednesday', description: '' }] },
+    { id: 'q2', header: 'Freeze', question: 'Release on Thursday despite the freeze?', options: [{ label: 'Yes', description: '' }, { label: 'No', description: '' }] },
+  ];
+  form.setQuestions([{ requestId: 'r9', questions }]);
+  const job = form.store.getJob('CTEAM:9.1')!;
+  form.store.putJob('CTEAM:9.1', { ...job, question: { requestId: 'r9', questions, ts: '9.5', nonce: 'n', index: 0, answers: {}, runId: null } as never });
+  form.restrict('workflows/release.md');
+  await form.bot.handle({ channel: 'CTEAM', threadTs: '9.1', messageTs: '9.6', user: PRIYA, text: 'Tuesday', direct: false });
+  await new Promise((done) => setTimeout(done, 50));
+  assert.ok(![...form.posted, ...form.updated].some((text) => /despite the freeze/.test(text)), 'the second question is never shown');
+  assert.match(JSON.stringify(form.answered[0]), /Stop here: this thread moved to a fresh session/);
+  assert.equal(form.started.length, 2);
+
+  // A thread from before Serra recorded its pages, after the owner accepted a page's deletion: its reply is withheld.
+  const profileDir = fixture(t);
+  const older = await botOn(profileDir);
+  await older.bot.handle({ channel: 'CTEAM', threadTs: '10.1', messageTs: '10.1', user: PRIYA, text: '<@UMOSS> how do I cut a release?', direct: true });
+  const legacy = older.store.getJob('CTEAM:10.1')!;
+  delete legacy.visibility; delete legacy.knowledgePages;
+  older.store.putJob('CTEAM:10.1', legacy);
+  rmSync(join(older.config.knowledgeDir, 'workflows/release.md'));
+  older.knowledge.acceptDrift('workflows/release.md', null);
+  await older.finish('Run pnpm release:prepare, never on Thursday.');
+  assert.ok(!older.posted.some((text) => /release:prepare/.test(text)));
+  // The same with a recorded page list: the deleted page is in it, so it counts as taken back.
+  const recorded = await botOn(fixture(t));
+  await recorded.bot.handle({ channel: 'CTEAM', threadTs: '11.1', messageTs: '11.1', user: PRIYA, text: '<@UMOSS> how do I cut a release?', direct: true });
+  rmSync(join(recorded.config.knowledgeDir, 'workflows/release.md'));
+  recorded.knowledge.acceptDrift('workflows/release.md', null);
+  await recorded.finish('Run pnpm release:prepare, never on Thursday.');
+  assert.ok(!recorded.posted.some((text) => /release:prepare/.test(text)));
+
+  // The owner's DM was briefed with owner-only pages: its review request is the owner's to post, not the bot's.
+  const dm = await botOn(fixture(t));
+  await dm.bot.handle({ channel: 'DROBIN', threadTs: '12.1', messageTs: '12.1', user: ROBIN, text: 'open the PR and ask for review', direct: true });
+  await dm.finish('Done. <review-request>Please review https://github.com/larchwood/moss/pull/1</review-request>');
+  assert.match(dm.reviews[0]?.heldBack ?? '', /only you may hear/);
+  const team = await botOn(fixture(t));
+  await team.bot.handle({ channel: 'CTEAM', threadTs: '13.1', messageTs: '13.1', user: PRIYA, text: '<@UMOSS> open the PR and ask for review', direct: true });
+  await team.finish('Done. <review-request>Please review https://github.com/larchwood/moss/pull/2</review-request>');
+  assert.equal(team.reviews[0]?.heldBack, undefined, 'a teammate\'s thread posts as before');
 });
