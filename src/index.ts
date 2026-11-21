@@ -20,7 +20,7 @@ const config = loadConfig();
 mkdirSync(dirname(config.statePath), { recursive: true, mode: 0o700 });
 const releaseProfileLock = acquireLock(`${config.statePath}.lock`);
 process.on('exit', releaseProfileLock);
-const { checkKnowledge, loadIndex, briefKnowledge, seedApproved } = createKnowledge(config.knowledgeDir);
+const { checkKnowledge, loadIndex, briefKnowledge, seedApproved, untaggedPages } = createKnowledge(config.knowledgeDir);
 
 const logger = timestampedLogger(LogLevel.INFO);
 // Under launchd, macOS may block the repository (Documents, Desktop, Downloads). Find out now, not on the first job.
@@ -79,6 +79,11 @@ app.message(async ({ message }) => {
 loadIndex();
 // From here on, briefs use the knowledge as the owner approved it: a file changed outside Serra waits for them in Pages.
 if (seedApproved()) app.logger.info('Keeping an approved copy of knowledge/ from now on.');
+// Pages from before audiences reach only the owner's replies: say so once at start, where an upgrading owner looks.
+const untagged = untaggedPages();
+if (untagged.length > 0) {
+  app.logger.info(`${untagged.length} knowledge page(s) don't say who may hear them, so only your own replies use them. Choose in the app: Knowledge › About me.`);
+}
 if (proposeBriefUpdate(config.profileDir)) {
   app.logger.info('The shipped brief has new knowledge rules: review it in Brief & policy (proposed/knowledge-update).');
 }

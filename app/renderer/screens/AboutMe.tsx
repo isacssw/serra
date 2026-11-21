@@ -3,7 +3,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import { ArrowUpRight, Building2, User, Users } from 'lucide-react';
 import { useNavigate } from 'react-router';
-import { ABOUT_MAX_CHARS, type AboutMe as AboutMeData, type Visibility } from '../../../src/owner-model.ts';
+import { ABOUT_MAX_CHARS, type AboutMe as AboutMeData, type Audience, type Visibility } from '../../../src/owner-model.ts';
+import { AudienceChoice } from './AudienceChoice.tsx';
 import { serra } from '../bridge.ts';
 import { Button, cx, Dialog, Page, useToast } from '../ui/index.ts';
 
@@ -38,6 +39,7 @@ export const AboutMe = () => {
   const [untagged, setUntagged] = useState<{ path: string; description: string; offlimits: boolean; preview: string; text: string }[]>([]);
   const [peek, setPeek] = useState<string | null>(null);
   const [sharing, setSharing] = useState<Set<string> | null>(null);
+  const [shareTo, setShareTo] = useState<Audience>('team');
   const [busy, setBusy] = useState(false);
   const toast = useToast();
 
@@ -68,10 +70,11 @@ export const AboutMe = () => {
     if (!bridge || !sharing || busy) return;
     setBusy(true);
     try {
-      const { shared } = await bridge.pages.share(untagged.filter((page) => sharing.has(page.path)).map(({ path, text }) => ({ path, text })), 'team');
+      const { shared } = await bridge.pages.share(untagged.filter((page) => sharing.has(page.path)).map(({ path, text }) => ({ path, text })), shareTo);
       setSharing(null);
+      const who = shareTo === 'owner' ? 'kept for you only' : shareTo === 'team' ? 'shared with your team' : 'shared with people outside your company';
       toast({
-        message: `Shared ${shared.length} page${shared.length === 1 ? '' : 's'} with your team.`,
+        message: `${shared.length} page${shared.length === 1 ? '' : 's'} ${who}.`,
         tone: 'success',
       });
       await load(visibility);
@@ -98,7 +101,7 @@ export const AboutMe = () => {
               {untagged.length === 1 ? 'It doesn\u2019t say who may hear it, so teammates\u2019 briefs leave it out.' : 'They don\u2019t say who may hear them, so teammates\u2019 briefs leave them out.'}
             </p>
             <div className="mt-2">
-              <Button onClick={() => setSharing(new Set())}>Choose what your team can hear</Button>
+              <Button onClick={() => { setShareTo('team'); setSharing(new Set()); }}>Choose who may hear them</Button>
             </div>
           </div>
         </section>
@@ -191,18 +194,19 @@ export const AboutMe = () => {
       <Dialog
         open={sharing !== null}
         onClose={() => setSharing(null)}
-        title="Share pages with your team"
-        description="Checked pages go into your teammates' briefs. Nothing is checked until you choose. You can change a page later in Pages."
+        title="Choose who may hear these pages"
+        description="Nothing is checked until you choose. Keeping a page for you only clears it from this list. You can change a page later in Pages."
         actions={(
           <>
             <Button onClick={() => setSharing(null)}>Cancel</Button>
             <Button variant="primary" disabled={busy || !sharing?.size} onClick={() => void share()}>
-              {sharing?.size ? `Share ${sharing.size} page${sharing.size === 1 ? '' : 's'}` : 'Share'}
+              {sharing?.size ? `Set ${sharing.size} page${sharing.size === 1 ? '' : 's'}` : 'Set'}
             </Button>
           </>
         )}
       >
-        <div className="mb-2 flex justify-end">
+        <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+          <AudienceChoice id="share-to" value={shareTo} disabled={busy} onChange={setShareTo} />
           <button
             type="button"
             onClick={() => setSharing(sharing?.size === untagged.length ? new Set() : new Set(untagged.map((page) => page.path)))}
@@ -228,7 +232,7 @@ export const AboutMe = () => {
                 <span className="flex min-w-0 flex-col">
                   <span className="font-mono text-xs">{path}</span>
                   {description && <span className="text-xs text-muted">{description}</span>}
-                  {offlimits && <span className="text-xs text-warn">Off-limits rules: sharing puts their topics in teammates&rsquo; briefs.</span>}
+                  {offlimits && shareTo !== 'owner' && <span className="text-xs text-warn">Off-limits rules: sharing puts their topics in {shareTo === 'team' ? 'teammates\u2019' : 'outsiders\u2019'} briefs.</span>}
                 </span>
                 <button
                   type="button"

@@ -103,6 +103,28 @@ export const removeHeaderField = (text: string, key: string): string => {
   return `---\n${lines.join('\n')}\n---\n${text.slice(match[0].length)}`;
 };
 
+/** A header's fields, each with its continuation lines (a `sources:` list), in order. */
+const headerEntries = (header: string): { key: string; lines: string[] }[] => header.split('\n').reduce<{ key: string; lines: string[] }[]>((entries, line) => {
+  const key = /^([\w-]+):/.exec(line)?.[1];
+  if (key || entries.length === 0) entries.push({ key: key ?? '', lines: [line] });
+  else entries.at(-1)!.lines.push(line);
+  return entries;
+}, []);
+
+/**
+ * `text` with its header fields in the order `like` has them; fields `like` lacks keep their order after those. The
+ * same text otherwise, so a diff against `like` shows only real changes, not moved lines.
+ */
+export const alignHeader = (text: string, like: string | null): string => {
+  const mine = /^---\n([\s\S]*?)\n---\n/.exec(text);
+  const theirs = like ? /^---\n([\s\S]*?)\n---\n/.exec(like) : null;
+  if (!mine?.[1] || !theirs?.[1]) return text;
+  const order = headerEntries(theirs[1]).map((entry) => entry.key);
+  const rank = (key: string): number => (order.includes(key) ? order.indexOf(key) : order.length);
+  const sorted = headerEntries(mine[1]).map((entry, at) => ({ entry, at })).sort((a, b) => rank(a.entry.key) - rank(b.entry.key) || a.at - b.at);
+  return `---\n${sorted.flatMap(({ entry }) => entry.lines).join('\n')}\n---\n${text.slice(mine[0].length)}`;
+};
+
 /** The page template's header order. */
 const HEADER_ORDER = ['type', 'description', 'audience', 'written', 'verified', 'expires'];
 

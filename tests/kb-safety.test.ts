@@ -741,3 +741,21 @@ test('round 9: a teammate\'s worker reads a folder with only the pages they may 
   const { setHeaderField } = await import('../src/knowledge-rules.ts');
   assert.equal(setHeaderField('---\ntype: rule\ndescription: x\nwritten: 2026-11-01\n---\nBody\n', 'audience', 'team'), '---\ntype: rule\ndescription: x\naudience: team\nwritten: 2026-11-01\n---\nBody\n');
 });
+
+test('round 10: an approval keeps the page\'s own header order, and sharing can keep pages for the owner only', async (t) => {
+  const { alignHeader } = await import('../src/knowledge-rules.ts');
+  const page = '---\ntype: rule\ndescription: x\naudience: team\nwritten: 2026-11-01\nverified: 2026-11-02\nsources:\n  - Owner, 2026-11-01\n---\nOld\n';
+  const proposal = '---\nverified: 2026-11-21\nwritten: 2026-11-20\ntype: rule\nsources:\n  - Owner, 2026-11-20\ndescription: x\naudience: team\n---\nNew\n';
+  assert.equal(alignHeader(proposal, page), '---\ntype: rule\ndescription: x\naudience: team\nwritten: 2026-11-20\nverified: 2026-11-21\nsources:\n  - Owner, 2026-11-20\n---\nNew\n');
+  assert.equal(alignHeader(proposal, null), proposal, 'a new page keeps the proposal\'s order');
+
+  const profileDir = fixture(t);
+  const knowledgeDir = join(profileDir, 'knowledge');
+  const notes = join(knowledgeDir, 'owner/private-notes.md');
+  writeFileSync(notes, readFileSync(notes, 'utf8').replace(/^audience:.*\n/m, ''));
+  const knowledge = createKnowledge(knowledgeDir);
+  assert.ok(knowledge.untaggedPages().includes('owner/private-notes.md'));
+  knowledge.shareWith(['owner/private-notes.md'], 'owner');
+  assert.ok(!knowledge.untaggedPages().includes('owner/private-notes.md'), 'kept for the owner, it leaves the list');
+  assert.match(readFileSync(notes, 'utf8'), /^audience: owner$/m);
+});

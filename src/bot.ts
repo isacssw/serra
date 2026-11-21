@@ -353,7 +353,17 @@ export const createBot = ({
    * A teammate's DM is team only when Slack says they're in the owner's workspace: a Slack Connect user from another
    * company, or one Slack won't describe, counts as outside.
    */
+  // Where someone works rarely changes: cached like a channel's, so checks before each post don't call Slack twice.
+  const dmPeople = new Map<string, { visibility: Visibility; until: number }>();
   const dmVisibility = async (user: string): Promise<Visibility> => {
+    const known = dmPeople.get(user);
+    if (known && known.until > now()) return known.visibility;
+    const visibility = await lookUpDmVisibility(user);
+    // A failed lookup counts as outside and isn't cached: the next check asks again.
+    if (visibility) dmPeople.set(user, { visibility, until: now() + VISIBILITY_TTL_MS });
+    return visibility ?? 'external';
+  };
+  const lookUpDmVisibility = async (user: string): Promise<Visibility | null> => {
     try {
       const [person, owner] = await Promise.all([client.users.info({ user }), client.users.info({ user: config.owner })]);
       const them = person.user as { team_id?: string; is_stranger?: boolean } | undefined;
@@ -361,7 +371,7 @@ export const createBot = ({
       return them?.team_id && home && them.team_id === home && !them.is_stranger ? 'team' : 'external';
     } catch (error) {
       logger.warn(`Could not tell where ${user} works, so their DM's brief carries only what outsiders may hear: ${errorMessage(error)}`);
-      return 'external';
+      return null;
     }
   };
 

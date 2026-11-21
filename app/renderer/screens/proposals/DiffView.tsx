@@ -33,27 +33,40 @@ export const DiffView = ({ current, proposed, labels = ['Current', 'Proposed'], 
       <p className="text-xs text-muted">
         {current === null ? `New page, ${stats.added} lines.` : `${stats.removed} lines removed, ${stats.added} added.`}
       </p>
-      {/* One grid, so a wrapped line on one side keeps its row level with the other side. */}
-      <div className="grid grid-cols-2 overflow-hidden rounded-lg border border-line bg-panel" role="group" aria-label={`${labels[0]} and ${labels[1]}`}>
-        <h3 className="border-r border-b border-line bg-raised px-3 py-2 text-sm font-semibold">{labels[0]}</h3>
-        <h3 className="border-b border-line bg-raised px-3 py-2 text-sm font-semibold">{labels[1]}</h3>
-        {current === null ? (
-          <>
-            <p className="border-r border-line px-3 py-3 text-sm text-muted">{emptyCurrent}</p>
-            <div className="py-1.5 font-mono text-xs leading-6" aria-label={labels[1]}>
-              {rows.map((row, index) => <Cell key={index} cell={row.proposed} />)}
-            </div>
-          </>
-        ) : (
-          <div className="col-span-2 grid grid-cols-2 py-1.5 font-mono text-xs leading-6">
-            {rows.map((row, index) => (
-              <div key={index} className="contents">
-                <div className="min-w-0 border-r border-line"><Cell cell={row.current} /></div>
-                <div className="min-w-0"><Cell cell={row.proposed} /></div>
-              </div>
-            ))}
+      <div className="@container">
+        {/* Narrow: one column, removed lines above the lines that replace them, so nothing wraps mid-word. */}
+        <div className="overflow-hidden rounded-lg border border-line bg-panel @3xl:hidden" role="group" aria-label={`${labels[0]} and ${labels[1]}, one column`}>
+          <h3 className="border-b border-line bg-raised px-3 py-2 text-sm font-semibold">
+            {current === null ? labels[1] : `${labels[0]} → ${labels[1]}`}
+          </h3>
+          <div className="py-1.5 font-mono text-xs leading-6">
+            {rows.flatMap((row, index) => (row.current?.kind === 'same'
+              ? [<Cell key={index} cell={row.proposed} />]
+              : [row.current && <Cell key={`${index}-was`} cell={row.current} />, row.proposed && <Cell key={`${index}-now`} cell={row.proposed} />]))}
           </div>
-        )}
+        </div>
+        {/* Wide: one grid, so a wrapped line on one side keeps its row level with the other side. */}
+        <div className="hidden grid-cols-2 overflow-hidden rounded-lg border border-line bg-panel @3xl:grid" role="group" aria-label={`${labels[0]} and ${labels[1]}`}>
+          <h3 className="border-r border-b border-line bg-raised px-3 py-2 text-sm font-semibold">{labels[0]}</h3>
+          <h3 className="border-b border-line bg-raised px-3 py-2 text-sm font-semibold">{labels[1]}</h3>
+          {current === null ? (
+            <>
+              <p className="border-r border-line px-3 py-3 text-sm text-muted">{emptyCurrent}</p>
+              <div className="py-1.5 font-mono text-xs leading-6" aria-label={labels[1]}>
+                {rows.map((row, index) => <Cell key={index} cell={row.proposed} />)}
+              </div>
+            </>
+          ) : (
+            <div className="col-span-2 grid grid-cols-2 py-1.5 font-mono text-xs leading-6">
+              {rows.map((row, index) => (
+                <div key={index} className="contents">
+                  <div className="min-w-0 border-r border-line"><Cell cell={row.current} /></div>
+                  <div className="min-w-0"><Cell cell={row.proposed} /></div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

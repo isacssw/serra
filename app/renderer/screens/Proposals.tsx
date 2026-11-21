@@ -13,7 +13,7 @@ import { REFRESH_COUNTS } from '../shell/events.ts';
 import { Button, cx, Dialog, Page, useToast } from '../ui/index.ts';
 import { DiffView } from './proposals/DiffView.tsx';
 import { AudienceChoice } from './AudienceChoice.tsx';
-import { frontmatter, removeHeaderField, setHeaderField } from '../../../src/knowledge-rules.ts';
+import { alignHeader, frontmatter, removeHeaderField, setHeaderField } from '../../../src/knowledge-rules.ts';
 import { localDate } from './pages.logic.ts';
 import { approvalAudience, pageAudience, type Audience } from '../../../src/owner-model.ts';
 import { useSearchParams } from 'react-router';
@@ -260,6 +260,7 @@ export const Proposals = () => {
                   <h2 className="text-lg font-semibold tracking-tight">{title}</h2>
                   {diff.proposal.description && <p className="text-sm text-muted">{diff.proposal.description}</p>}
                   {diff.proposal.target && <p className="text-xs text-muted">Changes <code>{diff.proposal.target}</code></p>}
+                  <Sources text={diff.proposed} />
                 </div>
                 <DiffView current={landing(diff, folder)} proposed={asWritten(diff, folder, picked)} />
                 {folders.length > 0 ? (
@@ -353,6 +354,30 @@ const widens = (from: Audience, to: Audience): boolean => AUDIENCE_RANK[to] > AU
 /** The page approving into `folder` writes over: the proposal's target when it lands there, else none (a new page). */
 const landing = (diff: ProposalDiff, folder: string): string | null => (replaces(diff, folder) ? diff.current : null);
 
+/** The proposal's `sources:` lines: who and which thread the worker says it learned this from. */
+const sourcesOf = (text: string): string[] => {
+  const header = /^---\n([\s\S]*?)\n---\n/.exec(text)?.[1] ?? '';
+  const lines = header.split('\n');
+  const start = lines.findIndex((line) => line.startsWith('sources:'));
+  if (start === -1) return [];
+  const items: string[] = [];
+  for (const line of lines.slice(start + 1)) {
+    const item = /^\s+-\s+(.+)$/.exec(line);
+    if (!item) break;
+    items.push(item[1]!.trim());
+  }
+  return items;
+};
+
+const Sources = ({ text }: { text: string }) => {
+  const sources = sourcesOf(text);
+  return (
+    <p className={cx('text-xs', sources.length ? 'text-muted' : 'text-warn')}>
+      {sources.length ? <>From {sources.join('; ')}. Check that it&rsquo;s what you said.</> : 'This proposal doesn\u2019t say where it came from.'}
+    </p>
+  );
+};
+
 /** What the proposal asks for, when it differs from the default for where the page lands. */
 const asks = (diff: ProposalDiff, folder: string): string | null => {
   const current = landing(diff, folder);
@@ -367,9 +392,9 @@ const asks = (diff: ProposalDiff, folder: string): string | null => {
 /** The page as approving into `folder` writes it: no `target:`, verified today, and the audience it will have. */
 const asWritten = (diff: ProposalDiff, folder: string, picked: Audience | null): string => {
   const page = setHeaderField(withoutTarget(diff.proposed), 'verified', localDate(new Date()));
-  const { audience, untagged } = approvalAudience(diff.proposed, landing(diff, folder));
-  if (picked) return setHeaderField(page, 'audience', picked);
-  return untagged ? removeHeaderField(page, 'audience') : setHeaderField(page, 'audience', audience);
+  const current = landing(diff, folder);
+  const { audience, untagged } = approvalAudience(diff.proposed, current);
+  return alignHeader(picked ? setHeaderField(page, 'audience', picked) : untagged ? removeHeaderField(page, 'audience') : setHeaderField(page, 'audience', audience), current);
 };
 
 /** Whether approving into `folder` replaces the page the proposal names, rather than adding a new one. */

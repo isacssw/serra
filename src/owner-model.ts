@@ -102,7 +102,13 @@ export const compileAboutMe = (pages: { path: string; text: string }[], visibili
     // Off-limits pages follow the audience rule like any page: their topics can be the very facts they protect.
     // Replies outsiders may see get the generic rule below instead, unless a page is marked for them.
     const offlimits = pageRank === 1;
-    if (!mayUse(audience, visibility)) { if (offlimits) withheldLimits = true; left.push({ path: page.path, reason: audience === 'owner' ? 'only for you' : 'only for your team' }); return []; }
+    if (!mayUse(audience, visibility)) {
+      if (offlimits) withheldLimits = true;
+      // Off-limits rules withheld here are replaced by a built-in rule, which can't say where to send a request.
+      const reason = audience === 'owner' ? 'only for you' : 'only for your team';
+      left.push({ path: page.path, reason: offlimits ? `${reason}: these replies get a built-in rule instead. To use yours, choose who may hear it in Pages` : reason });
+      return [];
+    }
     const body = currentBody(page.text);
     // A page from before the off-limits cap may be longer: it's shortened here and listed, so the owner fixes it.
     if (offlimits && body.length > OFFLIMITS_MAX_CHARS) left.push({ path: page.path, reason: `over ${OFFLIMITS_MAX_CHARS} characters: only the start is used. Shorten it in Pages` });

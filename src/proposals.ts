@@ -6,7 +6,7 @@ import type { Proposal, ProposalDiff } from './contracts.ts';
 import { approvalAudience, type Audience } from './owner-model.ts';
 import { insideKnowledge, knowledgePagePath, offlimitsBudgetAfter } from './knowledge.ts';
 import { createJournal } from './knowledge-journal.ts';
-import { DATE, frontmatter, INDEX_MAX_LINES, isOfflimits, lineCount, NOT_PAGES, pageProblems, PROPOSALS_DIR, removeHeaderField, setHeaderField } from './knowledge-rules.ts';
+import { alignHeader, DATE, frontmatter, INDEX_MAX_LINES, isOfflimits, lineCount, NOT_PAGES, pageProblems, PROPOSALS_DIR, removeHeaderField, setHeaderField } from './knowledge-rules.ts';
 
 /**
  * The owner's review queue for `knowledge/proposals/`: list, read, promote, merge, discard and undo.
@@ -135,9 +135,10 @@ const body = (text: string): string => text.replace(/^---\n[\s\S]*?\n---\n/, '')
  * narrow a page but never widen it, and a new page never starts out shared with outsiders).
  */
 const withAudience = (text: string, picked: Audience | undefined, proposed: string, current: string | null): string => {
-  if (picked) return setHeaderField(text, 'audience', picked);
   const { audience, untagged } = approvalAudience(proposed, current);
-  return untagged ? removeHeaderField(text, 'audience') : setHeaderField(text, 'audience', audience);
+  const page = picked ? setHeaderField(text, 'audience', picked) : untagged ? removeHeaderField(text, 'audience') : setHeaderField(text, 'audience', audience);
+  // Header fields in the page's own order, so the diff the owner reviewed shows only what changes.
+  return alignHeader(page, current);
 };
 
 /** The page with its header's `sources` list taken out. */
