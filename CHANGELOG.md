@@ -14,4 +14,5 @@ First public alpha, for trying Serra locally on macOS. Serra bridges a chat app 
 - Automatic investigations of messages in configured alert channels.
 - `updates` in profile.json (Settings › Worker › Update source): the Serra checkout and branch that Updates counts new commits in and Prepare copies from, so a packaged app can follow the repository.
 - macOS menubar app (built locally, unsigned): first-run wizard, Jobs, Knowledge, Brief and policy, Settings, Secrets, Tools, Updates and Diagnostics.
+- Tools (app and `pnpm bot tools`), read-only: each provider's MCP servers from `claude mcp list` and `codex mcp list` (claude.ai connectors and plugins included, with their status), the command-line tools on your Mac (installed, version, signed in), and recommended services with commands to copy. A comment after `enabled = false` in Codex's config no longer reads as on.
 - Releases are cut in CI: a release PR raises the version and dates this changelog, and merging it tags the commit and publishes a GitHub Release with the app (docs/releasing.md). CI also builds the app on every PR.
