@@ -11,6 +11,7 @@ import { delimiter, isAbsolute, join } from 'node:path';
 import { exec, toolEnv, type Exec } from './exec.ts';
 
 const MARKER = '__SERRA_ENV__';
+const END = '__SERRA_ENV_END__';
 
 export interface LoginEnvironment {
   /** PATH to search: the login shell's, then this process's, then the usual install folders. */
@@ -25,11 +26,13 @@ export const loginShellEnv = async (
 ): Promise<Record<string, string> | null> => {
   // Interactive and login, so version managers set up in .zshrc (nvm, asdf, mise) are on it too. It starts from the
   // allowlisted environment: the rc files run, but never see a token Serra itself resolved.
-  const result = await run(shell, ['-ilc', `printf '${MARKER}'; env -0`], { timeoutMs, env: toolEnv(process.env.PATH ?? '/usr/bin:/bin') });
+  const result = await run(shell, ['-ilc', `printf '${MARKER}'; env -0; printf '${END}'`], { timeoutMs, env: toolEnv(process.env.PATH ?? '/usr/bin:/bin') });
   const start = result.stdout.indexOf(MARKER);
-  if (start < 0 || result.timedOut) return null;
+  const end = result.stdout.indexOf(END, start);
+  // Between the markers only: whatever a logout script prints after `env` isn't part of the last variable.
+  if (start < 0 || end < 0 || result.timedOut) return null;
   const env: Record<string, string> = {};
-  for (const entry of result.stdout.slice(start + MARKER.length).split('\0')) {
+  for (const entry of result.stdout.slice(start + MARKER.length, end).split('\0')) {
     const equals = entry.indexOf('=');
     if (equals > 0) env[entry.slice(0, equals)] = entry.slice(equals + 1);
   }
@@ -54,12 +57,14 @@ const CACHE_MS = 5 * 60_000;
 
 /**
  * The login environment, cached for five minutes; `fresh` asks the shell again (Check again on the Tools screen).
- * `SERRA_TOOLS_PATH` replaces the search path and skips the shell: tests use it so they never find the real
- * `claude` or `gh`.
+ * `SERRA_TOOLS_PATH` replaces the search path and skips the shell (for unusual shells, and for tests, so they never
+ * find the real `claude` or `gh`).
  */
 export const loginEnvironment = (options: { run?: Exec; home?: string; fresh?: boolean } = {}): Promise<LoginEnvironment> => {
   if (process.env.SERRA_TOOLS_PATH !== undefined) return Promise.resolve({ path: mergePaths(process.env.SERRA_TOOLS_PATH), env: null });
-  if (!options.fresh && cached && Date.now() - cached.at < CACHE_MS) return cached.value;
+  // A fresh request within a couple of seconds of another (the MCP and CLI checks of one Check again) shares it.
+  const age = cached ? Date.now() - cached.at : Infinity;
+  if (cached && (options.fresh ? age < 2_000 : age < CACHE_MS)) return cached.value;
   // The promise is cached, so the MCP and CLI checks that start together share one login shell.
   const value = loginShellEnv({ run: options.run }).catch(() => null)
     .then((env) => ({ env, path: mergePaths(env?.PATH, process.env.PATH, INSTALL_DIRS(options.home ?? homedir())) }));

@@ -76,8 +76,8 @@ const Row = ({ icon, title, sub, meta, status, badge, more, moreLabel }: {
             <span className="truncate text-sm font-medium">{title}</span>
             {badge}
           </span>
-          {sub && <span className="truncate text-xs text-muted">{sub}</span>}
-          {meta && <span className="text-xs break-all text-muted @2xl:hidden">{meta}</span>}
+          {sub && <span className="text-xs break-words text-muted @2xl:truncate">{sub}</span>}
+          {meta && <span className="text-xs break-words text-muted @2xl:hidden">{meta}</span>}
         </div>
         <span className="hidden truncate text-xs text-muted @2xl:block">{meta}</span>
         <span className="hidden justify-end @2xl:flex">

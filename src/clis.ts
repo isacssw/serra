@@ -2,7 +2,7 @@
 // read-only check (`gh auth status`, `az account show`). Also the signals that make a recommended service relevant
 // (a Sentry SDK in the repo, vercel.json, Jira links in the knowledge). Read-only: nothing is installed, signed in
 // or changed. Only a version, an account name and yes/no leave this module, never a command's raw output.
-import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
+import { closeSync, constants, existsSync, fstatSync, openSync, readdirSync, readSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import type { Profile } from './config.ts';
@@ -51,20 +51,21 @@ export const detectCli = async (spec: CliSpec, { path, run = exec, home = homedi
   const bin = spec.bins.map((name) => findExecutable(name, path)).find(Boolean) ?? null;
   if (!bin) return { id: spec.id, path: null, version: null, check: null };
   const env = toolEnv(path);
-  const checkArgs = async (): Promise<readonly string[] | null> => {
+  /** The check's arguments; 'skip' when the help probe failed, so whether the flag exists is unknown. */
+  const checkArgs = async (): Promise<readonly string[] | 'skip' | null> => {
     if (!spec.check) return null;
     const flag = spec.check.ifSupported;
     if (!flag) return spec.check.args;
     // Only a flag the installed version knows: older gh has no --no-refresh and would fail on it.
     const help = await run(bin, [...spec.check.args.slice(0, 2), '--help'], { env, timeoutMs: 5_000 });
+    if (help.code !== 0 || help.timedOut) return 'skip';
     return `${help.stdout}${help.stderr}`.includes(flag) ? [...spec.check.args, flag] : spec.check.args;
   };
-  const [version, check] = await Promise.all([
-    run(bin, spec.versionArgs, { env, timeoutMs: 8_000 }),
-    checkArgs().then((args) => (args ? run(bin, args, { env, timeoutMs: 10_000 }) : null)),
-  ]);
+  const [version, args] = await Promise.all([run(bin, spec.versionArgs, { env, timeoutMs: 8_000 }), checkArgs()]);
+  const check = args && args !== 'skip' ? await run(bin, args, { env, timeoutMs: 10_000 }) : null;
   const versionText = `${version.stdout}\n${version.stderr}`.slice(0, 2_000);
   let checkStatus: CliStatus['check'] = null;
+  if (spec.check && args === 'skip') checkStatus = { kind: spec.check.kind, state: 'unknown', account: null };
   if (spec.check && check) {
     const ok = check.code === 0 && (!spec.check.needsOutput || check.stdout.trim().length > 0);
     const state: CliCheckState = check.timedOut || check.missing ? 'unknown' : ok ? 'yes' : 'no';
@@ -77,8 +78,19 @@ export const detectCli = async (spec: CliSpec, { path, run = exec, home = homedi
 // Signals
 // ---------------------------------------------------------------------------------------------------------------
 
+/**
+ * A small text file, or ''. Opened without blocking and checked on the open descriptor, so a FIFO or device in the
+ * repo (or a symlink to one) can't stall the main process; at most `max` bytes are read whatever it claims.
+ */
 const readSmall = (path: string, max = 256 * 1024): string => {
-  try { return statSync(path).size <= max ? readFileSync(path, 'utf8') : ''; } catch { return ''; }
+  let fd: number | null = null;
+  try {
+    fd = openSync(path, constants.O_RDONLY | constants.O_NONBLOCK);
+    if (!fstatSync(fd).isFile()) return '';
+    const buffer = Buffer.alloc(max);
+    const read = readSync(fd, buffer, 0, max, 0);
+    return buffer.subarray(0, read).toString('utf8');
+  } catch { return ''; } finally { if (fd !== null) closeSync(fd); }
 };
 
 /** Markdown under a folder, at most `limit` files. */

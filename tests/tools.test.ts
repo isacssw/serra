@@ -1,6 +1,7 @@
 // Tools (SERRA-39): the provider CLIs' server lists, the Codex comment fix, CLI detection, recommendation signals
 // and the screen's logic. Every command is a fake: nothing here runs `claude`, `codex`, `gh` or a shell.
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
 import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -252,7 +253,7 @@ test('detectCli: not installed, installed and signed in, installed and signed ou
   assert.deepEqual(signedIn.check, { kind: 'signed-in', state: 'yes', account: 'alex' });
   assert.equal(signedIn.path, join(f.bin, 'gh'));
 
-  const signedOut = await detectCli(spec('gh'), { path: f.bin, home: f.home, run: fakeRun({ 'gh --version': { stdout: 'gh version 2.83.0' }, 'gh auth status': { code: 1 } }) });
+  const signedOut = await detectCli(spec('gh'), { path: f.bin, home: f.home, run: fakeRun({ 'gh auth status --help': { stdout: '--active' }, 'gh --version': { stdout: 'gh version 2.83.0' }, 'gh auth status': { code: 1 } }) });
   assert.deepEqual(signedOut.check, { kind: 'signed-in', state: 'no', account: null });
 });
 
@@ -291,6 +292,10 @@ test('gh gets --no-refresh only when its help lists it', async (t) => {
   await detectCli(spec('gh'), { path: f.bin, home: f.home, run: older });
   assert.ok(older.calls.includes('gh auth status --active --hostname github.com'));
   assert.ok(!older.calls.some((call) => call.endsWith('--no-refresh')));
+  const broken = fakeRun({ 'gh auth status --help': { code: null, timedOut: true }, 'gh --version': { stdout: 'gh version 2.99.0' }, 'gh auth status': { stdout: 'account alex' } });
+  const unknown = await detectCli(spec('gh'), { path: f.bin, home: f.home, run: broken });
+  assert.equal(unknown.check!.state, 'unknown', 'no sign-in check runs when it is unclear whether --no-refresh exists');
+  assert.ok(!broken.calls.some((call) => call.startsWith('gh auth status --active')));
 });
 
 test('findExecutable needs an executable file', (t) => {
@@ -328,7 +333,7 @@ test('toolEnv passes only the allowlist, the PATH and the quiet switches', () =>
 });
 
 test('loginShellPath reads PATH between markers; mergePaths keeps order without repeats', async () => {
-  const run: Exec = async () => result({ stdout: 'motd noise\n__SERRA_ENV__PATH=/a:/b\0HOME=/h\0' });
+  const run: Exec = async () => result({ stdout: 'motd noise\n__SERRA_ENV__PATH=/a:/b\0HOME=/h\0__SERRA_ENV_END__' });
   assert.equal(await loginShellPath({ run }), '/a:/b');
   assert.equal(await loginShellPath({ run: async () => result({ code: null, timedOut: true }) }), null);
   assert.equal(mergePaths('/a:/b', null, '/b:/c', ''), '/a:/b:/c');
@@ -352,6 +357,10 @@ test('recommendationSignals: Sentry SDK, vercel.json, Jira and Linear links; a b
     sentry: 'The repo uses a Sentry SDK', vercel: 'vercel.json in the repo',
     atlassian: 'Your notes mention Jira or Confluence', linear: 'Your notes link to Linear',
   });
+  // A FIFO in the repo is skipped, never read (a blocking read would freeze the main process).
+  rmSync(join(f.project, 'requirements.txt'));
+  execFileSync('mkfifo', [join(f.project, 'requirements.txt')]);
+  assert.equal(recommendationSignals(f.profile(), f.profileDir).sentry, undefined);
   const alert = f.profile({ messageTriggers: [{ channel: 'C0123456789', instructions: 'Investigate this Sentry alert.' }] });
   assert.equal(recommendationSignals(alert, null).sentry, 'An alert rule mentions Sentry');
 });
@@ -427,7 +436,20 @@ test('recommendations: GitHub always, others only with a signal or a server; rea
   rows = recommendationRows(emptyMcp({ servers: [{ ...linear, driver: 'codex', health: null }, { ...linear, name: 'github', host: 'api.githubcopilot.com', health: 'connected' }] }), { clis: [], signals: {} });
   assert.equal(rows.find((row) => row.rec.id === 'linear')!.state.text, 'Configured');
   rows = recommendationRows(emptyMcp({ servers: [{ ...linear, scope: 'local', load: 'unsure', health: 'connected' }] }), { clis: [], signals: {} });
-  assert.equal(rows.find((row) => row.rec.id === 'linear')!.state.text, 'Not set up', 'a local-scope server is not Ready');
+  assert.deepEqual(rows.find((row) => row.rec.id === 'linear')!.state, { tone: 'warn', text: 'May not load' }, 'a local-scope server is not Ready, and says why');
+
+  // A failed server says Failed; a turned-off one says Turned off and never gets an `add` that would replace it.
+  rows = recommendationRows(emptyMcp({ servers: [{ ...linear, health: 'failed' }] }), { clis: [], signals: {} });
+  assert.deepEqual(rows.find((row) => row.rec.id === 'linear')!.state, { tone: 'down', text: 'Failed' });
+  const off = { ...linear, name: 'vercel', host: 'mcp.vercel.com', driver: 'codex' as const, load: 'disabled' as const, health: null };
+  rows = recommendationRows(emptyMcp({ worker: { provider: 'codex', drivers: ['codex'], note: null }, servers: [off] }), { clis: [], signals: { vercel: 'vercel.json in the repo' } });
+  const turnedOff = rows.find((row) => row.rec.id === 'vercel')!;
+  assert.equal(turnedOff.state.text, 'Turned off');
+  assert.ok(!turnedOff.setup.some((step) => step.command.includes('mcp add')), turnedOff.setup.map((step) => step.command).join('\n'));
+
+  // Without an MCP list (it failed), no MCP commands are offered at all.
+  rows = recommendationRows(null, { clis: [], signals: { vercel: 'vercel.json in the repo' } });
+  assert.deepEqual(rows.find((row) => row.rec.id === 'vercel')!.setup.map((step) => step.command), ['npm i -g vercel']);
   const github = rows.find((row) => row.rec.id === 'github')!;
   assert.equal(github.state.text, 'Not set up');
 
@@ -448,7 +470,7 @@ test('while the MCP list loads, an MCP-backed recommendation says Checking, with
 });
 
 test('loginShellEnv reads the environment after the marker, NUL-separated', async () => {
-  const env = await loginShellEnv({ run: async () => result({ stdout: `motd\n__SERRA_ENV__PATH=/a:/b\0GITHUB_TOKEN=x=y\0` }) });
+  const env = await loginShellEnv({ run: async () => result({ stdout: `motd\n__SERRA_ENV__PATH=/a:/b\0GITHUB_TOKEN=x=y\0__SERRA_ENV_END__bye` }) });
   assert.deepEqual(env, { PATH: '/a:/b', GITHUB_TOKEN: 'x=y' });
   assert.equal(await loginShellEnv({ run: async () => result({ stdout: 'no marker' }) }), null);
 });

@@ -146,9 +146,11 @@ export const recommendationRows = (
 ): RecommendationRow[] => {
   const rows: RecommendationRow[] = [];
   for (const rec of recommendations) {
-    const servers = (mcp?.servers ?? []).filter((server) => server.load !== 'disabled' && rec.server.test(`${server.name} ${server.host ?? ''}`));
+    // Every server for it, including turned-off ones (an `add` would replace those), and the ones that are on.
+    const matching = (mcp?.servers ?? []).filter((server) => rec.server.test(`${server.name} ${server.host ?? ''}`));
+    const servers = matching.filter((server) => server.load !== 'disabled');
     const signal = clis?.signals[rec.id];
-    if (!rec.always && !signal && !servers.length) continue;
+    if (!rec.always && !signal && !matching.length) continue;
     const spec = rec.cli ? catalog.find((entry) => entry.id === rec.cli) : undefined;
     const cli = spec ? clis?.clis.find((entry) => entry.id === spec.id) : undefined;
     const cliState = spec && clis ? cliStatus(cli) : null;
@@ -165,16 +167,19 @@ export const recommendationRows = (
     else if (!rec.needsCli && servers.some((server) => server.health === 'needs-auth')) state = { tone: 'warn', text: 'Needs sign-in' };
     else if (cliState?.text === 'Not signed in') state = { tone: 'warn', text: 'Not signed in' };
     else if (configured) state = { tone: 'neutral', text: 'Configured' };
+    // A server that's on but failed, may not load or waits for approval: say so, as the MCP list below does.
+    else if (!rec.needsCli && servers.length) state = servers.map(serverStatus).sort((a, b) => STATUS_ORDER[a.tone] - STATUS_ORDER[b.tone])[0]!;
     else if (cliUnchecked) state = { tone: 'neutral', text: 'Installed' };
+    else if (!rec.needsCli && matching.length) state = { tone: 'off', text: 'Turned off' };
     else state = { tone: 'off', text: 'Not set up' };
     const setup: RecommendationRow['setup'] = [];
     if (state.text !== 'Ready' && state.text !== 'Checking…') {
       if (spec && !cli?.path) setup.push({ label: `Install ${spec.label}`, command: spec.install });
       else if (spec?.login && (cliState?.text === 'Not signed in' || cliUnchecked)) setup.push({ label: 'Sign in', command: spec.login });
-      // Per provider: sign in to a server it already has (never re-add it: that would replace its settings), or add
-      // the vendor's server where it has none.
-      for (const driver of mcp?.worker.drivers ?? ['claude']) {
-        const existing = servers.filter((server) => server.driver === driver);
+      // Per provider: sign in to a server it already has (never re-add it, even turned off: that would replace its
+      // settings), or add the vendor's server where it has none. Without an MCP list, no MCP commands at all.
+      for (const driver of mcp?.worker.drivers ?? []) {
+        const existing = matching.filter((server) => server.driver === driver);
         const signIn = existing.find((server) => server.health === 'needs-auth');
         if (signIn) setup.push({ label: `Sign in (${DRIVER_NAMES[driver]})`, command: PROVIDER_MCP[driver].login(signIn.name) });
         else if (!existing.length && rec.mcp) setup.push({ label: `Add to ${DRIVER_NAMES[driver]}`, command: PROVIDER_MCP[driver].add(rec.mcp.name, rec.mcp.url) });
