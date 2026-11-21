@@ -185,6 +185,8 @@ test('the bot follows the app only while no job runs, and never in developer mod
   assert.deepEqual(botSyncDecision(input({ follows: false })), { sync: { state: 'manual' }, action: 'none' }, 'a copy run from source does not lead the bot');
   // A bot the owner stopped stays stopped.
   assert.deepEqual(botSyncDecision(input({ serviceLoaded: false })), { sync: { state: 'stopped', from: '0.1.0-alpha.2', to: '0.1.0-alpha.3' }, action: 'none' });
+  // Update now on a stopped bot that failed shows the failure, not "stopped" again.
+  assert.equal(botSyncDecision(input({ serviceLoaded: false, failed: { version: '0.1.0-alpha.3', message: 'Slack account: invalid_auth' } })).sync.state, 'failed');
   // Stopped on the app's own version: stopped, not "runs", and nothing to update to.
   assert.deepEqual(botSyncDecision(input({ serviceLoaded: false, active: { appVersion: '0.1.0-alpha.3', fromApp: true } })), { sync: { state: 'stopped', from: '0.1.0-alpha.3', to: null }, action: 'none' });
   assert.deepEqual(botSyncDecision(input({ active: null })), { sync: { state: 'not-installed' }, action: 'none' });

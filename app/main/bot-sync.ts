@@ -57,12 +57,13 @@ export const botSyncDecision = (input: BotSyncInput): { sync: BotSync; action: B
   const to = input.appVersion;
   // Same version from a checkout (developer mode earlier) isn't the app's build: it moves to the app's own code.
   const inStep = from === to && input.active.fromApp === true;
-  if (!input.serviceLoaded && input.running !== 'sync') return { sync: { state: 'stopped', from, to: inStep ? null : to }, action: 'none' };
+  if (input.running === 'sync' && !inStep) return { sync: { state: 'updating', from, to }, action: 'none' };
+  // A failed attempt is shown (with Try again) even for a stopped bot, so the owner sees why Update now didn't work.
+  if (input.failed?.version === to && !inStep) return { sync: { state: 'failed', from, to, message: input.failed.message }, action: 'none' };
+  if (!input.serviceLoaded) return { sync: { state: 'stopped', from, to: inStep ? null : to }, action: 'none' };
   if (inStep) return { sync: { state: 'in-step', version: to }, action: 'none' };
-  if (input.running === 'sync') return { sync: { state: 'updating', from, to }, action: 'none' };
   // Its state files may already be in the newer format: moving back is the owner's call.
   if (from && parseVersion(from) && parseVersion(to) && compareVersions(from, to) > 0) return { sync: { state: 'ahead', from, to }, action: 'none' };
-  if (input.failed?.version === to) return { sync: { state: 'failed', from, to, message: input.failed.message }, action: 'none' };
   if (input.jobs > 0) return { sync: { state: 'waiting', from, to, jobs: input.jobs }, action: 'none' };
   // Another action (a manual prepare or rollback) is running: wait for it.
   if (input.running) return { sync: { state: 'waiting', from, to, jobs: 0 }, action: 'none' };
