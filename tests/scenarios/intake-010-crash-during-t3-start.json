@@ -1,0 +1,100 @@
+{
+  "id": "intake-010-crash-during-t3-start",
+  "specs": [
+    "INTAKE-010"
+  ],
+  "title": "a held request whose T3 thread was made just before a crash carries on in that thread instead of starting a second",
+  "steps": [
+    {
+      "do": "pause"
+    },
+    {
+      "do": "slack",
+      "envelope": {
+        "type": "event_callback",
+        "team_id": "THOME",
+        "api_app_id": "A1",
+        "event_id": "Ev1",
+        "event_time": 1700000100,
+        "authorizations": [
+          {
+            "team_id": "THOME",
+            "user_id": "UBOT",
+            "is_bot": true
+          }
+        ],
+        "event": {
+          "type": "app_mention",
+          "user": "USAM",
+          "text": "<@UBOT> rename the pricing page",
+          "ts": "1700000100.000100",
+          "channel": "C1",
+          "event_ts": "1700000100.000100",
+          "team": "THOME"
+        }
+      },
+      "expect": {
+        "held": 1
+      }
+    },
+    {
+      "do": "resume"
+    },
+    {
+      "_": "T3 makes the thread, and the daemon dies before `t3 thread start` returns.",
+      "do": "t3.hangStart"
+    },
+    {
+      "do": "advance",
+      "ms": 15000,
+      "expect": {
+        "held": 1,
+        "t3": {
+          "started": 1
+        },
+        "state": {
+          "C1:1700000100.000100": "$none"
+        }
+      }
+    },
+    {
+      "do": "crash",
+      "expect": {
+        "held": 0,
+        "t3": {
+          "started": 1
+        },
+        "state": {
+          "C1:1700000100.000100": {
+            "t3ThreadId": "t3-1",
+            "heard": [
+              "1700000100.000100"
+            ]
+          }
+        },
+        "logs": [
+          "Carrying on in T3 thread t3-1"
+        ]
+      }
+    },
+    {
+      "do": "worker.reply",
+      "text": "Renamed it to Plans."
+    },
+    {
+      "do": "advance",
+      "ms": 15000,
+      "expect": {
+        "slack": [
+          {
+            "method": "chat.postMessage",
+            "count": 1,
+            "args": {
+              "text": "Renamed it to Plans."
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

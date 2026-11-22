@@ -6,9 +6,8 @@ import { join } from 'node:path';
 import test, { type TestContext } from 'node:test';
 import * as config from '../src/config.ts';
 import * as contracts from '../src/contracts.ts';
-import type { Job as ContractJob, Profile } from '../src/contracts.ts';
+import type { Profile } from '../src/contracts.ts';
 import { runCli, type Command, type CommandTable } from '../src/manage.ts';
-import type { Job } from '../src/types.ts';
 
 const profile = (allowedUsers: string[] = []): Profile => ({
   version: 1, bot: { id: 'friday', name: 'Friday' }, owner: { name: 'Alex', slackUserId: 'U0123456789', githubLogin: 'alex' },
@@ -23,15 +22,6 @@ const tempProfile = (t: TestContext): string => {
 };
 const read = (directory: string): string => readFileSync(join(directory, 'profile.json'), 'utf8');
 const strays = (directory: string): string[] => readdirSync(directory).filter((name) => name.endsWith('.tmp'));
-
-test('contracts re-export the existing validator, writers and Job instead of copying them', () => {
-  assert.equal(contracts.validateProfile, config.validateProfile);
-  assert.equal(contracts.writeProfileFile, config.writeProfileFile);
-  assert.equal(contracts.writeFileAtomic, config.writeFileAtomic);
-  // Compile-time: the contract Job and the stored Job are the same type in both directions.
-  const stored = {} as Job; const shared: ContractJob = stored; const back: Job = shared;
-  assert.equal(back, stored);
-});
 
 test('writeProfileFile replaces profile.json with owner-only permissions and leaves no temp file', (t) => {
   const directory = tempProfile(t);

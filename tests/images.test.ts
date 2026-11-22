@@ -3,8 +3,8 @@ import { mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test, { type TestContext } from 'node:test';
-import type { webApi } from '@slack/bolt';
 import { shareImages } from '../src/images.ts';
+import { createFakeSlack } from './fakes/slack.ts';
 
 const thread = { channel: 'C1', threadTs: '1.0' };
 
@@ -12,20 +12,16 @@ const thread = { channel: 'C1', threadTs: '1.0' };
 const fixture = (t: TestContext, { fail = false, base = '/tmp' } = {}) => {
   const root = realpathSync(mkdtempSync(join(base, 'bots-images-')));
   t.after(() => rmSync(root, { recursive: true, force: true }));
-  const uploads: Record<string, unknown>[] = [];
-  const client = {
-    filesUploadV2: async (args: Record<string, unknown>) => {
-      if (fail) throw new Error('upload refused');
-      uploads.push(args);
-      return { ok: true };
-    },
-  } as unknown as webApi.WebClient;
+  const slack = createFakeSlack();
+  if (fail) slack.fail('filesUploadV2', new Error('upload refused'), Infinity);
+  const { client } = slack;
   const file = (name: string, bytes: string | Buffer = 'content'): string => {
     const path = join(root, name);
     writeFileSync(path, bytes);
     return path;
   };
-  return { root, client, uploads, file };
+  /** Uploads Slack accepted. */
+  return { root, client, file, get uploads() { return fail ? [] : slack.callsTo('filesUploadV2'); } };
 };
 
 test('uploads a linked local HTML deliverable and says it is attached', async (t) => {

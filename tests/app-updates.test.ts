@@ -1,19 +1,20 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test, { type TestContext } from 'node:test';
-import type { SerraPushes } from '../app/main/bridge.ts';
+import { createBridge, type InvokeResult, type SerraPushes } from '../app/main/bridge.ts';
 import type { HandlerContext } from '../app/main/ipc/context.ts';
+import { createHandlers, registerHandlers, type IpcRegistrar } from '../app/main/ipc/index.ts';
 import { updatesHandlers } from '../app/main/ipc/updates.ts';
 import { memoryPrefs } from '../app/main/prefs.ts';
 import { stoppedStatusSource } from '../app/main/status.ts';
 import {
-  actionStates, activateDialog, activationNotice, keepVersions, appCard, botLine, canCheck, commitsHeading, homeOf, noteLines, preparedLabel, progressPercent,
+  actionStates, activateDialog, activationNotice, appCard, botLine, canCheck, commitsHeading, homeOf, noteLines, preparedLabel, progressPercent,
   releaseLabel, rollbackDialog, rollbackNotice, sourceLabel, syncDialog, tildePath,
 } from '../app/renderer/screens/updates.logic.ts';
-import type { AppUpdateView } from '../app/main/app-updater.ts';
+import { createAppUpdater, type AppUpdateView } from '../app/main/app-updater.ts';
 import { botSyncDecision, type BotSyncInput } from '../app/main/bot-sync.ts';
 import { updatesService } from '../app/main/ipc/updates.ts';
 import { type ServiceDriver } from '../src/deploy.ts';
@@ -131,18 +132,29 @@ test('the app card in each state says one thing and offers the one next step', (
   assert.equal(canCheck(view({ state: 'up-to-date', checkedAt: '' })), true);
 });
 
-test('versions keep together on one line', () => {
-  assert.equal(keepVersions('The bot runs version 0.1.0-alpha.3.'), 'The bot runs version 0.1.0\u2011alpha.3.');
-  assert.equal(keepVersions('a well-known 1.0.0 release'), 'a well-known 1.0.0 release');
-});
-
-test('release notes become plain lines without Markdown syntax', () => {
-  assert.deepEqual(noteLines(release.notes), [
+test('the Updates screen shows a new release\'s notes from GitHub as plain lines, without Markdown syntax', async (t) => {
+  const dir = mkdtempSync(join(tmpdir(), 'serra-notes-')); t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const github = (body: string) => [{
+    tag_name: 'v0.1.0-alpha.3', name: 'Serra v0.1.0-alpha.3', body, draft: false, prerelease: true, published_at: '2026-11-28T10:00:00Z',
+    html_url: 'https://github.com/acme/serra/releases/tag/v0.1.0-alpha.3',
+    assets: [{ name: 'Serra-0.1.0-alpha.3-arm64.dmg', browser_download_url: 'https://example.test/dmg', size: 1 }, { name: 'SHA256SUMS', browser_download_url: 'https://example.test/sums', size: 1 }],
+  }];
+  /** What the screen's "What's new" list shows after a check, as Updates.tsx picks the notes and renders each line. */
+  const shown = async (body: string) => {
+    const updater = createAppUpdater({
+      current: '0.1.0-alpha.2', arch: 'arm64', unavailable: null, dir: join(dir, 'updates'), feedUrl: 'feed', bundlePath: join(dir, 'Serra.app'),
+      fetch: async () => new Response(JSON.stringify(github(body))), getChoice: () => null, setChoice: () => {}, quit: () => {}, openPath: async () => {},
+    });
+    const status = await updater.check();
+    assert.equal(status.state, 'available');
+    return noteLines(status.state === 'available' ? status.release.notes : '');
+  };
+  assert.deepEqual(await shown('## Added\r\n- **Updates** from [GitHub](https://github.com)\n* `pnpm` no longer needed\n\n![screenshot](https://example.test/x.png)\nThanks __everyone__.'), [
     { kind: 'heading', text: 'Added' }, { kind: 'item', text: 'Updates from GitHub' }, { kind: 'item', text: 'pnpm no longer needed' },
+    { kind: 'text', text: 'Thanks everyone.' },
   ]);
-  assert.deepEqual(noteLines(''), []);
+  assert.deepEqual(await shown(''), [], 'a release without notes shows no "What\'s new" section');
 });
-
 test('the bot line: in step, waiting for jobs, updating, failed, not installed, and nothing in developer mode', () => {
   assert.equal(botLine({ state: 'in-step', version: '0.1.0-alpha.3' })?.text, 'The bot runs version 0.1.0-alpha.3.');
   const waiting = botLine({ state: 'waiting', from: '0.1.0-alpha.2', to: '0.1.0-alpha.3', jobs: 2, paused: false })!;
@@ -429,13 +441,27 @@ test('after an app update the bot moves to the new version, but waits while a jo
   assert.ok(pushes.includes('expect-stop'), 'notifications are told the stop is expected');
 });
 
-test('the window confirms its first screen, which an update that just installed waits for', () => {
-  // The swap script rolls the update back unless the new version confirms it started (app.rendered → started()).
-  const app = readFileSync(join(import.meta.dirname, '../app/renderer/App.tsx'), 'utf8');
-  assert.match(app, /const Rendered = [\s\S]*app\.rendered\(\)/);
-  assert.match(app, /<Rendered \/>/, 'Rendered is mounted in the shell');
-});
+test('once the window shows its first screen after an update, the swap script is told the new version started, so it keeps it', async (t) => {
+  const dir = mkdtempSync(join(tmpdir(), 'serra-launch-')); t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const target = join(dir, 'Serra.app');
+  mkdirSync(`${target}.previous`, { recursive: true });
+  mkdirSync(join(dir, 'updates'), { recursive: true });
+  writeFileSync(join(dir, 'updates/pending.json'), JSON.stringify({ from: '0.1.0-alpha.2', to: '0.1.0-alpha.3', target }));
+  const appUpdater = createAppUpdater({
+    current: '0.1.0-alpha.3', arch: 'arm64', unavailable: null, dir: join(dir, 'updates'), feedUrl: 'feed', bundlePath: target,
+    fetch: async () => new Response('[]'), getChoice: () => null, setChoice: () => {}, quit: () => {}, openPath: async () => {},
+  });
+  const handlers = new Map<string, Parameters<IpcRegistrar['handle']>[1]>();
+  registerHandlers({ handle: (channel, listener) => { handlers.set(channel, listener); } }, createHandlers({ ...contextFor(dir, []), appUpdater }), () => true, () => {});
+  const bridge = createBridge(async (channel, args): Promise<InvokeResult> => structuredClone(await handlers.get(channel)!({ senderFrame: { url: 'file:///app' } }, ...structuredClone(args))), () => () => {});
 
+  assert.equal(existsSync(join(dir, 'updates/started')), false, 'nothing is confirmed while the window is still loading');
+  await bridge.app.rendered();
+  assert.equal(readFileSync(join(dir, 'updates/started'), 'utf8'), '0.1.0-alpha.3');
+  assert.equal(existsSync(join(dir, 'updates/pending.json')), false);
+  await bridge.app.rendered();
+  assert.equal(readFileSync(join(dir, 'updates/started'), 'utf8'), '0.1.0-alpha.3', 'a second screen confirms nothing new');
+});
 test('a pause the update no longer needs is lifted, and one that lapsed with jobs still running is not renewed for a while', async (t) => {
   const f = await profileFixture(t);
   let clock = Date.parse('2026-11-21T22:00:00Z');

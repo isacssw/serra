@@ -13,6 +13,7 @@ import { join, resolve } from 'node:path';
 import { fillBrief, renderBrief, type BriefInput } from './brief.ts';
 import { codeRoot, loadConfig, writeFileAtomic, type Config } from './config.ts';
 import { createKnowledge } from './knowledge.ts';
+import { parseJson } from './lib/guards.ts';
 import { APP_PROPOSALS_FOLDER, stampProposalsFolder } from './proposals.ts';
 import { jobThreadInput, run, showThread, startThread, threadPullRequest } from './t3.ts';
 import type { StartThreadInput } from './types.ts';
@@ -70,8 +71,9 @@ export const readTasks = (profileDir: string): AppTask[] => {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return [];
     throw error;
   }
-  const parsed: unknown = JSON.parse(raw);
-  if (!Array.isArray(parsed)) throw new Error(`${TASKS_FILE} is not a list`);
+  // A broken file is reported, not read as no tasks: adding a task would otherwise write over the ones in it.
+  const parsed = parseJson(raw);
+  if (!Array.isArray(parsed)) throw new Error(`${TASKS_FILE} is not a JSON list. Fix or remove ${tasksPath(profileDir)}.`);
   return parsed.filter(isTask);
 };
 

@@ -1,0 +1,122 @@
+{
+  "id": "intake-010-held-request-survives-crash",
+  "specs": [
+    "INTAKE-008",
+    "INTAKE-010"
+  ],
+  "title": "a request held for an update survives a crash while it is being started, and starts exactly once after",
+  "steps": [
+    {
+      "do": "pause"
+    },
+    {
+      "do": "slack",
+      "envelope": {
+        "type": "event_callback",
+        "team_id": "THOME",
+        "api_app_id": "A1",
+        "event_id": "Ev1",
+        "event_time": 1700000100,
+        "authorizations": [
+          {
+            "team_id": "THOME",
+            "user_id": "UBOT",
+            "is_bot": true
+          }
+        ],
+        "event": {
+          "type": "app_mention",
+          "user": "USAM",
+          "text": "<@UBOT> rename the pricing page",
+          "ts": "1700000100.000100",
+          "channel": "C1",
+          "event_ts": "1700000100.000100",
+          "team": "THOME"
+        }
+      },
+      "expect": {
+        "held": 1,
+        "reactions": {
+          "C1:1700000100.000100": [
+            "hourglass_flowing_sand"
+          ]
+        },
+        "t3": {
+          "started": 0
+        }
+      }
+    },
+    {
+      "do": "resume"
+    },
+    {
+      "_": "The daemon dies while starting it: its 👀 never comes back from Slack.",
+      "do": "slack.hang",
+      "method": "reactions.add"
+    },
+    {
+      "do": "advance",
+      "ms": 15000,
+      "expect": {
+        "held": 1,
+        "t3": {
+          "started": 0
+        },
+        "state": {
+          "C1:1700000100.000100": "$none"
+        }
+      }
+    },
+    {
+      "do": "crash",
+      "expect": {
+        "held": 0,
+        "t3": {
+          "started": 1
+        },
+        "state": {
+          "C1:1700000100.000100": {
+            "t3ThreadId": "t3-1",
+            "heard": [
+              "1700000100.000100"
+            ]
+          }
+        },
+        "reactions": {
+          "C1:1700000100.000100": [
+            "eyes"
+          ]
+        }
+      }
+    },
+    {
+      "do": "advance",
+      "ms": 15000,
+      "expect": {
+        "t3": {
+          "started": 1,
+          "sends": 0
+        }
+      }
+    },
+    {
+      "do": "worker.reply",
+      "text": "Renamed it to Plans."
+    },
+    {
+      "do": "advance",
+      "ms": 15000,
+      "expect": {
+        "slack": [
+          {
+            "method": "chat.postMessage",
+            "count": 1,
+            "args": {
+              "text": "Renamed it to Plans."
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -15,7 +15,7 @@ const bridgeOf = (context: ActionContext): SerraBridge => {
 };
 
 /** How a change reads after it is saved, as in the CLI: "Applies now". */
-export const appliesText = (when: AppliesWhen): string =>
+const appliesText = (when: AppliesWhen): string =>
   when === 'now' ? 'Applies now.' : when === 'next job' ? 'Applies on the next job.' : 'Applies after a restart.';
 
 const sectionHeading = (id: string): string | undefined => sections.find((section) => section.id === id)?.heading ?? undefined;

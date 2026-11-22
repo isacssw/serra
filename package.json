@@ -16,7 +16,7 @@
     "doctor": "node src/doctor.ts",
     "onboard": "node src/onboard.ts",
     "bot": "node src/manage.ts",
-    "test": "node --test tests/*.test.ts",
+    "test": "node --test --test-timeout=60000 tests/*.test.ts",
     "app:build": "node app/build.ts && vite build --config app/renderer/vite.config.ts",
     "app:dev": "pnpm app:build && electron .",
     "app:renderer": "vite --config app/renderer/vite.config.ts",

@@ -1,0 +1,51 @@
+{
+  "id": "reply-005-failure-detail-in-owner-dm",
+  "specs": [
+    "REPLY-005"
+  ],
+  "title": "a failed start in the owner's own DM shows the owner the first line of the error",
+  "t3": {
+    "failStart": "t3 thread start exited 1: could not read /Users/you/secret-project/.t3/config"
+  },
+  "steps": [
+    {
+      "do": "slack",
+      "envelope": {
+        "type": "event_callback",
+        "team_id": "THOME",
+        "api_app_id": "A1",
+        "event_id": "Ev1",
+        "event_time": 1700000100,
+        "authorizations": [
+          {
+            "team_id": "THOME",
+            "user_id": "UBOT",
+            "is_bot": true
+          }
+        ],
+        "event": {
+          "type": "message",
+          "channel_type": "im",
+          "user": "UOWNER",
+          "text": "ship it",
+          "ts": "1700000100.000100",
+          "channel": "DOWNER",
+          "event_ts": "1700000100.000100",
+          "team": "THOME"
+        }
+      },
+      "expect": {
+        "slack": [
+          {
+            "method": "chat.postMessage",
+            "count": 1,
+            "args": {
+              "channel": "DOWNER",
+              "text": "Something went wrong on my side.\n`t3 thread start exited 1: could not read /Users/you/secret-project/.t3/config`"
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

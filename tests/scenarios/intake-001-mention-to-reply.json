@@ -1,0 +1,46 @@
+{
+  "id": "intake-001-mention-to-reply",
+  "specs": ["INTAKE-001", "REPLY-001"],
+  "title": "a mention gets 👀 and a T3 thread, and the worker's reply is posted once in the thread, clearing 👀 and loading",
+  "steps": [
+    { "do": "slack", "envelope": {
+        "type": "event_callback", "team_id": "THOME", "api_app_id": "A1", "event_id": "Ev1", "event_time": 1700000100,
+        "authorizations": [{ "team_id": "THOME", "user_id": "UBOT", "is_bot": true }],
+        "event": { "type": "app_mention", "user": "USAM", "text": "<@UBOT> which plans are in the seed data?",
+                   "ts": "1700000100.000100", "channel": "C1", "event_ts": "1700000100.000100", "team": "THOME" } } },
+    { "do": "slack", "envelope": {
+        "type": "event_callback", "team_id": "THOME", "api_app_id": "A1", "event_id": "Ev2", "event_time": 1700000100,
+        "authorizations": [{ "team_id": "THOME", "user_id": "UBOT", "is_bot": true }],
+        "event": { "type": "message", "channel_type": "channel", "user": "USAM", "text": "<@UBOT> which plans are in the seed data?",
+                   "ts": "1700000100.000100", "channel": "C1", "event_ts": "1700000100.000100", "team": "THOME" } },
+      "expect": {
+        "reactions": { "C1:1700000100.000100": ["eyes"] },
+        "slack": [
+          { "method": "assistant.threads.setStatus", "args": { "channel_id": "C1", "thread_ts": "1700000100.000100", "status": "is looking into it…" } },
+          { "method": "chat.postMessage", "count": 0 }
+        ],
+        "t3": { "started": 1, "sends": 0 },
+        "state": { "C1:1700000100.000100": { "t3ThreadId": "t3-1", "requester": "USAM", "watching": true, "lastPostedRunId": null } },
+        "jobs": { "C1:1700000100.000100": "running" }
+      } },
+    { "do": "advance", "ms": 15000, "expect": { "slack": [{ "method": "chat.postMessage", "count": 0 }] } },
+    { "do": "mark", "name": "before-reply" },
+    { "do": "worker.reply", "text": "Starter is the only plan in the seed data." },
+    { "do": "advance", "ms": 15000, "expect": {
+        "slack": [
+          { "method": "chat.postMessage", "since": "before-reply", "count": 1,
+            "args": { "channel": "C1", "thread_ts": "1700000100.000100", "text": "Starter is the only plan in the seed data.",
+                      "metadata": { "event_type": "serra_reply", "event_payload": { "run_id": "run-1" } } } },
+          { "method": "reactions.remove", "since": "before-reply", "args": { "channel": "C1", "timestamp": "1700000100.000100", "name": "eyes" } },
+          { "method": "assistant.threads.setStatus", "since": "before-reply", "args": { "channel_id": "C1", "status": "" } }
+        ],
+        "reactions": { "C1:1700000100.000100": [] },
+        "state": { "C1:1700000100.000100": { "lastPostedRunId": "run-1", "delivering": "$absent", "watching": true } },
+        "jobs": { "C1:1700000100.000100": "done" }
+      } },
+    { "do": "advance", "ms": 15000, "expect": {
+        "slack": [{ "method": "chat.postMessage", "since": "before-reply", "count": 1 }],
+        "state": { "C1:1700000100.000100": { "watching": false } }
+      } }
+  ]
+}

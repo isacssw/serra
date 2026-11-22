@@ -1,0 +1,118 @@
+{
+  "id": "intake-010-orphan-thread-not-adopted",
+  "specs": [
+    "INTAKE-010"
+  ],
+  "title": "a replayed request never adopts an orphaned thread of the same title made for a different message",
+  "steps": [
+    {
+      "_": "A live request's start is cut off after T3 made its thread: that thread is followed by no job.",
+      "do": "t3.hangStart",
+      "later": 1,
+      "made": true
+    },
+    {
+      "do": "slack",
+      "envelope": {
+        "type": "event_callback",
+        "team_id": "THOME",
+        "api_app_id": "A1",
+        "event_id": "Ev1",
+        "event_time": 1700000100,
+        "authorizations": [
+          {
+            "team_id": "THOME",
+            "user_id": "UBOT",
+            "is_bot": true
+          }
+        ],
+        "event": {
+          "type": "app_mention",
+          "user": "USAM",
+          "text": "<@UBOT> deploy staging",
+          "ts": "1700000100.000100",
+          "channel": "C1",
+          "event_ts": "1700000100.000100",
+          "team": "THOME"
+        }
+      },
+      "expect": {
+        "t3": {
+          "started": 1
+        }
+      }
+    },
+    {
+      "do": "crash",
+      "expect": {
+        "state": {
+          "C1:1700000100.000100": "$none"
+        }
+      }
+    },
+    {
+      "do": "pause"
+    },
+    {
+      "do": "slack",
+      "envelope": {
+        "type": "event_callback",
+        "team_id": "THOME",
+        "api_app_id": "A1",
+        "event_id": "Ev2",
+        "event_time": 1700000100,
+        "authorizations": [
+          {
+            "team_id": "THOME",
+            "user_id": "UBOT",
+            "is_bot": true
+          }
+        ],
+        "event": {
+          "type": "app_mention",
+          "user": "USAM",
+          "text": "<@UBOT> deploy staging",
+          "ts": "1700000300.000100",
+          "channel": "C2",
+          "event_ts": "1700000300.000100",
+          "team": "THOME"
+        }
+      },
+      "expect": {
+        "held": 1
+      }
+    },
+    {
+      "do": "resume"
+    },
+    {
+      "_": "The identical held request's start is cut off before T3 made its thread.",
+      "do": "t3.hangStart",
+      "later": 1,
+      "made": false
+    },
+    {
+      "do": "advance",
+      "ms": 15000,
+      "expect": {
+        "t3": {
+          "started": 2
+        }
+      }
+    },
+    {
+      "do": "crash",
+      "expect": {
+        "held": 0,
+        "t3": {
+          "started": 3
+        },
+        "state": {
+          "C2:1700000300.000100": {
+            "t3ThreadId": "t3-2"
+          }
+        }
+      }
+    }
+  ]
+}

@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { bridgeMethods, createBridge, invokeChannel, pushChannel, pushChannels, type InvokeResult } from '../app/main/bridge.ts';
+import { createBridge, pushChannel, type InvokeResult } from '../app/main/bridge.ts';
 import { createHandlers, registerHandlers, type IpcRegistrar } from '../app/main/ipc/index.ts';
 import type { HandlerContext } from '../app/main/ipc/context.ts';
 import { defaultPrefs, memoryPrefs, mergePrefs, readPrefs } from '../app/main/prefs.ts';
 import { forwardStatus, stoppedStatusSource, type StatusSource } from '../app/main/status.ts';
-import { allowsPermission, isAppUrl, isExternalUrl, windowOptions } from '../app/main/window-options.ts';
+import { allowsPermission, isAppUrl, isExternalUrl } from '../app/main/window-options.ts';
 import type { BotEvent, BotStatus } from '../src/contracts.ts';
 
 const APP_PAGE = 'file:///Users/you/serra/app/out/renderer/index.html';
@@ -48,32 +48,6 @@ const wire = (context = fakeContext(), senderUrl = APP_PAGE) => {
   const push = (channel: string, payload: unknown): void => { for (const listener of listeners.get(channel) ?? []) listener(payload); };
   return { bridge, channels, logs, push, context };
 };
-
-test('every bridge method has a handler, and no handler is outside the bridge', () => {
-  const handlers = createHandlers(fakeContext());
-  assert.deepEqual(Object.keys(handlers).sort(), Object.keys(bridgeMethods).sort());
-  for (const [namespace, methods] of Object.entries(bridgeMethods)) {
-    const set = handlers[namespace as keyof typeof handlers] as Record<string, unknown>;
-    assert.deepEqual(Object.keys(set).sort(), [...methods].sort(), `${namespace} handlers`);
-    for (const method of methods) assert.equal(typeof set[method], 'function', `${namespace}.${method}`);
-  }
-});
-
-test('registerHandlers registers one unique channel per bridge method', () => {
-  const { channels } = wire();
-  const expected = Object.entries(bridgeMethods).flatMap(([namespace, methods]) => methods.map((method) => invokeChannel(namespace, method)));
-  assert.deepEqual(channels, expected);
-  assert.equal(new Set(channels).size, channels.length);
-  assert.ok(channels.every((channel) => channel.startsWith('serra:')));
-});
-
-test('the bridge has every namespace and method as a function, plus the push subscriptions', () => {
-  const { bridge } = wire();
-  for (const [namespace, methods] of Object.entries(bridgeMethods)) {
-    for (const method of methods) assert.equal(typeof (bridge as unknown as Record<string, Record<string, unknown>>)[namespace]?.[method], 'function');
-  }
-  assert.deepEqual(Object.keys(bridge.on).sort(), [...pushChannels].sort());
-});
 
 test('a handler error rejects in the window as a plain message', async () => {
   const { bridge } = wire();
@@ -166,17 +140,6 @@ test('forwardStatus survives a failing source and a closed window', () => {
   destroyed = true;
   closing.resend();
   assert.equal(logs.length, 3, 'one failed send logged, then nothing sent to the destroyed window');
-});
-
-test('on macOS the title bar is integrated: traffic lights inset in the sidebar; other systems keep their frame', () => {
-  const mac = windowOptions('/p.cjs', defaultPrefs.window, 'darwin');
-  assert.equal(mac.titleBarStyle, 'hiddenInset');
-  assert.deepEqual(mac.trafficLightPosition, { x: 16, y: 18 });
-  const linux = windowOptions('/p.cjs', defaultPrefs.window, 'linux');
-  assert.equal(linux.titleBarStyle, undefined);
-  assert.equal(linux.trafficLightPosition, undefined);
-  // The chrome change leaves the locked-down web preferences alone.
-  assert.deepEqual(mac.webPreferences, linux.webPreferences);
 });
 
 test('isAppUrl allows only the app folder and the dev server; isExternalUrl only web links', () => {

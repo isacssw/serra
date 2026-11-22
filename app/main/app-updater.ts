@@ -6,9 +6,10 @@ import { accessSync, constants, existsSync, mkdirSync, mkdtempSync, readFileSync
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import {
-  compareVersions, download, downloadText, fetchReleases, includePrereleases, pickUpdate, verifyChecksum,
+  compareVersions, download, downloadText, fetchReleases, includePrereleases, isAppRelease, parseVersion, pickUpdate, verifyChecksum,
   type AppRelease, type Fetch,
 } from '../../src/app-updates.ts';
+import { isOptional, isRecord, isString, readJsonFile, readJsonOrNull } from '../../src/lib/guards.ts';
 import { run } from '../../src/t3.ts';
 
 /** How a downloaded update gets installed: Serra swaps itself, or the owner drags it from the opened disk image. */
@@ -164,6 +165,13 @@ exit 1
 `;
 
 interface Pending { from: string; to: string; target: string; release?: AppRelease }
+const isPending = (value: unknown): value is Pending =>
+  isRecord(value) && isString(value.from) && isString(value.to) && isString(value.target) && isOptional(isAppRelease)(value.release);
+
+interface FailedStart { version: string; from: string }
+/** Both are versions: `version` is compared with each newer release, and a non-version would make every check fail. */
+const isFailedStart = (value: unknown): value is FailedStart =>
+  isRecord(value) && isString(value.version) && parseVersion(value.version) !== null && isString(value.from);
 
 /** The app's updater. One check, download or install at a time; every change is pushed to the window. */
 export const createAppUpdater = (deps: AppUpdaterDeps) => {
@@ -186,9 +194,8 @@ export const createAppUpdater = (deps: AppUpdaterDeps) => {
   let pendingSwap = false;
   /** A version that was installed but didn't start here: not offered again until a newer one is out. */
   const failedStartPath = join(deps.dir, 'failed-start.json');
-  let failedStart: { version: string; from: string } | null = null;
-  try { failedStart = JSON.parse(readFileSync(failedStartPath, 'utf8')) as { version: string; from: string }; } catch { /* none */ }
-  const didNotStart = (failed: { version: string; from: string }): string =>
+  let failedStart: FailedStart | null = readJsonOrNull(failedStartPath, isFailedStart);
+  const didNotStart = (failed: FailedStart): string =>
     `Serra ${failed.version} didn't start on this Mac, so Serra put ${failed.from} back. It isn't offered again; a newer version will be.`;
   // A helper whose process is gone (killed, or the Mac restarted) leaves its lock behind.
   try {
@@ -197,9 +204,11 @@ export const createAppUpdater = (deps: AppUpdaterDeps) => {
   } catch { /* no lock */ }
   /** A verified download kept for the installer after Serra couldn't replace itself. */
   let keep: string | null = null;
-  if (existsSync(pendingPath)) {
+  const marker = readJsonFile(pendingPath, isPending);
+  if (marker.state === 'invalid') log('dropped an unreadable pending.json');
+  if (marker.state === 'ok') {
     try {
-      const pending = JSON.parse(readFileSync(pendingPath, 'utf8')) as Pending;
+      const pending = marker.value;
       if (pending.to === deps.current) {
         updatedFrom = pending.from;
         pendingSwap = true;
@@ -228,8 +237,8 @@ export const createAppUpdater = (deps: AppUpdaterDeps) => {
         }
       }
     } catch { /* a broken marker is dropped */ }
-    if (!pendingSwap) rmSync(pendingPath, { force: true });
   }
+  if (marker.state !== 'absent' && !pendingSwap) rmSync(pendingPath, { force: true });
   // Nothing is downloaded or staged at launch: earlier downloads and staged apps are left over, so they go.
   // A cleanup that fails (a file in use) never stops the app from starting.
   try {

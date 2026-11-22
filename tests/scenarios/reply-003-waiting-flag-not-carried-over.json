@@ -1,0 +1,130 @@
+{
+  "id": "reply-003-waiting-flag-not-carried-over",
+  "specs": [
+    "REPLY-003",
+    "JOBS-003"
+  ],
+  "title": "a turn nobody waits on, answered between polls, doesn't make a later run from T3 look unwatched",
+  "steps": [
+    {
+      "do": "slack",
+      "envelope": {
+        "type": "event_callback",
+        "team_id": "THOME",
+        "api_app_id": "A1",
+        "event_id": "Ev1",
+        "event_time": 1700000100,
+        "authorizations": [
+          {
+            "team_id": "THOME",
+            "user_id": "UBOT",
+            "is_bot": true
+          }
+        ],
+        "event": {
+          "type": "app_mention",
+          "user": "USAM",
+          "text": "<@UBOT> check the scorer",
+          "ts": "1700000100.000100",
+          "channel": "C1",
+          "event_ts": "1700000100.000100",
+          "team": "THOME"
+        }
+      }
+    },
+    {
+      "do": "worker.reply",
+      "text": "Checked."
+    },
+    {
+      "do": "advance",
+      "ms": 15000,
+      "expect": {
+        "state": {
+          "C1:1700000100.000100": {
+            "lastPostedRunId": "run-1",
+            "nextTurnWaits": "$absent"
+          }
+        }
+      }
+    },
+    {
+      "do": "slack",
+      "envelope": {
+        "type": "event_callback",
+        "team_id": "THOME",
+        "api_app_id": "A1",
+        "event_id": "Ev2",
+        "event_time": 1700000100,
+        "authorizations": [
+          {
+            "team_id": "THOME",
+            "user_id": "UBOT",
+            "is_bot": true
+          }
+        ],
+        "event": {
+          "type": "message",
+          "channel_type": "channel",
+          "user": "USAM",
+          "text": "thanks, looks fine",
+          "ts": "1700000150.000100",
+          "thread_ts": "1700000100.000100",
+          "channel": "C1",
+          "event_ts": "1700000150.000100",
+          "team": "THOME"
+        }
+      }
+    },
+    {
+      "do": "advance",
+      "ms": 5000,
+      "expect": {
+        "t3": {
+          "sends": 1
+        },
+        "state": {
+          "C1:1700000100.000100": {
+            "nextTurnWaits": false
+          }
+        }
+      }
+    },
+    {
+      "_": "The chatter turn ends before any poll sees it.",
+      "do": "worker.reply",
+      "text": "(quiet)"
+    },
+    {
+      "do": "advance",
+      "ms": 15000,
+      "expect": {
+        "state": {
+          "C1:1700000100.000100": {
+            "lastPostedRunId": "run-2",
+            "nextTurnWaits": "$absent"
+          }
+        }
+      }
+    },
+    {
+      "_": "Someone writes to the worker in T3 directly: a run Serra didn't send, that someone may well wait on.",
+      "do": "worker.userRun",
+      "text": "Alex, in T3: also bump the version"
+    },
+    {
+      "do": "advance",
+      "ms": 15000,
+      "expect": {
+        "state": {
+          "C1:1700000100.000100": {
+            "runSeen": {
+              "runId": "run-3",
+              "waits": true
+            }
+          }
+        }
+      }
+    }
+  ]
+}

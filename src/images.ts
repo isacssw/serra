@@ -1,9 +1,9 @@
 import { realpathSync, statSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { basename, extname, sep } from 'node:path';
-import type { webApi } from '@slack/bolt';
+import type { SlackApi } from './slack-api.ts';
 
-type SlackClient = webApi.WebClient;
+type SlackClient = Pick<SlackApi, 'filesUploadV2'>;
 
 /**
  * A Markdown image with an absolute local path, the way `show-visually` and the QA skills hand back an image or a video.

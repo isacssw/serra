@@ -1,0 +1,107 @@
+{
+  "id": "reply-005-failure-detail-in-channel",
+  "specs": [
+    "REPLY-005"
+  ],
+  "title": "a failed start in a channel shows nobody the raw error, not even the owner; the detail goes to the log",
+  "t3": {
+    "failStart": "t3 thread start exited 1: could not read /Users/you/secret-project/.t3/config"
+  },
+  "steps": [
+    {
+      "do": "slack",
+      "envelope": {
+        "type": "event_callback",
+        "team_id": "THOME",
+        "api_app_id": "A1",
+        "event_id": "Ev1",
+        "event_time": 1700000100,
+        "authorizations": [
+          {
+            "team_id": "THOME",
+            "user_id": "UBOT",
+            "is_bot": true
+          }
+        ],
+        "event": {
+          "type": "app_mention",
+          "user": "UOWNER",
+          "text": "<@UBOT> ship it",
+          "ts": "1700000100.000100",
+          "channel": "C1",
+          "event_ts": "1700000100.000100",
+          "team": "THOME"
+        }
+      },
+      "expect": {
+        "slack": [
+          {
+            "method": "chat.postMessage",
+            "count": 1,
+            "args": {
+              "channel": "C1",
+              "thread_ts": "1700000100.000100",
+              "text": "Something went wrong on my side, so I couldn't pick this up. The details are in Serra's Jobs and log."
+            }
+          },
+          {
+            "method": "chat.postMessage",
+            "count": 0,
+            "args": {
+              "text": {
+                "$match": "exited|/Users/"
+              }
+            }
+          }
+        ],
+        "reactions": {
+          "C1:1700000100.000100": []
+        },
+        "state": {
+          "C1:1700000100.000100": "$none"
+        },
+        "logs": [
+          "Failed handling C1:1700000100.000100: t3 thread start exited 1"
+        ]
+      }
+    },
+    {
+      "do": "slack",
+      "envelope": {
+        "type": "event_callback",
+        "team_id": "THOME",
+        "api_app_id": "A1",
+        "event_id": "Ev2",
+        "event_time": 1700000100,
+        "authorizations": [
+          {
+            "team_id": "THOME",
+            "user_id": "UBOT",
+            "is_bot": true
+          }
+        ],
+        "event": {
+          "type": "app_mention",
+          "user": "USAM",
+          "text": "<@UBOT> ship it",
+          "ts": "1700000200.000100",
+          "channel": "C1",
+          "event_ts": "1700000200.000100",
+          "team": "THOME"
+        }
+      },
+      "expect": {
+        "slack": [
+          {
+            "method": "chat.postMessage",
+            "count": 1,
+            "args": {
+              "thread_ts": "1700000200.000100",
+              "text": "Something went wrong on my side, so I couldn't pick this up. <@UOWNER> will take a look."
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

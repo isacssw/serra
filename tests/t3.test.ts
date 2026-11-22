@@ -3,7 +3,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
-import { run, sendToThread, showThread, startThread } from '../src/t3.ts';
+import { findThreads, run, sendToThread, showThread, startThread } from '../src/t3.ts';
 
 test('CLI contract preserves custom branches, stdin briefs, follow-ups and run IDs', async (t) => {
   const root = mkdtempSync(join(tmpdir(), 'bots-t3-')); t.after(() => rmSync(root, { recursive: true, force: true }));
@@ -22,4 +22,24 @@ test('CLI contract preserves custom branches, stdin briefs, follow-ups and run I
 
 test('a hung CLI command fails within its timeout', async () => {
   await assert.rejects(run(process.execPath, ['-e', 'setInterval(()=>{},1000)'], { timeoutMs: 30 }), /timed out/);
+});
+
+test('[INTAKE-010] findThreads reads T3\'s thread list: same title, made since the attempt, newest first; other output is an error', async (t) => {
+  const root = mkdtempSync(join(tmpdir(), 'bots-t3-')); t.after(() => rmSync(root, { recursive: true, force: true }));
+  const bin = join(root, 't3'); const out = join(root, 'out.txt'); const args = join(root, 'args.json');
+  writeFileSync(bin, `#!${process.execPath}\nconst fs=require('fs'); fs.writeFileSync(${JSON.stringify(args)}, JSON.stringify(process.argv.slice(2))); process.stdout.write(fs.readFileSync(${JSON.stringify(out)}, 'utf8'));`, { mode: 0o700 });
+  // The shape \`t3 thread list --json\` prints: a bare array, newest first, with more fields than these.
+  const thread = (threadId: string, title: string, createdAt: string) => ({ threadId, projectId: 'p1', title, link: `https://app.t3.codes/threads/${threadId}`, status: 'idle', createdAt, updatedAt: createdAt });
+  writeFileSync(out, JSON.stringify([
+    thread('newer', 'Friday: deploy staging', '2026-11-20T10:00:30.000Z'),
+    thread('other', 'Friday: something else', '2026-11-20T10:00:20.000Z'),
+    thread('older', 'Friday: deploy staging', '2026-11-20T10:00:10.000Z'),
+    thread('stale', 'Friday: deploy staging', '2026-11-19T09:00:00.000Z'),
+  ]));
+  assert.deepEqual(await findThreads('/repo', 'Friday: deploy staging', '2026-11-20T10:00:00.000Z', bin), ['newer', 'older']);
+  assert.deepEqual(JSON.parse(readFileSync(args, 'utf8')), ['thread', 'list', '--json', '--project', '/repo']);
+  writeFileSync(out, '[]');
+  assert.deepEqual(await findThreads('/repo', 'Friday: deploy staging', '2026-11-20T10:00:00.000Z', bin), []);
+  writeFileSync(out, 'Not signed in.');
+  await assert.rejects(findThreads('/repo', 'x', '2026-11-20T10:00:00.000Z', bin), /Unexpected t3 thread list output/);
 });

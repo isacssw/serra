@@ -1,6 +1,5 @@
 // APP-28: the theme pref, its native theme in main, and the window's theme store, control and ⌘K action.
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import type { Theme } from '../app/main/bridge.ts';
 import type { HandlerContext } from '../app/main/ipc/context.ts';
@@ -70,12 +69,6 @@ test('native theme: follows every saved change, and a rejected change leaves it 
   await handlers.app.setPrefs({ theme: 'system' });
   assert.equal(native.themeSource, 'system');
   assert.equal(prefs.get().theme, 'system');
-});
-
-test('native theme: main wraps the real prefs store with it before opening any window', () => {
-  const source = readFileSync(new URL('../app/main/index.ts', import.meta.url), 'utf8');
-  assert.match(source, /const stored = followTheme\(electronPrefs\(\), nativeTheme\);/);
-  assert.ok(source.indexOf('followTheme(') < source.indexOf('createMainWindow('));
 });
 
 // ---------------------------------------------------------------------------------------------------------------

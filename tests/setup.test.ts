@@ -384,6 +384,18 @@ test('the manifest comes from the profile, so an edited one is what Slack gets',
   assert.equal(JSON.parse(new URL(manifest.createUrl).searchParams.get('manifest_json')!).display_information.description, 'Edited');
 });
 
+test('a broken manifest.json is reported, not replaced by the template; a missing one comes from the template', async (t) => {
+  const f = fixture(t);
+  const dir = join(f.root, 'friday');
+  await createSetupProfile(draft(f, dir));
+  for (const text of ['{"display_information":', '[]']) {
+    writeFileSync(join(dir, 'manifest.json'), text);
+    assert.throws(() => slackManifest(dir), /manifest\.json isn't a JSON object\. Fix it, or remove it/);
+  }
+  rmSync(join(dir, 'manifest.json'));
+  assert.equal(JSON.parse(slackManifest(dir).json).features.bot_user.display_name, 'friday');
+});
+
 // ---------------------------------------------------------------------------------------------------------------
 // The wizard's logic
 // ---------------------------------------------------------------------------------------------------------------

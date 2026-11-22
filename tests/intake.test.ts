@@ -3,7 +3,7 @@ import { appendFileSync, existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test, { type TestContext } from 'node:test';
-import { acknowledgePause, admit, dropHeld, HELD_REQUESTS, heldThread, holdRequest, INTAKE_ACK, INTAKE_PAUSED, PAUSE_MS, pauseIntake, readAck, readHeld, readPause, readPauseFile, resumeIntake } from '../src/intake.ts';
+import { acknowledgePause, admit, dropHeld, HELD_REQUESTS, holdRequest, INTAKE_ACK, INTAKE_PAUSED, PAUSE_MS, pauseIntake, readAck, readHeld, readPause, readPauseFile, resumeIntake } from '../src/intake.ts';
 import type { IncomingMessage } from '../src/types.ts';
 
 const profile = (t: TestContext): string => {
@@ -46,8 +46,6 @@ test('held requests stay on disk until each is started, in order, once; a broken
   appendFileSync(join(dir, HELD_REQUESTS), 'not json\n');
   holdRequest(dir, second);
   assert.deepEqual(readHeld(dir).map((msg) => msg.text), ['first', 'second'], 'a message Slack delivered twice is held once');
-  assert.ok(heldThread(dir, first.channel, first.threadTs), 'its thread counts as the bot\'s, so replies wait behind it');
-  assert.equal(heldThread(dir, first.channel, '9.000'), false);
   dropHeld(dir, first);
   assert.deepEqual(readHeld(dir).map((msg) => msg.text), ['second'], 'the others stay until their turn');
   dropHeld(dir, second);

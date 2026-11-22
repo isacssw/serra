@@ -13,13 +13,19 @@ import { codeRoot } from '../src/config.ts';
 import { createKnowledge } from '../src/knowledge.ts';
 import { createProposals } from '../src/proposals.ts';
 import { proposeBriefUpdate } from '../src/brief.ts';
+import { fakeClock, type FakeClock } from './fakes/clock.ts';
+import { createFakeSlack, slackError } from './fakes/slack.ts';
+
+/** The fake clocks of this test's bots. `settle` moves them all, in place of sleeping for the batcher. */
+const clocks: FakeClock[] = [];
+const settle = async (ms: number): Promise<void> => { for (const clock of clocks) await clock.advance(ms); };
 
 const ROBIN = 'UROBIN0001'; const PRIYA = 'UPRIYA0001';
 
 /** A scratch copy of the fixture profile, with the shipped brief. */
 const fixture = (t: TestContext): string => {
   const dir = mkdtempSync(join(tmpdir(), 'serra-kb-safety-'));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => { clocks.length = 0; rmSync(dir, { recursive: true, force: true }); });
   const profileDir = join(dir, 'profile');
   cpSync(join(codeRoot, 'evals/fixture/knowledge'), join(profileDir, 'knowledge'), { recursive: true });
   cpSync(join(codeRoot, 'evals/fixture/project'), join(dir, 'project'), { recursive: true });
@@ -340,13 +346,8 @@ test('restricting a page a thread already used moves the next turn to a fresh th
   const knowledge = createKnowledge(config.knowledgeDir);
   knowledge.seedApproved();
   const started: string[] = []; const sent: string[] = [];
-  const client = {
-    users: { info: async ({ user }: { user: string }) => ({ user: { real_name: user, team_id: 'THOME' } }) },
-    conversations: { replies: async () => ({ messages: [] }), info: async ({ channel }: { channel: string }) => ({ channel: { id: channel, is_ext_shared: false, is_pending_ext_shared: false } }) },
-    chat: { getPermalink: async () => ({ permalink: 'https://x/p' }), postMessage: async () => ({ ts: '9.1' }), update: async () => ({}), delete: async () => ({}) },
-    reactions: { add: async () => ({}), remove: async () => ({}) },
-    assistant: { threads: { setStatus: async () => ({ ok: true }) } },
-  } as never;
+  const { client } = createFakeSlack({ botUserId: 'UMOSS' });
+  const clock = fakeClock(); clocks.push(clock);
   const quiet = (): void => {};
   const bot = createBot({
     config, client, botUserId: () => 'UMOSS', store: createStore(config.statePath), loadIndex: () => knowledge.loadIndex(),
@@ -358,7 +359,7 @@ test('restricting a page a thread already used moves the next turn to a fresh th
     } as never,
     questions: { listQuestions: async () => [], answerQuestion: async () => {} },
     fetchBase: async () => {}, share: async (_c, text) => text, reviewRequest: async (_c, text) => ({ reply: text, postedFor: null }),
-    receive: async () => '', timing: { quietMs: 5, retryMs: 5 }, events: () => {},
+    receive: async () => '', timing: { quietMs: 5, retryMs: 5 }, events: () => {}, clock,
   });
   await bot.handle({ channel: 'CTEAM', threadTs: '1.1', messageTs: '1.1', user: PRIYA, text: '<@UMOSS> how do I cut a release?', direct: true });
   assert.match(started[0]!, /workflows\/release\.md/);
@@ -366,7 +367,7 @@ test('restricting a page a thread already used moves the next turn to a fresh th
   const page = join(config.knowledgeDir, 'workflows/release.md');
   knowledge.savePage('workflows/release.md', readFileSync(page, 'utf8').replace('audience: team', 'audience: owner'));
   await bot.handle({ channel: 'CTEAM', threadTs: '1.1', messageTs: '1.2', user: PRIYA, text: '<@UMOSS> and after that?', direct: true });
-  await new Promise((done) => setTimeout(done, 80));
+  await settle(80);
   assert.equal(sent.length, 0, 'the old thread, which read the page, gets nothing more');
   assert.equal(started.length, 2);
   assert.doesNotMatch(started[1]!, /workflows\/release\.md/);
@@ -428,7 +429,7 @@ const botOn = async (profileDir: string) => {
   const config = loadConfig({ profileDir, env: { SLACK_BOT_TOKEN: 'xoxb-t', SLACK_APP_TOKEN: 'xapp-t' } });
   const knowledge = createKnowledge(config.knowledgeDir);
   knowledge.seedApproved();
-  const started: string[] = []; const sent: string[] = []; const answered: unknown[] = []; const bases: string[] = []; const posted: string[] = []; const updated: string[] = [];
+  const started: string[] = []; const sent: string[] = []; const answered: unknown[] = []; const bases: string[] = []; const updated: string[] = [];
   const reviews: { heldBack?: string }[] = [];
   const outside = new Set<string>();
   const hooks: { beforeShare?: () => void | Promise<void>; beforeReview?: () => void | Promise<void>; onUpdate?: () => void; failUpdates?: boolean; history: { ts: string; user?: string; bot_id?: string; text: string }[] } = { history: [] };
@@ -436,25 +437,22 @@ const botOn = async (profileDir: string) => {
   let transcript: { role: string; runId: string; text: string }[] = [];
   let activeRunId: string | null = null;
   const store = createStore(config.statePath);
-  const client = {
-    users: { info: async ({ user }: { user: string }) => ({ user: { real_name: user, team_id: 'THOME' } }) },
-    conversations: { replies: async () => ({ messages: hooks.history }), info: async ({ channel }: { channel: string }) => {
-      if (outside.has('SCOPE')) throw Object.assign(new Error('An API error occurred: missing_scope'), { data: { error: 'missing_scope' } });
-      if (outside.has('FAIL') || outside.has(`FAIL:${channel}`)) throw new Error('ratelimited');
-      return { channel: { id: channel, is_ext_shared: outside.has(channel), is_pending_ext_shared: false } };
-    } },
-    chat: { getPermalink: async () => ({ permalink: 'https://x/p' }), postMessage: async (body: { text: string }) => { posted.push(body.text); return { ts: '9.1' }; }, update: async (body: { ts?: string; text?: string }) => {
-      hooks.onUpdate?.();
-      if (hooks.failUpdates) throw Object.assign(new Error('message_not_found'), { data: { error: 'message_not_found' } });
-      updated.push(JSON.stringify(body));
-      // As Slack does: the thread's history shows a message as it was last edited.
-      const line = hooks.history.find((message) => message.ts === body.ts);
-      if (line && body.text !== undefined) line.text = body.text;
-      return {};
-    }, delete: async () => ({}) },
-    reactions: { add: async () => ({}), remove: async () => ({}) },
-    assistant: { threads: { setStatus: async () => ({ ok: true }) } },
-  } as never;
+  const slack = createFakeSlack({ botUserId: 'UMOSS', external: outside });
+  const clock = fakeClock(); clocks.push(clock);
+  const { client } = slack;
+  slack.client.conversations.replies = async () => ({ ok: true, messages: hooks.history });
+  slack.before('conversations.info', ({ channel }) => {
+    if (outside.has('SCOPE')) throw slackError('missing_scope');
+    if (outside.has('FAIL') || outside.has(`FAIL:${String(channel)}`)) throw new Error('ratelimited');
+  });
+  slack.before('chat.update', (body) => {
+    hooks.onUpdate?.();
+    if (hooks.failUpdates) throw slackError('message_not_found');
+    updated.push(JSON.stringify(body));
+    // As Slack does: the thread's history shows a message as it was last edited.
+    const line = hooks.history.find((message) => message.ts === body.ts);
+    if (line && typeof body.text === 'string') line.text = body.text;
+  });
   const quiet = (): void => {};
   const bot = createBot({
     config, client, botUserId: () => 'UMOSS', store, loadIndex: () => knowledge.loadIndex(),
@@ -473,7 +471,7 @@ const botOn = async (profileDir: string) => {
       reviews.push(ok ? {} : { heldBack: 'some people in the review channel may not hear it' });
       return { reply: text, postedFor: null };
     },
-    receive: async () => '', timing: { quietMs: 5, retryMs: 5 }, events: () => {},
+    receive: async () => '', timing: { quietMs: 5, retryMs: 5 }, events: () => {}, clock,
   });
   const restrict = (page: string): void => {
     const file = join(config.knowledgeDir, page);
@@ -488,7 +486,7 @@ const botOn = async (profileDir: string) => {
     activeRunId = 'run-2';
     transcript = [{ role: 'user', runId: 'run-2', text: 'brief' }, { role: 'assistant', runId: 'run-2', text: note }];
   };
-  return { bot, store, config, knowledge, started, sent, answered, bases, posted, updated, reviews, outside, hooks, restrict, finish, working, setQuestions: (list: typeof pendingQuestions) => { pendingQuestions = list; } };
+  return { bot, store, config, knowledge, started, sent, answered, bases, get posted() { return slack.posted.map((post) => String(post.text)); }, updated, reviews, outside, hooks, restrict, finish, working, setQuestions: (list: typeof pendingQuestions) => { pendingQuestions = list; } };
 };
 
 test('the worker opens pages from the approved copy, and writes proposals to knowledge/proposals', async (t) => {
@@ -506,7 +504,7 @@ test('a thread from before audiences, and an answer to a pending question, also 
   delete job.visibility; delete job.knowledgeRead;
   legacy.store.putJob(key, job);
   await legacy.bot.handle({ channel: 'CTEAM', threadTs: '1.1', messageTs: '1.2', user: PRIYA, text: '<@UMOSS> and after that?', direct: true });
-  await new Promise((done) => setTimeout(done, 80));
+  await settle(80);
   assert.equal(legacy.started.length, 2, 'an old thread had every page, and some are owner-only now');
   assert.equal(legacy.sent.length, 0);
 
@@ -518,7 +516,7 @@ test('a thread from before audiences, and an answer to a pending question, also 
   asked.store.putJob('CTEAM:2.1', { ...withQuestion, question: { requestId: 'r1', questions: [question], ts: '2.5', nonce: 'n', index: 0, answers: {}, runId: null } as never });
   asked.restrict('workflows/release.md');
   await asked.bot.handle({ channel: 'CTEAM', threadTs: '2.1', messageTs: '2.6', user: PRIYA, text: 'Tuesday', direct: false });
-  await new Promise((done) => setTimeout(done, 50));
+  await settle(50);
   assert.equal(asked.answered.length, 1);
   assert.match(JSON.stringify(asked.answered[0]), /Stop here: this thread moved to a fresh session/, 'the old thread only gets told to stop, not the answer');
   assert.equal(asked.started.length, 2);
@@ -553,7 +551,7 @@ test('a fresh session after knowledge is taken back starts from the old branch, 
   const branch = run.store.getJob('CTEAM:3.1')!.branch!;
   run.restrict('workflows/release.md');
   await run.bot.handle({ channel: 'CTEAM', threadTs: '3.1', messageTs: '3.2', user: PRIYA, text: '<@UMOSS> and after that?', direct: true });
-  await new Promise((done) => setTimeout(done, 80));
+  await settle(80);
   assert.equal(run.bases[1], branch, 'the new worktree starts from the old thread\'s branch');
   assert.match(run.started[1]!, new RegExp(`Earlier work in this thread is on the branch \`${branch}\``));
   assert.ok(run.posted.some((text) => /carrying on in a fresh session/.test(text)));
@@ -707,7 +705,7 @@ test('the next question of a form, a thread from before Serra recorded its pages
   form.store.putJob('CTEAM:9.1', { ...job, question: { requestId: 'r9', questions, ts: '9.5', nonce: 'n', index: 0, answers: {}, runId: null } as never });
   form.restrict('workflows/release.md');
   await form.bot.handle({ channel: 'CTEAM', threadTs: '9.1', messageTs: '9.6', user: PRIYA, text: 'Tuesday', direct: false });
-  await new Promise((done) => setTimeout(done, 50));
+  await settle(50);
   assert.ok(![...form.posted, ...form.updated].some((text) => /despite the freeze/.test(text)), 'the second question is never shown');
   assert.match(JSON.stringify(form.answered[0]), /Stop here: this thread moved to a fresh session/);
   assert.equal(form.started.length, 2);
@@ -817,7 +815,7 @@ test('a channel shared outside since, an outside review channel, a page shared s
   form.store.putJob('CTEAM:18.1', { ...job, question: { requestId: 'r18', questions: [question], ts: '18.5', nonce: 'n', index: 0, answers: {}, runId: null } as never });
   form.restrict('workflows/release.md');
   await form.bot.handle({ channel: 'CTEAM', threadTs: '18.1', messageTs: '18.6', user: PRIYA, text: 'Yes', direct: false });
-  await new Promise((done) => setTimeout(done, 50));
+  await settle(50);
   assert.ok(form.updated.some((body) => /This question was closed/.test(body)));
   assert.ok(![...form.posted, ...form.updated].some((text) => /despite the freeze/.test(text)), 'the worker\'s question is never republished');
 });
@@ -888,7 +886,7 @@ test('a snapshot in use is never cleaned up under a thread, a thread whose folde
   run.knowledge.savePage('workflows/release.md', `${readFileSync(releasePage, 'utf8')}- One more step.\n`);
   rmSync(run.store.getJob('CTEAM:23.1')!.knowledgeDir!, { recursive: true, force: true });
   await run.bot.handle({ channel: 'CTEAM', threadTs: '23.1', messageTs: '23.2', user: PRIYA, text: '<@UMOSS> and after that?', direct: true });
-  await new Promise((done) => setTimeout(done, 80));
+  await settle(80);
   assert.equal(run.started.length, 2);
   assert.equal(run.sent.length, 0);
 
@@ -927,7 +925,7 @@ test('a fresh session never sees the old question through Slack history, an olde
   form.restrict('workflows/release.md');
   form.hooks.history.push({ ts: '26.6', user: PRIYA, text: 'next Tuesday instead' });
   await form.bot.handle({ channel: 'CTEAM', threadTs: '26.1', messageTs: '26.6', user: PRIYA, text: 'next Tuesday instead', direct: false });
-  await new Promise((done) => setTimeout(done, 50));
+  await settle(50);
   assert.equal(form.started.length, 2);
   assert.doesNotMatch(form.started[1]!, /despite the freeze/);
 
@@ -940,7 +938,7 @@ test('a fresh session never sees the old question through Slack history, an olde
   delete legacy.visibility; delete legacy.knowledgeRead; delete legacy.knowledgeDir;
   owner.store.putJob('DROBIN:27.1', legacy);
   await owner.bot.handle({ channel: 'DROBIN', threadTs: '27.1', messageTs: '27.2', user: ROBIN, text: 'and open the PR', direct: true });
-  await new Promise((done) => setTimeout(done, 80));
+  await settle(80);
   assert.equal(owner.store.getJob('DROBIN:27.1')!.knowledgeRead, undefined);
   await owner.finish('Done. <review-request>Please review https://github.com/larchwood/moss/pull/6</review-request>');
   assert.match(owner.reviews[0]?.heldBack ?? '', /may not hear/);
@@ -970,7 +968,7 @@ test('a fresh session leaves out the earlier worker\'s messages even when Slack 
   form.restrict('workflows/release.md');
   form.hooks.history.push({ ts: '28.6', user: PRIYA, text: 'next Tuesday instead' });
   await form.bot.handle({ channel: 'CTEAM', threadTs: '28.1', messageTs: '28.6', user: PRIYA, text: 'next Tuesday instead', direct: false });
-  await new Promise((done) => setTimeout(done, 50));
+  await settle(50);
   assert.equal(form.started.length, 2);
   assert.doesNotMatch(form.started[1]!, /despite the freeze|release:prepare|never on Thursday/);
   assert.match(form.started[1]!, /earlier messages from Moss are left out/);
@@ -989,7 +987,7 @@ test('a new card in place of a failed edit is checked again: knowledge taken bac
   // The owner takes the page back while Slack is failing to edit the card.
   form.hooks.onUpdate = () => { form.hooks.onUpdate = undefined; form.restrict('workflows/release.md'); form.hooks.failUpdates = true; };
   await form.bot.handle({ channel: 'CTEAM', threadTs: '29.1', messageTs: '29.6', user: PRIYA, text: 'Tuesday', direct: false });
-  await new Promise((done) => setTimeout(done, 50));
+  await settle(50);
   assert.ok(!form.posted.some((text) => /despite the freeze/.test(text)), 'no new card with the next question');
 });
 
@@ -1006,7 +1004,7 @@ test('during a Slack outage a form doesn\'t move on, a review request needs a co
   form.store.putJob('CTEAM:30.1', { ...job, question: { requestId: 'r30', questions, ts: '30.5', nonce: 'n', index: 0, answers: {}, runId: null } as never });
   form.outside.add('FAIL');
   await form.bot.handle({ channel: 'CTEAM', threadTs: '30.1', messageTs: '30.6', user: PRIYA, text: 'Tuesday', direct: false });
-  await new Promise((done) => setTimeout(done, 50));
+  await settle(50);
   assert.ok(![...form.posted, ...form.updated].some((text) => /despite the freeze/.test(text)));
   assert.ok(form.posted.some((text) => /answer again in a minute/.test(text)));
   assert.equal(form.store.getJob('CTEAM:30.1')!.question?.index, 0, 'the form stays on the first question');

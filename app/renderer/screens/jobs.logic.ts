@@ -6,7 +6,7 @@ import type { Action } from '../commands/registry.ts';
 export type JobRow = JobListing['jobs'][number];
 
 /** The channel of a task started in the app (APP-25), the same as `APP_TASK_CHANNEL` in src/tasks.ts (a test checks). */
-export const APP_TASK_CHANNEL = 'app';
+const APP_TASK_CHANNEL = 'app';
 
 /** Whether a row is a task the owner started in the app, which T3 reports on rather than the daemon. */
 const isAppTask = (job: JobRow): boolean => job.channel === APP_TASK_CHANNEL;

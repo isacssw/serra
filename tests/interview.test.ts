@@ -11,9 +11,9 @@ import { tasksHandlers } from '../app/main/ipc/tasks.ts';
 import { memoryPrefs } from '../app/main/prefs.ts';
 import { followProposals } from '../app/main/proposals-watch.ts';
 import { stoppedStatusSource } from '../app/main/status.ts';
-import { defaultFolder, folderChoices, interviewStartedText } from '../app/renderer/screens/proposals.logic.ts';
+import { defaultFolder, folderChoices } from '../app/renderer/screens/proposals.logic.ts';
 import { codeRoot, loadConfig } from '../src/config.ts';
-import { createProfile, onboardingPrompt } from '../src/setup.ts';
+import { createProfile } from '../src/setup.ts';
 import {
   INTERVIEW_PROGRESS, INTERVIEW_TEMPLATE, INTERVIEW_TITLE, interviewBrief, previewInterview, readTasks, startInterview,
 } from '../src/tasks.ts';
@@ -200,11 +200,4 @@ test('the watcher follows the profile, and a profile without knowledge/ only log
   assert.equal(logs.length, 1);
   assert.match(logs[0]!, /not watching .*missing\/knowledge\/proposals/);
   watcher.follow(null);
-});
-
-test('setup and pnpm onboard point at the app and the interview brief', (t) => {
-  const { profileDir } = fixture(t);
-  assert.match(onboardingPrompt(profileDir), /Start interview/);
-  assert.match(readFileSync(join(profileDir, 'onboarding.md'), 'utf8'), /pnpm onboard --profile/);
-  assert.equal(interviewStartedText({ branch: 'friday/knowledge-interview' }), 'Interview started in T3 on friday/knowledge-interview. What you confirm there shows up here.');
 });

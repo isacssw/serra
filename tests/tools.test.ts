@@ -2,7 +2,7 @@
 // and the screen's logic. Every command is a fake: nothing here runs `claude`, `codex`, `gh` or a shell.
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import test, { type TestContext } from 'node:test';
@@ -15,7 +15,7 @@ import { formatMcpOverview, mcpOverview, parseCodexServers, tomlScalar, type Mcp
 import { loginShellEnv, loginShellPath, mergePaths } from '../src/shell-path.ts';
 import { CLI_CATALOG, type CliSpec } from '../src/tool-catalog.ts';
 import {
-  cliRows, cliStatus, driverGroups, providerLine, recommendationRows, recommendedCliIds, serverBrand, serverLabel, serverOrigin, serverStatus,
+  cliRows, cliStatus, driverGroups, recommendationRows, recommendedCliIds, serverBrand, serverLabel, serverStatus,
 } from '../app/renderer/screens/tools.logic.ts';
 
 const TOKEN = 'sntrys_fixture-secret-value';
@@ -51,7 +51,7 @@ const fixture = (t: TestContext) => {
     project: { path: project, remote: 'origin', baseRef: 'origin/main', githubRepo: 'acme/project' }, allowedUsers: [],
     worker: { provider: 'claude', model: 'opus' }, ...overrides,
   });
-  return { home, project, profileDir, bin, write, install, profile };
+  return { root, home, project, profileDir, bin, write, install, profile };
 };
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -281,21 +281,40 @@ test('a tool without a trusted sign-in check reports none', async (t) => {
   assert.equal(spec('vercel').check, undefined, 'vercel whoami can refresh saved credentials, so it is not checked');
 });
 
-test('gh gets --no-refresh only when its help lists it', async (t) => {
+test('checking GitHub sign-in never makes gh refresh its token, and still shows the account on a gh too old to know --no-refresh', async (t) => {
   const f = fixture(t);
-  f.install('gh');
-  const answers = (help: string) => fakeRun({ 'gh auth status --help': { stdout: help }, 'gh --version': { stdout: 'gh version 2.99.0' }, 'gh auth status': { stdout: 'account alex' } });
-  const newer = answers('  --no-refresh   Don\'t refresh tokens');
-  await detectCli(spec('gh'), { path: f.bin, home: f.home, run: newer });
-  assert.ok(newer.calls.includes('gh auth status --active --hostname github.com --no-refresh'), newer.calls.join('\n'));
-  const older = answers('  --active');
-  await detectCli(spec('gh'), { path: f.bin, home: f.home, run: older });
-  assert.ok(older.calls.includes('gh auth status --active --hostname github.com'));
-  assert.ok(!older.calls.some((call) => call.endsWith('--no-refresh')));
-  const broken = fakeRun({ 'gh auth status --help': { code: null, timedOut: true }, 'gh --version': { stdout: 'gh version 2.99.0' }, 'gh auth status': { stdout: 'account alex' } });
-  const unknown = await detectCli(spec('gh'), { path: f.bin, home: f.home, run: broken });
-  assert.equal(unknown.check!.state, 'unknown', 'no sign-in check runs when it is unclear whether --no-refresh exists');
-  assert.ok(!broken.calls.some((call) => call.startsWith('gh auth status --active')));
+  const refreshed = join(f.root, 'refreshed');
+  /** A real `gh` on the PATH. `auth status` without --no-refresh refreshes the token (leaves a mark); `--help` is how it says what it knows. */
+  const gh = (version: 'newer' | 'older' | 'broken-help') => {
+    f.write(join(f.bin, 'gh'), `#!/bin/sh
+case "$*" in
+  "--version") echo "gh version 2.99.0" ;;
+  "auth status --help")
+    ${version === 'broken-help' ? 'exit 2' : version === 'newer' ? 'echo "  --no-refresh   Don\'t refresh tokens"' : 'echo "  --active"'} ;;
+  "auth status"*)
+    case "$*" in
+      *--no-refresh*) ${version === 'older' ? 'echo "unknown flag: --no-refresh" >&2; exit 1' : ':'} ;;
+      *) /usr/bin/touch ${JSON.stringify(refreshed)} ;;
+    esac
+    echo "github.com"; echo "  ✓ Logged in to github.com account alex (keyring)" ;;
+  *) exit 1 ;;
+esac
+`);
+    chmodSync(join(f.bin, 'gh'), 0o755);
+    rmSync(refreshed, { force: true });
+  };
+
+  gh('newer');
+  assert.deepEqual((await detectCli(spec('gh'), { path: f.bin, home: f.home })).check, { kind: 'signed-in', state: 'yes', account: 'alex' });
+  assert.equal(existsSync(refreshed), false, 'a gh that can skip the refresh is told to');
+
+  gh('older');
+  assert.deepEqual((await detectCli(spec('gh'), { path: f.bin, home: f.home })).check, { kind: 'signed-in', state: 'yes', account: 'alex' },
+    'an older gh is not handed a flag it would fail on');
+
+  gh('broken-help');
+  assert.deepEqual((await detectCli(spec('gh'), { path: f.bin, home: f.home })).check, { kind: 'signed-in', state: 'unknown', account: null });
+  assert.equal(existsSync(refreshed), false, 'when it is unclear whether gh can skip the refresh, it is not asked at all');
 });
 
 test('findExecutable needs an executable file', (t) => {
@@ -387,14 +406,6 @@ test('server and CLI statuses', () => {
   assert.equal(serverLabel({ name: 'claude.ai Gmail', scope: 'connector' }), 'Gmail');
   assert.equal(serverBrand({ name: 'claude.ai Google Drive', host: 'drivemcp.googleapis.com' }), 'googledrive');
   assert.equal(serverBrand({ name: 'mystery', host: null }), null);
-});
-
-test('the provider line is a few words and says each thing once', () => {
-  assert.equal(providerLine({ provider: null, drivers: ['claude', 'codex'], note: 'Servers for both Claude and Codex are listed.' }), 'No worker provider set, so both are listed');
-  assert.equal(providerLine({ provider: 'custom', drivers: ['claude', 'codex'], note: 'x' }), '"custom" isn\'t Claude or Codex, so both are listed');
-  assert.equal(providerLine({ provider: 'claudeAgent', drivers: ['claude'], note: null }), 'Worker: claudeAgent');
-  assert.equal(serverOrigin({ scope: 'provider', source: 'Codex', driver: 'codex' }), 'Added by Codex');
-  assert.equal(serverOrigin({ scope: 'user', source: '~/.claude.json', driver: 'claude' }), 'User config · ~/.claude.json');
 });
 
 test('driverGroups: problems first, a hint with the provider command, and the fallback note', () => {

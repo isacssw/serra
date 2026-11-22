@@ -1,8 +1,9 @@
 import { execFile } from 'node:child_process';
-import { existsSync, readFileSync, realpathSync } from 'node:fs';
+import { existsSync, realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join, resolve, sep } from 'node:path';
 import { readEnv, readProfileFile } from './config.ts';
+import { readState } from './state.ts';
 import { readTasks } from './tasks.ts';
 
 /** Runs a command and resolves with its stdout. Rejects when it exits non-zero. Injected so tests never call git, gh or t3. */
@@ -74,13 +75,7 @@ const parseThread = (raw: string): ThreadFacts => {
  * state.json, APP-25), whose activity T3's own date covers. state.json is only read, never written.
  */
 const readJobs = (statePath: string): { threadId: string; lastActivity: string }[] => {
-  const state = record(JSON.parse(readFileSync(statePath, 'utf8')));
-  const jobs = Object.values(state).flatMap((value) => {
-    const job = record(value);
-    if (typeof job.t3ThreadId !== 'string') return [];
-    const lastActivity = typeof job.lastActivityAt === 'string' ? job.lastActivityAt : typeof job.createdAt === 'string' ? job.createdAt : '';
-    return [{ threadId: job.t3ThreadId, lastActivity }];
-  });
+  const jobs = Object.values(readState(statePath).jobs).map((job) => ({ threadId: job.t3ThreadId, lastActivity: job.lastActivityAt ?? job.createdAt }));
   const tasks = readTasks(dirname(statePath)).map((task) => ({ threadId: task.t3ThreadId, lastActivity: task.createdAt }));
   return [...jobs, ...tasks];
 };

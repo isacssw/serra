@@ -1,0 +1,219 @@
+{
+  "id": "quest-001-answer-question",
+  "specs": [
+    "QUEST-001"
+  ],
+  "title": "a T3 question is posted once as a card, a button press answers T3 and resumes it, and a second press answers nothing",
+  "steps": [
+    {
+      "do": "slack",
+      "envelope": {
+        "type": "event_callback",
+        "team_id": "THOME",
+        "api_app_id": "A1",
+        "event_id": "Ev1",
+        "event_time": 1700000100,
+        "authorizations": [
+          {
+            "team_id": "THOME",
+            "user_id": "UBOT",
+            "is_bot": true
+          }
+        ],
+        "event": {
+          "type": "app_mention",
+          "user": "USAM",
+          "text": "<@UBOT> plan the release",
+          "ts": "1700000100.000100",
+          "channel": "C1",
+          "event_ts": "1700000100.000100",
+          "team": "THOME"
+        }
+      }
+    },
+    {
+      "do": "worker.ask",
+      "request": {
+        "requestId": "req-1",
+        "questions": [
+          {
+            "id": "q1",
+            "header": "Day",
+            "question": "Which day should the release go out?",
+            "multiSelect": false,
+            "options": [
+              {
+                "label": "Tuesday",
+                "description": "Before the freeze"
+              },
+              {
+                "label": "Thursday",
+                "description": "After QA"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "do": "advance",
+      "ms": 15000,
+      "expect": {
+        "slack": [
+          {
+            "method": "chat.postMessage",
+            "count": 1,
+            "args": {
+              "channel": "C1",
+              "thread_ts": "1700000100.000100",
+              "text": {
+                "$match": "Which day should the release go out\\?"
+              }
+            }
+          }
+        ],
+        "state": {
+          "C1:1700000100.000100": {
+            "waitingInT3": true,
+            "question": {
+              "requestId": "req-1"
+            }
+          }
+        }
+      }
+    },
+    {
+      "do": "advance",
+      "ms": 15000,
+      "expect": {
+        "slack": [
+          {
+            "method": "chat.postMessage",
+            "count": 1
+          }
+        ]
+      }
+    },
+    {
+      "do": "mark",
+      "name": "card"
+    },
+    {
+      "do": "click",
+      "label": "Tuesday",
+      "user": "USAM",
+      "expect": {
+        "t3": {
+          "answered": 1
+        },
+        "slack": [
+          {
+            "method": "chat.update",
+            "since": "card",
+            "count": 1,
+            "args": {
+              "channel": "C1",
+              "text": "Answer sent. Continuing…",
+              "blocks": [
+                {},
+                {
+                  "text": {
+                    "text": "Which day should the release go out?\nTuesday"
+                  }
+                },
+                {}
+              ]
+            }
+          },
+          {
+            "method": "assistant.threads.setStatus",
+            "since": "card",
+            "args": {
+              "status": "is looking into it…"
+            }
+          }
+        ],
+        "state": {
+          "C1:1700000100.000100": {
+            "question": "$absent",
+            "waitingInT3": false,
+            "watching": true
+          }
+        }
+      }
+    },
+    {
+      "do": "slack",
+      "envelope": {
+        "type": "block_actions",
+        "team": {
+          "id": "THOME"
+        },
+        "user": {
+          "id": "USAM"
+        },
+        "api_app_id": "A1",
+        "token": "x",
+        "trigger_id": "t",
+        "channel": {
+          "id": "C1"
+        },
+        "message": {
+          "ts": "1700000000.000001",
+          "type": "message"
+        },
+        "actions": [
+          {
+            "type": "button",
+            "action_id": "serra_question_choice_1",
+            "block_id": "sq:00000000000000000000000000000000:choices",
+            "value": "00000000000000000000000000000000",
+            "action_ts": "2"
+          }
+        ]
+      },
+      "expect": {
+        "t3": {
+          "answered": 1
+        },
+        "slack": [
+          {
+            "method": "chat.postMessage",
+            "since": "card",
+            "count": 0
+          }
+        ]
+      }
+    },
+    {
+      "do": "click",
+      "label": "Thursday",
+      "user": "USAM",
+      "expect": {
+        "t3": {
+          "answered": 1
+        }
+      }
+    },
+    {
+      "do": "worker.reply",
+      "text": "Tuesday it is: release notes drafted."
+    },
+    {
+      "do": "advance",
+      "ms": 15000,
+      "expect": {
+        "slack": [
+          {
+            "method": "chat.postMessage",
+            "since": "card",
+            "count": 1,
+            "args": {
+              "text": "Tuesday it is: release notes drafted."
+            }
+          }
+        ]
+      }
+    }
+  ]
+}
