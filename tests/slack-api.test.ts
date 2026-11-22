@@ -23,7 +23,7 @@ test('[REPLY-009] Serra\'s fixed notices are never recognised by their text: the
   const target = { conversation: 'C1', thread: '1700000000.000100' };
   await chat.notice(target, { kind: 'withheld' });
   await chat.notice(target, { kind: 'unconfirmed' });
-  await chat.notice(target, { kind: 'setup-problem', problem: 'missing_scope' });
+  await chat.notice(target, { kind: 'setup-problem', problem: 'missing-permission' });
   const at = '2026-11-18T10:00:00.000Z';
   for (const text of slack.posted.map((post) => String(post.text))) assert.equal(await chat.findReply(target, { runId: 'run-2', at, text }), null, text);
   await slack.client.chat.postMessage({ channel: 'C1', thread_ts: target.thread, text: 'Done.' });

@@ -1,22 +1,37 @@
 /**
- * The one way the worker's words reach a chat. `createDeliver` is handed the adapter's `WorkerWriter` and keeps it: the
- * function it returns is the only code that ever writes worker text. Each write first asks the chat who can see the
- * target now (`clear`), then asks the caller whether that audience may hear it (`may`: the knowledge-safety page check),
- * and writes straight after, so the gap between the check and the post is as small as it can be.
+ * The one way the worker's words reach a chat. `createDeliver` is handed the adapter's `WorkerWriter` and the page
+ * check, and keeps both: the function it returns is the only code that ever writes worker text. Each write first asks
+ * the chat who can see the target now (`clear`), then checks that this audience may hear what the worker was told, and
+ * writes straight after, so the gap between the check and the post is as small as it can be.
+ *
+ * A caller can't skip or loosen the check: it names one of a closed list of rules (`Hearing`), and the page check
+ * itself is fixed when the daemon wires `deliver`.
  *
  * Not guaranteed by anything: the milliseconds between the chat's answer and the write. A channel can be shared outside
  * in between. Today's code has the same gap.
  */
+import { wider, type Heard } from '../hearing.ts';
 import type { Audience, ChatError, MessageRef, PersonId, Target, WorkerFile, WorkerOut } from './port.ts';
 import type { Cleared, WorkerWriter } from './writer.ts';
 
-/** Where worker words go, for whom, and whether an audience may hear them. */
+/** Which rule a write must pass, besides the chat saying who can see the target. */
+type Hearing =
+  /** A job's thread: everyone who can see it may hear every page its worker was told. */
+  | { kind: 'thread'; heard: Heard }
+  /** Text only the owner may see, such as raw error output: the target must be theirs alone. */
+  | { kind: 'owner-only' }
+  /**
+   * Somewhere else than the job's thread (the code-review channel): everyone there may hear what the worker was told,
+   * and so may whoever sees `source`, the job's thread, now.
+   */
+  | { kind: 'elsewhere'; heard: Heard; source: { target: Target; requester: PersonId } };
+
+/** Where worker words go, for whom, and the rule they must pass. */
 export interface Delivery {
   target: Target;
   /** Whose request this answers: their DM, say, is theirs alone. */
   requester: PersonId;
-  /** Whether everyone in `audience` may hear what the worker was told. Called right before each write. */
-  may: (audience: Audience) => boolean | Promise<boolean>;
+  hearing: Hearing;
 }
 
 type Write =
@@ -32,7 +47,8 @@ type Delivered<T> = { ok: true; value: T } | Refused;
 
 export type Deliver = <W extends Write>(to: Delivery, write: W) => Promise<Delivered<Written<W>>>;
 
-export const createDeliver = (writer: WorkerWriter): Deliver => {
+/** `mayHear`: whether an audience may hear every page a worker was told (`hearing.ts`). */
+export const createDeliver = (writer: WorkerWriter, mayHear: (heard: Heard, audience: Audience) => boolean): Deliver => {
   const perform = async (proof: Cleared, write: Write): Promise<string | Error | null | undefined> => {
     switch (write.op) {
       case 'send': return writer.send(proof, write.out);
@@ -40,10 +56,22 @@ export const createDeliver = (writer: WorkerWriter): Deliver => {
       case 'upload': return writer.upload(proof, write.file);
     }
   };
+
   return async <W extends Write>(to: Delivery, write: W): Promise<Delivered<Written<W>>> => {
+    const { hearing } = to;
+    // Somewhere else: who sees the job's thread now is asked first, so the target's answer is the last before the write.
+    let heard = 'heard' in hearing ? hearing.heard : {};
+    if (hearing.kind === 'elsewhere') {
+      const source = await writer.clear(hearing.source.target, hearing.source.requester);
+      if (!source.ok) return { ok: false, why: 'unconfirmed', error: source.error };
+      if (!mayHear(heard, source.value.audience)) return { ok: false, why: 'withheld' };
+      // The target is then checked for the wider of the two: the source's audience is who the worker's thread speaks to now.
+      heard = { ...heard, visibility: wider(heard.visibility, source.value.audience) };
+    }
     const cleared = await writer.clear(to.target, to.requester);
     if (!cleared.ok) return { ok: false, why: 'unconfirmed', error: cleared.error };
-    if (!(await to.may(cleared.value.audience))) return { ok: false, why: 'withheld' };
+    const audience = cleared.value.audience;
+    if (hearing.kind === 'owner-only' ? audience !== 'owner' : !mayHear(heard, audience)) return { ok: false, why: 'withheld' };
     // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- `perform` returns what `write.op` asks for; TypeScript can't narrow a generic through the switch
     return { ok: true, value: (await perform(cleared.value, write)) as Written<W> };
   };

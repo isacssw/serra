@@ -51,20 +51,33 @@
           { "regex": "^(electron|react|react-dom|react-router)($|/)", "message": "src/ runs in plain Node: no Electron or React." },
           { "regex": "^@slack/", "message": "Slack lives in src/slack/. The core talks to a chat through ChatPort (src/chat/port.ts)." },
           { "regex": "(^|/)slack/", "message": "Slack lives in src/slack/. The core talks to a chat through ChatPort (src/chat/port.ts); only the daemon wires the adapter in." },
-          { "regex": "(^|/)chat/writer(\\.ts)?$", "message": "Only deliver (src/chat/deliver.ts) and the chat adapters hold a WorkerWriter: worker words go out through deliver." }
+          { "regex": "(^|/)(chat/)?writer(\\.ts)?$", "message": "Only deliver (src/chat/deliver.ts) and the chat adapters hold a WorkerWriter: worker words go out through deliver." }
         ] }]
       }
     },
     {
-      // The daemon wires the Slack adapter in. Setup, doctor, secrets, Slack names and the Bolt logger still use Slack
-      // directly until the profile is per channel (architecture review, seam F).
-      "files": ["src/daemon.ts", "src/index.ts", "src/setup.ts", "src/doctor.ts", "src/secrets.ts", "src/slack-names.ts", "src/logging.ts"],
+      // The daemon wires the Slack adapter in.
+      "files": ["src/daemon.ts", "src/index.ts"],
       "rules": {
         "react/rules-of-hooks": "off",
         "no-restricted-imports": ["error", { "patterns": [
           { "regex": "(^|/)app/", "message": "src/ never imports from app/: the app calls src, not the reverse." },
           { "regex": "^(electron|react|react-dom|react-router)($|/)", "message": "src/ runs in plain Node: no Electron or React." },
-          { "regex": "(^|/)chat/writer(\\.ts)?$", "message": "Only deliver (src/chat/deliver.ts) and the chat adapters hold a WorkerWriter: worker words go out through deliver." }
+          { "regex": "(^|/)(chat/)?writer(\\.ts)?$", "message": "Only deliver (src/chat/deliver.ts) and the chat adapters hold a WorkerWriter: worker words go out through deliver." }
+        ] }]
+      }
+    },
+    {
+      // Setup, doctor, secrets, Slack names and the Bolt logger still call Slack's API themselves until the profile is
+      // per channel (architecture review, seam F). They use @slack/bolt, not the adapter.
+      "files": ["src/setup.ts", "src/doctor.ts", "src/secrets.ts", "src/slack-names.ts", "src/logging.ts"],
+      "rules": {
+        "react/rules-of-hooks": "off",
+        "no-restricted-imports": ["error", { "patterns": [
+          { "regex": "(^|/)app/", "message": "src/ never imports from app/: the app calls src, not the reverse." },
+          { "regex": "^(electron|react|react-dom|react-router)($|/)", "message": "src/ runs in plain Node: no Electron or React." },
+          { "regex": "(^|/)slack/", "message": "Slack lives in src/slack/. The core talks to a chat through ChatPort (src/chat/port.ts); only the daemon wires the adapter in." },
+          { "regex": "(^|/)(chat/)?writer(\\.ts)?$", "message": "Only deliver (src/chat/deliver.ts) and the chat adapters hold a WorkerWriter: worker words go out through deliver." }
         ] }]
       }
     },
@@ -112,7 +125,7 @@
       "files": ["app/main/**", "app/preload.ts"],
       "rules": {
         "react/rules-of-hooks": "off",
-        "no-restricted-imports": ["error", { "patterns": [{ "regex": "(^|/)renderer/", "allowTypeImports": true, "message": "app/main never imports renderer code." }] }]
+        "no-restricted-imports": ["error", { "patterns": [{ "regex": "(^|/)renderer/", "allowTypeImports": true, "message": "app/main never imports renderer code." }, { "regex": "(^|/)src/(slack/|chat/writer)", "message": "The app never reaches the chat adapter or the WorkerWriter: it talks to the daemon over the status socket." }] }]
       }
     },
     {
@@ -129,7 +142,7 @@
     },
     {
       "files": ["app/main/**/*.logic.ts"],
-      "rules": { "no-restricted-imports": ["error", { "patterns": [{ "regex": "(^|/)renderer/", "allowTypeImports": true, "message": "app/main never imports renderer code." }, { "regex": "^(node:|react|react-dom|react-router|electron)", "allowTypeImports": true, "message": "A .logic.ts file is pure: move this import to the screen or handler that calls it." }] }] }
+      "rules": { "no-restricted-imports": ["error", { "patterns": [{ "regex": "(^|/)renderer/", "allowTypeImports": true, "message": "app/main never imports renderer code." }, { "regex": "(^|/)src/(slack/|chat/writer)", "message": "The app never reaches the chat adapter or the WorkerWriter: it talks to the daemon over the status socket." }, { "regex": "^(node:|react|react-dom|react-router|electron)", "allowTypeImports": true, "message": "A .logic.ts file is pure: move this import to the screen or handler that calls it." }] }] }
     },
     {
       // Tests cast fakes on purpose (a recorded Slack client as WebClient); eval and release scripts read their own files.

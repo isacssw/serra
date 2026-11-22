@@ -20,9 +20,10 @@ Rules a tool checks are left out here; `pnpm check` and CI tell you. Humans: [CO
   `src/` only from the pure modules listed in `.oxlintrc.json`. Everything else goes through `window.serra`, typed by
   `SerraApi` in `app/main/bridge.ts`.
 - `*.logic.ts` is the pure, tested half of a screen or service: no React, Electron or `node:` values. Put logic there.
-- Only `src/slack/` knows Slack; the core talks to a chat through `ChatPort` (`src/chat/port.ts`), and `src/daemon.ts`
-  wires the adapter in. Worker words go out only through `deliver` (`src/chat/deliver.ts`), the one holder of a
-  `WorkerWriter`: it asks who can see the target right before each write. A new chat is a new adapter folder.
+- The core reaches Slack only through `ChatPort` (`src/chat/port.ts`), implemented in `src/slack/`; `src/daemon.ts`
+  wires it in, and still parses Slack's inbound events. Worker words go out only through `deliver`
+  (`src/chat/deliver.ts`), the one holder of a `WorkerWriter`: it asks who can see the target, and runs the page
+  check, right before each write. Setup, doctor and secrets still call Slack directly (one exception list).
 
 ## Rules the tools don't check
 

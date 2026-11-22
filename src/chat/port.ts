@@ -25,8 +25,14 @@ export interface Target { readonly conversation: string; readonly thread: string
 /** One message the chat holds, by its conversation and the chat's ID for it. */
 export interface MessageRef { readonly conversation: string; readonly id: string }
 
-/** Why a lookup failed: `retry` may work later; `setup` won't until the owner fixes the app (`problem` is the chat's code). */
-export type ChatError = { kind: 'retry' } | { kind: 'setup'; problem: string };
+/** A lookup the chat refuses until the owner fixes the app: a permission it lacks, or a token it doesn't accept. */
+export type SetupProblem = 'missing-permission' | 'bad-token';
+
+/**
+ * Why a lookup failed: `retry` may work later; `setup` won't until the owner fixes the app. `code` is the chat's own
+ * error code, for the log and the app only: it never goes into a notice.
+ */
+export type ChatError = { kind: 'retry' } | { kind: 'setup'; problem: SetupProblem; code: string };
 export type Result<T> = { ok: true; value: T } | { ok: false; error: ChatError };
 
 /** An edit failed because the message is gone (someone deleted it). Callers post a new one instead. */
@@ -36,6 +42,14 @@ export class MessageGone extends Error {
     this.name = 'MessageGone';
   }
 }
+
+declare const t3Link: unique symbol;
+/** A T3 thread's web link, as T3 gave it. Only `t3LinkOf` makes one, so worker text can't pass for a link in a notice. */
+export type T3Link = string & { readonly [t3Link]: true };
+/** `url` as a T3 link: an http(s) URL with nothing a chat could read as markup, or null. */
+export const t3LinkOf = (url: string): T3Link | null =>
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the brand exists only in the type; this is its constructor
+  /^https?:\/\/[^\s<>|]+$/.test(url) ? url as T3Link : null;
 
 /** How many attached files one turn downloads for the worker. */
 export const MAX_ATTACHMENTS = 5;
@@ -56,15 +70,16 @@ export type Notice =
   /** In place of worker words when the chat couldn't confirm who can see the thread. */
   | { kind: 'unconfirmed' }
   /** In place of worker words when the chat won't say who can see the thread until the owner fixes the app. */
-  | { kind: 'setup-problem'; problem: string }
+  | { kind: 'setup-problem'; problem: SetupProblem }
   /** The thread carries on in a fresh T3 session because some knowledge it used changed. */
   | { kind: 'fresh-session' }
   /** The worker waits for something only T3 can show (a token, an approval, a form too big for the chat). */
-  | { kind: 'waiting-in-t3'; link: string }
+  | { kind: 'waiting-in-t3'; link: T3Link | null }
   /** Feedback on an answer to a question card. */
-  | { kind: 'question-hint'; hint: 'choose' | 'invalid-answer' | 'changed' | 'not-sent' | 'unconfirmed' }
-  /** A question card closed because its thread's knowledge was taken back. Only for `replaceWithNotice`. */
-  | { kind: 'question-closed' };
+  | { kind: 'question-hint'; hint: 'choose' | 'invalid-answer' | 'changed' | 'not-sent' | 'unconfirmed' };
+
+/** What a message can be replaced with: a notice, or a question card's fixed "closed" text. */
+export type Replacement = Notice | { kind: 'question-closed' };
 
 /** How a reply tells the owner: `callout` for a new blocker, `cc` once so they follow the thread, otherwise nothing. */
 export type OwnerNotify = 'callout' | 'cc' | 'none';
@@ -73,7 +88,7 @@ export type OwnerNotify = 'callout' | 'cc' | 'none';
  * Where a notice stands in for a run's reply: which run (so a restart finds it instead of posting again) and the frame
  * the reply would have had.
  */
-export type InPlaceOf = { runId: string } & ({ frame: 'reply'; link: string; notify: OwnerNotify } | { frame: 'status' });
+export type InPlaceOf = { runId: string } & ({ frame: 'reply'; link: T3Link | null; notify: OwnerNotify } | { frame: 'status' });
 
 /** A message read back from a thread, its text as the chat holds it (pass it to `read`). */
 export interface HistoryLine {
@@ -123,6 +138,8 @@ export interface ChatPort {
   self(): PersonId;
   /** A person's name as the chat shows it, or their ID when it can't say. */
   displayName(person: PersonId): Promise<string>;
+  /** Who a message mentions, and its words without the mentions: enough to tell who it is for, with no lookup. */
+  parse(text: string): Pick<InboundText, 'mentions' | 'prose'>;
   /** A message's text as the worker reads it: mentions as the names `nameOf` gives. */
   read(text: string, nameOf: (person: PersonId) => Promise<string>): Promise<InboundText>;
   /** The thread's messages before `before`, oldest first; `more` when older ones were left out. Null when it can't be read. */
@@ -140,7 +157,7 @@ export interface ChatPort {
   /** Posts a notice in the thread, or in place of a run's reply. Returns the message's ID. */
   notice(target: Target, notice: Notice, inPlaceOf?: InPlaceOf): Promise<string | undefined>;
   /** Replaces a message, such as a card or a status line, with a notice. False when it couldn't (it was deleted, say). */
-  replaceWithNotice(ref: MessageRef, notice: Notice, frame?: 'status'): Promise<boolean>;
+  replaceWithNotice(ref: MessageRef, notice: Replacement, frame?: 'status'): Promise<boolean>;
   /** Removes a message the bot posted. Best effort. */
   remove(ref: MessageRef): Promise<void>;
   /** Marks a message as seen and being worked on (Slack: 👀), or takes the mark away. Best effort. */

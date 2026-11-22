@@ -47,7 +47,7 @@ test('a request the review channel may not hear goes back to the owner to paste'
 test('Slack shows a review request as prepared by the bot for the owner, linking back to its thread', async () => {
   const slack = createFakeSlack();
   const { deliver } = slackChat(slack.client, { owner: 'U0123456789', botToken: 'xoxb-1111-2222-fixturevalue', profileDir: '/tmp' }, { botUserId: 'UBOT' });
-  await deliver({ target: { conversation: 'CREVIEW', thread: null }, requester: 'U0123456789', may: () => true },
+  await deliver({ target: { conversation: 'CREVIEW', thread: null }, requester: 'U0123456789', hearing: { kind: 'thread', heard: {} } },
     { op: 'send', out: { kind: 'review', markdown: 'Change https://github.com/acme/project/pull/12', from: 'Friday', link: 'https://slack.test/thread' } });
   assert.equal(slack.posted.length, 1);
   assert.equal(slack.posted[0]!.channel, 'CREVIEW');

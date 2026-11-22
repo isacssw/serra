@@ -18,7 +18,7 @@ export interface WorkerWriter {
   clear(target: Target, requester: PersonId): Promise<Result<Cleared>>;
   /** Posts in `proof.target`. Returns the message's ID. Throws what the chat throws. */
   send(proof: Cleared, out: WorkerOut): Promise<string>;
-  /** Edits a message in `proof.target`'s conversation. Throws `MessageGone` when it was deleted. */
+  /** Edits a message in `proof.target`'s conversation (who can see it is the conversation's). Throws `MessageGone` when it was deleted. */
   revise(proof: Cleared, ref: MessageRef, out: WorkerOut): Promise<void>;
   /** Uploads a file into `proof.target`. Returns the error instead of throwing, so one failed upload doesn't lose the reply. */
   upload(proof: Cleared, file: WorkerFile): Promise<Error | null>;

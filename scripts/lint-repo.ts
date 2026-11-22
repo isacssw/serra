@@ -153,11 +153,18 @@ check('lint: every suppression covers one line, names its rule and says why, aft
 
 check('imports: the core reaches Slack and the WorkerWriter by no dynamic import() either', () => {
   // .oxlintrc.json's import rules see static imports only. These files may load Slack (see the overrides there).
-  const slackOk = /^src\/(slack\/|daemon\.ts$|index\.ts$|setup\.ts$|doctor\.ts$|secrets\.ts$|slack-names\.ts$|logging\.ts$)/;
-  const bad = code().filter((file) => file.startsWith('src/')).flatMap((file) => [...read(file).matchAll(/\bimport\(\s*(['"`])([^'"`]+)\1/g)]
-    .filter(([, , target = '']) => (!slackOk.test(file) && /^@slack\/|(^|\/)slack\//.test(target))
-      || (!/^src\/(slack\/|chat\/deliver\.ts$)/.test(file) && /(^|\/)chat\/writer(\.ts)?$/.test(target)))
-    .map((match) => `${file}: ${match[2]}`));
+  const boltOk = /^src\/(slack\/|daemon\.ts$|index\.ts$|setup\.ts$|doctor\.ts$|secrets\.ts$|slack-names\.ts$|logging\.ts$)/;
+  const adapterOk = /^src\/(slack\/|daemon\.ts$|index\.ts$)/;
+  // Any dynamic import, a template or a variable included: only a literal can be checked, so the core may use none of
+  // the others to reach Slack.
+  const bad = code().filter((file) => file.startsWith('src/')).flatMap((file) => [...read(file).matchAll(/\bimport\(\s*(?:(['"`])([^'"`]+)\1|([^)'"`]+))/g)]
+    .filter(([, , literal, other]) => {
+      if (other !== undefined) return !boltOk.test(file);
+      const target = literal ?? '';
+      return (!boltOk.test(file) && /^@slack\//.test(target)) || (!adapterOk.test(file) && /(^|\/)slack\//.test(target))
+        || (!/^src\/(slack\/|chat\/deliver\.ts$)/.test(file) && /(^|\/)(chat\/)?writer(\.ts)?$/.test(target));
+    })
+    .map((match) => `${file}: ${match[2] ?? match[3] ?? ''}`));
   assert.deepEqual(bad, []);
 });
 
@@ -248,7 +255,7 @@ const exceptionsNow = (): Set<string> => {
 // A reviewed change to the gates (any change but removing exceptions): the fingerprint the check below prints for it.
 // It covers main's version and this one, so it only ever matches the change it was made for.
 // Changing this line is how a PR says "this changes what the gates enforce, on purpose"; the reviewer sees both.
-const ACKNOWLEDGED_GATE_CHANGE = 'b460b40344321486';
+const ACKNOWLEDGED_GATE_CHANGE = 'c34de7aa1ab636f2';
 
 check('gates: unchanged against main, except exceptions removed (lint, knip, tsconfigs, scripts, gitleaks, CI)', () => {
   const commit = base();

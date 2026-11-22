@@ -4,10 +4,10 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { fillBrief, needsOwner, NO_THREAD } from './brief.ts';
 import type { Deliver, Delivery, Refused } from './chat/deliver.ts';
-import { MAX_ATTACHMENTS, MessageGone, type Audience as Visibility, type ChatPort, type InboundText, type InPlaceOf, type MessageRef, type Notice, type OwnerNotify, type PersonId, type Target, type WorkerOut } from './chat/port.ts';
+import { MAX_ATTACHMENTS, MessageGone, type Audience as Visibility, type ChatPort, type InboundText, type InPlaceOf, type MessageRef, type Notice, type OwnerNotify, type PersonId, type SetupProblem, type Target, type WorkerOut, t3LinkOf } from './chat/port.ts';
 import { stampProposalsFolder, threadProposalsFolder } from './proposals.ts';
 import type { BriefKnowledge } from './knowledge.ts';
-import { mayUse } from './owner-model.ts';
+import { revokedAt } from './hearing.ts';
 import type { Config, MessageTrigger } from './config.ts';
 import { audienceOf, createBatcher, followUpMessage, isPing, ownerNotice, speakerName, type Audience, type ThreadLine } from './conversation.ts';
 import { shareImages, type Upload } from './images.ts';
@@ -146,6 +146,9 @@ type Heard = ThreadLine & { ts: string };
 /** Where a job's replies go. Stored as Slack's `channel` and `threadTs` until the stored shape changes. */
 const targetOf = (job: Pick<Job, 'channel' | 'threadTs'>): Target => ({ conversation: job.channel, thread: job.threadTs });
 const messageIn = (job: Pick<Job, 'channel'>, id: string): MessageRef => ({ conversation: job.channel, id });
+
+/** What a post means for the owner's follow state, saved with its intent (REPLY-009). */
+type OwnerFlags = { ownerFollows?: boolean; ownerAskOpen?: boolean };
 
 /** The notice that stands in for worker words `deliver` refused. */
 const refusalNotice = (refused: Refused): Notice => refused.why === 'withheld' ? { kind: 'withheld' }
@@ -313,7 +316,7 @@ export const createBot = ({
     events('failure', { key, error: message.slice(0, 500) });
     const post = async (): Promise<void> => {
       if (user === config.owner) {
-        const detail = await deliver({ target: { conversation: channel, thread: threadTs }, requester: user, may: (audience) => audience === 'owner' },
+        const detail = await deliver({ target: { conversation: channel, thread: threadTs }, requester: user, hearing: { kind: 'owner-only' } },
           { op: 'send', out: { kind: 'failure-detail', line: message.split('\n')[0]!.slice(0, 300) } });
         if (detail.ok) return;
       }
@@ -425,14 +428,10 @@ export const createBot = ({
   };
 
   /**
-   * Where the worker's words for this job go, and the page check `deliver` runs right before each write: every page
-   * the worker read must be for whoever can see the thread then.
+   * Where the worker's words for this job go. `deliver` checks right before each write that every page the worker
+   * read is for whoever can see the thread then.
    */
-  const deliveryFor = (job: Job): Delivery => ({
-    target: targetOf(job),
-    requester: job.requester,
-    may: (audience) => !loadKnowledge || revokedAt(job, audience).revoked.length === 0,
-  });
+  const deliveryFor = (job: Job): Delivery => ({ target: targetOf(job), requester: job.requester, hearing: { kind: 'thread', heard: job } });
 
   /**
    * Posts a run's reply, at least once and rarely twice. The intent is saved first, the post carries the run ID (Slack:
@@ -444,7 +443,7 @@ export const createBot = ({
    * place: `notice`, or the one for the refusal. Returns the posted message's ID and whether a notice took its place.
    */
   const postReply = async (key: string, job: Job, runId: string, thread: Pick<T3Thread, 'activeRunId'>, out: WorkerOut | null, notice: Notice | null,
-    inPlaceOf: InPlaceOf, { byWorker, owner = {} }: { byWorker: boolean; owner?: { ownerFollows?: boolean; ownerAskOpen?: boolean } }): Promise<{ id: string | undefined; notice: boolean }> => {
+    inPlaceOf: InPlaceOf, { byWorker, owner = {}, ownerIfNotice = owner }: { byWorker: boolean; owner?: OwnerFlags; ownerIfNotice?: OwnerFlags }): Promise<{ id: string | undefined; notice: boolean }> => {
     const text = out && 'markdown' in out ? out.markdown.slice(0, INTENT_TEXT) : undefined;
     updateJob(key, () => ({ delivering: { runId, at: new Date(now()).toISOString(), ...(text === undefined ? {} : { text }), ...owner } }));
     let instead = notice;
@@ -453,8 +452,13 @@ export const createBot = ({
       const sent = await deliver(deliveryFor(job), { op: 'send', out });
       if (sent.ok) id = sent.value; else instead = refusalNotice(sent);
     }
-    if (instead) id = await chat.notice(targetOf(job), instead, inPlaceOf);
-    updateJob(key, (latest) => ({ lastPostedRunId: runId, delivering: undefined, ...seenOver(latest, thread), ...turnOver(latest, runId, byWorker), ...owner }));
+    const flags = instead ? ownerIfNotice : owner;
+    if (instead) {
+      // A restart that finds this notice posted restores what a notice means for the owner, not what the reply would have.
+      if (out) updateJob(key, (latest) => (latest.delivering ? { delivering: { ...latest.delivering, ...flags } } : {}));
+      id = await chat.notice(targetOf(job), instead, inPlaceOf);
+    }
+    updateJob(key, (latest) => ({ lastPostedRunId: runId, delivering: undefined, ...seenOver(latest, thread), ...turnOver(latest, runId, byWorker), ...flags }));
     return { id, notice: instead !== null };
   };
 
@@ -472,11 +476,8 @@ export const createBot = ({
    */
   const postReview = (job: Job, channel: string, link: string): PostReview => async (markdown) => {
     const target: Target = { conversation: channel, thread: null };
-    const sent = await deliver({ target, requester: config.owner, may: async (audience) => {
-      if (!loadKnowledge) return true;
-      const source = await revocation(job);
-      return !source.unknown && source.revoked.length === 0 && revokedAt({ ...job, visibility: source.visibility }, audience).revoked.length === 0;
-    } }, { op: 'send', out: { kind: 'review', markdown, from: config.name, link } });
+    const sent = await deliver({ target, requester: config.owner, hearing: { kind: 'elsewhere', heard: job, source: { target: targetOf(job), requester: job.requester } } },
+      { op: 'send', out: { kind: 'review', markdown, from: config.name, link } });
     if (!sent.ok) return { ok: false, refused: true };
     return { ok: true, link: await chat.permalink({ conversation: channel, id: sent.value }) };
   };
@@ -495,15 +496,16 @@ export const createBot = ({
     // A reply the worker wrote with knowledge the owner has since taken back isn't posted: it may repeat that text.
     // When the chat can't say who sees the thread, nothing is posted yet: the next poll tries again.
     const check = !QUIET.test(reply) && loadKnowledge ? await revocation(job) : null;
-    const problem = check?.unknown ? check.problem : undefined;
-    if (check?.unknown && !problem) {
+    const setup = check?.unknown ? check.setup : undefined;
+    const problem = setup?.problem;
+    if (check?.unknown && !setup) {
       logger.warn(`Could not confirm who can see ${key}; the reply waits for the next check.`);
       return;
     }
-    if (problem) {
+    if (setup) {
       // Asking again won't help: the owner is told what to fix, and the thread gets a notice instead of the reply.
-      logger.error(`Slack won't say who can see ${key} (${problem}): update the Slack app's scopes (docs/configuration.md) and reinstall it.`);
-      events('failure', { key, error: `Slack won't say who can see this thread (${problem}). Update the Slack app's scopes and reinstall it; until then replies there are held.` });
+      logger.error(`The chat won't say who can see ${key} (${setup.code}): update the chat app's permissions (docs/configuration.md) and reinstall it.`);
+      events('failure', { key, error: `The chat won't say who can see this thread (${setup.code}). Update the chat app's permissions and reinstall it; until then replies there are held.` });
     }
     /** A notice in place of the reply (a setup problem, or a withheld answer): it isn't the run's result. */
     let replaced: Notice | null = problem ? { kind: 'setup-problem', problem } : check && check.revoked.length > 0 ? { kind: 'withheld' } : null;
@@ -577,7 +579,7 @@ export const createBot = ({
     if (byWorker && !someonePending && !blocked && !reviewPosted && !uploaded && notice === 'none') {
       const out: WorkerOut | null = markdown === null ? null : { kind: 'status', markdown, link: thread.link, runId, updatedAt: now() };
       let edited = false;
-      let withheld = replaced !== null;
+      let withheld = false;
       if (job.statusTs) {
         const ref = messageIn(job, job.statusTs);
         // A status message someone deleted can't be edited: a new one takes its place.
@@ -590,7 +592,7 @@ export const createBot = ({
           const instead = revised && !revised.ok ? refusalNotice(revised) : replaced;
           if (instead) {
             edited = await chat.replaceWithNotice(ref, instead, 'status');
-            withheld = true;
+            withheld = edited;
           }
         }
       }
@@ -608,7 +610,7 @@ export const createBot = ({
         lastActivityAt: new Date(now()).toISOString(),
       }));
       await finishLoading(key, job);
-      events('reply', { ...measured, ...(withheld || posted?.notice ? { notice: true } : {}), kind: edited ? 'status_edited' : 'status_posted' });
+      events('reply', { ...measured, ...(replaced || withheld || posted?.notice ? { notice: true } : {}), kind: edited ? 'status_edited' : 'status_posted' });
       return;
     }
 
@@ -618,8 +620,8 @@ export const createBot = ({
       ownerAskOpen: needs && (told === 'callout' || latest.ownerAskOpen === true),
     });
     const out: WorkerOut | null = markdown === null ? null : { kind: 'reply', markdown, link: thread.link, notify: notice, runId };
-    const posted = await postReply(key, job, runId, thread, out, replaced, { runId, frame: 'reply', link: thread.link, notify: noticeNotify },
-      { byWorker, owner: out ? ownerAfter(notice, blocked, job) : ownerAfter(noticeNotify, false, job) });
+    const posted = await postReply(key, job, runId, thread, out, replaced, { runId, frame: 'reply', link: t3LinkOf(thread.link), notify: noticeNotify },
+      { byWorker, owner: out ? ownerAfter(notice, blocked, job) : ownerAfter(noticeNotify, false, job), ownerIfNotice: ownerAfter(noticeNotify, false, job) });
     // A notice that took the reply's place is no blocker, and tells the owner as a notice does.
     const [told, needs] = posted.notice ? [noticeNotify, false] : [notice, blocked];
     const cleared = await clearEyes(job);
@@ -740,7 +742,7 @@ export const createBot = ({
     // When the chat can't say who sees the thread, the form doesn't move on: the next question is the worker's words.
     const check = loadKnowledge ? await revocation(job) : null;
     if (check?.unknown) {
-      await (check.problem ? notify(job.channel, job.threadTs, { kind: 'setup-problem', problem: check.problem }) : questionFeedback(job, 'unconfirmed'));
+      await (check.setup ? notify(job.channel, job.threadTs, { kind: 'setup-problem', problem: check.setup.problem }) : questionFeedback(job, 'unconfirmed'));
       return;
     }
     // The next question is the worker's own words too: a thread whose knowledge was taken back shows none, and the
@@ -761,20 +763,19 @@ export const createBot = ({
       const out: WorkerOut = { kind: 'question', card: next, to: recipient };
       // Save only after the edit succeeds, so a failed edit leaves usable choices and can be retried. The next question
       // is the worker's words: `deliver` checks it first, and a card it refuses is closed with fixed copy.
+      /** A refused card: withheld closes the form with fixed copy; unconfirmed keeps it as it is, to answer again. */
+      const refused = async (why: Refused['why']): Promise<void> => {
+        if (why === 'withheld') await clearQuestion(key, job, user, { ...state, answers }, true);
+        else await questionFeedback(job, 'unconfirmed');
+      };
       try {
         const revised = await deliver(deliveryFor(job), { op: 'revise', ref: messageIn(job, state.ts), out });
-        if (!revised.ok) {
-          await clearQuestion(key, job, user, { ...state, answers }, true);
-          return;
-        }
+        if (!revised.ok) return await refused(revised.why);
       } catch (error) {
         if (!(error instanceof MessageGone)) throw error;
         // A new card in place of one someone deleted.
         const posted = await deliver(deliveryFor(job), { op: 'send', out });
-        if (!posted.ok) {
-          await clearQuestion(key, job, user, { ...state, answers }, true);
-          return;
-        }
+        if (!posted.ok) return await refused(posted.why);
         next.ts = posted.value;
       }
       updateJob(key, (latest) => ({ question: next, ...rememberReply(latest) }));
@@ -810,7 +811,7 @@ export const createBot = ({
   /** Secrets, approvals and forms the chat cannot display stay in T3. Queued follow-ups wait for their resolution. */
   const postWaitingNotice = async (key: string, job: Job, thread: T3Thread): Promise<void> => {
     await setLoading(job.channel, job.threadTs, false, job.loadingRequested === true);
-    await notify(job.channel, job.threadTs, { kind: 'waiting-in-t3', link: thread.link });
+    await notify(job.channel, job.threadTs, { kind: 'waiting-in-t3', link: t3LinkOf(thread.link) });
     updateJob(key, () => ({ waitingInT3: true, ownerFollows: true, lastActivityAt: new Date(now()).toISOString() }));
     logger.info(`T3 thread ${job.t3ThreadId} is waiting on a request; told the owner in ${key}`);
     events('waiting_in_t3', { key, t3ThreadId: job.t3ThreadId });
@@ -882,35 +883,19 @@ export const createBot = ({
   };
 
   /**
-   * Pages this thread's brief allowed that `current` may not hear: restricted, retired or removed since. Checked for
-   * the wider of who could see the thread when it started and `current`. A thread from before Serra recorded its pages
-   * was briefed with every page there was, including any removed since, which can't be checked: unless only the owner
-   * sees it, it counts as revoked. `deliver` runs this right before every write of worker words.
+   * `revokedAt` (`hearing.ts`) for who can see the thread now, asked of the chat: a channel shared with another company
+   * since is outside. `unknown` when the chat can't say (`setup` when it won't until the owner fixes the app). Checked
+   * before a turn and before work that ends in a post; `deliver` checks again right before each write.
    */
-  const WIDTH: Record<Visibility, number> = { owner: 0, team: 1, external: 2 };
-  const revokedAt = (job: Job, current: Visibility): { visibility: Visibility; knowledge: BriefKnowledge; revoked: string[] } => {
-    const visibility = job.visibility && WIDTH[job.visibility] >= WIDTH[current] ? job.visibility : current;
-    const knowledge = loadKnowledge!(visibility);
-    // The owner may hear anything they ever had, removed pages included: nothing of theirs is withheld from them.
-    if (visibility === 'owner') return { visibility, knowledge, revoked: [] };
-    if (!job.knowledgeRead) return { visibility, knowledge, revoked: ['(pages from before Serra recorded them)'] };
-    // A page is revoked for this audience when the version the worker read wasn't for them, or when the page as it is
-    // now isn't (narrowed, retired or removed since).
-    return { visibility, knowledge, revoked: Object.entries(job.knowledgeRead).filter(([page, audience]) => !mayUse(audience, visibility) || !knowledge.pages.includes(page)).map(([page]) => page) };
-  };
-
-  /**
-   * `revokedAt` for who can see the thread now, asked of the chat: a channel shared with another company since is
-   * outside. `unknown` when the chat can't say (`problem` when it won't until the owner fixes the app): nothing the
-   * worker wrote goes out until it can.
-   */
-  const revocation = async (job: Job): Promise<{ visibility: Visibility; knowledge: BriefKnowledge; revoked: string[]; unknown: boolean; problem?: string }> => {
+  const revocation = async (job: Job): Promise<{ visibility: Visibility; knowledge: BriefKnowledge; revoked: string[]; unknown: boolean; setup?: { problem: SetupProblem; code: string } }> => {
     const current = await chat.audience(targetOf(job), job.requester, { fresh: true });
-    if (current.ok) return { ...revokedAt(job, current.value), unknown: false };
+    if (current.ok) return { ...revokedAt(loadKnowledge!, job, current.value), unknown: false };
     const visibility = job.visibility ?? 'external';
     const knowledge = loadKnowledge!(visibility);
+    // The owner may hear anything they ever had: a thread only they could see stays theirs.
     if (visibility === 'owner') return { visibility, knowledge, revoked: [], unknown: false };
-    return { visibility, knowledge, revoked: ['(who can see this thread is unknown)'], unknown: true, ...(current.error.kind === 'setup' ? { problem: current.error.problem } : {}) };
+    return { visibility, knowledge, revoked: ['(who can see this thread is unknown)'], unknown: true,
+      ...(current.error.kind === 'setup' ? { setup: { problem: current.error.problem, code: current.error.code } } : {}) };
   };
 
   /**
@@ -993,7 +978,7 @@ export const createBot = ({
 
   /** A message in a thread the bot already owns: a turn for the worker, or context it gets with its next turn. */
   const continueJob = async (key: string, msg: IncomingMessage, allowed: boolean): Promise<void> => {
-    const said: Audience = msg.direct ? 'bot' : audienceOf(await read(msg.text), { userId: chat.self(), name: config.name });
+    const said: Audience = msg.direct ? 'bot' : audienceOf(chat.parse(msg.text), { userId: chat.self(), name: config.name });
     if (!allowed && said === 'bot') return refuse(msg);
     if (!(await toReadable(msg.text)) && !(allowed && msg.files?.length)) return;
     const job = getJob(key);
@@ -1061,7 +1046,7 @@ export const createBot = ({
       const followsPing = !msg.direct && !trigger;
       if (followsPing) {
         // After "are you there?" / "I'm here", the pinger's next message is the request, with or without an @mention.
-        if (pingedBy(key) !== msg.user || audienceOf(await read(msg.text), { userId: chat.self(), name: config.name }) === 'others') return;
+        if (pingedBy(key) !== msg.user || audienceOf(chat.parse(msg.text), { userId: chat.self(), name: config.name }) === 'others') return;
       } else if (!trigger && !allowed) return refuse(msg);
       const said = await toReadable(msg.text);
       if (!said && !(trigger ? false : msg.files?.length)) return;

@@ -7,7 +7,7 @@ import { basename } from 'node:path';
 import type { Clock } from '../clock.ts';
 import { errorMessage } from '../lib/errors.ts';
 import { isRecord } from '../lib/guards.ts';
-import { MessageGone, type Audience, type ChatError, type ChatPort, type HistoryLine, type InPlaceOf, type Notice, type OwnerNotify, type PersonId, type Result, type Target, type WorkerOut } from '../chat/port.ts';
+import { MessageGone, type Audience, type ChatError, type ChatPort, type HistoryLine, type InPlaceOf, type Notice, type Replacement, type OwnerNotify, type PersonId, type Result, type Target, type WorkerOut } from '../chat/port.ts';
 import { clearedFor, type Cleared, type WorkerWriter } from '../chat/writer.ts';
 import { comparableSlackText, slackErrorCode, type SlackApi } from './api.ts';
 import { receiveAttachments } from './attachments.ts';
@@ -60,9 +60,11 @@ const truncate = (text: string): string =>
 
 const isDm = (conversation: string): boolean => conversation.startsWith('D');
 
+const BAD_TOKEN = new Set(['not_allowed_token_type', 'not_authed', 'invalid_auth', 'account_inactive', 'token_revoked']);
 const chatError = (error: unknown): ChatError => {
   const code = slackErrorCode(error);
-  return PERMANENT_SLACK_ERRORS.has(code) ? { kind: 'setup', problem: code } : { kind: 'retry' };
+  if (!PERMANENT_SLACK_ERRORS.has(code)) return { kind: 'retry' };
+  return { kind: 'setup', problem: BAD_TOKEN.has(code) ? 'bad-token' : 'missing-permission', code };
 };
 
 export interface SlackChatOptions {
@@ -92,12 +94,11 @@ export const createSlackChat = ({ client, owner, botUserId, botToken, profileDir
         : `Something went wrong on my side, so I couldn't pick this up. ${mention(owner)} will take a look.`;
       case 'withheld': return WITHHELD;
       case 'unconfirmed': return UNCONFIRMED;
-      case 'setup-problem': return `${SETUP_NOTICE_START}: my Slack app is missing a permission (${notice.problem}). I've told my owner how to fix it, and I'll answer here once it's done.`;
+      case 'setup-problem': return `${SETUP_NOTICE_START}: ${notice.problem === 'bad-token' ? 'my Slack app\'s token isn\'t accepted' : 'my Slack app is missing a permission'}. I've told my owner how to fix it, and I'll answer here once it's done.`;
       case 'fresh-session': return 'Some knowledge this thread used has changed, so I\'m carrying on in a fresh session.';
-      case 'waiting-in-t3': return `${mention(owner)} I'm waiting for you in T3: <${notice.link}|answer it there>. `
+      case 'waiting-in-t3': return `${mention(owner)} I'm waiting for you in T3: ${notice.link ? `<${notice.link}|answer it there>` : 'answer it there'}. `
         + 'It needs an action there, such as a token, an approval, or a question Slack cannot display. Messages here reach me once it\'s answered.';
       case 'question-hint': return QUESTION_HINTS[notice.hint];
-      case 'question-closed': return closedMessage().text;
     }
   };
 
@@ -167,12 +168,12 @@ export const createSlackChat = ({ client, owner, botUserId, botToken, profileDir
   const replyMetadata = (runId: string) => ({ event_type: REPLY_EVENT, event_payload: { run_id: runId } });
 
   /** A run's reply: a callout for a new blocker, the reply, and a footer with a cc and the T3 link. */
-  const replyFrame = (body: string, link: string, notify: OwnerNotify): Rendered => ({
+  const replyFrame = (body: string, link: string | null, notify: OwnerNotify): Rendered => ({
     text: body.slice(0, SLACK_FALLBACK_LIMIT),
     blocks: [
       ...(notify === 'callout' ? [{ type: 'section' as const, text: { type: 'mrkdwn' as const, text: `${mention(owner)} this one needs you.` } }] : []),
       { type: 'markdown', text: body },
-      { type: 'context', elements: [{ type: 'mrkdwn', text: `${notify === 'cc' ? `cc ${mention(owner)} · ` : ''}<${link}|T3 thread>` }] },
+      { type: 'context', elements: [{ type: 'mrkdwn', text: `${notify === 'cc' ? `cc ${mention(owner)} · ` : ''}${link ? `<${link}|T3 thread>` : 'T3 thread'}` }] },
     ],
     unfurl_links: false,
   });
@@ -200,9 +201,9 @@ export const createSlackChat = ({ client, owner, botUserId, botToken, profileDir
   };
 
   /** A notice as a message, in the thread or in the frame of the reply it stands in for. */
-  const renderNotice = (notice: Notice, inPlaceOf?: InPlaceOf): Rendered => {
-    const text = noticeText(notice);
+  const renderNotice = (notice: Replacement, inPlaceOf?: InPlaceOf): Rendered => {
     if (notice.kind === 'question-closed') return closedMessage();
+    const text = noticeText(notice);
     if (inPlaceOf?.frame === 'reply') return replyFrame(text, inPlaceOf.link, inPlaceOf.notify);
     if (inPlaceOf?.frame === 'status') return { text, blocks: [{ type: 'markdown', text }], unfurl_links: false };
     return { text, unfurl_links: false };
@@ -211,6 +212,10 @@ export const createSlackChat = ({ client, owner, botUserId, botToken, profileDir
   // The port. -------------------------------------------------------------------------------------------------------
 
   const displayNames = new Map<string, string>();
+  const parse = (text: string): { mentions: PersonId[]; prose: string } => ({
+    mentions: [...new Set([...text.matchAll(MENTION)].flatMap((match) => (match[1] ? [match[1]] : [])))],
+    prose: text.replace(MENTION, ' '),
+  });
 
   const chat: ChatPort = {
     self: botUserId,
@@ -225,8 +230,10 @@ export const createSlackChat = ({ client, owner, botUserId, botToken, profileDir
       return name;
     },
 
+    parse,
+
     async read(text, nameOf) {
-      const mentions = [...new Set([...text.matchAll(MENTION)].flatMap((match) => (match[1] ? [match[1]] : [])))];
+      const { mentions, prose } = parse(text);
       const names = new Map<string, string>();
       for (const person of mentions) if (person !== botUserId()) names.set(person, await nameOf(person));
       // The bot's own mention removed, everyone else's turned into `@Name`: dropping every mention loses who a
@@ -235,7 +242,7 @@ export const createSlackChat = ({ client, owner, botUserId, botToken, profileDir
         .replace(MENTION, (_mention, user: string) => (user === botUserId() ? '' : `@${names.get(user) ?? user}`))
         .replace(/[ \t]{2,}/g, ' ')
         .trim();
-      return { text: readable, mentions, prose: text.replace(MENTION, ' ') };
+      return { text: readable, mentions, prose };
     },
 
     async history(target, before) {
@@ -263,9 +270,10 @@ export const createSlackChat = ({ client, owner, botUserId, botToken, profileDir
       .then((result) => result.permalink ?? null, () => null),
 
     async findReply(target, intent) {
+      if (target.thread === null) return null;
       // Ten minutes before the intent was saved: room for Slack's clock and this machine's to disagree.
       const intentAt = Date.parse(intent.at) / 1000;
-      const replies = await client.conversations.replies({ channel: target.conversation, ts: target.thread ?? '', include_all_metadata: true, oldest: (intentAt - 600).toFixed(6), limit: 200 })
+      const replies = await client.conversations.replies({ channel: target.conversation, ts: target.thread, include_all_metadata: true, oldest: (intentAt - 600).toFixed(6), limit: 200 })
         .catch((error: unknown) => {
           logger.warn(`Couldn't read ${target.conversation}:${target.thread ?? ''} to check for a reply posted before a restart: ${errorMessage(error)}`);
           return null;
@@ -324,8 +332,8 @@ export const createSlackChat = ({ client, owner, botUserId, botToken, profileDir
 
   // The writer. -----------------------------------------------------------------------------------------------------
 
-  /** A proof is for one target and a short while: worker words never go out on an old answer. */
-  const check = (proof: Cleared, conversation: string): void => {
+  /** A proof is for one conversation and a short while: worker words never go out on an old answer. */
+  const check = (proof: Cleared, conversation = proof.target.conversation): void => {
     if (proof.target.conversation !== conversation) throw new Error(`Cleared for ${proof.target.conversation}, not ${conversation}`);
     if (now() - proof.at > CLEARED_TTL_MS) throw new Error(`Who can see ${conversation} was checked too long ago to post on`);
   };
@@ -337,7 +345,7 @@ export const createSlackChat = ({ client, owner, botUserId, botToken, profileDir
     },
 
     async send(proof, out) {
-      check(proof, proof.target.conversation);
+      check(proof);
       const runId = out.kind === 'reply' || out.kind === 'status' ? out.runId : null;
       const posted = await client.chat.postMessage({ ...inThread(proof.target), ...render(out), ...(runId ? { metadata: replyMetadata(runId) } : {}) });
       if (!posted.ts) throw new Error('Slack returned no message');
@@ -357,7 +365,7 @@ export const createSlackChat = ({ client, owner, botUserId, botToken, profileDir
     },
 
     async upload(proof, file) {
-      check(proof, proof.target.conversation);
+      check(proof);
       if (proof.target.thread === null) return new Error('Files go into a thread');
       const result = await client
         .filesUploadV2({

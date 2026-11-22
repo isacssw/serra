@@ -16,6 +16,7 @@ import { proposeBriefUpdate } from '../src/brief.ts';
 import { fakeClock, type FakeClock } from './fakes/clock.ts';
 import { createFakeSlack, slackError } from './fakes/slack.ts';
 import { slackChat } from './fakes/chat.ts';
+import { mayHearWith } from '../src/hearing.ts';
 
 /** The fake clocks of this test's bots. `settle` moves them all, in place of sleeping for the batcher. */
 const clocks: FakeClock[] = [];
@@ -351,7 +352,7 @@ test('restricting a page a thread already used moves the next turn to a fresh th
   const clock = fakeClock(); clocks.push(clock);
   const quiet = (): void => {};
   const bot = createBot({
-    config, ...slackChat(client, config, { botUserId: 'UMOSS', clock, receive: async () => '' }), store: createStore(config.statePath), loadIndex: () => knowledge.loadIndex(),
+    config, ...slackChat(client, config, { botUserId: 'UMOSS', clock, receive: async () => '', mayHear: mayHearWith((visibility) => knowledge.briefKnowledge(visibility)) }), store: createStore(config.statePath), loadIndex: () => knowledge.loadIndex(),
     loadKnowledge: (visibility) => knowledge.briefKnowledge(visibility), logger: { info: quiet, warn: quiet, error: quiet, debug: quiet },
     t3: {
       startThread: async (input: { brief: string }) => { started.push(input.brief); return `t3-${started.length}`; },
@@ -456,7 +457,7 @@ const botOn = async (profileDir: string) => {
   });
   const quiet = (): void => {};
   const bot = createBot({
-    config, ...slackChat(client, config, { botUserId: 'UMOSS', clock, receive: async () => '' }), store, loadIndex: () => knowledge.loadIndex(),
+    config, ...slackChat(client, config, { botUserId: 'UMOSS', clock, receive: async () => '', mayHear: mayHearWith((visibility) => knowledge.briefKnowledge(visibility)) }), store, loadIndex: () => knowledge.loadIndex(),
     loadKnowledge: (visibility) => knowledge.briefKnowledge(visibility), logger: { info: quiet, warn: quiet, error: quiet, debug: quiet },
     t3: {
       startThread: async (input: { brief: string; baseRef: string }) => { started.push(input.brief); bases.push(input.baseRef); return `t3-${started.length}`; },
@@ -1035,7 +1036,7 @@ test('a Slack app without the scope to describe channels gets a setup notice in 
   await run.bot.handle({ channel: 'CTEAM', threadTs: '33.1', messageTs: '33.1', user: PRIYA, text: '<@UMOSS> how do I cut a release?', direct: true });
   run.outside.add('SCOPE');
   await run.finish('Run pnpm release:prepare.');
-  assert.ok(run.posted.some((text) => /missing a permission \(missing_scope\)/.test(text)), 'the thread hears why');
+  assert.ok(run.posted.some((text) => /missing a permission\. I've told my owner/.test(text)), 'the thread hears why');
   assert.ok(!run.posted.some((text) => /release:prepare/.test(text)));
   const before = run.posted.length;
   await run.bot.poll();

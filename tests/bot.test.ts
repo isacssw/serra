@@ -1280,3 +1280,46 @@ test('at start, a followed job whose run finished while the bot was stopped is p
   await bot.poll();
   assert.deepEqual(f.posts.map((post) => post.text), ['Scoring works like this.']);
 });
+
+// Each write of worker words is checked by `deliver` right before it goes out. These tests have no knowledge set up,
+// so the only lookups of who can see the thread are those last-moment checks.
+
+test('[REPLY-003] a progress line Slack can\'t clear at the moment of writing isn\'t shown, and the next poll tries again', async (t) => {
+  const f = fixture(t);
+  await f.say(SAM, `<@${BOT}> why does the leaderboard double count?`, true);
+  await f.bot.poll();
+  f.workerNotes('Reproducing the double count locally first.');
+  await f.advance(3 * 60_000);
+  f.slack.fail('conversations.info', new Error('ratelimited'), 2);
+  await f.bot.poll();
+  assert.equal(f.posts.length, 0, 'no worker words without the check');
+  await f.bot.poll();
+  assert.match(f.posts[0]!.text, /Still on it: Reproducing/);
+});
+
+test('[QUEST-001] a lookup blip before the next question card keeps the form: the answer is asked for again, nothing is lost', async (t) => {
+  const f = fixture(t);
+  await f.say(SAM, `<@${BOT}> investigate`, true);
+  const request = nativeQuestion();
+  request.questions.push({ id: 'details', header: 'Details', question: 'Anything else?', options: [] });
+  f.questionRequests.push(request); f.waitsInT3(1); await f.bot.poll();
+  const first = savedQuestion(f);
+  f.slack.fail('conversations.info', new Error('ratelimited'), 2);
+  await choose(f, 0);
+  assert.deepEqual(savedQuestion(f), first, 'the card and its answers are as they were');
+  assert.ok(f.posts.some((post) => /haven’t taken that answer/.test(post.text)));
+  assert.ok(!f.edits.some((edit) => /was closed/.test(edit.text)), 'not closed as if knowledge were taken back');
+  await choose(f, 0);
+  assert.equal(savedQuestion(f).index, 1, 'answering again moves on');
+});
+
+test('[REPLY-001] a reply Slack can\'t clear at the moment of writing becomes the "couldn\'t confirm" notice, posted once for its run', async (t) => {
+  const f = fixture(t);
+  await f.say(SAM, `<@${BOT}> rename the pricing page`, true);
+  f.slack.fail('conversations.info', new Error('ratelimited'), 2);
+  await f.workerReplies('Renamed it.');
+  assert.deepEqual(f.posts.map((post) => post.text), ['I couldn\'t confirm who can see this thread just now, so I haven\'t posted my answer here. Ask again in a minute and I\'ll try again.']);
+  assert.equal(f.eyes.size, 0, 'the 👀 goes with it');
+  await f.bot.poll();
+  assert.equal(f.posts.length, 1, 'the run counts as answered');
+});
