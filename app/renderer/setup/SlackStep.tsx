@@ -64,14 +64,16 @@ const TokenRow = ({ status, checking, workspace, onChange }: { status: SecretSta
         <StateIcon tone={tone} />
         <div className="flex min-w-0 flex-1 flex-col">
           <p className="text-[14px] font-medium">{label} <span className="font-mono text-[12px] font-normal text-muted">{SECRET_PREFIXES[status.name]}…</span></p>
-          <p className={cx('text-[13px] break-words', token.state === 'rejected' && !busy ? 'text-down' : 'text-muted')} role="status">
+          <p className={cx('text-[13px] break-words', token.state === 'rejected' && !busy ? 'text-down' : 'text-muted')} role="status" title={token.error ?? undefined}>
             {checking || busy ? 'Checking with Slack…' : tokenText(token, workspace)}
           </p>
         </div>
         {(token.state === 'found' || (token.state === 'rejected' && !refused)) && !checking && (
           <Button size="sm" onClick={() => void check()} disabled={busy}>{token.state === 'found' ? 'Check' : 'Check again'}</Button>
         )}
-        {token.state === 'verified' && !replacing && <Button size="sm" variant="ghost" onClick={() => setReplacing(true)}>Replace</Button>}
+        {(token.state === 'verified' || (token.state === 'rejected' && !refused)) && !replacing && (
+          <Button size="sm" variant="ghost" onClick={() => setReplacing(true)}>Replace</Button>
+        )}
       </div>
       {showField && (
         <form className="flex items-start gap-2 pl-8" onSubmit={(event) => { event.preventDefault(); void save(); }}>

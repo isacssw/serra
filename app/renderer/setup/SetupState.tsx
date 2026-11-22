@@ -34,7 +34,12 @@ export const SetupProvider = ({ initial, children }: { initial: SetupProgress | 
     const reread = (): void => { void refresh(); };
     const events = ['focus', SETUP_INCOMPLETE_EVENT, SETUP_CHANGED];
     for (const name of events) window.addEventListener(name, reread);
-    const off = serra()?.on.status(reread);
+    // Job counts change the status often; setup only cares whether the bot is up and connected.
+    let last = '';
+    const off = serra()?.on.status((status) => {
+      const key = status.state === 'up' ? `up:${status.slackConnected}` : status.state;
+      if (key !== last) { last = key; reread(); }
+    });
     return () => { for (const name of events) window.removeEventListener(name, reread); off?.(); };
   }, [initial, refresh]);
   const value = useMemo(() => ({ progress, refresh }), [progress, refresh]);

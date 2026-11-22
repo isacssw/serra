@@ -344,7 +344,8 @@ export const checkSecret = async (profileDir: string, name: SecretName, options:
     try { result = await verify(name, value); }
     catch (caught) {
       const code = (caught as { data?: { error?: unknown } }).data?.error;
-      throw new Error(`Slack rejected ${name}: ${typeof code === 'string' ? code : (caught as Error).message}`);
+      // Slack's own answer means it refused the token; anything else means the check never reached a verdict.
+      throw new Error(typeof code === 'string' ? `Slack rejected ${name}: ${code}` : `Couldn't reach Slack: ${(caught as Error).message}`);
     }
   } catch (caught) {
     error = scrub(caught instanceof Error ? caught.message : String(caught), [value]);

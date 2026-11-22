@@ -56,7 +56,7 @@ const Rail = ({ pathname }: { pathname: string }) => {
                 </span>
                 {/* Narrow windows show the numbers only; the name stays for screen readers. */}
                 <span className="max-md:sr-only">{step.short}</span>
-                {(done || !open) && <span className="sr-only">{done ? ', done' : `, ${lockedReason(progress, step.id)}`}</span>}
+                {(done || !open) && <span className="sr-only">{done ? ', done' : `, ${lockedReason(progress, step.id).replace(/^A/, 'a')}`}</span>}
               </button>
             </li>
           );
@@ -100,9 +100,10 @@ export const SetupFlow = () => {
         <span className={isMac ? 'min-w-[72px]' : undefined} />
         {onStart ? <span /> : <Rail pathname={pathname} />}
         <div className="flex justify-end">
-          {profile && pathname !== DONE_PATH && (
+          {/* Hidden where the screen's own main button already opens Serra (the end, or a finished summary). */}
+          {profile && progress?.next && pathname !== DONE_PATH && (
             <Button variant="ghost" size="sm" className="no-drag text-muted" onClick={() => void navigate(defaultPath)}>
-              {progress?.next ? 'Skip for now' : 'Open Serra'}
+              Skip for now
             </Button>
           )}
         </div>

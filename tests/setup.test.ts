@@ -17,16 +17,16 @@ import { isSetupIncomplete, SETUP_INCOMPLETE, SETUP_INCOMPLETE_MESSAGE, SetupInc
 import { stoppedStatusSource } from '../app/main/status.ts';
 import {
   announcement, DONE_PATH, draftErrors, lockedReason, draftRequest, draftToSave, emptyDraft, foundLine, nextPath, outcomeText, pickable, previousPath,
-  restoreDraft, resumePath, ringDash, shortPath, tokenRefused, tokenText, setupRowLabel, slackLine, startView, stepOpen, suggestId, summaryRows, tokensToPrecheck, toToken,
+  plainError, restoreDraft, resumePath, ringDash, shortPath, tokenRefused, tokenText, setupRowLabel, slackLine, startView, stepOpen, suggestId, summaryRows, tokensToPrecheck, toToken,
 } from '../app/renderer/setup/setup.logic.ts';
 import type { SecretStatus } from '../src/contracts.ts';
 import { loadConfig, readProfileFile } from '../src/config.ts';
 import type { ServiceDriver } from '../src/deploy.ts';
 import { diagnose, type SlackAccountCheck } from '../src/doctor.ts';
 import { prepareNextRelease } from '../src/releases.ts';
-import type { SlackVerify } from '../src/secrets.ts';
+import { checkSecret, type SlackVerify } from '../src/secrets.ts';
 import {
-  confirmOwner, createProfile, createSetupProfile, detectProject, installService, profileFromDraft, setupProgress,
+  certainPresence, confirmOwner, createProfile, createSetupProfile, detectProject, installService, profileFromDraft, setupProgress,
   slackManifest, suggestBotId, summarizeProfile, type MemberLookup, type ProfileDraft, type ProfileSummary, type SetupProgress,
 } from '../src/setup.ts';
 
@@ -424,7 +424,7 @@ test('setup logic: where to resume, and which step comes next', () => {
   assert.equal(previousPath('/setup/you'), '/setup');
   assert.equal(previousPath('/setup/owner'), '/setup/slack');
   assert.equal(announcement('/setup/slack'), 'Step 2 of 4: Connect Slack');
-  assert.equal(announcement('/setup'), 'Welcome to Serra');
+  assert.equal(announcement('/setup'), 'Serra setup');
 });
 
 test('setup logic: the first screen welcomes, summarises what was found, or asks which bot', () => {
@@ -446,6 +446,7 @@ test('setup logic: the first screen welcomes, summarises what was found, or asks
   // An installed service whose first answer is on record (or, for another profile, that is installed) is done.
   assert.equal(foundLine(legacy), '2 of 4 steps already done.');
   assert.equal(summaryRows(summaryWith(['profile'], { service: 'installed' }))[3]!.value, 'Installed, hasn’t answered yet');
+  assert.equal(summaryRows(summaryWith(['profile'], { service: 'disconnected' }))[3]!.value, 'Running, not connected to Slack');
   assert.equal(shortPath('/Users/you/.local/share/serra/friday', '/Users/you'), '~/.local/share/serra/friday');
   assert.equal(shortPath('/Volumes/x/friday', '/Users/you'), '/Volumes/x/friday');
   assert.deepEqual(summaryRows(legacy).map((row) => [row.label, row.value, row.done]), [
@@ -476,6 +477,19 @@ test('setup logic: found tokens are checked on their own, except 1Password ones,
   assert.equal(tokenRefused('getaddrinfo ENOTFOUND slack.com'), false);
   assert.equal(tokenText(toToken(status('SLACK_BOT_TOKEN', { kind: 'env' }, { error: 'token_revoked' })), null), 'Slack didn’t accept this token. Paste a new one.');
   assert.equal(tokenText(toToken(status('SLACK_BOT_TOKEN', { kind: '1password', reference: 'op://v/i/f' }, { error: '1Password is locked' })), null), 'Couldn’t check it: 1Password is locked');
+  // Wrong kind of token, or a missing scope: a retry never helps, so these ask for a new token in plain words.
+  const wrongKind = toToken(status('SLACK_APP_TOKEN', { kind: 'keychain', service: 's', account: 'a' }, { error: "SLACK_APP_TOKEN from Keychain item s/a isn't a real xapp- token" }));
+  assert.equal(tokenRefused(wrongKind.error), true);
+  assert.equal(tokenText(wrongKind, null), 'This isn’t an xapp- token. Paste the app token.');
+  const scope = toToken(status('SLACK_APP_TOKEN', { kind: 'env' }, { error: 'Slack rejected SLACK_APP_TOKEN: missing_scope' }));
+  assert.equal(tokenText(scope, null), 'It’s missing the connections:write scope. Generate a new app token with it.');
+  // Offline: the check never reached Slack, said plainly, with no variable name or path.
+  const offline = toToken(status('SLACK_BOT_TOKEN', { kind: 'env' }, { error: "Couldn't reach Slack: A request error occurred: getaddrinfo ENOTFOUND slack.com" }));
+  assert.equal(tokenRefused(offline.error), false);
+  assert.equal(tokenText(offline, null), 'Couldn’t check it: Slack is unreachable (getaddrinfo ENOTFOUND slack.com)');
+  assert.equal(plainError("SLACK_APP_TOKEN from /Users/you/.local/share/serra/friday/.env is empty"), '.env is empty');
+  // Something unknown counts as the token's problem: the owner can always paste a new one.
+  assert.equal(tokenRefused('Slack rejected SLACK_BOT_TOKEN: something_new'), true);
 });
 
 test('setup logic: the sidebar row and the saved draft', () => {
@@ -700,7 +714,7 @@ test('a deleted Keychain item isn\'t connected, even with a passing check on rec
     checks: { SLACK_BOT_TOKEN: { verifiedAt: at, error: null }, SLACK_APP_TOKEN: { verifiedAt: at, error: null } },
   }));
   writeFileSync(join(f.root, 'keychain.json'), JSON.stringify({ 'dev.serra.friday/SLACK_BOT_TOKEN': BOT, 'dev.serra.friday/SLACK_APP_TOKEN': APP }));
-  const handlers = setupHandlers(context(dir), { launchAgentsDir: join(f.root, 'agents'), answerWaitMs: 0 });
+  const handlers = setupHandlers(context(dir), { launchAgentsDir: join(f.root, 'agents'), answerWaitMs: 0, presenceCacheMs: 0 });
   assert.equal((await handlers.progress()).steps.find((step) => step.id === 'slack')!.done, true);
   // The app token's item was deleted from the Keychain.
   writeFileSync(join(f.root, 'keychain.json'), JSON.stringify({ 'dev.serra.friday/SLACK_BOT_TOKEN': BOT }));
@@ -709,4 +723,33 @@ test('a deleted Keychain item isn\'t connected, even with a passing check on rec
   const summary = await summarizeProfile(dir, { launchAgentsDir: join(f.root, 'agents') });
   assert.equal(summary.steps.find((step) => step.id === 'slack')!.done, false);
   assert.equal(summary.tokens.find((token) => token.name === 'SLACK_APP_TOKEN')!.state, 'missing');
+});
+
+test('an uncertain Keychain answer isn\'t a deleted token, and a bot that reached Slack before counts as answered', async (t) => {
+  const f = fixture(t);
+  const statuses: SecretStatus[] = [
+    { name: 'SLACK_BOT_TOKEN', source: { kind: 'keychain', service: 's', account: 'a' }, set: false, verifiedAt: null, error: 'security timed out' },
+    { name: 'SLACK_APP_TOKEN', source: { kind: 'keychain', service: 's', account: 'b' }, set: false, verifiedAt: null, error: null },
+  ];
+  assert.deepEqual(certainPresence(statuses), { SLACK_APP_TOKEN: false });
+
+  const dir = join(f.root, 'friday');
+  cliProfile(f, dir);
+  writeFileSync(join(dir, 'active.json'), '{}');
+  const agents = join(f.root, 'agents');
+  assert.equal(setupProgress(dir, { launchAgentsDir: agents, running: false }).steps.find((step) => step.id === 'service')!.done, false);
+  // Set up before the first answer was recorded: the daemon's ready.json says it reached Slack.
+  writeFileSync(join(dir, 'ready.json'), '{}');
+  assert.equal(setupProgress(dir, { launchAgentsDir: agents, running: false }).steps.find((step) => step.id === 'service')!.done, true);
+});
+
+test('a check that never reached Slack says so, instead of "Slack rejected"', async (t) => {
+  const f = fixture(t);
+  const dir = join(f.root, 'friday');
+  cliProfile(f, dir);
+  writeFileSync(join(dir, '.env'), `SLACK_BOT_TOKEN=${BOT}\nSLACK_APP_TOKEN=${APP}\n`);
+  const offline = await checkSecret(dir, 'SLACK_BOT_TOKEN', { verify: async () => { throw new Error('A request error occurred: getaddrinfo ENOTFOUND slack.com'); } });
+  assert.equal(offline.error, "Couldn't reach Slack: A request error occurred: getaddrinfo ENOTFOUND slack.com");
+  const refused = await checkSecret(dir, 'SLACK_BOT_TOKEN', { verify: async () => { throw Object.assign(new Error('An API error occurred'), { data: { error: 'invalid_auth' } }); } });
+  assert.equal(refused.error, 'Slack rejected SLACK_BOT_TOKEN: invalid_auth');
 });

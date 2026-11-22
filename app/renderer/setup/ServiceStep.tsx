@@ -8,7 +8,7 @@ import { serra } from '../bridge.ts';
 import { useBotStatus } from '../shell/live.ts';
 import { Button } from '../ui/index.ts';
 import { Alert, Card, errorText, StateIcon, StepFooter, StepHeader } from './parts.tsx';
-import { FLOW, nextPath, outcomeText, previousPath } from './setup.logic.ts';
+import { FLOW, nextPath, outcomeText, previousPath, stepDone } from './setup.logic.ts';
 import { setupChanged, useSetup } from './SetupState.tsx';
 
 const step = FLOW[3]!;
@@ -68,7 +68,9 @@ export const ServiceStep = () => {
   };
 
   const result = outcome && !outcome.ok ? outcomeText(outcome) : null;
-  const tone = running ? 'done' : busy || waiting ? (late ? 'problem' : 'busy') : result ? 'problem' : 'todo';
+  const tone = running ? 'done' : disconnected && !busy ? 'problem' : busy || waiting ? (late ? 'problem' : 'busy') : result ? 'problem' : 'todo';
+  // Setup counts the step done once the bot has answered; stopped since, Continue still goes on (Done offers Start).
+  const canContinue = (running && installed) || stepDone(progress, 'service');
   const line = running ? `${name} is running and connected to Slack.`
     : disconnected && !busy ? `${name} is running but not connected to Slack yet.`
     : busy === 'install' ? (log.at(-1) ?? 'Preparing…')
@@ -86,12 +88,12 @@ export const ServiceStep = () => {
           <StateIcon tone={tone} />
           <p className="min-w-0 flex-1 text-[14px] break-words" role="status">{line}</p>
           {!running && !disconnected && !busy && !waiting && installed && <Button size="sm" onClick={() => void start()}>Start</Button>}
-          {!running && !busy && (!waiting || late) && (
+          {!running && !busy && !disconnected && (!waiting || late) && (
             <Button size="sm" variant={installed ? 'ghost' : 'primary'} onClick={() => void install()}>
               {installed ? 'Install again' : 'Install and start'}
             </Button>
           )}
-          {late && <Button size="sm" variant="ghost" onClick={() => void navigate('/settings/diagnostics')}>Diagnostics</Button>}
+          {(late || (disconnected && !busy)) && <Button size="sm" variant={disconnected ? 'primary' : 'ghost'} onClick={() => void navigate('/settings/diagnostics')}>Diagnostics</Button>}
         </div>
         {log.length > 0 && (
           <details className="pl-8 text-[13px]" open={Boolean(result)}>
@@ -108,7 +110,7 @@ export const ServiceStep = () => {
       {error && <Alert>{error}</Alert>}
       <p className="text-[13px] text-muted">It starts again on its own when you log in.</p>
       <StepFooter back={previousPath(step.path)}>
-        <Button variant="primary" aria-disabled={running && installed ? undefined : true} onClick={() => { if (running && installed) void refresh().then((latest) => navigate(nextPath(latest ?? progress, step.path))); }}>
+        <Button variant="primary" aria-disabled={canContinue ? undefined : true} onClick={() => { if (canContinue) void refresh().then((latest) => navigate(nextPath(latest ?? progress, step.path))); }}>
           Continue
         </Button>
       </StepFooter>

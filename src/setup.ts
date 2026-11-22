@@ -358,6 +358,13 @@ export interface ServiceLookup {
   present?: Partial<Record<SecretName, boolean>>;
 }
 
+/**
+ * Token presence that is certain: a Keychain lookup that failed (timed out, locked) says nothing, so it is left out
+ * and the files' view stands, rather than calling a working token deleted.
+ */
+export const certainPresence = (statuses: readonly SecretStatus[]): Partial<Record<SecretName, boolean>> =>
+  Object.fromEntries(statuses.filter((status) => status.set || status.source.kind !== 'keychain' || !status.error).map((status) => [status.name, status.set]));
+
 /** Records that the installed bot answered, connected to Slack, so setup's last step stays done (see `SetupFile`). */
 export const recordServiceAnswered = (profileDir: string, now = new Date()): void => {
   const directory = resolve(profileDir);
@@ -419,7 +426,8 @@ export const setupProgress = (profileDir: string | null, lookup: ServiceLookup =
   const installed = serviceInstalled(directory, profile, lookup);
   // Done once the installed bot has answered (recorded in setup.json), or answers now. The CLI, which can't tell,
   // counts an installed service.
-  const answered = Boolean(setup.serviceAnsweredAt) || (lookup.running ?? true);
+  // A bot set up before this was recorded counts too when it left `ready.json`, written once it reached Slack.
+  const answered = Boolean(setup.serviceAnsweredAt) || existsSync(join(directory, 'ready.json')) || (lookup.running ?? true);
   add('service', installed && answered, !installed ? 'Not installed yet' : lookup.running ? 'Running' : answered ? 'Installed under launchd' : 'Installed, hasn’t answered yet');
   return {
     profileDir: directory,
@@ -449,8 +457,11 @@ export interface TokenSummary {
   error: string | null;
 }
 
-/** `running`: the daemon answers on its status socket. `installed`: launchd has it, but it isn't answering. */
-export type ServiceState = 'running' | 'installed' | 'none';
+/**
+ * `running`: the daemon answers on its status socket, connected to Slack. `disconnected`: it answers, not connected.
+ * `installed`: launchd has it, but it isn't answering.
+ */
+export type ServiceState = 'running' | 'disconnected' | 'installed' | 'none';
 
 /** One profile as the setup's first screen summarises it: what is there, and the first step still missing. */
 export interface ProfileSummary extends SetupProgress {
@@ -480,7 +491,7 @@ export const tokenState = (status: SecretStatus): TokenState => {
  */
 export const summarizeProfile = async (
   profileDir: string,
-  { running, secrets, ...lookup }: ServiceLookup & { secrets?: SecretOptions } = {},
+  { running, disconnected, secrets, ...lookup }: ServiceLookup & { secrets?: SecretOptions; disconnected?: boolean } = {},
 ): Promise<ProfileSummary> => {
   const directory = resolve(profileDir);
   let profile: Profile | null = null;
@@ -490,7 +501,7 @@ export const summarizeProfile = async (
   if (profile) {
     try {
       const statuses = await secretStatus(directory, secrets);
-      present = Object.fromEntries(statuses.map((status) => [status.name, status.set]));
+      present = certainPresence(statuses);
       tokens = statuses.map((status) => ({
         name: status.name, state: tokenState(status), where: sourceLabel(status.source) as TokenSummary['where'], error: status.error,
       }));
@@ -509,7 +520,7 @@ export const summarizeProfile = async (
     repo: profile ? profile.project.githubRepo || basename(profile.project.path) : null,
     workspace,
     tokens,
-    service: installed ? (running ? 'running' : 'installed') : 'none',
+    service: installed ? (running ? 'running' : disconnected ? 'disconnected' : 'installed') : 'none',
   };
 };
 

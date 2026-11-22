@@ -12,7 +12,7 @@ import { readProfileFile } from '../../../src/config.ts';
 import type { SecretName } from '../../../src/contracts.ts';
 import { secretStatus, type SecretOptions } from '../../../src/secrets.ts';
 import {
-  confirmOwner, createSetupProfile, detectGithubLogin, detectProject, installService, recordServiceAnswered, setupProgress, slackManifest,
+  certainPresence, confirmOwner, createSetupProfile, detectGithubLogin, detectProject, installService, recordServiceAnswered, setupProgress, slackManifest,
   summarizeProfile, type InstallOptions, type MemberLookup, type ProfileDraft, type SetupProgress,
 } from '../../../src/setup.ts';
 import { run } from '../../../src/t3.ts';
@@ -38,6 +38,8 @@ export interface SetupDeps {
   secrets?: SecretOptions;
   /** Where launchd plists live (tests: a temp folder). */
   launchAgentsDir?: string;
+  /** How long token presence is reused between progress reads (default 3 s; tests: 0). */
+  presenceCacheMs?: number;
   /** How long to give a daemon that has a socket to answer, right after launch (default 1.5 s; tests: 0). */
   answerWaitMs?: number;
   /** Where log lines go besides the window (default: the main process's console). */
@@ -104,6 +106,19 @@ export const setupHandlers = (context: HandlerContext, deps: SetupDeps = {}): Ha
   };
 
   /**
+   * Which tokens are still where their source says, cached for a few seconds: progress is read on every window focus
+   * and status change, and each read would run `security` once per token.
+   */
+  let cached: { directory: string; at: number; present: Partial<Record<SecretName, boolean>> | undefined } | null = null;
+  const presence = async (directory: string): Promise<Partial<Record<SecretName, boolean>> | undefined> => {
+    if (cached && cached.directory === directory && Date.now() - cached.at < (deps.presenceCacheMs ?? 3_000)) return cached.present;
+    let present: Partial<Record<SecretName, boolean>> | undefined;
+    try { present = certainPresence(await secretStatus(directory, deps.secrets)); } catch { /* the files' view stands */ }
+    cached = { directory, at: Date.now(), present };
+    return present;
+  };
+
+  /**
    * Setup's progress for the profile in use. Keychain items are checked for presence once Slack would count as done
    * (a deleted item isn't connected), and the bot's first answer after an install is recorded, so a bot stopped later
    * doesn't reopen setup. The wait for a daemon to answer only happens until that first answer.
@@ -113,8 +128,7 @@ export const setupHandlers = (context: HandlerContext, deps: SetupDeps = {}): Ha
     if (!directory) return setupProgress(null, lookup);
     let present: Partial<Record<SecretName, boolean>> | undefined;
     if (setupProgress(directory, { ...lookup, running: false }).steps.find((step) => step.id === 'slack')?.done) {
-      try { present = Object.fromEntries((await secretStatus(directory, deps.secrets)).map((status) => [status.name, status.set])); }
-      catch { /* the files' view stands */ }
+      present = await presence(directory);
     }
     const base = { ...lookup, ...(present ? { present } : {}) };
     const stopped = setupProgress(directory, { ...base, running: false });
@@ -133,7 +147,9 @@ export const setupHandlers = (context: HandlerContext, deps: SetupDeps = {}): Ha
     const options = { ...lookup, ...(deps.secrets ? { secrets: deps.secrets } : {}) };
     const others = profilesUnder(root).map((dir) => resolve(dir)).filter((dir) => dir !== selectedDir);
     return {
-      selected: selectedDir ? await summarizeProfile(selectedDir, { ...options, running: up }) : null,
+      selected: selectedDir ? await summarizeProfile(selectedDir, {
+        ...options, running: up, disconnected: !up && context.status.current().state === 'up',
+      }) : null,
       others: await Promise.all(others.map((dir) => summarizeProfile(dir, options))),
       pinned: context.profilePinned === true,
       profileRoot: root,
