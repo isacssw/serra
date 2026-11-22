@@ -15,7 +15,7 @@ import {
 import { launchd, preparedProblems, type DeployOptions, type PrepareOptions } from '../../../src/deploy.ts';
 import { pauseIntake, readAck, readPause, readPauseFile, resumeIntake } from '../../../src/intake.ts';
 import type { Handlers } from '../bridge.ts';
-import { clearUpdateSource, lastCleared, sourceProblem, staleSource } from '../../../src/update-migration.ts';
+import { clearUpdateSource, forgetCleared, lastCleared, sourceProblem, staleSource } from '../../../src/update-migration.ts';
 import { botSyncDecision, type BotSync } from '../bot-sync.ts';
 import type { HandlerContext } from './context.ts';
 
@@ -41,7 +41,7 @@ const MAX_LOG_LINES = 500;
 /** How often the bot's version is compared with the app's, after a first look shortly after launch. */
 const SYNC_EVERY_MS = 60_000;
 const SYNC_FIRST_MS = 20_000;
-/** A missing update source is cleared only when it is still missing this long after it was first seen. */
+/** A missing or unrecognised update source is cleared only when it still is this long after it was first seen. */
 const MISSING_CONFIRM_MS = 60_000;
 /** After a pause lapsed with jobs still running, new requests flow again for this long; the update waits for a quiet moment. */
 const PAUSE_COOLDOWN_MS = 60 * 60_000;
@@ -77,13 +77,14 @@ export const updatesService = (context: HandlerContext, deps: UpdatesDeps = {}) 
   /**
    * In a packaged app: an update source that can never work (set under alpha.2, say) is cleared, after a backup, so
    * the bot follows the app instead of sitting in developer mode. A real checkout, or anything uncertain, is kept. A
-   * missing folder is cleared only when it is still missing a minute later, in case it was only being moved.
+   * missing or unrecognised folder is cleared only when it is still so a minute later, in case it was being moved.
    */
   const migrate = (profileDir: string | null): void => {
     if (!profileDir || looked.has(profileDir)) return;
     const stale = staleSource(profileDir, context.botFollowsApp === true);
     if (!stale) { looked.add(profileDir); missingSeen.delete(profileDir); return; }
-    if (stale.kind === 'missing') {
+    // A folder may be mid-copy or mid-move: look again a minute later. Only a path inside an app needs no second look.
+    if (stale.kind !== 'inside-app') {
       const seen = missingSeen.get(profileDir);
       if (!seen || seen.source !== stale.source) { missingSeen.set(profileDir, { source: stale.source, at: now() }); return; }
       if (now() - seen.at < MISSING_CONFIRM_MS) return;
@@ -266,6 +267,8 @@ export const updatesService = (context: HandlerContext, deps: UpdatesDeps = {}) 
       // Not in the middle of a bot action: a build may be reading the source right now.
       if (!running) migrate(profileDir);
       const releases = profileDir ? await releaseStatus(profileDir, { ...deps.status, fetch: options?.fetch === true }) : null;
+      // The owner set a source again: an earlier automatic clear isn't news any more, even once it is removed again.
+      if (profileDir && releases?.mode === 'developer') forgetCleared(profileDir);
       const bot: BotSync = (await decide(profileDir, releases ?? undefined))?.sync ?? { state: 'not-installed' };
       return {
         appVersion: context.runtime.version,

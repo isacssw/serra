@@ -180,6 +180,8 @@ test('the Updates screen: a stale source is cleared once per launch and said in 
   const before = await developer.status();
   assert.equal(before.releases?.mode, 'developer');
   assert.equal(before.sourceCleared, null, 'no notice in developer mode');
+  assert.ok(existsSync(status.sourceCleared!.backup), 'the backup is kept');
+  assert.ok(!existsSync(join(status.sourceCleared!.backup, 'cleared.json')), 'its notice is dropped once a source is set again');
   const done = await developer.followApp();
   assert.equal(done?.source, f.checkout);
   assert.equal(done?.reason, '');
@@ -255,4 +257,19 @@ test('with a bot from before alpha.3 running a job, Updates and its log make no 
   const holding = await updatesService({ ...contextFor(f.directory, true), every: () => {} }, { echo: () => {}, deploy: { driver } }).handlers.status();
   assert.equal(holding.bot.state === 'waiting' && holding.bot.paused, true);
   assert.match(botLine(holding.bot)!.detail, /New requests wait until then/);
+});
+
+test('a folder that is not Serra’s code is cleared only if it still is a minute later (it may be mid-copy)', async (t) => {
+  const f = fixture(t);
+  const copying = join(f.root, 'copying');
+  mkdirSync(copying);
+  writeFileSync(join(copying, 'README.md'), '# Serra\n');
+  f.setSource(copying);
+  let clock = Date.parse('2026-11-22T10:00:00.000Z');
+  const handlers = updatesHandlers(contextFor(f.directory, true), { echo: () => {}, now: () => clock });
+  assert.equal((await handlers.status()).releases?.mode, 'developer');
+  writeFileSync(join(copying, 'package.json'), '{"name":"serra"}');
+  clock += 61_000;
+  assert.equal((await handlers.status()).releases?.mode, 'developer', 'the copy finished: it is Serra’s code now, and stays');
+  assert.deepEqual(f.profile().updates, { source: copying });
 });

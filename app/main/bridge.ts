@@ -265,7 +265,7 @@ export interface SerraApi {
       log: string[];
       /** The bot can follow this app's version (a packaged app), so developer mode is a choice the owner can leave. */
       followsApp: boolean;
-      /** An update source Serra cleared for this profile since it opened (stale, or Follow app updates), for a one-line notice. */
+      /** The last update source Serra cleared on its own for this profile in the past week, for a one-line notice. Null in developer mode. */
       sourceCleared: ClearedSource | null;
     };
     /** Jobs the bot is following, which a restart pauses, for the confirm dialogs. */

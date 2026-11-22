@@ -148,6 +148,14 @@ const NOTICE = 'cleared.json';
 /** How long Updates mentions a cleared source. */
 export const NOTICE_DAYS = 7;
 
+/** Drops the notices (not the backups): the owner set a source again, so an earlier clear no longer applies. */
+export const forgetCleared = (profileDir: string): void => {
+  const root = join(resolve(profileDir), 'backups');
+  try {
+    for (const name of readdirSync(root)) if (name.endsWith('-update-source')) rmSync(join(root, name, NOTICE), { force: true });
+  } catch { /* no backups */ }
+};
+
 /** The latest clear of this profile's update source, if it was in the last `NOTICE_DAYS` days. */
 export const lastCleared = (profileDir: string, now = new Date()): ClearedSource | null => {
   const root = join(resolve(profileDir), 'backups');

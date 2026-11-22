@@ -61,7 +61,7 @@ To work on Serra itself, set Settings › Worker › **Developer: update from a 
 1. Open the `.dmg` and drag **Serra** to **Applications**.
 2. Eject the disk image.
 
-From alpha.3 on, Serra updates itself (see [Updates](#updates)). To install by hand (alpha.2 or older, or a build of your own), quit Serra (menubar icon, or ⌘Q with the window focused), then drag the new version over the old one. App preferences and the bot's profile are kept.
+From alpha.3 on, Serra updates itself (see [Updates](#updates)). To install by hand (alpha.2 or older, or a build of your own), quit Serra (⌘Q with its window focused; the menubar icon has no Quit), then drag the new version over the old one. App preferences and the bot's profile are kept.
 
 ## First launch past Gatekeeper
 

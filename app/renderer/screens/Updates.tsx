@@ -309,7 +309,8 @@ export const Updates = () => {
     if (!bridge) return;
     setConfirm(null);
     setNotice(null);
-    if (action !== 'follow') { setLines([]); setRunning(action); }
+    setLines([]);
+    if (action !== 'follow') setRunning(action);
     try {
       if (action === 'activate') {
         const outcome = await bridge.updates.activate();
