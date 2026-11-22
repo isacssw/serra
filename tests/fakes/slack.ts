@@ -42,6 +42,8 @@ export interface FakeSlackOptions {
   /** The time, for message ts as Slack makes them (seconds, then a sequence). Defaults to the real clock. */
   now?: () => number;
   files?: Record<string, Record<string, unknown>>;
+  /** Whose each DM is, as `conversations.info` says (`user`). A DM not listed leaves `user` out. */
+  dms?: Record<string, string>;
   /** Whether `conversations.replies` returns message metadata when asked. Default true; false for a workspace that leaves it out. */
   returnsMetadata?: boolean;
   /** Store posted text as Slack does: `&`, `<`, `>` escaped outside link markup, and bare links wrapped as `<url>`. */
@@ -175,7 +177,8 @@ export const createFakeSlack = (options: FakeSlackOptions = {}) => {
     },
     conversations: {
       info: (args) => call('conversations.info', args, () => ({
-        ok: true, channel: { id: args.channel, is_im: args.channel.startsWith('D'), is_ext_shared: external.has(args.channel), is_pending_ext_shared: false },
+        ok: true, channel: { id: args.channel, is_im: args.channel.startsWith('D'), is_ext_shared: external.has(args.channel), is_pending_ext_shared: false,
+          ...(options.dms?.[args.channel] ? { user: options.dms[args.channel] } : {}) },
       })),
       replies: (args) => call('conversations.replies', args, () => {
         const oldest = typeof args.oldest === 'string' ? Number(args.oldest) : -Infinity;

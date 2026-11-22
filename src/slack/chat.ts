@@ -12,7 +12,7 @@ import { clearedFor, type Cleared, type WorkerWriter } from '../chat/writer.ts';
 import { comparableSlackText, slackErrorCode, type SlackApi } from './api.ts';
 import { receiveAttachments } from './attachments.ts';
 import { incomingFiles } from './incoming.ts';
-import { answeredMessage, closedMessage, questionMessage, type Blocks } from './questions.ts';
+import { answeredMessage, closedMessage, overMessage, questionMessage, type Blocks } from './questions.ts';
 
 /** A message's content, without where it goes. */
 type Rendered = { text: string; blocks?: Blocks; unfurl_links?: boolean };
@@ -141,6 +141,23 @@ export const createSlackChat = ({ client, owner, botUserId, botToken, profileDir
     }
   };
 
+  /** The owner's DM, asked of Slack: theirs alone, or, when Slack says it is someone else's, as that person's DM. */
+  const confirmOwnDm = async (conversation: string): Promise<Result<Audience>> => {
+    const ask = async (): Promise<Result<Audience>> => {
+      try {
+        const { channel } = await client.conversations.info({ channel: conversation });
+        // An IM's `user` is the person in it; Slack's types leave it out.
+        const other: unknown = isRecord(channel) ? channel.user : undefined;
+        return typeof other === 'string' && other !== owner ? lookUpDm(other) : { ok: true, value: 'owner' };
+      } catch (error) {
+        logger.debug(`Looking up ${conversation} failed: ${errorMessage(error)}`);
+        return { ok: false, error: chatError(error) };
+      }
+    };
+    const looked = await ask();
+    return looked.ok ? looked : ask();
+  };
+
   /**
    * Who will see the bot's reply in this thread. A DM is the owner's own, or a teammate's. A channel shared with another
    * company counts as outside. `fresh` asks Slack again, twice if it fails once: before anything is posted, a channel
@@ -149,7 +166,8 @@ export const createSlackChat = ({ client, owner, botUserId, botToken, profileDir
   const audience = async (target: Target, requester: PersonId, { fresh = false }: { fresh?: boolean } = {}): Promise<Result<Audience>> => {
     const conversation = target.conversation;
     if (isDm(conversation)) {
-      if (requester === owner) return { ok: true, value: 'owner' };
+      // Before a post, the owner's DM is confirmed to be theirs: a DM is only as private as the person in it.
+      if (requester === owner) return fresh ? confirmOwnDm(conversation) : { ok: true, value: 'owner' };
       const known = dmPeople.get(requester);
       if (!fresh && known && known.until > now()) return { ok: true, value: known.visibility };
       const looked = await lookUpDm(requester);
@@ -203,6 +221,7 @@ export const createSlackChat = ({ client, owner, botUserId, botToken, profileDir
   /** A notice as a message, in the thread or in the frame of the reply it stands in for. */
   const renderNotice = (notice: Replacement, inPlaceOf?: InPlaceOf): Rendered => {
     if (notice.kind === 'question-closed') return closedMessage();
+    if (notice.kind === 'question-over') return overMessage(notice.answered);
     const text = noticeText(notice);
     if (inPlaceOf?.frame === 'reply') return replyFrame(text, inPlaceOf.link, inPlaceOf.notify);
     if (inPlaceOf?.frame === 'status') return { text, blocks: [{ type: 'markdown', text }], unfurl_links: false };
@@ -332,7 +351,10 @@ export const createSlackChat = ({ client, owner, botUserId, botToken, profileDir
 
   // The writer. -----------------------------------------------------------------------------------------------------
 
-  /** A proof is for one conversation and a short while: worker words never go out on an old answer. */
+  /**
+   * A proof is for one conversation and a short while: worker words never go out on an old answer. `deliver` clears and
+   * writes back to back, so this is a second net for a writer misused elsewhere.
+   */
   const check = (proof: Cleared, conversation = proof.target.conversation): void => {
     if (proof.target.conversation !== conversation) throw new Error(`Cleared for ${proof.target.conversation}, not ${conversation}`);
     if (now() - proof.at > CLEARED_TTL_MS) throw new Error(`Who can see ${conversation} was checked too long ago to post on`);

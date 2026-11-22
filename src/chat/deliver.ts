@@ -10,13 +10,17 @@
  * Not guaranteed by anything: the milliseconds between the chat's answer and the write. A channel can be shared outside
  * in between. Today's code has the same gap.
  */
-import { wider, type Heard } from '../hearing.ts';
+import { mayHearWith, wider, type Heard } from '../hearing.ts';
+import type { BriefKnowledge } from '../knowledge.ts';
 import type { Audience, ChatError, MessageRef, PersonId, Target, WorkerFile, WorkerOut } from './port.ts';
 import type { Cleared, WorkerWriter } from './writer.ts';
 
 /** Which rule a write must pass, besides the chat saying who can see the target. */
 type Hearing =
-  /** A job's thread: everyone who can see it may hear every page its worker was told. */
+  /**
+   * A job's thread: everyone who can see it may hear every page its worker was told. `heard` is the job as saved: a
+   * caller could still pass a made-up record here, which only review catches. An empty one is withheld from all but the owner.
+   */
   | { kind: 'thread'; heard: Heard }
   /** Text only the owner may see, such as raw error output: the target must be theirs alone. */
   | { kind: 'owner-only' }
@@ -47,8 +51,12 @@ type Delivered<T> = { ok: true; value: T } | Refused;
 
 export type Deliver = <W extends Write>(to: Delivery, write: W) => Promise<Delivered<Written<W>>>;
 
-/** `mayHear`: whether an audience may hear every page a worker was told (`hearing.ts`). */
-export const createDeliver = (writer: WorkerWriter, mayHear: (heard: Heard, audience: Audience) => boolean): Deliver => {
+/**
+ * `loadKnowledge`: the knowledge for an audience, the same one the bot builds briefs from. Without it (no knowledge set
+ * up) nothing is withheld, as for the bot's own checks.
+ */
+export const createDeliver = (writer: WorkerWriter, loadKnowledge: ((visibility: Audience) => BriefKnowledge) | undefined): Deliver => {
+  const mayHear = mayHearWith(loadKnowledge);
   const perform = async (proof: Cleared, write: Write): Promise<string | Error | null | undefined> => {
     switch (write.op) {
       case 'send': return writer.send(proof, write.out);
@@ -59,6 +67,8 @@ export const createDeliver = (writer: WorkerWriter, mayHear: (heard: Heard, audi
 
   return async <W extends Write>(to: Delivery, write: W): Promise<Delivered<Written<W>>> => {
     const { hearing } = to;
+    // Raw error output is never worker words for a thread: it goes only where only the owner can see it.
+    if ('out' in write && write.out.kind === 'failure-detail' && hearing.kind !== 'owner-only') throw new Error('An error\'s detail goes out only under the owner-only rule');
     // Somewhere else: who sees the job's thread now is asked first, so the target's answer is the last before the write.
     let heard = 'heard' in hearing ? hearing.heard : {};
     if (hearing.kind === 'elsewhere') {

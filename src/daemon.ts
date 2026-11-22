@@ -9,7 +9,6 @@ import { basename, dirname, join } from 'node:path';
 import type { App, Logger } from '@slack/bolt';
 import { createBot, type BotDeps } from './bot.ts';
 import { createDeliver } from './chat/deliver.ts';
-import { mayHearWith } from './hearing.ts';
 import { proposeBriefUpdate } from './brief.ts';
 import { systemClock, createTracker, type Clock } from './clock.ts';
 import { defaultProfileRoot, type Config } from './config.ts';
@@ -108,7 +107,7 @@ export const startDaemon = async (deps: DaemonDeps): Promise<Daemon> => {
     });
     const bot = createBot({
       ...deps.bot,
-      config, chat, deliver: createDeliver(writer, mayHearWith(briefKnowledge)), store, loadIndex, loadKnowledge: (visibility) => briefKnowledge(visibility), logger, clock,
+      config, chat, deliver: createDeliver(writer, briefKnowledge), store, loadIndex, loadKnowledge: (visibility) => briefKnowledge(visibility), logger, clock,
       // The app sees the same events as events.jsonl, live.
       events: (name, fields) => { logEvent(name, fields); status?.publish(name, fields); },
     });

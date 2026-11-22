@@ -1323,3 +1323,14 @@ test('[REPLY-001] a reply Slack can\'t clear at the moment of writing becomes th
   await f.bot.poll();
   assert.equal(f.posts.length, 1, 'the run counts as answered');
 });
+
+test('[QUEST-001] a lookup blip when the last answer is sent closes the card plainly, not as knowledge made private', async (t) => {
+  const f = fixture(t);
+  await f.say(SAM, `<@${BOT}> investigate`, true);
+  f.questionRequests.push(nativeQuestion()); f.waitsInT3(1); await f.bot.poll();
+  f.slack.fail('conversations.info', new Error('ratelimited'), 2);
+  await choose(f, 0);
+  assert.equal(f.answered.length, 1, 'the answer reached T3');
+  assert.equal(f.edits.at(-1)!.text, 'Answer sent. Continuing…');
+  assert.doesNotMatch(f.edits.at(-1)!.blocks, /Which|made private/);
+});

@@ -23,7 +23,8 @@ Rules a tool checks are left out here; `pnpm check` and CI tell you. Humans: [CO
 - The core reaches Slack only through `ChatPort` (`src/chat/port.ts`), implemented in `src/slack/`; `src/daemon.ts`
   wires it in, and still parses Slack's inbound events. Worker words go out only through `deliver`
   (`src/chat/deliver.ts`), the one holder of a `WorkerWriter`: it asks who can see the target, and runs the page
-  check, right before each write. Setup, doctor and secrets still call Slack directly (one exception list).
+  check, right before each write. `index.ts`, setup, doctor, secrets, Slack names and logging still use `@slack/bolt`
+  directly (one exception list).
 
 ## Rules the tools don't check
 

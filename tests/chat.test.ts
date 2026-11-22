@@ -5,11 +5,10 @@ import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
 import { createBot } from '../src/bot.ts';
 import { createDeliver } from '../src/chat/deliver.ts';
-import { t3LinkOf, type Audience, type Target } from '../src/chat/port.ts';
-import type { Heard } from '../src/hearing.ts';
+import { t3LinkOf, type Target } from '../src/chat/port.ts';
 import { createSlackChat } from '../src/slack/chat.ts';
 import { createStore } from '../src/state.ts';
-import { createFakeChat } from './fakes/chat.ts';
+import { createFakeChat, onePage } from './fakes/chat.ts';
 import { fakeClock } from './fakes/clock.ts';
 import { OWNER as PROFILE_OWNER, testProfile } from './fakes/profile.ts';
 import { createFakeSlack, slackError } from './fakes/slack.ts';
@@ -19,16 +18,15 @@ const OWNER = 'U0123456789';
 const thread: Target = { conversation: 'C1', thread: '1700000000.000100' };
 const reply = { kind: 'reply', markdown: 'PR is up.', link: 'https://t3.test/t', notify: 'none', runId: 'run-1' } as const;
 const quiet = (): void => {};
-/** The page check: the worker was told something only the team may hear. */
-const teamOnly = (_heard: Heard, audience: Audience): boolean => audience !== 'external';
-const told: Heard = { visibility: 'team', knowledgeRead: { 'workflows/release.md': 'team' } };
+/** The worker was told one page only the team may hear. */
+const { heard: told, loadKnowledge } = onePage();
 
 const fixture = (options: Parameters<typeof createFakeSlack>[0] = {}) => {
   const clock = fakeClock('2026-11-18T10:00:00Z');
   const slack = createFakeSlack({ botUserId: 'UBOT', now: () => clock.now(), ...options });
   const { chat, writer } = createSlackChat({ client: slack.client, owner: OWNER, botUserId: () => 'UBOT', botToken: 'xoxb-1111-2222-fixturevalue',
     profileDir: '/tmp', logger: { info: quiet, warn: quiet, error: quiet, debug: quiet }, clock });
-  return { slack, chat, writer, clock, deliver: createDeliver(writer, teamOnly) };
+  return { slack, chat, writer, clock, deliver: createDeliver(writer, loadKnowledge) };
 };
 
 test('[KB-002] deliver writes worker words only after the chat says who can see the target, and only if they may hear them', async () => {
@@ -49,6 +47,15 @@ test('[KB-002] text only the owner may see goes only to the owner\'s own DM', as
   assert.deepEqual(await f.deliver({ target: thread, requester: OWNER, hearing: { kind: 'owner-only' } }, detail), { ok: false, why: 'withheld' });
   assert.equal((await f.deliver({ target: { conversation: 'D1', thread: '1.0' }, requester: OWNER, hearing: { kind: 'owner-only' } }, detail)).ok, true);
   assert.equal(f.slack.callsTo('chat.postMessage').length, 1);
+});
+
+test('[REPLY-005] an error\'s detail goes out only under the owner-only rule, and only to a DM Slack confirms is the owner\'s', async () => {
+  const f = fixture({ dms: { D2: 'USAM' } });
+  const detail = { op: 'send', out: { kind: 'failure-detail', line: 'exited 1' } } as const;
+  await assert.rejects(f.deliver({ target: { conversation: 'D1', thread: '1.0' }, requester: OWNER, hearing: { kind: 'thread', heard: told } }, detail), /only under the owner-only rule/);
+  // Passed off as the owner's, a teammate's DM is still theirs: Slack says whose it is.
+  assert.deepEqual(await f.deliver({ target: { conversation: 'D2', thread: '1.0' }, requester: OWNER, hearing: { kind: 'owner-only' } }, detail), { ok: false, why: 'withheld' });
+  assert.equal(f.slack.callsTo('chat.postMessage').length, 0);
 });
 
 test('[REPLY-008] a review request goes elsewhere only when its channel and the thread it came from may both hear it', async () => {
@@ -126,7 +133,7 @@ const coreOnFakeChat = (t: TestContext) => {
   const fake = createFakeChat();
   const worker = createFakeT3();
   const bot = createBot({
-    config, chat: fake.chat, deliver: createDeliver(fake.writer, () => true), store: createStore(config.statePath), loadIndex: () => 'index',
+    config, chat: fake.chat, deliver: createDeliver(fake.writer, undefined), store: createStore(config.statePath), loadIndex: () => 'index',
     logger: { info: quiet, warn: quiet, error: (message) => assert.fail(message), debug: quiet }, t3: worker.t3, questions: worker.questions,
     fetchBase: async () => {}, share: async (text) => text, reviewRequest: async (text) => ({ reply: text, postedFor: null }), clock,
     timing: { quietMs: 15, retryMs: 5 },

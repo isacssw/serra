@@ -7,7 +7,7 @@ import type { Deliver, Delivery, Refused } from './chat/deliver.ts';
 import { MAX_ATTACHMENTS, MessageGone, type Audience as Visibility, type ChatPort, type InboundText, type InPlaceOf, type MessageRef, type Notice, type OwnerNotify, type PersonId, type SetupProblem, type Target, type WorkerOut, t3LinkOf } from './chat/port.ts';
 import { stampProposalsFolder, threadProposalsFolder } from './proposals.ts';
 import type { BriefKnowledge } from './knowledge.ts';
-import { revokedAt } from './hearing.ts';
+import { revokedAt, type Heard } from './hearing.ts';
 import type { Config, MessageTrigger } from './config.ts';
 import { audienceOf, createBatcher, followUpMessage, isPing, ownerNotice, speakerName, type Audience, type ThreadLine } from './conversation.ts';
 import { shareImages, type Upload } from './images.ts';
@@ -141,11 +141,14 @@ const seenOver = (job: Job, thread: Pick<T3Thread, 'activeRunId'>): Partial<Job>
 const heardNow = (job: Job, ts: string): Partial<Job> => ({ heard: [...(job.heard ?? []).filter((seen) => seen !== ts), ts].slice(-50) });
 
 /** A thread message waiting for the worker, with the chat message it came from. */
-type Heard = ThreadLine & { ts: string };
+type HeardLine = ThreadLine & { ts: string };
 
 /** Where a job's replies go. Stored as Slack's `channel` and `threadTs` until the stored shape changes. */
 const targetOf = (job: Pick<Job, 'channel' | 'threadTs'>): Target => ({ conversation: job.channel, thread: job.threadTs });
 const messageIn = (job: Pick<Job, 'channel'>, id: string): MessageRef => ({ conversation: job.channel, id });
+
+/** What a job's worker was told, as saved with it: the pages it could read, and who could see the thread then. */
+const heardIn = (job: Job): Heard => ({ ...(job.visibility ? { visibility: job.visibility } : {}), ...(job.knowledgeRead ? { knowledgeRead: job.knowledgeRead } : {}) });
 
 /** What a post means for the owner's follow state, saved with its intent (REPLY-009). */
 type OwnerFlags = { ownerFollows?: boolean; ownerAskOpen?: boolean };
@@ -431,7 +434,7 @@ export const createBot = ({
    * Where the worker's words for this job go. `deliver` checks right before each write that every page the worker
    * read is for whoever can see the thread then.
    */
-  const deliveryFor = (job: Job): Delivery => ({ target: targetOf(job), requester: job.requester, hearing: { kind: 'thread', heard: job } });
+  const deliveryFor = (job: Job): Delivery => ({ target: targetOf(job), requester: job.requester, hearing: { kind: 'thread', heard: heardIn(job) } });
 
   /**
    * Posts a run's reply, at least once and rarely twice. The intent is saved first, the post carries the run ID (Slack:
@@ -450,7 +453,14 @@ export const createBot = ({
     let id: string | undefined;
     if (out) {
       const sent = await deliver(deliveryFor(job), { op: 'send', out });
-      if (sent.ok) id = sent.value; else instead = refusalNotice(sent);
+      if (sent.ok) id = sent.value;
+      else {
+        instead = refusalNotice(sent);
+        if (!sent.ok && sent.why === 'unconfirmed' && sent.error.kind === 'setup') {
+          logger.error(`The chat won't say who can see ${key} (${sent.error.code}): update the chat app's permissions (docs/configuration.md) and reinstall it.`);
+          events('failure', { key, error: `The chat won't say who can see this thread (${sent.error.code}). Update the chat app's permissions and reinstall it; until then replies there are held.` });
+        }
+      }
     }
     const flags = instead ? ownerIfNotice : owner;
     if (instead) {
@@ -476,9 +486,9 @@ export const createBot = ({
    */
   const postReview = (job: Job, channel: string, link: string): PostReview => async (markdown) => {
     const target: Target = { conversation: channel, thread: null };
-    const sent = await deliver({ target, requester: config.owner, hearing: { kind: 'elsewhere', heard: job, source: { target: targetOf(job), requester: job.requester } } },
+    const sent = await deliver({ target, requester: config.owner, hearing: { kind: 'elsewhere', heard: heardIn(job), source: { target: targetOf(job), requester: job.requester } } },
       { op: 'send', out: { kind: 'review', markdown, from: config.name, link } });
-    if (!sent.ok) return { ok: false, refused: true };
+    if (!sent.ok) return sent.why === 'withheld' ? { ok: false, refused: true } : { ok: false, error: 'I couldn\'t confirm who can see the review channel or this thread just now' };
     return { ok: true, link: await chat.permalink({ conversation: channel, id: sent.value }) };
   };
 
@@ -695,6 +705,11 @@ export const createBot = ({
       const revised = await deliver(deliveryFor(job), { op: 'revise', ref, out: { kind: 'answered', card: state, ...(answeredBy ? { by: answeredBy } : {}) } })
         .catch((error: unknown) => { logger.debug(`Updating the question in ${key} failed: ${errorMessage(error)}`); return null; });
       if (revised === null || revised.ok) return;
+      // Not knowing who can see the thread isn't knowledge taken back: the card says only that it's over.
+      if (revised.why === 'unconfirmed') {
+        await chat.replaceWithNotice(ref, { kind: 'question-over', answered: answeredBy !== undefined });
+        return;
+      }
     }
     await chat.replaceWithNotice(ref, { kind: 'question-closed' });
   };
@@ -764,18 +779,19 @@ export const createBot = ({
       // Save only after the edit succeeds, so a failed edit leaves usable choices and can be retried. The next question
       // is the worker's words: `deliver` checks it first, and a card it refuses is closed with fixed copy.
       /** A refused card: withheld closes the form with fixed copy; unconfirmed keeps it as it is, to answer again. */
-      const refused = async (why: Refused['why']): Promise<void> => {
-        if (why === 'withheld') await clearQuestion(key, job, user, { ...state, answers }, true);
+      const refusedCard = async (refused: Refused): Promise<void> => {
+        if (refused.why === 'withheld') await clearQuestion(key, job, user, { ...state, answers }, true);
+        else if (refused.error.kind === 'setup') await notify(job.channel, job.threadTs, { kind: 'setup-problem', problem: refused.error.problem });
         else await questionFeedback(job, 'unconfirmed');
       };
       try {
         const revised = await deliver(deliveryFor(job), { op: 'revise', ref: messageIn(job, state.ts), out });
-        if (!revised.ok) return await refused(revised.why);
+        if (!revised.ok) return await refusedCard(revised);
       } catch (error) {
         if (!(error instanceof MessageGone)) throw error;
         // A new card in place of one someone deleted.
         const posted = await deliver(deliveryFor(job), { op: 'send', out });
-        if (!posted.ok) return await refused(posted.why);
+        if (!posted.ok) return await refusedCard(posted);
         next.ts = posted.value;
       }
       updateJob(key, (latest) => ({ question: next, ...rememberReply(latest) }));
@@ -903,7 +919,7 @@ export const createBot = ({
    * its text in context. The next turn then starts a fresh thread, briefed from the knowledge as it is now, with the
    * chat thread so far as context. Returns true when it did.
    */
-  const restartIfRevoked = async (key: string, job: Job, lines: Heard[]): Promise<boolean> => {
+  const restartIfRevoked = async (key: string, job: Job, lines: HeardLine[]): Promise<boolean> => {
     if (!loadKnowledge) return false;
     const { visibility, knowledge, revoked, unknown } = await revocation(job);
     // Not knowing who sees the thread is no reason to restart: what's said to the worker isn't posted anywhere.
@@ -943,7 +959,7 @@ export const createBot = ({
     return true;
   };
 
-  const followUps = createBatcher<Heard>({
+  const followUps = createBatcher<HeardLine>({
     clock,
     quietMs: timing.quietMs,
     retryMs: timing.retryMs,
@@ -1000,7 +1016,7 @@ export const createBot = ({
       if (!getJob(key)?.waitingInT3) await setLoading(msg.channel, msg.threadTs, true);
     }
     const text = await messageContent(msg.text, allowed ? msg.files : []);
-    const line: Heard = { speaker: await speaker(msg.user), text, audience, ts: msg.messageTs };
+    const line: HeardLine = { speaker: await speaker(msg.user), text, audience, ts: msg.messageTs };
 
     // The owner writing in the thread answers any open ask, and means they see its replies.
     const ownerWrote: Partial<Job> = msg.user === config.owner ? { ownerAskOpen: false, ownerFollows: true } : {};

@@ -7,6 +7,7 @@ import type { Clock } from '../../src/clock.ts';
 import type { Audience, ChatPort, InPlaceOf, MessageRef, Notice, Result, Target, WorkerOut } from '../../src/chat/port.ts';
 import { clearedFor, type WorkerWriter } from '../../src/chat/writer.ts';
 import type { Heard } from '../../src/hearing.ts';
+import type { BriefKnowledge } from '../../src/knowledge.ts';
 import type { Config } from '../../src/config.ts';
 import type { Upload } from '../../src/images.ts';
 import type { SlackApi } from '../../src/slack/api.ts';
@@ -15,23 +16,30 @@ import { createSlackChat, type SlackChatOptions } from '../../src/slack/chat.ts'
 const quiet = (): void => {};
 
 export const slackChat = (client: SlackApi, config: Pick<Config, 'owner' | 'botToken' | 'profileDir'>,
-  { botUserId, clock = { now: Date.now }, logger = { info: quiet, warn: quiet, error: quiet, debug: quiet }, receive, mayHear = () => true }:
+  { botUserId, clock = { now: Date.now }, logger = { info: quiet, warn: quiet, error: quiet, debug: quiet }, receive, loadKnowledge }:
   { botUserId: string; clock?: Pick<Clock, 'now'>; logger?: SlackChatOptions['logger']; receive?: SlackChatOptions['receive'];
-    /** The page check `deliver` runs (`mayHearWith` in hearing.ts). Without it, nothing is withheld, as without knowledge. */
-    mayHear?: (heard: Heard, audience: Audience) => boolean }) => {
+    /** The knowledge `deliver` checks pages against, as the bot's. Without it, nothing is withheld, as without knowledge. */
+    loadKnowledge?: (visibility: Audience) => BriefKnowledge }) => {
   const { chat, writer } = createSlackChat({ client, owner: config.owner, botUserId: () => botUserId, botToken: config.botToken, profileDir: config.profileDir,
     logger, clock, ...(receive ? { receive } : {}) });
-  return { chat, deliver: createDeliver(writer, mayHear) };
+  return { chat, deliver: createDeliver(writer, loadKnowledge) };
 };
 
+/** Knowledge with one team page that stays available while `available()` says so: then it's withdrawn, as if retired. */
+export const onePage = (available: () => boolean = () => true) => ({
+  heard: { visibility: 'team', knowledgeRead: { 'workflows/release.md': 'team' } } satisfies Heard,
+  loadKnowledge: (): BriefKnowledge => ({ index: '', pages: available() ? ['workflows/release.md'] : [], read: {}, readDir: '/tmp' }) as unknown as BriefKnowledge,
+});
+
 /**
- * Uploads into `target` the way the bot does, through `deliver` and the Slack adapter. `may` stands in for the page
- * check: false refuses the upload.
+ * Uploads into `target` the way the bot does, through `deliver` and the Slack adapter. `available` stands in for the
+ * page the worker read: once false, the page is withdrawn and the next upload is refused.
  */
-export const slackUpload = (client: SlackApi, target: Target, may: () => boolean = () => true): Upload => {
-  const { deliver } = slackChat(client, { owner: 'U0123456789', botToken: 'xoxb-1111-2222-fixturevalue', profileDir: '/tmp' }, { botUserId: 'UBOT', mayHear: may });
+export const slackUpload = (client: SlackApi, target: Target, available: () => boolean = () => true): Upload => {
+  const knowledge = onePage(available);
+  const { deliver } = slackChat(client, { owner: 'U0123456789', botToken: 'xoxb-1111-2222-fixturevalue', profileDir: '/tmp' }, { botUserId: 'UBOT', loadKnowledge: knowledge.loadKnowledge });
   return async (file) => {
-    const sent = await deliver({ target, requester: 'U0123456789', hearing: { kind: 'thread', heard: {} } }, { op: 'upload', file });
+    const sent = await deliver({ target, requester: 'U0123456789', hearing: { kind: 'thread', heard: knowledge.heard } }, { op: 'upload', file });
     return sent.ok ? sent.value : 'refused';
   };
 };

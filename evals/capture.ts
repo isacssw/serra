@@ -87,7 +87,7 @@ export const buildBrief = async (profileDir: string, item: EvalCase, { noAbout =
   const { chat, writer } = createSlackChat({ client, owner: config.owner, botUserId: () => BOT_USER, botToken: config.botToken, profileDir: config.profileDir,
     logger: { info: quiet, warn: quiet, error: quiet, debug: quiet }, clock: { now: Date.now }, receive: async () => '' });
   const bot = createBot({
-    config, chat, deliver: createDeliver(writer, () => true), store: createStore(config.statePath), loadIndex: () => knowledge.loadIndex(), loadKnowledge: (visibility) => {
+    config, chat, deliver: createDeliver(writer, undefined), store: createStore(config.statePath), loadIndex: () => knowledge.loadIndex(), loadKnowledge: (visibility) => {
       const known = knowledge.briefKnowledge(visibility);
       return noAbout ? withoutOwnerPages(known) : known;
     },

@@ -99,6 +99,12 @@ export const closedMessage = (): QuestionMessage => ({
   blocks: [{ type: 'section', text: plain('This question was closed: some knowledge it used was made private.') }],
 });
 
+/** A card that waits for nothing any more, without the questions or answers: fixed copy, none of the worker's words. */
+export const overMessage = (answered: boolean): QuestionMessage => {
+  const text = answered ? 'Answer sent. Continuing…' : 'This question is no longer waiting for an answer.';
+  return { text, blocks: [{ type: 'section', text: plain(text) }] };
+};
+
 export const answeredMessage = (state: QuestionCard, answeredBy?: string): QuestionMessage => ({
   text: answeredBy ? 'Answer sent. Continuing…' : 'This question is no longer waiting for an answer.',
   blocks: [

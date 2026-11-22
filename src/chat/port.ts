@@ -78,8 +78,12 @@ export type Notice =
   /** Feedback on an answer to a question card. */
   | { kind: 'question-hint'; hint: 'choose' | 'invalid-answer' | 'changed' | 'not-sent' | 'unconfirmed' };
 
-/** What a message can be replaced with: a notice, or a question card's fixed "closed" text. */
-export type Replacement = Notice | { kind: 'question-closed' };
+/** What a message can be replaced with: a notice, or a question card's fixed text. */
+export type Replacement = Notice
+  /** A card closed because its thread's knowledge was taken back. */
+  | { kind: 'question-closed' }
+  /** A card that waits for nothing any more, when the chat couldn't confirm who sees it to show the answers. */
+  | { kind: 'question-over'; answered: boolean };
 
 /** How a reply tells the owner: `callout` for a new blocker, `cc` once so they follow the thread, otherwise nothing. */
 export type OwnerNotify = 'callout' | 'cc' | 'none';
