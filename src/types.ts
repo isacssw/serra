@@ -1,4 +1,4 @@
-import type { SlackQuestion } from './questions.ts';
+import type { QuestionCard } from './questions.ts';
 
 /** The fields of `t3 thread show --json` that the bot reads. */
 export interface T3Thread {
@@ -46,8 +46,8 @@ export interface Job {
   lastActivityAt?: string;
   /** The run is waiting on a request in T3's UI and the owner was told in Slack, so it isn't posted twice. */
   waitingInT3?: boolean;
-  /** The current native T3 question shown in Slack. Saved so answers and buttons survive daemon restarts. */
-  question?: SlackQuestion;
+  /** The current native T3 question shown in the chat. Saved so answers and buttons survive daemon restarts. */
+  question?: QuestionCard;
   /** Recent thread replies consumed as question answers, so Slack retries cannot answer the next question. */
   answeredQuestionMessages?: string[];
   /** PRs whose review request the bot already posted, so a resumed worker can't post twice. */

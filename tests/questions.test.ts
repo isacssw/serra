@@ -1,13 +1,14 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { answeredMessage, canShowQuestion, choiceAnswer, questionInteraction, questionMessage, typedAnswer, type SlackQuestion } from '../src/questions.ts';
+import { canShowQuestion, choiceAnswer, typedAnswer, type QuestionCard } from '../src/questions.ts';
+import { answeredMessage, questionInteraction, questionMessage } from '../src/slack/questions.ts';
 import type { T3Question } from '../src/t3-questions.ts';
 
 const question: T3Question = {
   id: 'scope', header: 'Scope', question: 'Which area should I investigate?',
   options: [{ label: 'Frontend', description: 'Browser behavior', value: 'front' }, { label: 'Backend', description: 'API behavior', value: 'back' }],
 };
-const state = (q = question): SlackQuestion => ({ requestId: 'request-1', questions: [q], ts: '200.1', index: 0, answers: {}, nonce: 'a'.repeat(32), runId: 'run-1' });
+const state = (q = question): QuestionCard => ({ requestId: 'request-1', questions: [q], ts: '200.1', index: 0, answers: {}, nonce: 'a'.repeat(32), runId: 'run-1' });
 
 test('forms keep question and option text plain, with complete descriptions and usable buttons', () => {
   const q = { ...question, question: '<!channel> Which <@USER> area?' };
@@ -107,13 +108,15 @@ test('interactive payloads are bound to the message, form nonce, and saved choic
   const nonce = 'b'.repeat(32);
   const body = { type: 'block_actions', channel: { id: 'C1' }, user: { id: 'U1' }, message: { ts: '200.1' },
     actions: [{ action_id: 'serra_question_choice_1', block_id: `sq:${nonce}:choices`, value: nonce }] };
-  assert.deepEqual(questionInteraction(body), { channel: 'C1', user: 'U1', messageTs: '200.1', nonce, actionId: 'serra_question_choice_1', indices: [1] });
+  assert.deepEqual(questionInteraction(body), { channel: 'C1', user: 'U1', messageTs: '200.1', nonce, indices: [1] });
   assert.equal(questionInteraction({ ...body, type: 'view_submission' }), null);
   assert.equal(questionInteraction({ ...body, actions: [{ ...body.actions[0], value: 'forged' }] }), null);
   assert.equal(questionInteraction({ ...body, actions: [{ ...body.actions[0], block_id: 'sq:forged:choices' }] }), null);
   const multi = { ...body, actions: [{ action_id: 'serra_question_submit', block_id: `sq:${nonce}:submit`, value: nonce }],
     state: { values: { [`sq:${nonce}:choices`]: { serra_question_multi: { selected_options: [{ value: '0' }, { value: '1' }] } } } } };
   assert.deepEqual(questionInteraction(multi)?.indices, [0, 1]);
+  // Changing a multi-select isn't an answer until Submit: the bot never hears of it.
+  assert.equal(questionInteraction({ ...body, actions: [{ action_id: 'serra_question_multi', block_id: `sq:${nonce}:choices`, selected_options: [{ value: '0' }] }] }), null);
 });
 
 test('large and ambiguous forms fall back to T3; completed cards contain no interactive controls', () => {

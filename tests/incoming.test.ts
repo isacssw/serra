@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { alertText, incomingMessage } from '../src/incoming.ts';
+import { alertText, incomingMessage } from '../src/slack/incoming.ts';
 import { matchMessageTrigger } from '../src/message-triggers.ts';
 
 const event = { user: 'U1', channel: 'C1', ts: '2', thread_ts: '1', text: '', subtype: 'file_share', files: [{ id: 'F1' }] };

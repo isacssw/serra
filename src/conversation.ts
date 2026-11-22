@@ -1,8 +1,8 @@
-/** How the bot takes part in a Slack thread: who a message is for, what the worker is told, and when the owner is pinged. */
+/** How the bot takes part in a chat thread: who a message is for, what the worker is told, and when the owner is pinged. */
 
+import type { InboundText } from './chat/port.ts';
 import { createTracker, systemClock, type Clock, type Timer } from './clock.ts';
 
-const MENTION = /<@([UW][A-Z0-9]+)(?:\|[^>]*)?>/g;
 const escapeRegExp = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 /**
@@ -14,28 +14,15 @@ const escapeRegExp = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/
  */
 export type Audience = 'bot' | 'others' | 'open';
 
-export const audienceOf = (text: string, bot: { userId: string; name: string }): Audience => {
-  const mentioned = [...text.matchAll(MENTION)].map((match) => match[1]);
-  if (mentioned.includes(bot.userId)) return 'bot';
+/** `said` as the chat read it (`ChatPort.read`): who it mentions, and its words without the mentions. */
+export const audienceOf = (said: Pick<InboundText, 'mentions' | 'prose'>, bot: { userId: string; name: string }): Audience => {
+  if (said.mentions.includes(bot.userId)) return 'bot';
   // People also call the bot by name without the @.
-  const named = new RegExp(`(?<![\\p{L}\\p{N}])${escapeRegExp(bot.name)}(?![\\p{L}\\p{N}])`, 'iu').test(text);
-  return mentioned.length > 0 && !named ? 'others' : 'open';
+  const named = new RegExp(`(?<![\\p{L}\\p{N}])${escapeRegExp(bot.name)}(?![\\p{L}\\p{N}])`, 'iu').test(said.prose);
+  return said.mentions.length > 0 && !named ? 'others' : 'open';
 };
 
-/** The Slack member IDs a message mentions, without duplicates. */
-export const mentionedUsers = (text: string): string[] => [...new Set([...text.matchAll(MENTION)].flatMap((match) => (match[1] ? [match[1]] : [])))];
-
-/**
- * A message as the worker should read it: the bot's own mention removed, everyone else's turned into `@Name`.
- * Dropping every mention loses who a message was addressed to.
- */
-export const readable = (text: string, botUserId: string, names: ReadonlyMap<string, string>): string =>
-  text
-    .replace(MENTION, (_mention, user: string) => (user === botUserId ? '' : `@${names.get(user) ?? user}`))
-    .replace(/[ \t]{2,}/g, ' ')
-    .trim();
-
-/** A Slack display name, safe to use as a speaker label: one line, and unable to imitate the owner marker. */
+/** A display name, safe to use as a speaker label: one line, and unable to imitate the owner marker. */
 export const speakerName = (name: string): string => name.replace(/[\r\n()[\]<>]/g, ' ').replace(/\s+/g, ' ').trim() || 'someone';
 
 export interface ThreadLine {

@@ -1,7 +1,4 @@
-import type { SlackApi } from './slack-api.ts';
 import { run } from './t3.ts';
-
-type SlackClient = Pick<SlackApi, 'chat'>;
 
 const BLOCK = /<review-request>\s*([\s\S]*?)\s*<\/review-request>/i;
 const PR_URL = /https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/pull\/\d+(?![\w/-])/g;
@@ -12,6 +9,12 @@ export interface ReviewRequestOutcome {
   /** The PR whose review was requested, when a request was posted. */
   postedFor: string | null;
 }
+
+/**
+ * Posts the request in the code-review channel, checked right before it goes out: `refused` when someone there may not
+ * hear what the worker was told. On success, a link to the post when the chat gives one.
+ */
+export type PostReview = (markdown: string) => Promise<{ ok: true; link: string | null } | { ok: false; refused: true } | { ok: false; error: string }>;
 
 /** Slack text from a worker may not ping a channel or a group, whatever a bug report talked it into. */
 const withoutBroadcasts = (text: string): string =>
@@ -40,9 +43,8 @@ const prProblem = async (url: string, expectedLogin: string | undefined, command
  * really is open, ready and the owner's. The destination is fixed here, so nothing in a request can redirect it.
  */
 export const handleReviewRequest = async (
-  client: SlackClient,
   text: string,
-  opts: { channel?: string; mayPost?: () => Promise<boolean>; owner: string; botName: string; repositories: string[]; githubLogin?: string; alreadyPosted: string[]; sourceLink: string },
+  opts: { post?: PostReview; repositories: string[]; githubLogin?: string; alreadyPosted: string[] },
   command: typeof run = run,
 ): Promise<ReviewRequestOutcome> => {
   const match = BLOCK.exec(text);
@@ -54,7 +56,7 @@ export const handleReviewRequest = async (
     postedFor: null,
   });
 
-  if (!opts.channel) return blocked('review posting is disabled; configure a review channel to enable it');
+  if (!opts.post) return blocked('review posting is disabled; configure a review channel to enable it');
   const prs = [...new Set(message.match(PR_URL) ?? [])];
   const pr = prs[0];
   if (!pr) return blocked('it has no GitHub PR link');
@@ -71,26 +73,7 @@ export const handleReviewRequest = async (
 
   // Checked last, right before sending: who may read the review channel, and what the worker was told, can change
   // while the PR is checked.
-  if (opts.mayPost && !(await opts.mayPost())) return blocked('it was written with knowledge some people in the review channel may not hear: check it and post it yourself');
-  const posted = await client.chat
-    .postMessage({
-      channel: opts.channel,
-      text: message.slice(0, 3_000),
-      blocks: [
-        { type: 'markdown', text: message },
-        {
-          type: 'context',
-          elements: [{ type: 'mrkdwn', text: `Prepared by ${opts.botName} for <@${opts.owner}> · <${opts.sourceLink}|request thread>` }],
-        },
-      ],
-      unfurl_links: false,
-    })
-    .catch((error: unknown) => (error instanceof Error ? error : new Error(String(error))));
-  if (posted instanceof Error) return blocked(posted.message);
-  if (!posted.ts) return blocked('Slack returned no message');
-  const link = await client.chat
-    .getPermalink({ channel: opts.channel, message_ts: posted.ts })
-    .then((result) => result.permalink)
-    .catch(() => undefined);
-  return { reply: replace(`Review request posted${link ? `: ${link}` : ' in the code-review channel'}.`), postedFor: pr };
+  const posted = await opts.post(message).catch((error: unknown) => ({ ok: false as const, error: error instanceof Error ? error.message : String(error) }));
+  if (!posted.ok) return blocked('refused' in posted ? 'it was written with knowledge some people in the review channel may not hear: check it and post it yourself' : posted.error);
+  return { reply: replace(`Review request posted${posted.link ? `: ${posted.link}` : ' in the code-review channel'}.`), postedFor: pr };
 };

@@ -4,23 +4,24 @@ import { join } from 'node:path';
 import test, { type TestContext } from 'node:test';
 import { createBot, type BotDeps } from '../src/bot.ts';
 import type { MessageTrigger } from '../src/config.ts';
-import { incomingMessage } from '../src/incoming.ts';
+import { incomingMessage } from '../src/slack/incoming.ts';
 import { createStore } from '../src/state.ts';
 import { fakeClock } from './fakes/clock.ts';
 import { BOT, OWNER, SAM, testProfile } from './fakes/profile.ts';
 import { createFakeSlack } from './fakes/slack.ts';
 import { createFakeT3 } from './fakes/t3.ts';
-import { receiveAttachments } from '../src/attachments.ts';
+import { receiveAttachments } from '../src/slack/attachments.ts';
 import type { IncomingFile, IncomingMessage } from '../src/types.ts';
 import type { T3QuestionRequest } from '../src/t3-questions.ts';
-import { questionInteraction } from '../src/questions.ts';
+import { questionInteraction } from '../src/slack/questions.ts';
+import { slackChat } from './fakes/chat.ts';
 import { addAllowedUser, PROFILE_SETTINGS, updateProfileSection } from '../src/profile-settings.ts';
 import { watchProfile } from '../src/profile-reload.ts';
 import { listJobs } from '../src/jobs.ts';
 
 
 /** A bot wired to the shared recording Slack and scriptable T3 (tests/fakes), on a fake clock the test moves by hand. */
-const fixture = (t: TestContext, receive?: BotDeps['receive'], { allowErrors = false, failStart, statusError, failAnswer, ...profile }: { branchPattern?: string; allowErrors?: boolean; messageTriggers?: MessageTrigger[]; failStart?: () => boolean; statusError?: () => boolean; failAnswer?: () => boolean } = {}) => {
+const fixture = (t: TestContext, receive?: typeof receiveAttachments, { allowErrors = false, failStart, statusError, failAnswer, ...profile }: { branchPattern?: string; allowErrors?: boolean; messageTriggers?: MessageTrigger[]; failStart?: () => boolean; statusError?: () => boolean; failAnswer?: () => boolean } = {}) => {
   const { config } = testProfile(t, profile);
   const clock = fakeClock('2026-11-18T10:00:00Z');
   const slack = createFakeSlack({ botUserId: BOT, names: { [OWNER]: 'Alex Doe', [SAM]: 'Sam' }, now: () => clock.now() });
@@ -54,13 +55,13 @@ const fixture = (t: TestContext, receive?: BotDeps['receive'], { allowErrors = f
   };
   const quiet = (): void => {};
   const deps: BotDeps = {
-    config, client: slack.client, botUserId: () => BOT, store: createStore(config.statePath), loadIndex: () => 'index', t3,
+    config, store: createStore(config.statePath), loadIndex: () => 'index', t3,
     logger: { info: quiet, warn: quiet, error: (message) => { if (allowErrors || failStart || failAnswer) errors.push(message); else assert.fail(message); }, debug: quiet },
     questions: worker.questions,
-    fetchBase: async () => {}, share: async (_client, text) => text, reviewRequest: async (_client, text) => ({ reply: text, postedFor: null }),
-    receive: receive ?? ((client, files, profileDir, token, options) => receiveAttachments(client, files, profileDir, token, { ...options,
+    fetchBase: async () => {}, share: async (text) => text, reviewRequest: async (text) => ({ reply: text, postedFor: null }),
+    ...slackChat(slack.client, config, { botUserId: BOT, clock, receive: receive ?? ((client, files, profileDir, token, options) => receiveAttachments(client, files, profileDir, token, { ...options,
       fetchFile: async (url) => { downloads.push(String(url)); return new Response('fixture file bytes'); },
-    })),
+    })) }),
     timing: { quietMs: 15, retryMs: 5 },
     clock,
     events: (name, fields) => { recordedEvents.push({ name, fields }); },
@@ -888,8 +889,8 @@ test('only the owner or original requester can answer; forged and stale choices 
   await choose(f, 0, 'USTRANGER');
   assert.equal(f.answered.length, 0);
   const state = savedQuestion(f);
-  await f.bot.handleQuestionAction({ channel: 'COTHER', messageTs: state.ts, user: OWNER, nonce: state.nonce, actionId: 'serra_question_choice_0', indices: [0] });
-  await f.bot.handleQuestionAction({ channel: 'C1', messageTs: state.ts, user: OWNER, nonce: 'forged', actionId: 'serra_question_choice_0', indices: [0] });
+  await f.bot.handleQuestionAction({ channel: 'COTHER', messageTs: state.ts, user: OWNER, nonce: state.nonce, indices: [0] });
+  await f.bot.handleQuestionAction({ channel: 'C1', messageTs: state.ts, user: OWNER, nonce: 'forged', indices: [0] });
   assert.equal(f.answered.length, 0);
   await choose(f, 99, OWNER);
   assert.equal(f.answered.length, 0);
@@ -923,9 +924,11 @@ test('multi-select requires Submit and sends the saved option values together', 
   const request = nativeQuestion(); request.questions[0]!.multiSelect = true;
   f.questionRequests.push(request); f.waitsInT3(1); await f.bot.poll();
   const state = savedQuestion(f);
-  await f.bot.handleQuestionAction({ channel: 'C1', messageTs: state.ts, user: SAM, nonce: state.nonce, actionId: 'serra_question_multi', indices: [0, 1] });
+  // Changing the select isn't an answer: Slack's parser never hands it to the bot.
+  assert.equal(questionInteraction({ type: 'block_actions', channel: { id: 'C1' }, user: { id: SAM }, message: { ts: state.ts },
+    actions: [{ action_id: 'serra_question_multi', block_id: `sq:${state.nonce}:choices`, selected_options: [{ value: '0' }, { value: '1' }] }] }), null);
   assert.equal(f.answered.length, 0);
-  await f.bot.handleQuestionAction({ channel: 'C1', messageTs: state.ts, user: SAM, nonce: state.nonce, actionId: 'serra_question_submit', indices: [0, 1] });
+  await f.bot.handleQuestionAction({ channel: 'C1', messageTs: state.ts, user: SAM, nonce: state.nonce, indices: [0, 1] });
   assert.deepEqual(f.answered[0]!.answers, { scope: ['front', 'back'] });
 });
 

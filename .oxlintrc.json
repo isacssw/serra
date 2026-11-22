@@ -41,8 +41,49 @@
   },
   "overrides": [
     {
-      // Layer rule: the daemon, CLI and services never reach into the app or a UI library.
+      // Layer rules: the daemon, CLI and services never reach into the app or a UI library. The core never reaches Slack,
+      // only ChatPort; and only deliver writes the worker's words. (Each override below re-lists what it still forbids.)
       "files": ["src/**"],
+      "rules": {
+        "react/rules-of-hooks": "off",
+        "no-restricted-imports": ["error", { "patterns": [
+          { "regex": "(^|/)app/", "message": "src/ never imports from app/: the app calls src, not the reverse." },
+          { "regex": "^(electron|react|react-dom|react-router)($|/)", "message": "src/ runs in plain Node: no Electron or React." },
+          { "regex": "^@slack/", "message": "Slack lives in src/slack/. The core talks to a chat through ChatPort (src/chat/port.ts)." },
+          { "regex": "(^|/)slack/", "message": "Slack lives in src/slack/. The core talks to a chat through ChatPort (src/chat/port.ts); only the daemon wires the adapter in." },
+          { "regex": "(^|/)chat/writer(\\.ts)?$", "message": "Only deliver (src/chat/deliver.ts) and the chat adapters hold a WorkerWriter: worker words go out through deliver." }
+        ] }]
+      }
+    },
+    {
+      // The daemon wires the Slack adapter in. Setup, doctor, secrets, Slack names and the Bolt logger still use Slack
+      // directly until the profile is per channel (architecture review, seam F).
+      "files": ["src/daemon.ts", "src/index.ts", "src/setup.ts", "src/doctor.ts", "src/secrets.ts", "src/slack-names.ts", "src/logging.ts"],
+      "rules": {
+        "react/rules-of-hooks": "off",
+        "no-restricted-imports": ["error", { "patterns": [
+          { "regex": "(^|/)app/", "message": "src/ never imports from app/: the app calls src, not the reverse." },
+          { "regex": "^(electron|react|react-dom|react-router)($|/)", "message": "src/ runs in plain Node: no Electron or React." },
+          { "regex": "(^|/)chat/writer(\\.ts)?$", "message": "Only deliver (src/chat/deliver.ts) and the chat adapters hold a WorkerWriter: worker words go out through deliver." }
+        ] }]
+      }
+    },
+    {
+      // deliver is the one holder of a WorkerWriter.
+      "files": ["src/chat/deliver.ts"],
+      "rules": {
+        "react/rules-of-hooks": "off",
+        "no-restricted-imports": ["error", { "patterns": [
+          { "regex": "(^|/)app/", "message": "src/ never imports from app/: the app calls src, not the reverse." },
+          { "regex": "^(electron|react|react-dom|react-router)($|/)", "message": "src/ runs in plain Node: no Electron or React." },
+          { "regex": "^@slack/", "message": "Slack lives in src/slack/. The core talks to a chat through ChatPort (src/chat/port.ts)." },
+          { "regex": "(^|/)slack/", "message": "Slack lives in src/slack/. The core talks to a chat through ChatPort (src/chat/port.ts); only the daemon wires the adapter in." }
+        ] }]
+      }
+    },
+    {
+      // A chat adapter: Slack's API, and the WorkerWriter it makes.
+      "files": ["src/slack/**"],
       "rules": {
         "react/rules-of-hooks": "off",
         "no-restricted-imports": ["error", { "patterns": [

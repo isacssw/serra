@@ -4,7 +4,7 @@
  * the calls the code really makes.
  */
 import type { webApi } from '@slack/bolt';
-import { isRecord } from './lib/guards.ts';
+import { isRecord } from '../lib/guards.ts';
 
 type WebClient = webApi.WebClient;
 

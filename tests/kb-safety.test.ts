@@ -15,6 +15,7 @@ import { createProposals } from '../src/proposals.ts';
 import { proposeBriefUpdate } from '../src/brief.ts';
 import { fakeClock, type FakeClock } from './fakes/clock.ts';
 import { createFakeSlack, slackError } from './fakes/slack.ts';
+import { slackChat } from './fakes/chat.ts';
 
 /** The fake clocks of this test's bots. `settle` moves them all, in place of sleeping for the batcher. */
 const clocks: FakeClock[] = [];
@@ -350,7 +351,7 @@ test('restricting a page a thread already used moves the next turn to a fresh th
   const clock = fakeClock(); clocks.push(clock);
   const quiet = (): void => {};
   const bot = createBot({
-    config, client, botUserId: () => 'UMOSS', store: createStore(config.statePath), loadIndex: () => knowledge.loadIndex(),
+    config, ...slackChat(client, config, { botUserId: 'UMOSS', clock, receive: async () => '' }), store: createStore(config.statePath), loadIndex: () => knowledge.loadIndex(),
     loadKnowledge: (visibility) => knowledge.briefKnowledge(visibility), logger: { info: quiet, warn: quiet, error: quiet, debug: quiet },
     t3: {
       startThread: async (input: { brief: string }) => { started.push(input.brief); return `t3-${started.length}`; },
@@ -358,8 +359,8 @@ test('restricting a page a thread already used moves the next turn to a fresh th
       showThread: async (id: string) => ({ thread: { threadId: id, link: 'https://t3/x', status: 'idle', latestRunId: null, activeRunId: null, pendingRequestCount: 0 }, messages: [] }),
     } as never,
     questions: { listQuestions: async () => [], answerQuestion: async () => {} },
-    fetchBase: async () => {}, share: async (_c, text) => text, reviewRequest: async (_c, text) => ({ reply: text, postedFor: null }),
-    receive: async () => '', timing: { quietMs: 5, retryMs: 5 }, events: () => {}, clock,
+    fetchBase: async () => {}, share: async (text) => text, reviewRequest: async (text) => ({ reply: text, postedFor: null }),
+    timing: { quietMs: 5, retryMs: 5 }, events: () => {}, clock,
   });
   await bot.handle({ channel: 'CTEAM', threadTs: '1.1', messageTs: '1.1', user: PRIYA, text: '<@UMOSS> how do I cut a release?', direct: true });
   assert.match(started[0]!, /workflows\/release\.md/);
@@ -455,7 +456,7 @@ const botOn = async (profileDir: string) => {
   });
   const quiet = (): void => {};
   const bot = createBot({
-    config, client, botUserId: () => 'UMOSS', store, loadIndex: () => knowledge.loadIndex(),
+    config, ...slackChat(client, config, { botUserId: 'UMOSS', clock, receive: async () => '' }), store, loadIndex: () => knowledge.loadIndex(),
     loadKnowledge: (visibility) => knowledge.briefKnowledge(visibility), logger: { info: quiet, warn: quiet, error: quiet, debug: quiet },
     t3: {
       startThread: async (input: { brief: string; baseRef: string }) => { started.push(input.brief); bases.push(input.baseRef); return `t3-${started.length}`; },
@@ -463,15 +464,15 @@ const botOn = async (profileDir: string) => {
       showThread: async (id: string, _bin?: string, count = 1) => ({ thread: { threadId: id, link: 'https://t3/x', status: activeRunId ? 'running' : 'idle', latestRunId: activeRunId ?? (transcript.length ? 'run-1' : null), activeRunId, pendingRequestCount: pendingQuestions.length }, messages: transcript.slice(-count) }),
     } as never,
     questions: { listQuestions: async () => pendingQuestions as never, answerQuestion: async (...args: unknown[]) => { answered.push(args); } },
-    fetchBase: async () => {}, share: async (_c, text) => { await hooks.beforeShare?.(); return text; },
-    reviewRequest: async (_c, text, opts) => {
+    fetchBase: async () => {}, share: async (text) => { await hooks.beforeShare?.(); return text; },
+    reviewRequest: async (text, opts) => {
       await hooks.beforeReview?.();
-      // As the real handler does, right before it would post to the review channel.
-      const ok = opts.mayPost ? await opts.mayPost() : true;
-      reviews.push(ok ? {} : { heldBack: 'some people in the review channel may not hear it' });
+      // As the real handler does, once the PR checks pass: post, which `deliver` checks right before it goes out.
+      const posted = opts.post ? await opts.post('Review https://github.com/acme/project/pull/1') : { ok: true };
+      reviews.push(posted.ok ? {} : { heldBack: 'some people in the review channel may not hear it' });
       return { reply: text, postedFor: null };
     },
-    receive: async () => '', timing: { quietMs: 5, retryMs: 5 }, events: () => {}, clock,
+    timing: { quietMs: 5, retryMs: 5 }, events: () => {}, clock,
   });
   const restrict = (page: string): void => {
     const file = join(config.knowledgeDir, page);

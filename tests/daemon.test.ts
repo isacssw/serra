@@ -80,9 +80,9 @@ test('[REPLY-008] a review request posted just before a crash is recorded at onc
   const pr = 'https://github.com/acme/project/pull/12';
   let h: Awaited<ReturnType<typeof startTestDaemon>> | null = null;
   h = await startTestDaemon(t, { bot: {
-    reviewRequest: async (client, text, options) => {
+    reviewRequest: async (text, options) => {
       if (options.alreadyPosted.includes(pr)) return { reply: text, postedFor: null };
-      await client.chat.postMessage({ channel: 'CREVIEW', text: `Review ${pr}` });
+      await h!.slack.client.chat.postMessage({ channel: 'CREVIEW', text: `Review ${pr}` });
       // The reply to the thread, posted next, reaches Slack and then the daemon dies.
       h!.slack.hangAfter('chat.postMessage');
       return { reply: `${text}\n\nReview request posted.`, postedFor: pr };

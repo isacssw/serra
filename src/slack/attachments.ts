@@ -1,11 +1,11 @@
 import { chmod, lstat, mkdir, mkdtemp, rename, rm, writeFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { join } from 'node:path';
-import type { SlackApi } from './slack-api.ts';
-import type { IncomingFile } from './types.ts';
+import type { SlackApi } from './api.ts';
+import { MAX_ATTACHMENTS } from '../chat/port.ts';
+import type { IncomingFile } from '../types.ts';
 
 export const MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024;
-export const MAX_ATTACHMENTS = 5;
 const TIMEOUT_MS = 30_000;
 
 /** Private Slack download URLs only. In particular, remote files must never receive the bot token. */

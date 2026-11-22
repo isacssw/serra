@@ -4,6 +4,7 @@ Serra follows [Semantic Versioning](https://semver.org) once it reaches 1.0. Unt
 
 ## Unreleased
 
+- Every message carrying the worker's words (replies, status and progress lines, question cards, uploads, review requests, an error's detail in the owner's DM) is now checked against who can see its thread at the moment it is written, not only earlier in the poll. If that last check fails, the thread gets the usual "made private" or "couldn't confirm" notice instead. A question card closed this way shows the fixed "closed" text.
 - Setup is now its own full-window flow: a short welcome, then You & repo, Connect Slack, Confirm you and Install and start, with a step rail, focus on each step's heading and announcements for screen readers. It finds what already exists first: a profile made by `pnpm run setup` or an older app, tokens in `.env` or the Keychain (checked, not asked for again), the owner, and a service installed under launchd. It resumes at the first missing step, and with several profiles it asks which one. The profile form is kept if you quit halfway, and the install step waits until the bot actually answers.
 - Until setup is done, the sidebar has a **Finish setup** row with the steps left, and every screen that needs a profile shows the same calm **Finish setup** state instead of an error. Setup is also under **Serra › Set Up Serra…** in the menu bar and in ⌘K.
 - A token check that never reached Slack (offline, a timeout) now says "Couldn't reach Slack" instead of "Slack rejected", on Secrets as well as in setup.

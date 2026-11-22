@@ -1,6 +1,8 @@
 // Builds the brief Serra's own code sends a worker for one eval case: a real `createBot` with a recording chat
 // client and a T3 stub that keeps the brief instead of starting a thread, or `taskBrief` for a task started in the
 // app. Nothing here decides what goes into the brief; that is the code under test.
+import { createDeliver } from '../src/chat/deliver.ts';
+import { createSlackChat } from '../src/slack/chat.ts';
 import { createBot } from '../src/bot.ts';
 import { loadConfig } from '../src/config.ts';
 import { createKnowledge } from '../src/knowledge.ts';
@@ -82,8 +84,10 @@ export const buildBrief = async (profileDir: string, item: EvalCase, { noAbout =
   const knowledge = createKnowledge(config.knowledgeDir);
   // As the daemon does at start: from here on, briefs and the worker read the approved copy.
   knowledge.seedApproved();
+  const { chat, writer } = createSlackChat({ client, owner: config.owner, botUserId: () => BOT_USER, botToken: config.botToken, profileDir: config.profileDir,
+    logger: { info: quiet, warn: quiet, error: quiet, debug: quiet }, clock: { now: Date.now }, receive: async () => '' });
   const bot = createBot({
-    config, client, botUserId: () => BOT_USER, store: createStore(config.statePath), loadIndex: () => knowledge.loadIndex(), loadKnowledge: (visibility) => {
+    config, chat, deliver: createDeliver(writer), store: createStore(config.statePath), loadIndex: () => knowledge.loadIndex(), loadKnowledge: (visibility) => {
       const known = knowledge.briefKnowledge(visibility);
       return noAbout ? withoutOwnerPages(known) : known;
     },
@@ -94,8 +98,8 @@ export const buildBrief = async (profileDir: string, item: EvalCase, { noAbout =
       showThread: async () => ({ thread: { threadId: 't3-eval', link: 'https://t3.test/t3-eval', status: 'idle', latestRunId: null, activeRunId: null, pendingRequestCount: 0 }, messages: [] }),
     } as never,
     questions: { listQuestions: async () => [], answerQuestion: async () => {} },
-    fetchBase: async () => {}, share: async (_client, text) => text, reviewRequest: async (_client, text) => ({ reply: text, postedFor: null }),
-    receive: async () => '', timing: { quietMs: 5, retryMs: 5 }, events: () => {},
+    fetchBase: async () => {}, share: async (text) => text, reviewRequest: async (text) => ({ reply: text, postedFor: null }),
+    timing: { quietMs: 5, retryMs: 5 }, events: () => {},
   });
   const text = item.via === 'dm' ? item.text : `<@${BOT_USER}> ${item.text}`;
   await bot.handle({ channel, threadTs, messageTs, user: item.user, text, direct: true });

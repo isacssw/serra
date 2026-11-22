@@ -5,7 +5,7 @@
  * message can't be edited. Any method can be failed or held on cue: `fail` throws Slack's error shape, `hang` records
  * the call (Slack received it) and never answers, which is how a scenario simulates a crash mid-call.
  */
-import type { SlackApi } from '../../src/slack-api.ts';
+import type { SlackApi } from '../../src/slack/api.ts';
 
 export type SlackMethod =
   | 'auth.test' | 'chat.postMessage' | 'chat.update' | 'chat.delete' | 'chat.getPermalink' | 'reactions.add' | 'reactions.remove'

@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { isNotice } from '../src/bot.ts';
-import { comparableSlackText } from '../src/slack-api.ts';
-import { slackStoredText } from './fakes/slack.ts';
+import { comparableSlackText } from '../src/slack/api.ts';
+import { slackChat } from './fakes/chat.ts';
+import { createFakeSlack, slackStoredText } from './fakes/slack.ts';
 
 test('[REPLY-009] a reply and the text Slack stores for it compare equal, and different replies don\'t', () => {
   const replies = [
@@ -16,9 +16,16 @@ test('[REPLY-009] a reply and the text Slack stores for it compare equal, and di
   assert.equal(comparableSlackText('x'.repeat(900)).length, 500, 'a prefix is compared');
 });
 
-test('[REPLY-009] Serra\'s fixed notices are never recognised by their text: the same notice is posted many times', () => {
-  assert.equal(isNotice('Some of what I knew for this answer has since been made private, so I won\'t post it. Ask again and I\'ll answer with what I may share now.'), true);
-  assert.equal(isNotice('I couldn\'t confirm who can see this thread just now, so I haven\'t posted my answer here. Ask again in a minute and I\'ll try again.'), true);
-  assert.equal(isNotice('I can\'t check who can see this thread: my Slack app is missing a permission (missing_scope).'), true);
-  assert.equal(isNotice('Done.'), false);
+test('[REPLY-009] Serra\'s fixed notices are never recognised by their text: the same notice is posted many times', async () => {
+  // A restart looks for a reply cut off mid-post. Without metadata, a notice already in the thread is not taken for it.
+  const slack = createFakeSlack({ botUserId: 'UBOT', returnsMetadata: false, now: () => Date.parse('2026-11-18T10:00:00Z') });
+  const { chat } = slackChat(slack.client, { owner: 'UOWNER', botToken: 'xoxb-1111-2222-fixturevalue', profileDir: '/tmp' }, { botUserId: 'UBOT' });
+  const target = { conversation: 'C1', thread: '1700000000.000100' };
+  await chat.notice(target, { kind: 'withheld' });
+  await chat.notice(target, { kind: 'unconfirmed' });
+  await chat.notice(target, { kind: 'setup-problem', problem: 'missing_scope' });
+  const at = '2026-11-18T10:00:00.000Z';
+  for (const text of slack.posted.map((post) => String(post.text))) assert.equal(await chat.findReply(target, { runId: 'run-2', at, text }), null, text);
+  await slack.client.chat.postMessage({ channel: 'C1', thread_ts: target.thread, text: 'Done.' });
+  assert.notEqual(await chat.findReply(target, { runId: 'run-2', at, text: 'Done.' }), null, 'a worker\'s reply is found by its text');
 });

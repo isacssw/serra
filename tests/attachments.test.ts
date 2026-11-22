@@ -3,7 +3,7 @@ import { mkdtempSync, readFileSync, readdirSync, rmSync, statSync } from 'node:f
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test, { type TestContext } from 'node:test';
-import { MAX_ATTACHMENT_BYTES, receiveAttachments } from '../src/attachments.ts';
+import { MAX_ATTACHMENT_BYTES, receiveAttachments } from '../src/slack/attachments.ts';
 import { createFakeSlack } from './fakes/slack.ts';
 
 const fixture = (t: TestContext) => {

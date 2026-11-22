@@ -1,0 +1,50 @@
+/**
+ * The one way the worker's words reach a chat. `createDeliver` is handed the adapter's `WorkerWriter` and keeps it: the
+ * function it returns is the only code that ever writes worker text. Each write first asks the chat who can see the
+ * target now (`clear`), then asks the caller whether that audience may hear it (`may`: the knowledge-safety page check),
+ * and writes straight after, so the gap between the check and the post is as small as it can be.
+ *
+ * Not guaranteed by anything: the milliseconds between the chat's answer and the write. A channel can be shared outside
+ * in between. Today's code has the same gap.
+ */
+import type { Audience, ChatError, MessageRef, PersonId, Target, WorkerFile, WorkerOut } from './port.ts';
+import type { Cleared, WorkerWriter } from './writer.ts';
+
+/** Where worker words go, for whom, and whether an audience may hear them. */
+export interface Delivery {
+  target: Target;
+  /** Whose request this answers: their DM, say, is theirs alone. */
+  requester: PersonId;
+  /** Whether everyone in `audience` may hear what the worker was told. Called right before each write. */
+  may: (audience: Audience) => boolean | Promise<boolean>;
+}
+
+type Write =
+  | { op: 'send'; out: WorkerOut }
+  | { op: 'revise'; ref: MessageRef; out: WorkerOut }
+  | { op: 'upload'; file: WorkerFile };
+
+type Written<W extends Write> = W extends { op: 'send' } ? string : W extends { op: 'upload' } ? Error | null : undefined;
+
+/** Not written: `withheld` when the audience may not hear it, `unconfirmed` when the chat couldn't say who the audience is. */
+export type Refused = { ok: false; why: 'withheld' } | { ok: false; why: 'unconfirmed'; error: ChatError };
+type Delivered<T> = { ok: true; value: T } | Refused;
+
+export type Deliver = <W extends Write>(to: Delivery, write: W) => Promise<Delivered<Written<W>>>;
+
+export const createDeliver = (writer: WorkerWriter): Deliver => {
+  const perform = async (proof: Cleared, write: Write): Promise<string | Error | null | undefined> => {
+    switch (write.op) {
+      case 'send': return writer.send(proof, write.out);
+      case 'revise': await writer.revise(proof, write.ref, write.out); return undefined;
+      case 'upload': return writer.upload(proof, write.file);
+    }
+  };
+  return async <W extends Write>(to: Delivery, write: W): Promise<Delivered<Written<W>>> => {
+    const cleared = await writer.clear(to.target, to.requester);
+    if (!cleared.ok) return { ok: false, why: 'unconfirmed', error: cleared.error };
+    if (!(await to.may(cleared.value.audience))) return { ok: false, why: 'withheld' };
+    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- `perform` returns what `write.op` asks for; TypeScript can't narrow a generic through the switch
+    return { ok: true, value: (await perform(cleared.value, write)) as Written<W> };
+  };
+};

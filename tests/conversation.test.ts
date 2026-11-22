@@ -1,28 +1,33 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { audienceOf, createBatcher, followUpMessage, isPing, mentionedUsers, ownerNotice, readable, speakerName, type ThreadLine } from '../src/conversation.ts';
+import { audienceOf, createBatcher, followUpMessage, isPing, ownerNotice, speakerName, type ThreadLine } from '../src/conversation.ts';
 import { localLinksToText } from '../src/links.ts';
 import { fakeClock } from './fakes/clock.ts';
+import { slackChat, slackUpload } from './fakes/chat.ts';
 import { createFakeSlack } from './fakes/slack.ts';
 
 const bot = { userId: 'UBOT', name: 'Friday' };
 
-test('a message that names other people and not the bot is not for the bot', () => {
-  assert.equal(audienceOf('can you open the pricing admin page <@USAM>? let me know', bot), 'others');
-  assert.equal(audienceOf('<@UBOT> and <@USAM> look at this', bot), 'bot');
+/** A message as the Slack adapter reads it: who it mentions and its words, mentions as `@Name`. */
+const { chat } = slackChat(createFakeSlack({ botUserId: 'UBOT' }).client, { owner: 'UOWNER', botToken: 'xoxb-1111-2222-fixturevalue', profileDir: '/tmp' }, { botUserId: 'UBOT' });
+const names: Record<string, string> = { USAM: 'Sam' };
+const read = (text: string) => chat.read(text, async (person) => names[person] ?? person);
+
+test('a message that names other people and not the bot is not for the bot', async () => {
+  assert.equal(audienceOf(await read('can you open the pricing admin page <@USAM>? let me know'), bot), 'others');
+  assert.equal(audienceOf(await read('<@UBOT> and <@USAM> look at this'), bot), 'bot');
   // Named without an @: it wakes the worker, which judges whether it is being talked to or about.
-  assert.equal(audienceOf('friday, give me the role name so <@USAM> gets access', bot), 'open');
-  assert.equal(audienceOf('Friday is oversharing my secrets', bot), 'open');
-  assert.equal(audienceOf('it shows an error', bot), 'open');
+  assert.equal(audienceOf(await read('friday, give me the role name so <@USAM> gets access'), bot), 'open');
+  assert.equal(audienceOf(await read('Friday is oversharing my secrets'), bot), 'open');
+  assert.equal(audienceOf(await read('it shows an error'), bot), 'open');
   // A name inside another word is not the bot being called.
-  assert.equal(audienceOf('see you on fridays <@USAM>', bot), 'others');
+  assert.equal(audienceOf(await read('see you on fridays <@USAM>'), bot), 'others');
 });
 
-test('the worker reads who was addressed: only the bot mention is removed', () => {
-  const names = new Map([['USAM', 'Sam']]);
-  assert.equal(readable('<@UBOT> can you open the pricing admin page <@USAM>?', 'UBOT', names), 'can you open the pricing admin page @Sam?');
-  assert.equal(readable('ask <@UNKNOWN|someone>', 'UBOT', names), 'ask @UNKNOWN');
-  assert.deepEqual(mentionedUsers('<@UA> <@UB> <@UA>'), ['UA', 'UB']);
+test('the worker reads who was addressed: only the bot mention is removed', async () => {
+  assert.equal((await read('<@UBOT> can you open the pricing admin page <@USAM>?')).text, 'can you open the pricing admin page @Sam?');
+  assert.equal((await read('ask <@UNKNOWN|someone>')).text, 'ask @UNKNOWN');
+  assert.deepEqual((await read('<@UA> <@UB> <@UA>')).mentions, ['UA', 'UB']);
 });
 
 test('a display name cannot imitate the owner marker or another speaker', () => {
@@ -110,7 +115,7 @@ test('an image embed with a bracketed path is uploaded, and one outside the shar
   const slack = createFakeSlack();
   const { client } = slack;
   const uploads = (): string[] => slack.callsTo('filesUploadV2').map((args) => String(args.file));
-  const reply = await shareImages(client, `Done.\n\n![](<${image}>)\n![secret](/etc/passwd.png)`, { channel: 'C1', threadTs: '1.0' });
+  const reply = await shareImages(`Done.\n\n![](<${image}>)\n![secret](/etc/passwd.png)`, slackUpload(client, { conversation: 'C1', thread: '1.0' }));
   assert.equal(uploads().length, 1);
   assert.match(reply, /_\(image attached above: flow\.png\)_/);
   assert.match(reply, /image "secret" not attached/);

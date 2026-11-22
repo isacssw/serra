@@ -1,6 +1,6 @@
-import type { IncomingFile, IncomingMessage } from './types.ts';
-import type { MessageTrigger } from './config.ts';
-import { matchMessageTrigger } from './message-triggers.ts';
+import type { IncomingFile, IncomingMessage } from '../types.ts';
+import type { MessageTrigger } from '../config.ts';
+import { matchMessageTrigger } from '../message-triggers.ts';
 
 const record = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 

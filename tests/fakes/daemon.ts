@@ -109,9 +109,10 @@ export const startTestDaemon = async (t: TestContext, options: DaemonHarnessOpti
     const daemon = await startDaemon({
       config, app, client: gated(slack.client, alive), logger: quietLogger(logs), clock: scoped, knowledge: createKnowledge(config.knowledgeDir),
       bot: {
-        t3: gated(t3.t3, alive), questions: gated(t3.questions, alive), fetchBase: async () => {}, share: async (_client, text) => text,
-        reviewRequest: async (_client, text) => ({ reply: text, postedFor: null }), receive: async () => '', ...options.bot,
+        t3: gated(t3.t3, alive), questions: gated(t3.questions, alive), fetchBase: async () => {}, share: async (text) => text,
+        reviewRequest: async (text) => ({ reply: text, postedFor: null }), ...options.bot,
       },
+      receive: async () => '',
       checkAccess: options.checkAccess ?? (async () => {}), lock: () => () => {}, statusSocket: false, watchProfile: false, pid: 4242,
     });
     current = { daemon, receiver, clock: scoped };

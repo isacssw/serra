@@ -12,6 +12,7 @@ import { memoryPrefs } from '../app/main/prefs.ts';
 import { stoppedStatusSource } from '../app/main/status.ts';
 import { linkButtons, rowIcon } from '../app/renderer/screens/jobs.logic.ts';
 import { canStart, MAX_REQUEST, requestProblem, startedText } from '../app/renderer/screens/newTask.logic.ts';
+import { slackChat } from './fakes/chat.ts';
 import { createBot } from '../src/bot.ts';
 import { cleanupWorktrees } from '../src/cleanup.ts';
 import { loadConfig } from '../src/config.ts';
@@ -111,7 +112,7 @@ test('the brief a task sends is the one the daemon sends for the same request, b
   const { client } = createFakeSlack({ names: { [OWNER]: 'Alex' } });
   client.chat.getPermalink = async () => ({ ok: true, permalink: 'https://acme.slack.com/archives/D0123456789/p100' });
   const bot = createBot({
-    config, client, botUserId: () => 'UBOT', store: createStore(config.statePath),
+    config, ...slackChat(client, config, { botUserId: 'UBOT' }), store: createStore(config.statePath),
     loadIndex: createKnowledge(config.knowledgeDir).loadIndex,
     loadKnowledge: (visibility) => createKnowledge(config.knowledgeDir).briefKnowledge(visibility),
     logger: { info: quiet, warn: quiet, debug: quiet, error: (message) => assert.fail(message) },
@@ -288,7 +289,7 @@ test('an index pushed over its cap outside the app still lets the daemon and a t
   const { client } = createFakeSlack({ names: { [OWNER]: 'Alex' } });
   client.chat.getPermalink = async () => ({ ok: true, permalink: 'https://acme.slack.com/archives/D0123456789/p100' });
   const bot = createBot({
-    config, client, botUserId: () => 'UBOT', store: createStore(config.statePath),
+    config, ...slackChat(client, config, { botUserId: 'UBOT' }), store: createStore(config.statePath),
     loadIndex: createKnowledge(config.knowledgeDir).loadIndex,
     loadKnowledge: (visibility) => createKnowledge(config.knowledgeDir).briefKnowledge(visibility),
     logger: { info: quiet, warn: quiet, debug: quiet, error: (message) => assert.fail(message) },

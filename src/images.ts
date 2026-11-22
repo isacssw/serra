@@ -1,9 +1,7 @@
 import { realpathSync, statSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { basename, extname, sep } from 'node:path';
-import type { SlackApi } from './slack-api.ts';
-
-type SlackClient = Pick<SlackApi, 'filesUploadV2'>;
+import type { WorkerFile } from './chat/port.ts';
 
 /**
  * A Markdown image with an absolute local path, the way `show-visually` and the QA skills hand back an image or a video.
@@ -83,42 +81,22 @@ const checkImage = (path: string): { path: string } | { problem: string } => {
   return checkShareable(path, isVideo ? MAX_VIDEO_BYTES : MAX_IMAGE_BYTES);
 };
 
-/** Uploads one file into the thread. Returns the error instead of throwing, so one failed upload doesn't lose the reply. */
-const upload = async (
-  client: SlackClient,
-  thread: { channel: string; threadTs: string },
-  path: string,
-  label: string,
-  altText?: string,
-): Promise<Error | null> => {
-  const result = await client
-    .filesUploadV2({
-      channel_id: thread.channel,
-      thread_ts: thread.threadTs,
-      file: path,
-      filename: basename(path),
-      title: label,
-      ...(altText ? { alt_text: altText } : {}),
-    })
-    .catch((error: unknown) => (error instanceof Error ? error : new Error(String(error))));
-  return result instanceof Error ? result : null;
-};
+/**
+ * Uploads one file into the thread: the error when it failed, or `refused` when it may not go out now (who can see the
+ * thread, or what its worker was told, changed). Checked right before each upload, so one file going out can't carry
+ * the next past a change.
+ */
+export type Upload = (file: WorkerFile) => Promise<Error | null | 'refused'>;
 
 /**
- * Uploads the local images a reply embeds into the Slack thread, and replaces each embed with a short note,
- * since Slack can't show a path on the owner's machine.
+ * Uploads the local images a reply embeds into the thread, and replaces each embed with a short note,
+ * since the chat can't show a path on the owner's machine.
  * Plain links to a local HTML, PDF, ZIP or text deliverable are uploaded too, and become `label (attached above)`.
  * A link that can't be shared stays as it is, for `localLinksToText` to turn into plain text.
  * Returns the reply to post as text.
  */
-export const shareImages = async (
-  client: SlackClient,
-  text: string,
-  thread: { channel: string; threadTs: string; mayPost?: () => Promise<boolean> },
-): Promise<string> => {
-  // Checked right before each upload: one file going out must not carry the next past a change.
+export const shareImages = async (text: string, upload: Upload): Promise<string> => {
   let stopped = false;
-  const mayUpload = async (): Promise<boolean> => !stopped && (!thread.mayPost || (await thread.mayPost()) || ((stopped = true), false));
   const embeds = [...text.matchAll(LOCAL_IMAGE)];
   const links = [...text.matchAll(LOCAL_FILE_LINK)].filter(([, , bracketed, plain]) =>
     FILE_TYPES.has(extname(bracketed ?? plain ?? '').toLowerCase()),
@@ -147,8 +125,9 @@ export const shareImages = async (
       notes.set(embed, `_(image attached above: ${label})_`);
       continue;
     }
-    if (!(await mayUpload())) break;
-    const error = await upload(client, thread, checked.path, label, label);
+    if (stopped) break;
+    const error = await upload({ path: checked.path, label, altText: label });
+    if (error === 'refused') { stopped = true; break; }
     if (error) {
       notes.set(embed, `_(image "${label}" not attached: ${error.message})_`);
       continue;
@@ -169,8 +148,10 @@ export const shareImages = async (
     if ('problem' in checked) continue;
     if (!sent.has(checked.path)) {
       if (files >= MAX_FILES) continue;
-      if (!(await mayUpload())) break;
-      if (await upload(client, thread, checked.path, label.replaceAll('`', ''))) continue;
+      if (stopped) break;
+      const error = await upload({ path: checked.path, label: label.replaceAll('`', '') });
+      if (error === 'refused') { stopped = true; break; }
+      if (error) continue;
       files++;
       sent.add(checked.path);
     }
