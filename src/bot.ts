@@ -16,7 +16,7 @@ import { localLinksToText } from './links.ts';
 import { createProfileReloader } from './profile-reload.ts';
 import { handleReviewRequest } from './review.ts';
 import { slackKey, type createStore } from './state.ts';
-import { jobThreadInput, run, sendToThread, showThread, startThread } from './t3.ts';
+import { findThread, jobThreadInput, run, sendToThread, showThread, startThread } from './t3.ts';
 import { answerQuestion, listQuestions, type T3QuestionRequest } from './t3-questions.ts';
 import { answeredMessage, closedMessage, canShowQuestion, choiceAnswer, questionMessage, typedAnswer, type QuestionAnswer, type QuestionInteraction, type SlackQuestion } from './questions.ts';
 import type { IncomingFile, IncomingMessage, Job, T3Message, T3Thread } from './types.ts';
@@ -108,6 +108,8 @@ const someoneWaits = (job: Job, runId: string, messages: T3Message[]): boolean =
 
 /** Marks a reply Serra posts with the run it answers, so a restart can find it in the thread instead of posting it again. */
 const REPLY_EVENT = 'serra_reply';
+/** How much of a reply's text its saved intent keeps. A reply's fallback text is at most 3,000 characters. */
+const INTENT_TEXT = 3_000;
 const replyMetadata = (runId: string) => ({ event_type: REPLY_EVENT, event_payload: { run_id: runId } });
 
 /** The worker's latest note in a run that is still going, such as "Reproducing the bug locally first." */
@@ -169,7 +171,7 @@ export interface BotDeps {
   /** The knowledge for a reply the given audience will see. Without it, every brief gets `loadIndex()` and no About me. */
   loadKnowledge?: (visibility: Visibility) => BriefKnowledge;
   logger: { info(message: string): void; warn(message: string): void; error(message: string): void; debug(message: string): void };
-  t3?: { startThread: typeof startThread; sendToThread: typeof sendToThread; showThread: typeof showThread };
+  t3?: { startThread: typeof startThread; sendToThread: typeof sendToThread; showThread: typeof showThread; findThread?: typeof findThread };
   questions?: { listQuestions: typeof listQuestions; answerQuestion: typeof answerQuestion };
   /** Brings the base branch up to date before a worktree is made from it. */
   fetchBase?: () => Promise<unknown>;
@@ -188,7 +190,7 @@ export interface BotDeps {
  */
 export const createBot = ({
   config, client, botUserId, store, loadIndex, loadKnowledge, logger,
-  t3 = { startThread, sendToThread, showThread },
+  t3 = { startThread, sendToThread, showThread, findThread },
   questions = { listQuestions, answerQuestion },
   fetchBase = () => run('git', ['-C', config.project, 'fetch', config.remote, '--quiet']),
   share = shareImages,
@@ -478,7 +480,15 @@ export const createBot = ({
         ...(trigger ? { triggerInstructions: trigger.instructions } : {}) }),
       now: new Date(now()),
     });
-    const t3ThreadId = await t3.startThread(input, config.t3Bin);
+    // A replay of a held request whose start was cut off: its thread may exist already (INTAKE-010).
+    const earlier = msg.attemptedAt && t3.findThread
+      ? await t3.findThread(config.project, input.title, new Date(Date.parse(msg.attemptedAt) - 60_000).toISOString(), config.t3Bin).catch((error: unknown) => {
+        logger.warn(`Couldn't look for a thread started before the restart for ${msg.channel}:${msg.threadTs}: ${errorMessage(error)}`);
+        return null;
+      })
+      : null;
+    if (earlier) logger.info(`Carrying on in T3 thread ${earlier}, started for ${msg.channel}:${msg.threadTs} before a restart.`);
+    const t3ThreadId = earlier ?? await t3.startThread(input, config.t3Bin);
 
     putJob(slackKey(msg.channel, msg.threadTs), {
       t3ThreadId,
@@ -541,13 +551,20 @@ export const createBot = ({
    * intent still saved looks for that metadata in the thread (`postedReply`) before posting again, so only a crash
    * while Slack is answering the post, followed by a failed thread read, can post it twice. Nothing is ever lost.
    */
-  const deliver = async (key: string, runId: string, thread: Pick<T3Thread, 'activeRunId'>,
-    message: PostMessage): Promise<string | undefined> => {
-    updateJob(key, () => ({ delivering: { runId, at: new Date(now()).toISOString() } }));
+  const deliver = async (key: string, runId: string, thread: Pick<T3Thread, 'activeRunId'>, message: PostMessage & { text: string },
+    { byWorker, owner = {} }: { byWorker: boolean; owner?: { ownerFollows?: boolean; ownerAskOpen?: boolean } }): Promise<string | undefined> => {
+    updateJob(key, () => ({ delivering: { runId, at: new Date(now()).toISOString(), text: message.text.slice(0, INTENT_TEXT), ...owner } }));
     const posted = await client.chat.postMessage({ ...message, metadata: replyMetadata(runId) });
-    updateJob(key, (latest) => ({ lastPostedRunId: runId, delivering: undefined, ...seenOver(latest, thread) }));
+    updateJob(key, (latest) => ({ lastPostedRunId: runId, delivering: undefined, ...seenOver(latest, thread), ...turnOver(latest, runId, byWorker), ...owner }));
     return posted.ts;
   };
+
+  /**
+   * A run that was never seen going (it started and ended between polls) answered the turn Serra sent last: that
+   * turn's `nextTurnWaits` is spent, and must not carry over to a later run started in T3.
+   */
+  const turnOver = (job: Job, runId: string, byWorker: boolean): Partial<Job> =>
+    !byWorker && job.runSeen?.runId !== runId && job.nextTurnWaits !== undefined ? { nextTurnWaits: undefined } : {};
 
   /** The ts of the reply to `runId` this bot already posted in the job's thread, or null when there is none or Slack can't say. */
   const postedReply = async (job: Job, runId: string): Promise<string | null> => {
@@ -558,8 +575,11 @@ export const createBot = ({
         logger.warn(`Couldn't read ${job.channel}:${job.threadTs} to check for a reply posted before a restart: ${errorMessage(error)}`);
         return null;
       });
-    const mine = replies?.messages?.find((message) => message.user === botUserId() && message.metadata?.event_type === REPLY_EVENT
-      && (message.metadata.event_payload as { run_id?: unknown } | undefined)?.run_id === runId);
+    const text = job.delivering?.text;
+    // By the run ID Serra put in the message's metadata; when Slack leaves metadata out, by the reply's own text.
+    const mine = replies?.messages?.find((message) => message.user === botUserId() && (message.metadata
+      ? message.metadata.event_type === REPLY_EVENT && (message.metadata.event_payload as { run_id?: unknown } | undefined)?.run_id === runId
+      : Boolean(text) && message.text === text));
     return mine?.ts ?? null;
   };
 
@@ -591,7 +611,9 @@ export const createBot = ({
     const recovered = job.delivering?.runId === runId ? await postedReply(job, runId) : null;
     if (recovered) {
       const cleared = await clearEyes(job);
+      const { ownerFollows, ownerAskOpen } = job.delivering ?? {};
       updateJob(key, (latest) => ({ lastPostedRunId: runId, delivering: undefined, ...seenOver(latest, thread), ...withoutReactions(latest, cleared),
+        ...turnOver(latest, runId, byWorker), ...(ownerFollows === undefined ? {} : { ownerFollows }), ...(ownerAskOpen === undefined ? {} : { ownerAskOpen }),
         ...(byWorker ? { statusTs: recovered } : { statusTs: undefined }), watching: true, waitingInT3: false, lastActivityAt: new Date(now()).toISOString() }));
       await finishLoading(key, job);
       logger.info(`The reply to ${runId} in ${key} was posted before a restart; not posting it again.`);
@@ -601,7 +623,7 @@ export const createBot = ({
     if (QUIET.test(text)) {
       // Nothing to say: the 👀 goes away, which tells the thread the message was seen.
       const cleared = await clearEyes(job);
-      updateJob(key, (latest) => ({ lastPostedRunId: runId, ...seenOver(latest, thread), ...withoutReactions(latest, cleared) }));
+      updateJob(key, (latest) => ({ lastPostedRunId: runId, delivering: undefined, ...seenOver(latest, thread), ...turnOver(latest, runId, byWorker), ...withoutReactions(latest, cleared) }));
       await finishLoading(key, job);
       events('reply', { ...measured, kind: 'quiet' });
       return;
@@ -631,13 +653,14 @@ export const createBot = ({
       alreadyPosted: job.reviewRequestedPrs ?? [],
       sourceLink: slackThread ?? thread.link,
     });
+    // A review request is its own post in another channel: recorded as soon as it is out, so no retry or restart posts it twice.
+    if (review.postedFor) updateJob(key, (latest) => ({ reviewRequestedPrs: [...new Set([...(latest.reviewRequestedPrs ?? []), review.postedFor!])] }));
     // Images go up first, so they sit in the thread just above the reply that refers to them. Checked again right
     // before uploading and before posting: who can see the thread, and what its worker was told, can change meanwhile.
     // Slack can't say who sees the thread before anything is uploaded: the reply waits for the next check. A review
     // request already posted is recorded first, so the retry doesn't post it twice.
     const toShare = await stillMayPost(job, review.reply);
     if (toShare === UNCONFIRMED) {
-      if (review.postedFor) updateJob(key, (latest) => ({ reviewRequestedPrs: [...(latest.reviewRequestedPrs ?? []), review.postedFor!] }));
       logger.warn(`Could not confirm who can see ${key} before uploading; the reply waits for the next check.`);
       return;
     }
@@ -668,9 +691,11 @@ export const createBot = ({
         : false;
       // A new post in place of a failed edit is checked again first: time has passed.
       const swapped = edited ? {} : await withheldIfRevoked(job, body);
-      const statusTs = edited ? job.statusTs : await deliver(key, runId, thread, { ...message, ...swapped, thread_ts: job.threadTs });
+      const statusTs = edited ? job.statusTs : await deliver(key, runId, thread, { ...message, ...swapped, thread_ts: job.threadTs }, { byWorker });
       updateJob(key, (latest) => ({
         lastPostedRunId: runId,
+        delivering: undefined,
+        ...turnOver(latest, runId, byWorker),
         ...seenOver(latest, thread),
         ...(statusTs ? { statusTs } : {}),
         watching: true,
@@ -697,7 +722,7 @@ export const createBot = ({
         { type: 'context', elements: [{ type: 'mrkdwn', text: `${notice === 'cc' ? `cc <@${config.owner}> · ` : ''}<${thread.link}|T3 thread>` }] },
       ],
       unfurl_links: false,
-    });
+    }, { byWorker, owner: { ownerFollows: ownerFollows || notice !== 'none' || job.ownerFollows === true, ownerAskOpen: blocked && (notice === 'callout' || job.ownerAskOpen === true) } });
     const cleared = await clearEyes(job);
     updateJob(key, (latest) => ({
       lastPostedRunId: runId,
@@ -711,7 +736,6 @@ export const createBot = ({
       // The next status update goes below this reply, not into a message further up.
       statusTs: undefined,
       lastActivityAt: new Date(now()).toISOString(),
-      ...(review.postedFor ? { reviewRequestedPrs: [...(latest.reviewRequestedPrs ?? []), review.postedFor] } : {}),
     }));
     await finishLoading(key, job);
     events('reply', { ...measured, ...([WITHHELD, UNCONFIRMED].includes(body) ? { notice: true } : {}), kind: 'reply', needsOwner: blocked, reviewRequested: reviewPosted });

@@ -12,7 +12,7 @@ import { proposeBriefUpdate } from './brief.ts';
 import { systemClock, createTracker, type Clock } from './clock.ts';
 import { defaultProfileRoot, type Config } from './config.ts';
 import { incomingMessage } from './incoming.ts';
-import { acknowledgePause, admit, dropHeld, heldThread, holdRequest, readHeld, readPause } from './intake.ts';
+import { acknowledgePause, admit, dropHeld, holdRequest, markAttempt, readHeld, readPause } from './intake.ts';
 import type { createKnowledge } from './knowledge.ts';
 import { errorMessage } from './lib/errors.ts';
 import { acquireLock } from './lock.ts';
@@ -119,8 +119,14 @@ export const startDaemon = async (deps: DaemonDeps): Promise<Daemon> => {
       try { await track(bot.handle(msg)); } finally { starting -= 1; acknowledge(); }
     };
 
-    /** The thread has a request waiting for the restart: replies there wait behind it. */
-    const owns = (channel: string, threadTs: string): boolean => bot.ownsThread(channel, threadTs) || heldThread(config.profileDir, channel, threadTs);
+    /** The held request being started right now. It is still on disk, but replies in its thread no longer wait for it. */
+    let releasingNow: IncomingMessage | null = null;
+    /** A request waits on disk in this thread, other than the one being started now: replies there wait behind it. */
+    const heldIn = (channel: string, threadTs: string): boolean => readHeld(config.profileDir).some((held) =>
+      held.channel === channel && held.threadTs === threadTs && !(releasingNow && held.channel === releasingNow.channel && held.messageTs === releasingNow.messageTs));
+    /** The bot's thread, or one with a request held or being started. */
+    const owns = (channel: string, threadTs: string): boolean =>
+      bot.ownsThread(channel, threadTs) || heldIn(channel, threadTs) || (releasingNow?.channel === channel && releasingNow.threadTs === threadTs);
 
     /**
      * Handles a message now, or holds it while the app has paused new work for an update (intake.ts): a request that
@@ -128,7 +134,7 @@ export const startDaemon = async (deps: DaemonDeps): Promise<Daemon> => {
      */
     const receive = async (msg: IncomingMessage): Promise<void> => {
       const paused = readPause(config.profileDir, clock.now());
-      const waitingBehind = heldThread(config.profileDir, msg.channel, msg.threadTs);
+      const waitingBehind = heldIn(msg.channel, msg.threadTs);
       if (waitingBehind || admit(paused !== null, bot.runningIn(msg.channel, msg.threadTs)) === 'hold') {
         holdRequest(config.profileDir, msg);
         await client.reactions.add({ channel: msg.channel, timestamp: msg.messageTs, name: HELD_REACTION }).catch(() => {});
@@ -152,16 +158,26 @@ export const startDaemon = async (deps: DaemonDeps): Promise<Daemon> => {
         for (;;) {
           // Checked again before each one: an update may have paused new work meanwhile.
           if (stopping || readPause(config.profileDir, clock.now())) return;
-          const msg = readHeld(config.profileDir)[0];
-          if (!msg) return;
-          await client.reactions.remove({ channel: msg.channel, timestamp: msg.messageTs, name: HELD_REACTION }).catch(() => {});
-          // A start that throws is told in its thread like any failed request, then let go: retrying it would
-          // repeat the failure on every poll.
-          await start(msg).catch((error: unknown) => bot.reportUnhandled(msg, error));
-          dropHeld(config.profileDir, msg);
+          const next = readHeld(config.profileDir)[0];
+          if (!next) return;
+          // On disk before anything else: if this daemon stops while starting it, the next one looks for its thread.
+          const marked = markAttempt(config.profileDir, next, new Date(clock.now()).toISOString());
+          releasingNow = marked;
+          try {
+            await client.reactions.remove({ channel: next.channel, timestamp: next.messageTs, name: HELD_REACTION }).catch(() => {});
+            // Only a replay carries `attemptedAt` to the bot: a first attempt has no earlier thread to look for.
+            // A start that throws is told in its thread like any failed request, then let go: retrying it would
+            // repeat the failure on every poll.
+            await start(next.attemptedAt ? next : { ...next, attemptedAt: undefined })
+              .catch((error: unknown) => bot.reportUnhandled(next, error))
+              .catch((error: unknown) => logger.error(`Couldn't report a failed held request in ${next.channel}: ${errorMessage(error)}`));
+          } finally { releasingNow = null; }
+          dropHeld(config.profileDir, next);
         }
       } finally { releasing = false; }
     };
+    /** Releases held requests; a file that can't be read or written is logged and tried again on the next poll. */
+    const release = (): Promise<void> => track(releaseHeld()).catch((error: unknown) => logger.error(`Releasing held requests failed: ${errorMessage(error)}`));
 
     app.event('app_mention', async ({ event }) => {
       if (stopping) return;
@@ -239,11 +255,11 @@ export const startDaemon = async (deps: DaemonDeps): Promise<Daemon> => {
       .finally(() => status?.refresh());
     // Requests held while the previous bot was paused for an update start now.
     acknowledge();
-    void track(releaseHeld());
+    void release();
     const timer = clock.setInterval(() => {
       if (stopping) return;
       acknowledge();
-      void track(releaseHeld());
+      void release();
       void track(bot.poll()).catch((error: unknown) => logger.error(`Poll failed: ${errorMessage(error)}`)).finally(() => status?.refresh());
     }, pollMs);
 

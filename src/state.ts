@@ -12,8 +12,18 @@ import { isArrayOf, isBoolean, isOneOf, isRecord, isString, isStringOrNull } fro
 const isStrings = isArrayOf(isString);
 const isAudience = isOneOf('owner', 'team', 'external');
 
-/** Each optional field and the shape it must have. A field of the wrong shape is dropped, not the job. */
-const OPTIONAL: { [K in keyof Job]?: (value: unknown) => boolean } = {
+const isTime = (value: unknown): value is string => isString(value) && !Number.isNaN(Date.parse(value));
+
+/** The fields a job may leave out. */
+type OptionalKeys<T> = { [K in keyof T]-?: undefined extends T[K] ? K : never }[keyof T];
+/** The fields every job has. Listed here so a new required field must be given a default in `migrateJob`. */
+const REQUIRED = ['t3ThreadId', 'channel', 'threadTs', 'requester', 'pendingReactionTs', 'lastPostedRunId', 'watching', 'createdAt'] as const satisfies readonly Exclude<keyof Job, OptionalKeys<Job>>[];
+
+/**
+ * Each optional field and the shape it must have. A field of the wrong shape is dropped, not the job. The type makes
+ * this list complete: a field added to `Job` without a guard here is a compile error, not a field lost on restart.
+ */
+const OPTIONAL: { [K in OptionalKeys<Job>]: (value: unknown) => boolean } = {
   pendingReactions: isStrings, loadingRequested: isBoolean, ownerFollows: isBoolean, ownerAskOpen: isBoolean,
   lastActivityAt: isString, waitingInT3: isBoolean,
   question: (x) => isRecord(x) && isString(x.ts) && isString(x.requestId) && isString(x.nonce) && Array.isArray(x.questions)
@@ -22,7 +32,8 @@ const OPTIONAL: { [K in keyof Job]?: (value: unknown) => boolean } = {
   progress: (x) => isRecord(x) && isString(x.ts) && isString(x.runId) && isString(x.text),
   runSeen: (x) => isRecord(x) && isString(x.runId) && isString(x.at) && (x.waits === undefined || isBoolean(x.waits)),
   nextTurnWaits: isBoolean, heard: isStrings,
-  delivering: (x) => isRecord(x) && isString(x.runId) && isString(x.at),
+  delivering: (x) => isRecord(x) && isString(x.runId) && isTime(x.at) && (x.text === undefined || isString(x.text))
+    && (x.ownerFollows === undefined || isBoolean(x.ownerFollows)) && (x.ownerAskOpen === undefined || isBoolean(x.ownerAskOpen)),
   visibility: isAudience,
   knowledgeRead: (x) => isRecord(x) && Object.values(x).every(isAudience),
   knowledgeDir: isString, branch: isString,
@@ -54,9 +65,11 @@ export const migrateJob = (key: string, value: unknown): { job: Job; repaired: b
     watching: pick('watching', isBoolean, false),
     createdAt: pick('createdAt', isString, isString(value.lastActivityAt) ? value.lastActivityAt : ''),
   };
-  for (const [field, guard] of Object.entries(OPTIONAL)) {
-    if (value[field] === undefined) continue;
-    if (guard(value[field])) Object.assign(job, { [field]: value[field] });
+  for (const [field, found] of Object.entries(value)) {
+    if (found === undefined || (REQUIRED as readonly string[]).includes(field)) continue;
+    const guard = (OPTIONAL as Record<string, ((value: unknown) => boolean) | undefined>)[field];
+    // A field this build doesn't know (written by a newer one) is kept as it is, so a rollback loses nothing.
+    if (!guard || guard(found)) Object.assign(job, { [field]: found });
     else repaired = true;
   }
   return { job, repaired };

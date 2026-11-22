@@ -49,6 +49,20 @@ const scopedClock = (clock: Clock): Clock & { dropAll(): void } => {
   };
 };
 
+/**
+ * The same object with every function gated on `alive()`: once a daemon has crashed, its calls never answer, as if
+ * the process were gone. Without this, work the old daemon still had in flight could reach Slack, T3 or state.json.
+ */
+const gated = <T extends object>(target: T, alive: () => boolean): T => {
+  const out: Record<string, unknown> = {};
+  for (const [name, value] of Object.entries(target)) {
+    out[name] = typeof value === 'function'
+      ? (...args: unknown[]) => (alive() ? (value as (...a: unknown[]) => unknown)(...args) : new Promise<never>(() => {}))
+      : value !== null && typeof value === 'object' ? gated(value as object, alive) : value;
+  }
+  return out as T;
+};
+
 export interface DaemonHarnessOptions {
   profile?: ProfileOverrides;
   clock?: FakeClock;
@@ -79,19 +93,22 @@ export const startTestDaemon = async (t: TestContext, options: DaemonHarnessOpti
   const { config } = testProfile(t, options.profile);
   const clock = options.clock ?? fakeClock();
   const slack = createFakeSlack({ botUserId: BOT, names: { UOWNER: 'Alex Doe', USAM: 'Sam' }, now: () => clock.now(), ...options.slack });
-  const t3 = createFakeT3(options.t3);
+  const t3 = createFakeT3({ now: () => clock.now(), ...options.t3 });
+  let generation = 0;
   const logs: string[] = [];
   let current: { daemon: Daemon; receiver: TestReceiver; clock: ReturnType<typeof scopedClock> } | null = null;
   let hung = false;
 
   const boot = async (): Promise<void> => {
+    const mine = ++generation;
+    const alive = (): boolean => generation === mine;
     const receiver = new TestReceiver();
     const app = new App({ token: 'xoxb-test', botId: 'BBOT', botUserId: BOT, receiver, tokenVerificationEnabled: false, logger: quietLogger(logs), logLevel: LogLevel.ERROR });
     const scoped = scopedClock(clock);
     const daemon = await startDaemon({
-      config, app, client: slack.client, logger: quietLogger(logs), clock: scoped, knowledge: createKnowledge(config.knowledgeDir),
+      config, app, client: gated(slack.client, alive), logger: quietLogger(logs), clock: scoped, knowledge: createKnowledge(config.knowledgeDir),
       bot: {
-        t3: t3.t3, questions: t3.questions, fetchBase: async () => {}, share: async (_client, text) => text,
+        t3: gated(t3.t3, alive), questions: gated(t3.questions, alive), fetchBase: async () => {}, share: async (_client, text) => text,
         reviewRequest: async (_client, text) => ({ reply: text, postedFor: null }), receive: async () => '', ...options.bot,
       },
       checkAccess: options.checkAccess ?? (async () => {}), lock: () => () => {}, statusSocket: false, watchProfile: false, pid: 4242,
@@ -102,7 +119,7 @@ export const startTestDaemon = async (t: TestContext, options: DaemonHarnessOpti
   const settle = async (): Promise<void> => {
     if (!current || hung) return;
     const daemon = current.daemon;
-    await Promise.race([daemon.idle(), slack.whenHung().then(() => { hung = true; })]);
+    await Promise.race([daemon.idle(), slack.whenHung().then(() => { hung = true; }), t3.whenHung().then(() => { hung = true; })]);
   };
   clock.settleWith(settle);
   await boot();
@@ -126,8 +143,10 @@ export const startTestDaemon = async (t: TestContext, options: DaemonHarnessOpti
     crash: async () => {
       current?.clock.dropAll();
       current = null;
+      generation += 1;
       hung = false;
       slack.resetHung();
+      t3.resetHung();
       await boot();
       await clock.settle();
     },

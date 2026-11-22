@@ -96,6 +96,23 @@ export const startThread = async ({ project, baseRef, branch, title, brief, prov
   return out.threadId;
 };
 
+/**
+ * The newest thread in `project` titled `title` and created at or after `since`, or null. A start cut off by a crash
+ * may still have made its thread: this finds it, so the replayed request carries on there instead of starting twice.
+ */
+export const findThread = async (project: string, title: string, since: string, bin = T3_BIN): Promise<string | null> => {
+  const raw = await run(bin, ['thread', 'list', '--json', '--project', project]);
+  const start = raw.search(/[[{]/);
+  if (start === -1) return null;
+  const parsed: unknown = JSON.parse(raw.slice(start));
+  const list = Array.isArray(parsed) ? parsed : isRecord(parsed) && Array.isArray(parsed.threads) ? parsed.threads : [];
+  const from = Date.parse(since);
+  const found = list.filter((thread): thread is Record<string, unknown> => isRecord(thread)
+    && thread.title === title && typeof thread.threadId === 'string' && typeof thread.createdAt === 'string' && Date.parse(thread.createdAt) >= from)
+    .sort((a, b) => Date.parse(String(b.createdAt)) - Date.parse(String(a.createdAt)))[0];
+  return found ? String(found.threadId) : null;
+};
+
 /** Queues a message on a thread. A busy thread gets it as its next turn. */
 export const sendToThread = async (threadId: string, message: string, bin = T3_BIN): Promise<void> => {
   await run(bin, ['thread', 'send', '--json', threadId, '-'], { input: message });

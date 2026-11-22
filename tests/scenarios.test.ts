@@ -9,6 +9,7 @@
  *   advance {ms}                    move the clock, firing due timers (the 15 s poll) in order
  *   worker.reply {text} | worker.note {text} | worker.endSilently | worker.startRun | worker.userRun {text} | worker.ask {request}
  *   slack.hang {method} | slack.hangAfter {method} | slack.fail {method, error}
+ *   t3.hangAfterStart               the next `thread start` makes its thread in T3, then never returns
  *   pause | resume                  the app pauses new work for an update, or lifts the pause
  *   restart | crash                 stop cleanly and start again, or abandon the daemon where it is and start again
  *   mark {name}                     remember the position in the Slack call log
@@ -47,6 +48,8 @@ interface Scenario {
   id: string; specs: string[]; title: string; profile?: Record<string, unknown>; steps: Step[];
   /** `failStart`: every `t3 thread start` fails with this error text (as `t3` stderr would read). */
   t3?: { failStart?: string };
+  /** `returnsMetadata: false`: Slack leaves message metadata out of thread reads. */
+  slack?: { returnsMetadata?: boolean };
 }
 
 const folder = new URL('./scenarios/', import.meta.url);
@@ -116,6 +119,7 @@ const check = async (h: DaemonHarness, expect: Expectation, marks: Map<string, n
 };
 
 const run = async (h: DaemonHarness, scenario: Scenario): Promise<void> => {
+  // The scenario's top-level `slack` and `t3` are options, not steps.
   const marks = new Map<string, number>();
   for (const [index, step] of scenario.steps.entries()) {
     const where = `${scenario.id} step ${index + 1}${step.do ? ` (${step.do})` : ''}`;
@@ -141,6 +145,7 @@ const run = async (h: DaemonHarness, scenario: Scenario): Promise<void> => {
       case 'worker.userRun': h.t3.userRun(text); break;
       case 'worker.ask': h.t3.ask(step.request as unknown as T3QuestionRequest); break;
       case 'slack.hang': h.slack.hang(method); break;
+      case 't3.hangAfterStart': h.t3.hangAfterStart(); break;
       case 'slack.hangAfter': h.slack.hangAfter(method); break;
       case 'slack.fail': h.slack.fail(method, String(step.error)); break;
       case 'pause': pauseIntake(h.config.profileDir, 'app-update', { now: h.clock.now() }); break;
@@ -162,6 +167,7 @@ for (const file of readdirSync(folder).filter((name) => name.endsWith('.json')).
     const h = await startTestDaemon(t, {
       ...(scenario.profile ? { profile: scenario.profile } : {}),
       ...(failStart ? { t3: { failStart: () => new Error(failStart) } } : {}),
+      ...(scenario.slack ? { slack: scenario.slack } : {}),
     });
     await run(h, scenario);
   });

@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict';
-import { existsSync } from 'node:fs';
+import { chmodSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import test from 'node:test';
 import { App, LogLevel } from '@slack/bolt';
 import { startDaemon } from '../src/daemon.ts';
 import { createKnowledge } from '../src/knowledge.ts';
-import { holdRequest, readHeld } from '../src/intake.ts';
+import { holdRequest, pauseIntake, readHeld, resumeIntake } from '../src/intake.ts';
 import { fakeClock } from './fakes/clock.ts';
 import { startTestDaemon, TestReceiver } from './fakes/daemon.ts';
 import { BOT, SAM, testProfile } from './fakes/profile.ts';
@@ -57,4 +57,21 @@ test('[SVC-004] stopping the daemon removes its ready marker and stops polling',
   await h.stop();
   assert.equal(existsSync(join(h.config.profileDir, 'ready.json')), false);
   assert.equal(h.clock.pending(), 0, 'no timer left behind');
+});
+
+test('[INTAKE-010] a held-requests file the daemon cannot write is logged and tried again on the next poll, without stopping the daemon', async (t) => {
+  const h = await startTestDaemon(t);
+  pauseIntake(h.config.profileDir, 'app-update', { now: h.clock.now() });
+  await h.deliver(mention('1700000100.000100', 'rename the pricing page'));
+  assert.equal(readHeld(h.config.profileDir).length, 1);
+  resumeIntake(h.config.profileDir);
+  chmodSync(h.config.profileDir, 0o500);
+  try {
+    await h.advance(15_000);
+  } finally { chmodSync(h.config.profileDir, 0o700); }
+  assert.ok(h.logs.some((line) => /Releasing held requests failed/.test(line)), 'the failure is logged');
+  assert.equal(h.t3.started.length, 0, 'nothing starts while its record can\'t be written');
+  await h.advance(15_000);
+  assert.equal(h.t3.started.length, 1, 'the next poll starts it');
+  assert.equal(readHeld(h.config.profileDir).length, 0);
 });

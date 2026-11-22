@@ -59,7 +59,8 @@ export const isHeldRequest = (value: unknown): value is IncomingMessage =>
   && typeof value.user === 'string' && typeof value.text === 'string' && typeof value.direct === 'boolean'
   && (value.files === undefined || (Array.isArray(value.files) && value.files.every(isRecord)))
   && (value.botId === undefined || typeof value.botId === 'string')
-  && (value.automaticTrigger === undefined || typeof value.automaticTrigger === 'boolean');
+  && (value.automaticTrigger === undefined || typeof value.automaticTrigger === 'boolean')
+  && (value.attemptedAt === undefined || isTime(value.attemptedAt));
 
 /** Starts (or renews) a pause. Returns it. Throws when it can't be written. */
 export const pauseIntake = (profileDir: string, reason: IntakePause['reason'], { now = Date.now(), ms = PAUSE_MS } = {}): IntakePause => {
@@ -135,6 +136,17 @@ export const dropHeld = (profileDir: string, msg: IncomingMessage): void => {
   const rest = readHeld(profileDir).filter((held) => key(held) !== key(msg));
   if (rest.length) writeAtomic(heldPath(profileDir), rest.map((held) => JSON.stringify(held)).join('\n') + '\n');
   else rmSync(heldPath(profileDir), { force: true });
+};
+
+/**
+ * Records, on disk, that starting this held request has begun. If the daemon stops before the request is dropped, the
+ * next one knows a T3 thread may already exist for it (`IncomingMessage.attemptedAt`). Returns the request as marked.
+ */
+export const markAttempt = (profileDir: string, msg: IncomingMessage, at: string): IncomingMessage => {
+  const marked = { ...msg, attemptedAt: msg.attemptedAt ?? at };
+  const held = readHeld(profileDir).map((line) => (key(line) === key(msg) ? marked : line));
+  writeAtomic(heldPath(profileDir), held.map((line) => JSON.stringify(line)).join('\n') + '\n');
+  return marked;
 };
 
 /** A thread with a held request: the bot treats it as its own, so a reply there is held after the request. */

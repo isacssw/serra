@@ -42,6 +42,8 @@ export interface FakeSlackOptions {
   /** The time, for message ts as Slack makes them (seconds, then a sequence). Defaults to the real clock. */
   now?: () => number;
   files?: Record<string, Record<string, unknown>>;
+  /** Whether `conversations.replies` returns message metadata when asked. Default true; false for a workspace that leaves it out. */
+  returnsMetadata?: boolean;
 }
 
 type Rule = { times: number; act: (args: Record<string, unknown>) => unknown };
@@ -171,7 +173,7 @@ export const createFakeSlack = (options: FakeSlackOptions = {}) => {
         const oldest = typeof args.oldest === 'string' ? Number(args.oldest) : -Infinity;
         const list = inThread(args.channel, args.ts).filter((message) => message.ts === args.ts || Number(message.ts) >= oldest);
         // Slack's message element type is wider than what these tests keep; the fields here are a subset of it.
-        const shown = list.map((message) => ({ ...message, ...(args.include_all_metadata ? {} : { metadata: undefined }) }));
+        const shown = list.map((message) => ({ ...message, ...(args.include_all_metadata && options.returnsMetadata !== false ? {} : { metadata: undefined }) }));
         return { ok: true, has_more: false, messages: shown as NonNullable<Awaited<ReturnType<SlackApi['conversations']['replies']>>['messages']> };
       }),
     },

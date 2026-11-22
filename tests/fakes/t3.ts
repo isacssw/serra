@@ -10,6 +10,7 @@ import type { StartThreadInput, T3Message, T3ThreadDetail } from '../../src/type
 
 interface FakeThread {
   id: string;
+  createdAt: string;
   input: StartThreadInput;
   runs: number;
   active: string | null;
@@ -25,6 +26,8 @@ export interface FakeT3Options {
   failStart?: () => Error | null;
   failAnswer?: () => Error | null;
   failShow?: () => Error | null;
+  /** The time, for when threads are created. Defaults to the real clock. */
+  now?: () => number;
 }
 
 export const createFakeT3 = (options: FakeT3Options = {}) => {
@@ -33,8 +36,13 @@ export const createFakeT3 = (options: FakeT3Options = {}) => {
   const started: StartThreadInput[] = [];
   const sends: { threadId: string; message: string }[] = [];
   const answered: { threadId: string; requestId: string; answers: T3Answers }[] = [];
-  /** Every call, in order: `start`, `send`, `show`, `questions`, `answer`. */
+  /** Every call, in order: `start`, `send`, `show`, `list`, `questions`, `answer`. */
   const log: string[] = [];
+  const now = options.now ?? Date.now;
+  /** `start` calls to hold: the thread is made in T3, and the CLI never returns (the daemon died waiting). */
+  let holdStarts = 0;
+  let markHung = (): void => {};
+  let hungSignal = new Promise<void>((resolve) => { markHung = resolve; });
 
   const thread = (id?: string): FakeThread => {
     const found = threads.get(id ?? order.at(-1) ?? '');
@@ -54,10 +62,20 @@ export const createFakeT3 = (options: FakeT3Options = {}) => {
       const failure = options.failStart?.();
       if (failure) throw failure;
       const id = options.threadId?.(order.length + 1) ?? `t3-${order.length + 1}`;
-      const created: FakeThread = { id, input, runs: 0, active: null, transcript: [], questions: [], otherRequests: 0 };
+      const created: FakeThread = { id, createdAt: new Date(now()).toISOString(), input, runs: 0, active: null, transcript: [], questions: [], otherRequests: 0 };
       threads.set(id, created); order.push(id);
       created.transcript.push({ role: 'user', runId: newRun(created), text: input.brief });
+      if (holdStarts > 0) {
+        holdStarts -= 1;
+        markHung();
+        return new Promise<never>(() => {});
+      }
       return id;
+    },
+    findThread: async (project, title, since) => {
+      log.push('list');
+      const from = Date.parse(since);
+      return [...threads.values()].filter((found) => found.input.project === project && found.input.title === title && Date.parse(found.createdAt) >= from).at(-1)?.id ?? null;
     },
     sendToThread: async (threadId, message) => {
       log.push('send');
@@ -97,6 +115,10 @@ export const createFakeT3 = (options: FakeT3Options = {}) => {
 
   return {
     t3, questions, started, sends, answered, log,
+    /** The next `thread start` makes its thread in T3, then never returns. */
+    hangAfterStart: (): void => { holdStarts += 1; },
+    whenHung: (): Promise<void> => hungSignal,
+    resetHung: (): void => { hungSignal = new Promise<void>((resolve) => { markHung = resolve; }); },
     threadIds: (): string[] => [...order],
     /** The brief of the latest (or given) thread. */
     brief: (threadId?: string): string => thread(threadId).input.brief,

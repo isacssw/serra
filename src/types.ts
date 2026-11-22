@@ -80,7 +80,15 @@ export interface Job {
    * A reply Serra is posting: written before the post and cleared after it. Found on a restart, it means the post may
    * have gone out, so Serra looks in the thread for its reply to that run before posting it again (REPLY-009).
    */
-  delivering?: { runId: string; at: string };
+  delivering?: {
+    runId: string;
+    at: string;
+    /** The start of the reply's text, to recognise it if Slack doesn't return the metadata. */
+    text?: string;
+    /** What posting it means for the owner's follow state, applied if the post turns out to have gone out. */
+    ownerFollows?: boolean;
+    ownerAskOpen?: boolean;
+  };
   /** Who sees this thread's replies, as its brief was built for. Absent on jobs from before audiences. */
   visibility?: 'owner' | 'team' | 'external';
   /**
@@ -118,6 +126,11 @@ export interface IncomingMessage {
   automaticTrigger?: boolean;
   /** An @mention, DM, or configured alert. False for a plain message in a thread the bot already owns. */
   direct: boolean;
+  /**
+   * A held request whose start was cut off (the daemon stopped while starting it): when the earlier attempt began.
+   * Its T3 thread may exist already, so the bot looks for it before starting another.
+   */
+  attemptedAt?: string;
 }
 
 /** File metadata carried by message and app_mention events, sometimes only an ID. */
