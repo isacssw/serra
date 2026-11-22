@@ -125,6 +125,9 @@ export const startDaemon = async (deps: DaemonDeps): Promise<Daemon> => {
       }
     };
     const start = async (msg: IncomingMessage): Promise<void> => {
+      // Whose a DM is, for the adapter's check that the owner's DM is theirs alone: from every message handled, held
+      // requests replayed after a restart included.
+      if (!msg.botId) sawDm(msg.channel, msg.user);
       starting += 1;
       try { await track(bot.handle(msg)); } finally { starting -= 1; acknowledge(); }
     };
@@ -143,8 +146,6 @@ export const startDaemon = async (deps: DaemonDeps): Promise<Daemon> => {
      * would start a job waits, with an hourglass on it, for the restarted bot. Messages for running jobs go through.
      */
     const receive = async (msg: IncomingMessage): Promise<void> => {
-      // Whose a DM is, for the adapter's check that the owner's DM is theirs alone.
-      if (!msg.botId) sawDm(msg.channel, msg.user);
       const paused = readPause(config.profileDir, clock.now());
       const waitingBehind = heldIn(msg.channel, msg.threadTs);
       if (waitingBehind || admit(paused !== null, bot.runningIn(msg.channel, msg.threadTs)) === 'hold') {
@@ -207,7 +208,9 @@ export const startDaemon = async (deps: DaemonDeps): Promise<Daemon> => {
       await ack();
       if (stopping) return;
       const interaction = questionInteraction(body);
-      if (interaction) await track(bot.handleQuestionAction(interaction));
+      if (!interaction) return;
+      sawDm(interaction.channel, interaction.user);
+      await track(bot.handleQuestionAction(interaction));
     });
     app.message(async ({ message }) => {
       if (stopping) return;

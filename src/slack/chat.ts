@@ -110,11 +110,11 @@ export const createSlackChat = ({ client, owner, botUserId, botToken, profileDir
   /** Where a DM's person works, remembered the same way. Checks before a post ask again. */
   const dmPeople = new Map<string, { visibility: Audience; until: number }>();
 
-  const lookUpChannel = async (conversation: string, requester: PersonId): Promise<Result<Audience>> => {
+  /** A channel or group DM: DMs never come here, since describing one needs `im:read`. */
+  const lookUpChannel = async (conversation: string): Promise<Result<Audience>> => {
     try {
       const { channel } = await client.conversations.info({ channel: conversation });
       if (!channel) throw new Error('Slack returned no channel');
-      if (channel.is_im) return { ok: true, value: requester === owner ? 'owner' : 'team' };
       // Team only on Slack's word: it says the channel isn't shared outside. Anything else counts as outside.
       const external = channel.is_ext_shared !== false || channel.is_pending_ext_shared === true;
       sharedChannels.set(conversation, { external, until: now() + VISIBILITY_TTL_MS });
@@ -157,9 +157,10 @@ export const createSlackChat = ({ client, owner, botUserId, botToken, profileDir
   };
 
   /**
-   * Who will see the bot's reply in this thread. A DM is the owner's own, or a teammate's. A channel shared with another
-   * company counts as outside. `fresh` asks Slack again, twice if it fails once: before anything is posted, a channel
-   * can be shared outside a minute after the job started.
+   * Who will see the bot's reply in this thread. A DM is the owner's own (no lookup: see `ownDm`), or a teammate's
+   * (where they work, from `users.info`). A channel shared with another company counts as outside. `fresh` skips the
+   * cache and asks again once after a failure that may pass, since a channel can be shared outside a minute after the
+   * job started; a setup error is final at once.
    */
   const audience = async (target: Target, requester: PersonId, { fresh = false }: { fresh?: boolean } = {}): Promise<Result<Audience>> => {
     const conversation = target.conversation;
@@ -172,8 +173,8 @@ export const createSlackChat = ({ client, owner, botUserId, botToken, profileDir
     }
     const known = sharedChannels.get(conversation);
     if (!fresh && known && known.until > now()) return { ok: true, value: known.external ? 'external' : 'team' };
-    const looked = await lookUpChannel(conversation, requester);
-    return looked.ok || !fresh || looked.error.kind === 'setup' ? looked : lookUpChannel(conversation, requester);
+    const looked = await lookUpChannel(conversation);
+    return looked.ok || !fresh || looked.error.kind === 'setup' ? looked : lookUpChannel(conversation);
   };
 
   // Rendering. ------------------------------------------------------------------------------------------------------
@@ -400,7 +401,7 @@ export const createSlackChat = ({ client, owner, botUserId, botToken, profileDir
     },
   };
 
-  /** A person wrote in a DM: it is theirs. The daemon calls this for every inbound DM message. */
+  /** A person wrote or clicked in a DM: it is theirs. The daemon calls this for every message it handles and every card click. */
   const sawDm = (conversation: string, person: PersonId): void => {
     if (isDm(conversation) && person !== botUserId()) dmOwners.set(conversation, person);
   };

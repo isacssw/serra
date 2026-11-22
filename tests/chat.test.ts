@@ -84,6 +84,7 @@ test('[KB-003] when Slack can\'t say who sees a thread, deliver writes nothing a
 
   f.slack.fail('conversations.info', slackError('missing_scope'), 2);
   assert.deepEqual(await f.deliver(to, { op: 'send', out: reply }), { ok: false, why: 'unconfirmed', error: { kind: 'setup', problem: 'missing-permission', code: 'missing_scope' } });
+  assert.equal(f.slack.callsTo('conversations.info').length, 3, 'a setup error isn\'t asked again');
   assert.equal(f.slack.callsTo('chat.postMessage').length, 0);
 });
 
