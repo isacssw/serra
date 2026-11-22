@@ -58,9 +58,9 @@ test('[QUEST-001] a wait shows a card once, closes it for what the chat can\'t s
   const request = { requestId: 'q1', questions: [] };
   assert.equal(step(job(follow(settle())), { thread: thread('run-1', 'run-1', 1), messages: [] }).do, 'wait');
   assert.deepEqual(waitStep(follow(settle()), [request], can), { do: 'card', request });
-  assert.deepEqual(waitStep(waitFor(settle(), card), [request], cannot), { do: 'in-t3', closeCard: true, tell: true, unsupported: [request] });
+  assert.deepEqual(waitStep(waitFor(settle(), card), [request], cannot), { do: 'in-t3', closeCard: true, unsupported: [request] });
   assert.deepEqual(waitStep(waitFor(settle()), [request], cannot), { do: 'nothing' }, 'told already');
-  assert.deepEqual(waitStep(follow(settle()), null, can), { do: 'in-t3', closeCard: false, tell: true, unsupported: [] });
+  assert.deepEqual(waitStep(follow(settle()), null, can), { do: 'in-t3', closeCard: false, unsupported: [] });
   assert.deepEqual(waitStep(waitFor(settle(), card), null, can), { do: 'nothing' }, 'unreadable requests leave the card up');
 });
 
@@ -73,39 +73,51 @@ test('[JOBS-003] the phase holds only what it means: a card only while waiting, 
   assert.deepEqual(settle(), { state: 'idle' });
 });
 
-test('[JOBS-003] any sequence of polls ends idle once T3 is quiet and every run is posted', () => {
-  // A small model of T3: runs start and end at random, some ask the bot's way, and the shell applies each step.
+test('[JOBS-003] any sequence of polls ends idle once T3 is quiet and every run is posted, and none is posted twice', () => {
+  // A small model of T3: runs start and end at random, some ask the bot's way, some wait on someone. The shell applies
+  // each step as pollJob does: a wait first, otherwise leaving any wait, then the step's transition.
   let seed = 7;
-  const random = (): number => { seed = (seed * 1_103_515_245 + 12_345) % 2_147_483_648; return seed / 2_147_483_648; };
+  const random = (): number => { seed = (seed * 48_271) % 2_147_483_647; return seed / 2_147_483_647; };
   for (let trial = 0; trial < 200; trial += 1) {
     let saved: Followed = job(follow(settle()), null, true);
     const messages: T3Message[] = [];
+    const postedRuns: string[] = [];
     let active: string | null = null;
     let latest: string | null = null;
     let n = 0;
+    const poll = (pending: number): void => {
+      const observed = { thread: thread(active, latest, pending), messages: messages.slice(-40) };
+      let next = step(saved, observed);
+      if (next.do === 'post' && next.missed) {
+        postedRuns.push(next.runId);
+        saved = { ...saved, lastPostedRunId: next.runId, phase: replied(saved.phase, active) };
+        next = step(saved, observed, { missed: false });
+      }
+      if (next.do === 'wait') {
+        saved = { ...saved, phase: waitFor(saved.phase, random() < 0.5 ? card : undefined) };
+        return;
+      }
+      saved = { ...saved, phase: stopWaiting(saved.phase) };
+      if (next.do === 'post') { postedRuns.push(next.runId); saved = { ...saved, lastPostedRunId: next.runId, phase: replied(saved.phase, active) }; }
+      else if (next.do === 'follow') { if (next.firstSight) saved = { ...saved, phase: seeRun({ id: next.runId, at: String(n), waits: next.waits }) }; }
+      else saved = { ...saved, phase: settle() };
+    };
     for (let tick = 0; tick < 30; tick += 1) {
       const roll = random();
       if (!active && roll < 0.4) { active = `run-${++n}`; latest = active; if (random() < 0.6) messages.push(user(active)); }
       else if (active && roll < 0.7) { messages.push(said(active, `reply ${active}`)); active = null; }
-      const pending = random() < 0.1 ? 1 : 0;
-      for (let guard = 0; guard < 5; guard += 1) {
-        const next = step(saved, { thread: thread(active, latest, pending), messages: messages.slice(-40) });
-        if (next.do === 'post') { saved = { ...saved, lastPostedRunId: next.runId, phase: replied(saved.phase, active) }; if (next.missed) continue; }
-        else if (next.do === 'follow') saved = next.firstSight ? { ...saved, phase: seeRun({ id: next.runId, at: String(tick), waits: next.waits }) } : saved;
-        else if (next.do === 'wait') saved = { ...saved, phase: waitFor(saved.phase) };
-        else saved = { ...saved, phase: settle() };
-        break;
-      }
-      assert.ok(saved.phase.state !== 'idle' || !active, 'a job with a run going is never idle');
+      const pending = active && random() < 0.15 ? 1 : 0;
+      poll(pending);
+      // What each phase may hold, after every poll.
+      if (saved.phase.state !== 'waiting') assert.ok(!('card' in saved.phase), 'a card only while waiting');
+      if (active) assert.notEqual(saved.phase.state, 'idle', 'a job with a run going is never idle');
+      if (pending) assert.equal(saved.phase.state, 'waiting');
     }
     // T3 goes quiet: whatever ran ends, and polls continue until nothing changes.
     if (active) { messages.push(said(active, 'end')); active = null; }
-    for (let poll = 0; poll < 4; poll += 1) {
-      const next = step(saved, { thread: thread(null, latest), messages: messages.slice(-40) });
-      if (next.do === 'post') saved = { ...saved, lastPostedRunId: next.runId, phase: replied(saved.phase, null) };
-      else if (next.do === 'settle') saved = { ...saved, phase: settle() };
-    }
+    for (let i = 0; i < 4; i += 1) poll(0);
     assert.deepEqual(saved.phase, { state: 'idle' }, `trial ${trial}`);
     assert.equal(looksRunning(saved), false, `trial ${trial}`);
+    assert.equal(new Set(postedRuns).size, postedRuns.length, `trial ${trial}: a run is posted once`);
   }
 });

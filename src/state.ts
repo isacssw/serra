@@ -11,7 +11,7 @@
  */
 import { copyFileSync, existsSync, readFileSync } from 'node:fs';
 import { writeFileAtomic } from './lib/atomic.ts';
-import { IDLE, type Phase, type SeenRun } from './lifecycle.ts';
+import { FOLLOW_UP_MS, IDLE, type Phase, type SeenRun } from './lifecycle.ts';
 import type { QuestionCard } from './questions.ts';
 import type { Job } from './types.ts';
 import { isArrayOf, isBoolean, isOneOf, isRecord, isString, isStringOrNull, isTime } from './lib/guards.ts';
@@ -50,7 +50,8 @@ const isCard = (x: unknown): x is QuestionCard => isRecord(x) && isString(x.ts) 
 const isProgress = (x: unknown): x is { ts: string; text: string } => isRecord(x) && isString(x.ts) && isString(x.text);
 const isSeenRun = (x: unknown): x is SeenRun => isRecord(x) && isString(x.id) && isString(x.at) && (x.waits === undefined || isBoolean(x.waits))
   && (x.progress === undefined || isProgress(x.progress));
-const isPhase = (x: unknown): x is Phase => isRecord(x) && (x.state === 'idle'
+const isLeftover = (x: unknown): boolean => isRecord(x) && isString(x.ts) && isString(x.runId) && isString(x.text);
+const isPhase = (x: unknown): x is Phase => isRecord(x) && ((x.state === 'idle' && (x.leftover === undefined || isLeftover(x.leftover)))
   || (x.state === 'following' && (x.run === undefined || isSeenRun(x.run)))
   || (x.state === 'waiting' && (x.run === undefined || isSeenRun(x.run)) && (x.card === undefined || isCard(x.card))));
 
@@ -63,12 +64,16 @@ const legacyOf = (phase: Phase): Record<(typeof LEGACY)[number], unknown> => {
     waitingInT3: phase.state === 'waiting',
     question: phase.state === 'waiting' ? phase.card : undefined,
     runSeen: run ? { runId: run.id, at: run.at, ...(run.waits === undefined ? {} : { waits: run.waits }) } : undefined,
-    progress: run?.progress ? { ts: run.progress.ts, runId: run.id, text: run.progress.text } : undefined,
+    progress: run?.progress ? { ts: run.progress.ts, runId: run.id, text: run.progress.text } : phase.state === 'idle' ? phase.leftover : undefined,
   };
 };
 
-/** Whether the saved flags are what `phase` saves: no older build changed them since. */
+/**
+ * Whether the saved flags are what `phase` saves: no older build changed them since. Every older build writes
+ * `watching`, so a file without it was written by a build that saves `phase` alone, and the phase stands.
+ */
 const flagsMatch = (value: Record<string, unknown>, phase: Phase): boolean => {
+  if (value.watching === undefined) return true;
   const expected = legacyOf(phase);
   // `waitingInT3: false` and no field mean the same.
   const flag = (field: (typeof LEGACY)[number], found: unknown): unknown => (field === 'waitingInT3' && found === undefined ? false : found);
@@ -77,12 +82,17 @@ const flagsMatch = (value: Record<string, unknown>, phase: Phase): boolean => {
 
 /**
  * The phase older builds' flags describe. A card means waiting with it, `waitingInT3` waiting without one, `watching`
- * following. A job not watched that still has a seen run nobody posted, or a progress line, is followed too: the next
- * poll then settles it properly (clearing the line in the chat) instead of it being dropped here.
+ * following. A job not watched that still has a seen run nobody posted, or a progress line, is followed too, so the next
+ * poll settles it properly (posting what's owed, clearing the line) instead of it being dropped here. Not one that went
+ * quiet `FOLLOW_UP_MS` ago, which older builds stopped looking at: a reply then would come from nowhere, so it is idle.
  */
-const phaseFromFlags = (value: Record<string, unknown>): Phase => {
+const phaseFromFlags = (value: Record<string, unknown>, now: number): Phase => {
+  const lastActive = Date.parse(isString(value.lastActivityAt) ? value.lastActivityAt : isString(value.createdAt) ? value.createdAt : '');
+  const line = isRecord(value.progress) && isString(value.progress.ts) && isString(value.progress.runId) && isString(value.progress.text)
+    ? { ts: value.progress.ts, runId: value.progress.runId, text: value.progress.text } : undefined;
+  // Its line, if any, is still taken down: `leftover`.
+  if (value.watching !== true && !(now - lastActive <= FOLLOW_UP_MS)) return line ? { state: 'idle', leftover: line } : IDLE;
   const seen = isRecord(value.runSeen) && isString(value.runSeen.runId) && isString(value.runSeen.at) ? value.runSeen : undefined;
-  const line = isRecord(value.progress) && isString(value.progress.ts) && isString(value.progress.runId) && isString(value.progress.text) ? value.progress : undefined;
   const runId = seen ? seen.runId : line?.runId;
   const run: SeenRun | undefined = isString(runId) ? {
     id: runId,
@@ -104,7 +114,7 @@ const phaseFromFlags = (value: Record<string, unknown>): Phase => {
  * default, and an optional field of the wrong shape is dropped. Only a value with no T3 thread to follow is no job.
  * `repaired` says whether anything was filled in or dropped.
  */
-const migrateJob = (key: string, value: unknown): { job: Job; repaired: boolean } | null => {
+const migrateJob = (key: string, value: unknown, now: number): { job: Job; repaired: boolean } | null => {
   if (!isRecord(value) || !isString(value.t3ThreadId)) return null;
   const split = key.indexOf(':');
   const [keyChannel, keyThread] = split === -1 ? [key, key] : [key.slice(0, split), key.slice(split + 1)];
@@ -122,7 +132,7 @@ const migrateJob = (key: string, value: unknown): { job: Job; repaired: boolean 
     requester: pick('requester', isString, ''),
     pendingReactionTs: pick('pendingReactionTs', isStringOrNull, null),
     lastPostedRunId: pick('lastPostedRunId', isStringOrNull, null),
-    phase: isPhase(value.phase) && flagsMatch(value, value.phase) ? value.phase : ((repaired = true), phaseFromFlags(value)),
+    phase: isPhase(value.phase) && flagsMatch(value, value.phase) ? value.phase : ((repaired = true), phaseFromFlags(value, now)),
     createdAt: pick('createdAt', isString, isString(value.lastActivityAt) ? value.lastActivityAt : ''),
   };
   for (const [field, found] of Object.entries(value)) {
@@ -153,7 +163,7 @@ export interface SavedState {
  * Reads `state.json`, migrating each job on read. No file is no jobs. A file that isn't a JSON object throws: the bot
  * must not start over it and then overwrite it.
  */
-export const readState = (file: string): SavedState => {
+export const readState = (file: string, { now = Date.now() }: { now?: number } = {}): SavedState => {
   let raw: string;
   try { raw = readFileSync(file, 'utf8'); } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return { jobs: {}, invalid: [], repaired: [] };
@@ -166,7 +176,7 @@ export const readState = (file: string): SavedState => {
   const invalid: string[] = [];
   const repaired: string[] = [];
   for (const [key, value] of Object.entries(parsed)) {
-    const read = migrateJob(key, value);
+    const read = migrateJob(key, value, now);
     if (!read) { invalid.push(key); continue; }
     jobs[key] = read.job;
     if (read.repaired) repaired.push(key);
@@ -179,7 +189,7 @@ export const readState = (file: string): SavedState => {
  * undo, so before that first write the original is copied once to `state.json.backup-<time>`.
  */
 export const createStore = (file: string, { warn = (_message: string): void => {}, now = () => new Date() }: { warn?: (message: string) => void; now?: () => Date } = {}) => {
-  const { jobs, invalid, repaired } = readState(file);
+  const { jobs, invalid, repaired } = readState(file, { now: now().getTime() });
   let backedUp = invalid.length === 0 && repaired.length === 0;
   if (invalid.length) warn(`state.json has ${invalid.length} entr${invalid.length === 1 ? 'y' : 'ies'} that aren't jobs (${invalid.slice(0, 3).join(', ')}): they are kept in a backup and left out.`);
 

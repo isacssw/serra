@@ -114,13 +114,13 @@ interface Classified {
  */
 const classify = (job: Job, last: { event: string; error?: string } | undefined): Classified => {
   const card = job.phase.state === 'waiting' ? job.phase.card : undefined;
-  const asked = card?.questions[card.index]?.question;
+  const asked = text(card?.questions[card.index]?.question);
   if (job.phase.state === 'waiting' && !card) return { group: 'needs you', reason: 'waiting in T3' };
   if (asked) return { group: 'needs you', reason: 'question', ownerQuestion: asked };
   if (job.ownerAskOpen === true) return { group: 'needs you', reason: 'owner pinged' };
   if (last?.event === 'failure') return { group: 'needs you', reason: 'failed', ...(last.error ? { error: last.error } : {}) };
 
-  if (looksRunning(job) || job.pendingReactionTs !== null) return { group: 'running' };
+  if (looksRunning(job) || text(job.pendingReactionTs) !== undefined) return { group: 'running' };
   return { group: 'done' };
 };
 

@@ -51,11 +51,38 @@ test('[JOBS-002] the old flags migrate to one phase: a card is a wait with it, a
     'C1:3.3': { ...base, threadTs: '3.3', watching: false, runSeen: { runId: 'run-2', at: 'x' }, progress: { ts: '9.9', runId: 'run-2', text: '⏳' } },
     'C1:4.4': { ...base, threadTs: '4.4', watching: false, runSeen: { runId: 'run-1', at: 'x' } },
   }));
-  const { jobs } = readState(file);
+  const { jobs } = readState(file, { now: Date.parse('2026-11-22T00:00:00Z') });
   assert.deepEqual(jobs['C1:1.1']!.phase, { state: 'waiting', card });
   assert.deepEqual(jobs['C1:2.2']!.phase, { state: 'waiting' });
   assert.deepEqual(jobs['C1:3.3']!.phase, { state: 'following', run: { id: 'run-2', at: 'x', progress: { ts: '9.9', text: '⏳' } } });
   assert.deepEqual(jobs['C1:4.4']!.phase, { state: 'idle' }, 'a seen run that was posted tells nothing');
+});
+
+test('[JOBS-002] a job older builds stopped looking at stays idle: a run owed weeks ago is not posted from nowhere', (t) => {
+  const dir = folder(t);
+  const file = join(dir, 'state.json');
+  const quiet = { t3ThreadId: 'thr', channel: 'C1', threadTs: '5.5', requester: 'USAM', pendingReactionTs: null, lastPostedRunId: 'run-6',
+    createdAt: '2026-10-01T10:00:00.000Z', lastActivityAt: '2026-10-20T10:00:00.000Z', watching: false, runSeen: { runId: 'run-7', at: 'x' } };
+  const line = { ts: '9.9', runId: 'run-7', text: '⏳ Still on it' };
+  writeFileSync(file, JSON.stringify({ 'C1:5.5': quiet, 'C1:6.6': { ...quiet, threadTs: '6.6', waitingInT3: true }, 'C1:7.7': { ...quiet, threadTs: '7.7', progress: line } }));
+  const { jobs } = readState(file, { now: Date.parse('2026-11-22T00:00:00Z') });
+  assert.deepEqual(jobs['C1:5.5']!.phase, { state: 'idle' });
+  assert.deepEqual(jobs['C1:6.6']!.phase, { state: 'idle' });
+  assert.deepEqual(jobs['C1:7.7']!.phase, { state: 'idle', leftover: line }, 'its line is still taken down at start');
+  // A job still being followed is followed, however long ago it last spoke.
+  writeFileSync(file, JSON.stringify({ 'C1:5.5': { ...quiet, watching: true } }));
+  assert.equal(readState(file, { now: Date.parse('2026-11-22T00:00:00Z') }).jobs['C1:5.5']!.phase.state, 'following');
+});
+
+test('[JOBS-002] a file with a phase and none of the old flags is read as it is', (t) => {
+  const dir = folder(t);
+  const file = join(dir, 'state.json');
+  const phase = { state: 'waiting', run: { id: 'run-1', at: 'x' } };
+  writeFileSync(file, JSON.stringify({ 'C1:1.1': { t3ThreadId: 'thr', channel: 'C1', threadTs: '1.1', requester: 'USAM', pendingReactionTs: null,
+    lastPostedRunId: null, createdAt: '2026-11-20T10:00:00.000Z', phase } }));
+  const read = readState(file);
+  assert.deepEqual(read.jobs['C1:1.1']!.phase, phase);
+  assert.deepEqual(read.repaired, []);
 });
 
 test('[JOBS-002] after a rollback, the flags an older build changed win over the phase it kept', (t) => {

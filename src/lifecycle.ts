@@ -23,8 +23,11 @@ export interface SeenRun {
 }
 
 export type Phase =
-  /** Nothing to follow: no run goes, and every run is posted. Checked now and then, since the worker starts runs itself. */
-  | { state: 'idle' }
+  /**
+   * Nothing to follow: no run goes, and every run is posted. Checked now and then, since the worker starts runs itself.
+   * `leftover`: a progress line an older build left in the chat for a run nobody follows any more; taken down at start.
+   */
+  | { state: 'idle'; leftover?: { ts: string; runId: string; text: string } }
   /** Checked every poll: a turn was sent, a run goes (`run`, once seen), or a reply was just posted. */
   | { state: 'following'; run?: SeenRun }
   /**
@@ -34,6 +37,9 @@ export type Phase =
   | { state: 'waiting'; run?: SeenRun; card?: QuestionCard };
 
 export const IDLE: Phase = { state: 'idle' };
+
+/** How long after its last activity an idle job is still checked now and then. */
+export const FOLLOW_UP_MS = 14 * 24 * 60 * 60_000;
 
 /** The run the job last saw, in any phase that has one. */
 export const seenRun = (phase: Phase): SeenRun | undefined => (phase.state === 'idle' ? undefined : phase.run);
@@ -190,8 +196,8 @@ export const step = (job: Followed, { thread, messages }: Observation, { missed:
 export type WaitStep =
   /** Show this request as a card (a new one replaces an open card). */
   | { do: 'card'; request: T3QuestionRequest }
-  /** None can be shown in the chat: close any card, and tell the owner to answer in T3 unless they were told already. */
-  | { do: 'in-t3'; closeCard: boolean; tell: boolean; unsupported: T3QuestionRequest[] }
+  /** None can be shown in the chat: close any card, and tell the owner to answer in T3 (they weren't told yet). */
+  | { do: 'in-t3'; closeCard: boolean; unsupported: T3QuestionRequest[] }
   /** Nothing to change: the card or the notice is up, or T3's requests couldn't be read and one of them is. */
   | { do: 'nothing' };
 
@@ -204,13 +210,13 @@ export const waitStep = (phase: Phase, requests: T3QuestionRequest[] | null, can
   const told = phase.state === 'waiting' && !card;
   const request = requests?.find(canShow);
   if (request) return { do: 'card', request };
-  if (requests !== null) return card || !told ? { do: 'in-t3', closeCard: card !== undefined, tell: true, unsupported: requests } : { do: 'nothing' };
-  return card || told ? { do: 'nothing' } : { do: 'in-t3', closeCard: false, tell: true, unsupported: [] };
+  if (requests !== null) return card || !told ? { do: 'in-t3', closeCard: card !== undefined, unsupported: requests } : { do: 'nothing' };
+  return card || told ? { do: 'nothing' } : { do: 'in-t3', closeCard: false, unsupported: [] };
 };
 
 /** What the Jobs screen and the bot read as running, from the saved job alone. */
 export const looksRunning = (job: Followed & { loadingRequested?: boolean; pendingReactions?: string[] }): boolean => {
   const run = seenRun(job.phase);
-  return job.loadingRequested === true || (job.pendingReactions ?? []).length > 0
+  return job.loadingRequested === true || (job.pendingReactions ?? []).length > 0 || (job.phase.state === 'idle' && job.phase.leftover !== undefined)
     || run?.progress !== undefined || (run !== undefined && run.id !== job.lastPostedRunId);
 };

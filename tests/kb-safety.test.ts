@@ -487,7 +487,7 @@ const botOn = async (profileDir: string) => {
     activeRunId = 'run-2';
     transcript = [{ role: 'user', runId: 'run-2', text: 'brief' }, { role: 'assistant', runId: 'run-2', text: note }];
   };
-  return { bot, store, config, knowledge, started, sent, answered, bases, get posted() { return slack.posted.map((post) => String(post.text)); }, updated, reviews, outside, hooks, restrict, finish, working, setQuestions: (list: typeof pendingQuestions) => { pendingQuestions = list; } };
+  return { bot, store, config, knowledge, started, sent, answered, bases, deleted: slack.deleted, get posted() { return slack.posted.map((post) => String(post.text)); }, updated, reviews, outside, hooks, restrict, finish, working, setQuestions: (list: typeof pendingQuestions) => { pendingQuestions = list; } };
 };
 
 test('the worker opens pages from the approved copy, and writes proposals to knowledge/proposals', async (t) => {
@@ -642,6 +642,21 @@ test('approval defaults fail closed both ways: a proposal can narrow a page, nev
   const shown = proposals.readProposal('2026-11-20-style.md');
   proposals.promoteProposal('2026-11-20-style.md', { folder: 'owner', reviewed: { proposal: shown.proposed, path: shown.proposal.target, page: shown.current } });
   assert.match(readFileSync(join(knowledgeDir, 'owner/working-style.md'), 'utf8'), /^audience: owner$/m);
+});
+
+test('[KB-002] a thread moved to a fresh session takes the old run\'s progress line down: it is the old worker\'s words', async (t) => {
+  const question = { id: 'q1', header: 'Day', question: 'Which day?', options: [{ label: 'Tuesday', description: '' }, { label: 'Friday', description: '' }] };
+  const run = await botOn(fixture(t));
+  await run.bot.handle({ channel: 'CTEAM', threadTs: '40.1', messageTs: '40.1', user: PRIYA, text: '<@UMOSS> how do I cut a release?', direct: true });
+  // The run someone waits on showed a progress line, then asked a question: the line stays up while the card waits.
+  const job = run.store.getJob('CTEAM:40.1')!;
+  run.store.putJob('CTEAM:40.1', { ...job, phase: { state: 'waiting', run: { id: 'run-2', at: '2020-01-01T00:00:00.000Z', progress: { ts: '40.9', text: '⏳ Still on it: never Thursday' } },
+    card: { requestId: 'r40', questions: [question], ts: '40.5', nonce: 'n', index: 0, answers: {}, runId: 'run-2' } as never } });
+  run.setQuestions([{ requestId: 'r40', questions: [question] }]);
+  run.restrict('workflows/release.md');
+  await run.bot.handle({ channel: 'CTEAM', threadTs: '40.1', messageTs: '40.2', user: PRIYA, text: 'Tuesday', direct: false });
+  assert.equal(run.started.length, 2, 'the thread moved to a fresh session');
+  assert.ok(run.deleted.includes('40.9'), 'the old line is gone');
 });
 
 test('a thread whose knowledge was taken back posts no question card, no progress note and no reply, older threads included', async (t) => {

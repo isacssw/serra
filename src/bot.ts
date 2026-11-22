@@ -18,7 +18,7 @@ import { handleReviewRequest, type PostReview } from './review.ts';
 import { slackKey, type createStore } from './state.ts';
 import { findThreads, jobThreadInput, run, sendToThread, showThread, startThread } from './t3.ts';
 import { answerQuestion, listQuestions, type T3QuestionRequest } from './t3-questions.ts';
-import { follow, followed, forgetRun, looksRunning, replied, RECENT_MESSAGES, seeRun, seenRun, settle, step, stopWaiting, waitFor, waitStep, withProgress, type PollStep } from './lifecycle.ts';
+import { FOLLOW_UP_MS, follow, followed, forgetRun, looksRunning, replied, RECENT_MESSAGES, seeRun, seenRun, settle, step, stopWaiting, waitFor, waitStep, withProgress, type PollStep } from './lifecycle.ts';
 import { canShowQuestion, choiceAnswer, typedAnswer, type QuestionAnswer, type QuestionCard, type QuestionInteraction } from './questions.ts';
 import type { IncomingFile, IncomingMessage, Job, T3Message, T3Thread } from './types.ts';
 import { createTracker, systemClock, type Clock } from './clock.ts';
@@ -27,7 +27,6 @@ import { errorMessage } from './lib/errors.ts';
 /** A job nobody is waiting on is still checked this often, so runs the worker starts itself (a PR watch) get posted. */
 const IDLE_POLL_MS = 2 * 60_000;
 /** How long after its last activity an idle job is still checked. */
-const FOLLOW_UP_MS = 14 * 24 * 60 * 60_000;
 /** A worker's reply that starts with this line has nothing for the chat: a background check-in, or a message that wasn't for the bot. */
 const QUIET = /^\s*\(quiet\)\s*(\n|$)/i;
 /** How long a thread must be silent before what was said goes to the worker, so quick messages become one turn. */
@@ -66,10 +65,10 @@ const newestThatFit = (lines: string[]): string[] => {
 /** How much of a reply's text its saved intent keeps. A reply's fallback text is at most 3,000 characters. */
 const INTENT_TEXT = 3_000;
 
-/** The worker's latest note in a run that is still going, such as "Reproducing the bug locally first." */
 /** The question card open in the job's thread, if any. */
 const cardOf = (job: Job): QuestionCard | undefined => (job.phase.state === 'waiting' ? job.phase.card : undefined);
 
+/** The worker's latest note in a run that is still going, such as "Reproducing the bug locally first." */
 const latestNote = (runId: string, messages: T3Message[]): string | undefined =>
   messages.findLast((message) => message.role === 'assistant' && message.runId === runId && message.text?.trim())?.text?.trim();
 
@@ -375,6 +374,11 @@ export const createBot = ({
 
   /** Takes the "still working" line away once its run has a reply. */
   const clearProgress = async (key: string, job: Job): Promise<void> => {
+    if (job.phase.state === 'idle' && job.phase.leftover) {
+      await chat.remove(messageIn(job, job.phase.leftover.ts));
+      updateJob(key, (latest) => (latest.phase.state === 'idle' ? { phase: settle() } : {}));
+      return;
+    }
     const run = seenRun(job.phase);
     if (!run?.progress) return;
     await chat.remove(messageIn(job, run.progress.ts));
@@ -610,6 +614,7 @@ export const createBot = ({
       await clearProgress(key, job);
       // The first sight of a run binds the turn Serra sent to it. A run the worker started on its own leaves that
       // turn for the run that answers it.
+      // `pollJob` left any wait before following a run: the run seen replaces what the job followed.
       updateJob(key, () => ({ phase: seeRun({ id: runId, at: new Date(now()).toISOString(), waits: next.waits }),
         ...(next.byWorker ? {} : { nextTurnWaits: undefined }) }));
       return;
@@ -902,6 +907,8 @@ export const createBot = ({
       now: new Date(now()),
     });
     const t3ThreadId = await t3.startThread({ ...input, ...(job.branch ? { baseRef: job.branch } : {}) }, config.t3Bin);
+    // The old run's progress line is the old worker's words, and goes with its run.
+    await clearProgress(key, getJob(key) ?? job);
     updateJob(key, () => ({ t3ThreadId, visibility, knowledgeRead: knowledge.read, knowledgeDir: knowledge.readDir, branch: input.branch, lastPostedRunId: null, nextTurnWaits: lines.some((line) => line.audience === 'bot'), delivering: undefined, phase: { state: 'following' } }));
     await notify(job.channel, job.threadTs, { kind: 'fresh-session' });
     logger.info(`${folderGone ? 'The knowledge folder this thread read was cleaned up' : `Knowledge this thread used was taken back (${revoked.length} page(s))`}; continued ${key} in a fresh T3 thread ${t3ThreadId}`);
