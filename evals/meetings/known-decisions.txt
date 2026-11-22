@@ -1,0 +1,9 @@
+Invoices check-in, 2026-11-14
+Fake meeting for Serra's evals: every person and company is invented.
+
+Priya: Quick one. Sales asked again whether we can reuse cancelled invoice numbers.
+Robin: No. Invoice numbers are sequential per merchant and never reused. That hasn't changed.
+Priya: And the PDFs, do we store them now?
+Robin: Still no. Invoice PDFs are generated on demand, never stored.
+Jonas: Same as we decided in October, yes.
+Priya: Great, I'll tell sales. That's all I had.

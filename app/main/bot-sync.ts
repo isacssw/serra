@@ -29,6 +29,11 @@ export type BotSync =
 export type BotSyncAction = 'none' | 'pause' | 'prepare' | 'activate';
 
 export interface BotSyncInput {
+  /**
+   * The running bot holds new requests while paused. A bot from before alpha.3 doesn't, so the screen mustn't promise
+   * that requests wait (SERRA-50 gap 1). Default: true.
+   */
+  honorsPause?: boolean;
   mode: 'release' | 'developer';
   /** The app is a packaged build whose code the bot can follow. A copy run from source doesn't lead the bot. */
   follows: boolean;
@@ -78,10 +83,11 @@ export const botSyncDecision = (input: BotSyncInput): { sync: BotSync; action: B
   // Running jobs finish first. New requests are held meanwhile, so the wait has an end.
   if (input.jobs > 0) {
     const pause = !input.paused && input.mayPause && !input.running;
-    return { sync: { state: 'waiting', from, to, jobs: input.jobs, paused: input.paused || pause }, action: pause ? 'pause' : 'none' };
+    const held = (input.paused || pause) && input.honorsPause !== false;
+    return { sync: { state: 'waiting', from, to, jobs: input.jobs, paused: held }, action: pause ? 'pause' : 'none' };
   }
   // Another action (a manual prepare or rollback) is running: wait for it.
-  if (input.running) return { sync: { state: 'waiting', from, to, jobs: 0, paused: input.paused }, action: 'none' };
+  if (input.running) return { sync: { state: 'waiting', from, to, jobs: 0, paused: input.paused && input.honorsPause !== false }, action: 'none' };
   const preparedForApp = input.prepared?.appVersion === to && input.prepared.fromApp === true && input.preparedReady;
   return { sync: { state: 'updating', from, to }, action: preparedForApp ? 'activate' : 'prepare' };
 };

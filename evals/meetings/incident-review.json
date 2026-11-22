@@ -1,0 +1,75 @@
+{
+  "transcript": "incident-review.txt",
+  "heldOut": true,
+  "tests": "undated constraints kept; a dated one sent to the reply; PR and ticket links",
+  "memory": [
+    {
+      "id": "no-4xx-retry",
+      "kind": "constraint",
+      "match": [
+        "4xx|4\\d\\d|client error",
+        "429"
+      ],
+      "quote": "the webhook worker never retries a 4xx response, except 429",
+      "target": "product/webhooks.md"
+    },
+    {
+      "id": "idempotency",
+      "kind": "decision",
+      "match": [
+        "idempotency",
+        "before"
+      ],
+      "quote": "Move the idempotency key check before the ack.",
+      "target": "product/webhooks.md",
+      "links": [
+        "https://github.com/ledgerline/api/pull/412"
+      ]
+    },
+    {
+      "id": "alert",
+      "kind": "decision",
+      "match": [
+        "5 ?(%|percent)",
+        "10 ?min"
+      ],
+      "quote": "page on-call when the delivery failure rate is above 5 percent for 10 minutes",
+      "target": "workflows/incident.md"
+    },
+    {
+      "id": "timeline",
+      "kind": "constraint",
+      "match": [
+        "timeline",
+        "24"
+      ],
+      "quote": "Every incident gets a written timeline in the incident doc within 24 hours.",
+      "target": "workflows/incident.md"
+    }
+  ],
+  "reply": [
+    {
+      "kind": "dated",
+      "match": [
+        "(freeze|deploy)",
+        "(28|black friday)"
+      ]
+    },
+    {
+      "kind": "question",
+      "match": [
+        "backfill|missed"
+      ]
+    },
+    {
+      "kind": "action",
+      "match": [
+        "(regression )?test|4xx|alert|review"
+      ]
+    }
+  ],
+  "forbiddenInMemory": [
+    "no(body)? deploys? .*(webhook|28)"
+  ],
+  "forbidden": []
+}

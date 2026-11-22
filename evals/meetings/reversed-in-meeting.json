@@ -1,0 +1,52 @@
+{
+  "transcript": "reversed-in-meeting.txt",
+  "heldOut": false,
+  "tests": "a decision reversed later in the meeting: only the final one is kept",
+  "memory": [
+    {
+      "id": "timezone",
+      "kind": "decision",
+      "match": [
+        "time ?zone"
+      ],
+      "quote": "Exports use the merchant's own time zone, the one set in their account.",
+      "target": "product/exports.md"
+    },
+    {
+      "id": "rows",
+      "kind": "decision",
+      "match": [
+        "(1|one) ?(million|m\\b|000,000)"
+      ],
+      "quote": "Cap each export file at one million rows.",
+      "target": "product/exports.md"
+    },
+    {
+      "id": "csv-only",
+      "kind": "decision",
+      "match": [
+        "xlsx|csv only"
+      ],
+      "quote": "We drop XLSX. CSV only from now on.",
+      "target": "product/exports.md"
+    }
+  ],
+  "reply": [
+    {
+      "kind": "action",
+      "match": [
+        "exports page|dashboard"
+      ]
+    },
+    {
+      "kind": "question",
+      "match": [
+        "xlsx|merchants"
+      ]
+    }
+  ],
+  "forbiddenInMemory": [
+    "(exports?|timestamps?) (are |is |use |in )+UTC(?!.*(not|instead|rather|scrap))"
+  ],
+  "forbidden": []
+}

@@ -6,6 +6,7 @@ import type { Proposal, ProposalDiff, ProposalSource } from './contracts.ts';
 import { approvalAudience, type Audience } from './owner-model.ts';
 import { insideKnowledge, knowledgePagePath, offlimitsBudgetAfter } from './knowledge.ts';
 import { createJournal } from './knowledge-journal.ts';
+import { withKnowledgeLock } from './knowledge-lock.ts';
 import { isArrayOf, isBoolean, isOneOf, isOptional, isRecord, isString, isStringOrNull, readJsonFile, readJsonOrNull } from './lib/guards.ts';
 import { alignHeader, DATE, frontmatter, INDEX_MAX_LINES, isOfflimits, lineCount, NOT_PAGES, pageProblems, PROPOSALS_DIR, removeHeaderField, setHeaderField } from './knowledge-rules.ts';
 
@@ -40,6 +41,8 @@ const PROPOSAL_SOURCE_FILE = '.from.json';
 /** The folder under knowledge/proposals/ a Slack thread's worker writes to. */
 export const threadProposalsFolder = (channel: string, threadTs: string): string => `from-slack/${channel}-${threadTs.replace(/\D/g, '-')}`;
 export const APP_PROPOSALS_FOLDER = 'from-app';
+/** Where a meeting's edits wait, one folder per meeting (meeting-store.ts). */
+const MEETING_FOLDER = 'from-meeting';
 
 /** Stamp a proposals folder with who started the thread that writes to it. Written by Serra, before the worker starts. */
 export const stampProposalsFolder = (knowledgeDir: string, folder: string, source: ProposalSource): void => {
@@ -224,12 +227,25 @@ export const createProposals = ({ knowledgeDir, backupDir, now = () => new Date(
     return path;
   };
 
+  /** Meeting edits have their own approval call, bound to their evidence (meeting-store.ts): never these. */
+  const notFromMeeting = (path: string): string => {
+    if (path.startsWith(`${PROPOSALS_DIR}/${MEETING_FOLDER}/`)) throw new Error('This is an edit from a meeting. Approve or discard it in the meeting\'s group in Proposals.');
+    return path;
+  };
+
   const pagePath = (relativePath: string, what: string): string => knowledgePagePath(root, relativePath, what);
 
   /** Who started the thread whose worker wrote proposals in `id`'s folder, as Serra stamped it. */
   const sourceOf = (id: string): ProposalSource | undefined => {
     const folder = dirname(id);
     if (folder === '.') return undefined;
+    // A meeting's stub names its meeting and item in its header; the meeting screen checks them against the registry.
+    if (folder.startsWith(`${MEETING_FOLDER}/`)) {
+      const fields = frontmatter(readFileSync(join(proposalsRoot, id), 'utf8'));
+      const meeting = fields?.get('meeting')?.trim();
+      const item = fields?.get('item')?.trim();
+      return meeting && item ? { who: 'a meeting', owner: false, via: 'meeting', meeting: { id: meeting, item } } : { who: 'unknown', owner: false, via: 'meeting' };
+    }
     const stamp = readJsonOrNull(join(proposalsRoot, folder, PROPOSAL_SOURCE_FILE), isProposalSource);
     if (!stamp) return undefined;
     return { who: stamp.who, owner: stamp.owner, via: stamp.via, ...(stamp.link !== undefined ? { link: stamp.link } : {}) };
@@ -349,8 +365,8 @@ export const createProposals = ({ knowledgeDir, backupDir, now = () => new Date(
    * Refuses a destination outside `knowledge/`, any other existing page (merge into it instead), a page that would
    * fail `pnpm knowledge`, and an index that would go over its cap. The `target:` line is dropped from the page.
    */
-  const promoteProposal = (id: string, { folder, name, when, gives, reviewed, audience }: PromoteOptions): ProposalChange => {
-    const source = proposalPath(id);
+  const promoteProposal = (id: string, { folder, name, when, gives, reviewed, audience }: PromoteOptions): ProposalChange => withKnowledgeLock(root, () => {
+    const source = notFromMeeting(proposalPath(id));
     const cleanFolder = folder.trim().replace(/\/+$/, '');
     if (!cleanFolder) throw new Error('Pick a folder under knowledge/ to promote into, like owner.');
     const { target } = describe(id);
@@ -399,14 +415,14 @@ export const createProposals = ({ knowledgeDir, backupDir, now = () => new Date(
         : `replaced \`${destination}\` with \`${source}\`, confirmed by the owner in the app.`),
       { path: source, before: proposed, after: null },
     ]);
-  };
+  });
 
   /**
    * Fold a proposal into an existing page and remove it from `proposals/`. Refuses a page outside `knowledge/`,
    * a page that doesn't exist (promote instead), and a result that would fail `pnpm knowledge`.
    */
-  const mergeProposal = (id: string, { into, text, reviewed, audience }: MergeOptions): ProposalChange => {
-    const source = proposalPath(id);
+  const mergeProposal = (id: string, { into, text, reviewed, audience }: MergeOptions): ProposalChange => withKnowledgeLock(root, () => {
+    const source = notFromMeeting(proposalPath(id));
     const target = pagePath(into, 'Target');
     const current = readText(target);
     if (current === null) throw new Error(`${target} doesn't exist. Promote the proposal to create it.`);
@@ -438,13 +454,13 @@ export const createProposals = ({ knowledgeDir, backupDir, now = () => new Date(
       logLine(at, `merged \`${source}\` into \`${target}\`, confirmed by the owner in the app.`),
       { path: source, before: proposed, after: null },
     ]);
-  };
+  });
 
   /** Remove a proposal without using it. The backup keeps its text for undo. */
-  const discardProposal = (id: string): ProposalChange => {
-    const source = proposalPath(id);
+  const discardProposal = (id: string): ProposalChange => withKnowledgeLock(root, () => {
+    const source = notFromMeeting(proposalPath(id));
     return apply('discard', id, null, [{ path: source, before: readFileSync(join(root, source), 'utf8'), after: null }]);
-  };
+  });
 
   const readChange = (changeId: string): ProposalChange => {
     if (!/^[\w.-]+$/.test(changeId)) throw new Error(`Not a backup ID: ${changeId}`);
@@ -459,7 +475,7 @@ export const createProposals = ({ knowledgeDir, backupDir, now = () => new Date(
    * Reverse a promote, merge or discard from its backup: every file goes back to its text from before the change.
    * Refuses when a file has changed since (say the promoted page was edited), so undo never loses newer work.
    */
-  const undoProposalChange = (changeId: string): ProposalChange => {
+  const undoProposalChange = (changeId: string): ProposalChange => withKnowledgeLock(root, () => {
     const change = readChange(changeId);
     if (change.undoneAt) throw new Error(`${changeId} was already undone at ${change.undoneAt}.`);
     checkNoDrift(change.files.map(({ path }) => path));
@@ -471,7 +487,7 @@ export const createProposals = ({ knowledgeDir, backupDir, now = () => new Date(
     const undone = { ...change, undoneAt: now().toISOString() };
     writeFileAtomic(join(backups, changeId, 'change.json'), JSON.stringify(undone, null, 2) + '\n');
     return undone;
-  };
+  });
 
   /** The folders a proposal can be promoted into and the pages it can be merged into, for the app's pickers. */
   const listTargets = (): ProposalTargets => {

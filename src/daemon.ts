@@ -28,6 +28,11 @@ import { QUESTION_ACTION, questionInteraction } from './slack/questions.ts';
 import { createStore } from './state.ts';
 import { jobCounts, startStatusServer, type StatusServer } from './status-socket.ts';
 import type { IncomingMessage } from './types.ts';
+import { readAttachmentText } from './slack/attachments.ts';
+import { createMeetingCapture, meetingsFirst, type MeetingCaptureDeps } from './meeting-capture.ts';
+import { createExtractor } from './meeting-extractor.ts';
+import { createSourceReader } from './meeting-sources.ts';
+import { toolSearchPath } from './shell-path.ts';
 
 const POLL_MS = 15_000;
 const HELD_REACTION = 'hourglass_flowing_sand';
@@ -59,6 +64,8 @@ export interface DaemonDeps {
   watchProfile?: boolean;
   pid?: number;
   pollMs?: number;
+  /** Meeting capture's model and provider seams (SERRA-62). Production runs Claude Code through the owner's PATH. */
+  meetings?: Partial<Pick<MeetingCaptureDeps, 'extractor' | 'sources' | 'readFile'>>;
 }
 
 export interface Daemon {
@@ -141,11 +148,48 @@ export const startDaemon = async (deps: DaemonDeps): Promise<Daemon> => {
     const owns = (channel: string, threadTs: string): boolean =>
       bot.ownsThread(channel, threadTs) || heldIn(channel, threadTs) || (releasingNow?.channel === channel && releasingNow.threadTs === threadTs);
 
+    // "Remember this meeting" in the owner's DM (SERRA-62): caught before the pause hold and before any job, so a
+    // transcript never reaches a T3 worker. Off until the owner turns it on in the app. One extractor per daemon,
+    // so its canary self-test runs once per Claude Code binary.
+    // Made on the first meeting, not at start: finding Claude Code asks the login shell.
+    let made: Promise<{ extractor: ReturnType<typeof createExtractor>; reader: ReturnType<typeof createSourceReader> }> | null = null;
+    const claude = () => (made ??= toolSearchPath().catch(() => process.env.PATH ?? '')
+      .then((path) => ({ extractor: createExtractor({ path }), reader: createSourceReader({ path }) })));
+    const extractor = deps.meetings?.extractor ?? { extract: async (prompt: string) => (await claude()).extractor.extract(prompt) };
+    const sources = deps.meetings?.sources ?? { fetchTranscript: async (link: Parameters<MeetingCaptureDeps['sources']['fetchTranscript']>[0]) => (await claude()).reader.fetchTranscript(link) };
+    const meetings = createMeetingCapture({
+      profileDir: config.profileDir, knowledgeDir: config.knowledgeDir, owner: config.owner,
+      chat: {
+        // No unfurling: meeting text is never turned into a link preview.
+        post: async (channel, text, threadTs) => (await client.chat.postMessage({ channel, text, unfurl_links: false, unfurl_media: false, ...(threadTs ? { thread_ts: threadTs } : {}) })).ts,
+        remove: async (channel, ts) => { await client.chat.delete({ channel, ts }); },
+        earlierInThread: async (channel, threadTs, beforeTs) => {
+          const replies = await client.conversations.replies({ channel, ts: threadTs, limit: 20 });
+          // People's messages only: an agent-view conversation can open with the app's own greeting.
+          return (replies.messages ?? []).filter((message) => message.ts !== undefined && message.ts < beforeTs && !message.bot_id && message.user !== botUserId).length;
+        },
+      },
+      readFile: deps.meetings?.readFile ?? ((file, maxChars) => readAttachmentText(client, file, config.botToken, maxChars)),
+      sources, extractor,
+      paused: () => readPause(config.profileDir, clock.now()) !== null,
+      busy: (channel, threadTs) => owns(channel, threadTs),
+      now: () => new Date(clock.now()),
+      log: (message) => logger.info(message),
+    });
+    // A meeting approval a crash left half done is rolled back before anything reads knowledge.
+    try { meetings.store.recover(); } catch (error) { logger.warn(`Meeting recovery: ${errorMessage(error)}`); }
+    /** A meeting message is Serra's own work, counted like a starting job so an update waits for it. */
+    const trackMeeting = (meetingWork: Promise<void>): Promise<void> => {
+      starting += 1;
+      return track(meetingWork).catch((error: unknown) => logger.error(`Meeting capture failed: ${errorMessage(error)}`))
+        .finally(() => { starting -= 1; acknowledge(); });
+    };
+
     /**
      * Handles a message now, or holds it while the app has paused new work for an update (intake.ts): a request that
      * would start a job waits, with an hourglass on it, for the restarted bot. Messages for running jobs go through.
      */
-    const receive = async (msg: IncomingMessage): Promise<void> => {
+    const receiveRequest = async (msg: IncomingMessage): Promise<void> => {
       const paused = readPause(config.profileDir, clock.now());
       const waitingBehind = heldIn(msg.channel, msg.threadTs);
       if (waitingBehind || admit(paused !== null, bot.runningIn(msg.channel, msg.threadTs)) === 'hold') {
@@ -162,6 +206,8 @@ export const startDaemon = async (deps: DaemonDeps): Promise<Daemon> => {
       }
       await start(msg);
     };
+    // Meetings first (SERRA-62): before the pause hold and before any job starts or continues.
+    const receive = meetingsFirst((msg) => meetings.intercept(msg), trackMeeting, receiveRequest);
 
     let releasing = false;
     /**
@@ -183,12 +229,17 @@ export const startDaemon = async (deps: DaemonDeps): Promise<Daemon> => {
           releasingNow = marked;
           try {
             await client.reactions.remove({ channel: next.channel, timestamp: next.messageTs, name: HELD_REACTION }).catch(() => {});
+            // A meeting message is never started as a job, held or not (SERRA-62).
+            const meeting = meetings.intercept(next);
+            if (meeting) await trackMeeting(meeting.work);
             // Only a replay carries `attemptedAt` to the bot: a first attempt has no earlier thread to look for.
             // A start that throws is told in its thread like any failed request, then let go: retrying it would
             // repeat the failure on every poll.
-            await start(next.attemptedAt ? next : { ...next, attemptedAt: undefined })
-              .catch((error: unknown) => bot.reportUnhandled(next, error))
-              .catch((error: unknown) => logger.error(`Couldn't report a failed held request in ${next.channel}: ${errorMessage(error)}`));
+            else {
+              await start(next.attemptedAt ? next : { ...next, attemptedAt: undefined })
+                .catch((error: unknown) => bot.reportUnhandled(next, error))
+                .catch((error: unknown) => logger.error(`Couldn't report a failed held request in ${next.channel}: ${errorMessage(error)}`));
+            }
           } finally { releasingNow = null; }
           dropHeld(config.profileDir, next);
         }
@@ -233,6 +284,13 @@ export const startDaemon = async (deps: DaemonDeps): Promise<Daemon> => {
     });
     for (const problem of checked.problems) logger.warn(`knowledge/${problem}`);
     for (const warning of checked.warnings) logger.warn(`knowledge/${warning}`);
+
+    // Meeting requests an older Serra held during an update are closed and dropped before intake opens, never replayed.
+    {
+      const { drop, replies } = meetings.closeHeld(readHeld(config.profileDir));
+      for (const msg of drop) dropHeld(config.profileDir, msg);
+      void Promise.allSettled(replies);
+    }
 
     const auth = await client.auth.test();
     botUserId = auth.user_id ?? '';
@@ -280,6 +338,7 @@ export const startDaemon = async (deps: DaemonDeps): Promise<Daemon> => {
       if (stopping) return;
       acknowledge();
       void release();
+      void track(meetings.upkeep()).catch((error: unknown) => logger.warn(`Meeting upkeep: ${errorMessage(error)}`));
       void track(bot.poll()).catch((error: unknown) => logger.error(`Poll failed: ${errorMessage(error)}`)).finally(() => status?.refresh());
     }, pollMs);
 

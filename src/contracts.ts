@@ -84,8 +84,10 @@ export interface ProposalSource {
   who: string;
   /** Whether that person is the owner. */
   owner: boolean;
-  /** Where: "Slack" or "the app". */
-  via: 'slack' | 'app';
+  /** Where: "Slack", "the app", or a meeting the owner sent (SERRA-62), whose edits have their own approval call. */
+  via: 'slack' | 'app' | 'meeting';
+  /** For a meeting's edit: which meeting and item, as the stub names them. The meeting registry decides if it's real. */
+  meeting?: { id: string; item: string };
   /** The Slack link to the thread's first message, when there is one. */
   link?: string;
 }

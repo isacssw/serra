@@ -72,6 +72,8 @@ export interface DaemonHarnessOptions {
   /** Extra seams for the bot. Uploads and review requests are pass-throughs unless given. */
   bot?: DaemonDeps['bot'];
   checkAccess?: DaemonDeps['checkAccess'];
+  /** Meeting capture's model and provider seams (SERRA-62). */
+  meetings?: DaemonDeps['meetings'];
 }
 
 export interface DaemonHarness {
@@ -114,6 +116,8 @@ export const startTestDaemon = async (t: TestContext, options: DaemonHarnessOpti
       },
       receive: async () => '',
       checkAccess: options.checkAccess ?? (async () => {}), lock: () => () => {}, statusSocket: false, watchProfile: false, pid: 4242,
+      // Never the real Claude Code: a test that sends a meeting passes its own extractor.
+      meetings: { extractor: { extract: async () => { throw new Error('no extractor in this test'); } }, sources: { fetchTranscript: async () => { throw new Error('no sources in this test'); } }, ...options.meetings },
     });
     current = { daemon, receiver, clock: scoped };
   };

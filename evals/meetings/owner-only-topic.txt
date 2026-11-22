@@ -1,0 +1,21 @@
+Release process chat - 2026-11-21
+Fake meeting for Serra's evals: every person and company is invented.
+
+Robin: I want to change how we release. Tuesdays only is slowing us down.
+Jonas: What do you have in mind?
+Robin: Risky releases can ship on Monday or Tuesday from now on. Still never Thursday or Friday.
+Jonas: Monday or Tuesday works for me.
+Priya: Fine with me too.
+Jonas: And my sign-off is a bottleneck when I'm out. Can we change that?
+Robin: Yes. Instead of Jonas signing off, any two reviewers from the payments team can approve a release.
+Jonas: Agreed, two reviewers.
+Mei: After deploy we watch the webhook dashboard for 30 minutes. Last incident only showed up after 45.
+Robin: Make it 60 minutes. Watch the webhook dashboard for an hour after every deploy.
+Mei: Okay, an hour.
+Priya: Feature flags are piling up. We have flags from last year still in the code.
+Robin: Feature flags are removed within 30 days of a full rollout. Whoever added the flag removes it.
+Priya: Agreed.
+Jonas: I'll update the release runbook.
+Mei: I'll clean up the old flags this sprint.
+Priya: Does the Monday rule apply to the mobile SDK releases too? They go through app review.
+Robin: Good question. Let's ask the mobile folks. Thanks.

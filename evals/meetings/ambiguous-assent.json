@@ -1,0 +1,17 @@
+{
+  "transcript": "ambiguous-assent.srt",
+  "heldOut": true,
+  "tests": "ambiguous assent ('sounds fine I guess'): who is left out for that decision",
+  "memory": [
+    { "id": "sdk-18", "kind": "decision", "match": ["18|eighteen"], "quote": "Eighteen months after the next major ships.", "target": "product/sdks.md" },
+    { "id": "py38", "kind": "decision", "match": ["3\\.8"], "quote": "Let's drop Python 3.8 in the next minor release.", "target": "product/sdks.md", "whoMustNotInclude": ["Jonas"] },
+    { "id": "notice-6m", "kind": "decision", "match": ["(6|six) months"], "quote": "Breaking changes need six months notice from now on", "target": "product/api-versioning.md" },
+    { "id": "generated-only", "kind": "constraint", "match": ["openapi|generated"], "quote": "The SDKs are only ever generated from the OpenAPI spec.", "target": "product/sdks.md" }
+  ],
+  "reply": [
+    { "kind": "action", "match": ["header|do not edit"] },
+    { "kind": "action", "match": ["changelog"] },
+    { "kind": "question", "match": ["backport|security"] }
+  ],
+  "forbidden": []
+}

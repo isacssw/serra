@@ -126,6 +126,8 @@ export interface IncomingMessage {
   automaticTrigger?: boolean;
   /** An @mention, DM, or configured alert. False for a plain message in a thread the bot already owns. */
   direct: boolean;
+  /** A message in a one-to-one DM with the bot (Slack's `channel_type: im`), not a mention or a group DM. */
+  im?: boolean;
   /**
    * A held request whose start was cut off (the daemon stopped while starting it): when the earlier attempt began.
    * Its T3 thread may exist already, so the bot looks for it before starting another.

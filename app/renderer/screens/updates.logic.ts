@@ -6,6 +6,7 @@ import type { ActivationOutcome, ReleaseOverview, RollbackOutcome } from '../../
 import type { AppUpdateView } from '../../main/app-updater.ts';
 import type { BotSync } from '../../main/bot-sync.ts';
 import type { SerraApi } from '../../main/bridge.ts';
+import type { ClearedSource } from '../../../src/update-migration.ts';
 
 export type UpdatesStatus = ReturnType<SerraApi['updates']['status']>;
 export type UpdateAction = NonNullable<UpdatesStatus['running']>;
@@ -127,6 +128,9 @@ export const canCheck = (view: AppUpdateView | null): boolean =>
 /** Release notes are Markdown; the card shows them as plain lines: headings, list items and paragraphs. */
 export type NoteLine = { kind: 'heading' | 'item' | 'text'; text: string };
 
+/** How the manual-install footer of every release's notes starts (`UPGRADE_NOTE` in scripts/release.ts). */
+export const UPGRADE_NOTE_START = 'On alpha.2 or older?';
+
 export const noteLines = (markdown: string): NoteLine[] => {
   const plain = (text: string): string => text
     .replace(/!\[[^\]]*\]\([^)]*\)/g, '')
@@ -138,6 +142,9 @@ export const noteLines = (markdown: string): NoteLine[] => {
   for (const raw of markdown.split('\n')) {
     const line = raw.trim();
     if (!line) continue;
+    // Rules aren't lines; how to upgrade by hand (scripts/release.ts adds it to every release) isn't for an app that
+    // updates itself.
+    if (/^([-*_])(\s*\1){2,}$/.test(line) || line.startsWith(UPGRADE_NOTE_START)) continue;
     const heading = /^#{1,6}\s+(.*)$/.exec(line);
     const item = /^[-*+]\s+(.*)$/.exec(line);
     if (heading) lines.push({ kind: 'heading', text: plain(heading[1]!) });
@@ -214,6 +221,24 @@ export const syncDialog = (to: string, runningJobs: number, { stopped = false, o
     : runningJobs === 0
       ? `No jobs are running. The bot restarts on version ${to}.`
       : `${plural(runningJobs, 'job is', 'jobs are')} running. The bot restarts on version ${to}; ${runningJobs === 1 ? 'the job continues' : 'the jobs continue'} after the restart, and replies wait until then.`,
+});
+
+// ---------------------------------------------------------------------------------------------------------------
+// Leaving developer mode (SERRA-63)
+// ---------------------------------------------------------------------------------------------------------------
+
+/** The one line shown after the update source was cleared, so the owner knows why the screen changed. */
+export const clearedLine = (cleared: Pick<ClearedSource, 'source' | 'reason'>, home: string | null = null): string => cleared.reason
+  ? `Cleared the old update source ${tildePath(cleared.source, home)} (${cleared.reason}), so the bot follows app updates again. profile.json was backed up first.`
+  : 'The bot follows app updates again. profile.json was backed up first.';
+
+/** In a packaged app, developer mode says what it costs, once, above its builds. */
+export const DEVELOPER_LINE = "The bot builds from this checkout and doesn't follow app updates.";
+
+/** The confirm dialog for Follow app updates. */
+export const followDialog = (appVersion: string): { title: string; body: string } => ({
+  title: 'Follow app updates?',
+  body: `Serra removes the checkout path and branch from Settings › Worker and backs up profile.json; the folder isn't touched. The bot then moves to ${appVersion} once no job is running, unless it's stopped or already newer.`,
 });
 
 // ---------------------------------------------------------------------------------------------------------------

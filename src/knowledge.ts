@@ -3,6 +3,8 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameS
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { writeFileAtomic } from './config.ts';
 import { createJournal, type KnowledgeDrift } from './knowledge-journal.ts';
+import { withKnowledgeLock } from './knowledge-lock.ts';
+import { createMeetingStore } from './meeting-store.ts';
 import { AUDIENCES, compileAboutMe, filterIndex, mayUse, pageAudience, type AboutMe, type Audience, type Visibility } from './owner-model.ts';
 import type { KnowledgePage, Profile } from './contracts.ts';
 import {
@@ -195,6 +197,9 @@ export const createKnowledge = (knowledgeDir: string, { backupDir }: KnowledgeOp
    * says which, and where their approved text is.
    */
   const briefKnowledge = (visibility: Visibility, now: Date = new Date()): BriefKnowledge => {
+    // A meeting approval a crash left half done is rolled back before any brief reads knowledge.
+    // A damaged registry never stops a job: it's logged, and Proposals shows the error.
+    try { createMeetingStore({ knowledgeDir: root }).recover(); } catch (error) { console.warn(`Meeting recovery: ${error instanceof Error ? error.message : String(error)}`); }
     const { changed, removed } = journal.drift();
     const drifted = changed.length > 0 || removed.length > 0;
     // Once the approved copy exists, briefs read only from it: whatever is on disk, even a save landing a moment after
@@ -470,5 +475,11 @@ export const createKnowledge = (knowledgeDir: string, { backupDir }: KnowledgeOp
     return { shared: ready.map(({ page }) => page) };
   };
 
-  return { untaggedPages, untaggedDetails, shareWith, loadIndex, briefKnowledge, checkKnowledge, listPages, readPage, savePage, seedApproved, drift, driftDetails, acceptDrift, restoreDrift };
+  // Every writer, and every snapshot a brief is built from, holds the knowledge lock (knowledge-lock.ts), so the app
+  // and the daemon never see half of each other's change.
+  const locked = <A extends unknown[], R>(work: (...args: A) => R) => (...args: A): R => withKnowledgeLock(root, () => work(...args));
+  return {
+    untaggedPages, untaggedDetails, shareWith: locked(shareWith), loadIndex: locked(loadIndex), briefKnowledge: locked(briefKnowledge), checkKnowledge,
+    listPages, readPage, savePage: locked(savePage), seedApproved, drift, driftDetails, acceptDrift: locked(acceptDrift), restoreDrift: locked(restoreDrift),
+  };
 };
