@@ -8,7 +8,7 @@ import type { StartedTask } from '../../../src/tasks.ts';
 import { serra } from '../bridge.ts';
 import { Button, cx, useToast } from '../ui/index.ts';
 import { ariaMod, mod } from '../shell/keys.ts';
-import { REFRESH_COUNTS, TASK_STARTING } from '../shell/events.ts';
+import { announceTaskStart } from '../shell/events.ts';
 import { canStart, requestProblem, startedText, taskLink } from './newTask.logic.ts';
 
 const message = (error: unknown): string => (error instanceof Error ? error.message : String(error));
@@ -35,8 +35,7 @@ export const NewTask = () => {
     if (!canStart(request, busy)) return;
     setBusy(true);
     setError(null);
-    window.dispatchEvent(new Event(TASK_STARTING));
-    bridge.tasks.start(request).then(
+    announceTaskStart(() => bridge.tasks.start(request)).then(
       (task) => {
         setStarted(task);
         setRequest('');
@@ -49,12 +48,7 @@ export const NewTask = () => {
         });
       },
       (failure: unknown) => setError(message(failure)),
-    ).finally(() => {
-      setBusy(false);
-      // The sidebar's list picks the task up now (or drops the failed start): its badge, and the star request's
-      // "nothing running" check, which waits for this reload after TASK_STARTING.
-      window.dispatchEvent(new Event(REFRESH_COUNTS));
-    });
+    ).finally(() => setBusy(false));
   };
 
   const showPreview = (): void => {

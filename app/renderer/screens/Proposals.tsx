@@ -9,7 +9,7 @@ import type { ProposalTargets } from '../../../src/proposals.ts';
 import type { UndoHandle } from '../../main/bridge.ts';
 import type { InterviewPreview } from '../../../src/tasks.ts';
 import { serra } from '../bridge.ts';
-import { REFRESH_COUNTS } from '../shell/events.ts';
+import { REFRESH_COUNTS, announceTaskStart } from '../shell/events.ts';
 import { Button, cx, Dialog, Page, useToast } from '../ui/index.ts';
 import { DiffView } from './proposals/DiffView.tsx';
 import { AudienceChoice } from './AudienceChoice.tsx';
@@ -453,7 +453,7 @@ const InterviewButton = ({ autoOpen = false, onOpened }: { autoOpen?: boolean; o
     const bridge = serra();
     if (!bridge || starting) return;
     setStarting(true);
-    bridge.tasks.startInterview().then(
+    announceTaskStart(() => bridge.tasks.startInterview()).then(
       (task) => {
         setDialog({ state: 'closed' });
         const link = taskLink(task);

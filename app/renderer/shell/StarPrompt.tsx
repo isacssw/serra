@@ -7,7 +7,7 @@ import { useLocation } from 'react-router';
 import { Star } from 'lucide-react';
 import type { BotStatus, JobSummary } from '../../../src/contracts.ts';
 import { serra } from '../bridge.ts';
-import { REFRESH_COUNTS, TASK_STARTING } from './events.ts';
+import { REFRESH_COUNTS, TASK_SETTLED, TASK_STARTING } from './events.ts';
 import { WELCOME_PATH } from '../screens/Welcome/welcome.logic.ts';
 import {
   answer, calmMoment, countFinished, dueToAsk, finishedWell, IDLE_MS, MAX_WAIT_MS, markShown, openedMessage, openRepo, shouldAsk,
@@ -91,30 +91,34 @@ export const StarPrompt = ({ status, jobs }: { status: BotStatus | null; jobs: J
   // What the idle wait reads when it ends: the moment may have passed (a job started, setup opened).
   // From sending a new task until the list reloaded after it, app tasks are unknown: T3 may already be running it.
   const [taskStarting, setTaskStarting] = useState(false);
-  const starting = useRef({ on: false, reloaded: false });
+  const starting = useRef({ on: false, settled: false, reloaded: false });
   const moment = { status, jobs: taskStarting ? null : jobs, path: pathname, welcomePath: WELCOME_PATH };
   const live = useRef(moment);
   live.current = moment;
 
   useEffect(() => {
     void serra()?.app.info().then((info) => { version.current = info.version; }, () => {});
-    const onStarting = (): void => { starting.current = { on: true, reloaded: false }; setTaskStarting(true); };
-    // New task asks for this reload once T3 answered; the list after it has the task.
-    const onRefresh = (): void => { if (starting.current.on) starting.current.reloaded = true; };
+    const onStarting = (): void => { starting.current = { on: true, settled: false, reloaded: false }; setTaskStarting(true); };
+    // Only the start's own settling counts: any other reload (a promoted proposal) may come before T3 has the task.
+    const onSettled = (): void => { if (starting.current.on) starting.current.settled = true; };
+    // The reload asked for after settling: the list it brings has the task.
+    const onRefresh = (): void => { if (starting.current.settled) starting.current.reloaded = true; };
     for (const type of ACTIVITY) window.addEventListener(type, noteInput, { capture: true, passive: true });
     window.addEventListener(TASK_STARTING, onStarting);
+    window.addEventListener(TASK_SETTLED, onSettled);
     window.addEventListener(REFRESH_COUNTS, onRefresh);
     return () => {
       cancelWait.current();
       for (const type of ACTIVITY) window.removeEventListener(type, noteInput, true);
       window.removeEventListener(TASK_STARTING, onStarting);
+      window.removeEventListener(TASK_SETTLED, onSettled);
       window.removeEventListener(REFRESH_COUNTS, onRefresh);
     };
   }, []);
 
   // The reload after the start landed (the list is null while it runs): app tasks are known again.
   useEffect(() => {
-    if (taskStarting && starting.current.reloaded && jobs) { starting.current = { on: false, reloaded: false }; setTaskStarting(false); }
+    if (taskStarting && starting.current.reloaded && jobs) { starting.current = { on: false, settled: false, reloaded: false }; setTaskStarting(false); }
   }, [jobs, taskStarting]);
 
   // The days-of-use clock starts the first time the bot is up, so setup time doesn't count.
@@ -147,7 +151,8 @@ export const StarPrompt = ({ status, jobs }: { status: BotStatus | null; jobs: J
           // Saved before it shows: a card whose answer can't be kept would come back every time, so it never shows.
           return markShown(current, context.version, context.now);
         }).then(() => {
-          if (shown && calmMoment(live.current).ask && idleNow()) { setOpen(true); return; }
+          // Idleness was checked before saving; input during the save doesn't hold back a card that never takes focus.
+          if (shown && calmMoment(live.current).ask) { setOpen(true); return; }
           // Saved as shown but the moment changed in the instant between: that ask is spent, a rare cost that keeps
           // "shown" honest about what was saved. Not shown because the owner is busy: wait for the next pause.
           if (shown) return;
