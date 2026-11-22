@@ -155,7 +155,7 @@ export const Start = () => {
               <ul className="flex flex-col divide-y divide-line-subtle">
                 <Need icon={<BrandMark brand="slack" />} title="A Slack workspace" detail="Where you can add an app" />
                 <Need icon={<BrandMark brand="github" />} title="A repository" detail="On this Mac, open in T3 Code" />
-                <Need icon={<SquareTerminal size={16} strokeWidth={1.75} />} title="A coding agent" detail="Claude Code or Codex, signed in" />
+                <Need icon={<SquareTerminal size={16} strokeWidth={1.75} />} title="A coding agent" detail="Claude, Codex or any T3 Code provider, signed in" />
               </ul>
             </Card>
           </section>

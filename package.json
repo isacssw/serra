@@ -5,6 +5,7 @@
   "type": "module",
   "description": "A bridge from your team chat to the coding agents on your Mac: chat requests become T3 Code worktree threads. Slack today, more channels planned.",
   "license": "MIT",
+  "author": "Isac",
   "scripts": {
     "start": "node src/index.ts",
     "check": "tsc -p . && tsc -p app && tsc -p app/renderer && node --run lint",
@@ -18,7 +19,7 @@
     "bot": "node src/manage.ts",
     "test": "node --test --test-timeout=60000 tests/*.test.ts",
     "app:build": "node app/build.ts && vite build --config app/renderer/vite.config.ts",
-    "app:dev": "pnpm app:build && electron .",
+    "app:dev": "pnpm app:build && node node_modules/electron/install.js && electron .",
     "app:renderer": "vite --config app/renderer/vite.config.ts",
     "app:package": "pnpm app:build && electron-builder --mac --publish never"
   },
@@ -53,6 +54,9 @@
     "onlyBuiltDependencies": [
       "electron",
       "esbuild"
+    ],
+    "ignoredBuiltDependencies": [
+      "electron-winstaller"
     ]
   },
   "main": "app/out/main/index.mjs"

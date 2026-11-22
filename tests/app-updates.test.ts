@@ -126,6 +126,10 @@ test('the app card in each state says one thing and offers the one next step', (
   assert.equal(failedVerify.title, "Serra 0.1.0-alpha.3 didn't pass its checks");
   assert.equal(failedVerify.meta, 'You have 0.1.0-alpha.2');
   assert.deepEqual(failedVerify.primary, { action: 'download', label: 'Try again' });
+  const stalled = appCard(view({ state: 'error', stage: 'download', message: 'The download stopped: No data arrived for 60 seconds. Check your connection and try again.', release }), now);
+  assert.equal(stalled.title, "Serra 0.1.0-alpha.3 didn't finish downloading");
+  assert.match(stalled.body, /No data arrived for 60 seconds/);
+  assert.deepEqual(stalled.primary, { action: 'download', label: 'Try again' });
   assert.equal(appCard(view({ state: 'idle' }), now).primary, null);
   assert.equal(appCard(view({ state: 'no-build', version: '0.2.0', url: release.url, reason: 'arch', checkedAt: now.toISOString() }), now).body, 'Serra 0.2.0 is out, but it has no build for this Mac yet.');
   for (const state of ['checking', 'downloading', 'verifying', 'installing', 'ready', 'unavailable']) assert.equal(canCheck(view({ state, release, install: { kind: 'replace' }, reason: '' })), false, state);

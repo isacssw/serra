@@ -18,7 +18,7 @@ import { isTokenVerdict } from '../src/token-errors.ts';
 import { stoppedStatusSource } from '../app/main/status.ts';
 import {
   announcement, DONE_PATH, draftErrors, lockedReason, draftRequest, draftToSave, emptyDraft, foundLine, nextPath, outcomeText, pickable, previousPath,
-  plainError, restoreDraft, resumePath, ringDash, shortPath, tokenRefused, tokenText, setupRowLabel, slackLine, startView, stepOpen, suggestId, summaryRows, tokensToPrecheck, toToken,
+  plainError, restoreDraft, slackAppCard, resumePath, ringDash, shortPath, tokenRefused, tokenText, setupRowLabel, slackLine, startView, stepOpen, suggestId, summaryRows, tokensToPrecheck, toToken,
 } from '../app/renderer/setup/setup.logic.ts';
 import type { SecretStatus } from '../src/contracts.ts';
 import { loadConfig, readProfileFile } from '../src/config.ts';
@@ -496,6 +496,15 @@ test('setup logic: found tokens are checked on their own, except 1Password ones,
   const wrongKind = toToken(status('SLACK_APP_TOKEN', { kind: 'keychain', service: 's', account: 'a' }, { error: "SLACK_APP_TOKEN from Keychain item s/a isn't a real xapp- token" }));
   assert.equal(tokenRefused(wrongKind.error), true);
   assert.equal(tokenText(wrongKind, null), 'This isn’t an xapp- token. Paste the app token.');
+  // The Slack-app card agrees with its rows: never "tokens are here" while Slack refuses them.
+  const bot = (extra: Partial<SecretStatus>) => toToken(status('SLACK_BOT_TOKEN', { kind: 'env' }, extra));
+  const app = (extra: Partial<SecretStatus>) => toToken(status('SLACK_APP_TOKEN', { kind: 'env' }, extra));
+  const refusedBoth = slackAppCard([bot({ error: 'Slack rejected SLACK_BOT_TOKEN: invalid_auth' }), app({ error: 'Slack rejected SLACK_APP_TOKEN: invalid_auth' })]);
+  assert.deepEqual(refusedBoth, { tone: 'problem', text: 'Slack didn’t accept either token. Paste new ones below, or create and install the app again.', create: true });
+  assert.equal(slackAppCard([bot({ verifiedAt: '2026-11-22T00:00:00Z' }), app({ error: 'Slack rejected SLACK_APP_TOKEN: invalid_auth' })]).text, 'Slack didn’t accept the app token. Paste a new one below, or create and install the app again.');
+  assert.deepEqual(slackAppCard([bot({ verifiedAt: '2026-11-22T00:00:00Z' }), app({ verifiedAt: '2026-11-22T00:00:00Z' })]), { tone: 'done', text: 'Your Slack app is connected.', create: false });
+  assert.equal(slackAppCard([bot({}), app({})]).text, 'Your app’s tokens are here.');
+  assert.equal(slackAppCard([bot({ set: false }), app({})]).tone, 'todo');
   const scope = toToken(status('SLACK_APP_TOKEN', { kind: 'env' }, { error: 'Slack rejected SLACK_APP_TOKEN: missing_scope' }));
   assert.equal(tokenText(scope, null), 'It’s missing the connections:write scope. Generate a new app token with it.');
   // Offline: the check never reached Slack, said plainly, with no variable name or path.

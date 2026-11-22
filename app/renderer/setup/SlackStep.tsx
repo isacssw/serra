@@ -11,7 +11,7 @@ import { SecretCard } from '../screens/Secrets.tsx';
 import { SECRET_PREFIXES, saveRequest } from '../screens/secrets.logic.ts';
 import { BrandMark, Button, cx, Input, useToast } from '../ui/index.ts';
 import { Alert, Card, errorText, StateIcon, StepFooter, StepHeader, type Tone } from './parts.tsx';
-import { FLOW, nextPath, previousPath, tokenRefused, tokensToPrecheck, tokenText, toToken } from './setup.logic.ts';
+import { FLOW, nextPath, previousPath, slackAppCard, tokenRefused, tokensToPrecheck, tokenText, toToken } from './setup.logic.ts';
 import { setupChanged, useSetup } from './SetupState.tsx';
 
 const step = FLOW[1]!;
@@ -144,8 +144,7 @@ export const SlackStep = () => {
 
   const tokens = statuses?.map(toToken) ?? [];
   const connected = tokens.length > 0 && tokens.every((token) => token.state === 'verified');
-  // Any token there means the app was made; whether each one works is the rows' business.
-  const haveTokens = tokens.length > 0 && tokens.every((token) => token.state !== 'missing');
+  const appCard = slackAppCard(tokens);
   const proceed = async () => {
     if (!connected) return;
     const latest = await refresh();
@@ -161,13 +160,11 @@ export const SlackStep = () => {
         <h2 id="slack-app" className="text-[13px] font-medium text-muted">1 · The Slack app</h2>
         <Card className="flex flex-col gap-3 px-4 py-3.5">
           <div className="flex items-center gap-3">
-            <StateIcon tone={haveTokens ? 'done' : 'todo'} />
-            <p className="min-w-0 flex-1 text-[13px]">
-              {haveTokens ? 'Your app’s tokens are here.' : 'Create it from Serra’s manifest, then install it to your workspace.'}
-            </p>
+            <StateIcon tone={appCard.tone} />
+            <p className="min-w-0 flex-1 text-[13px]" role="status">{appCard.text}</p>
           </div>
           <div className="flex flex-wrap gap-2 pl-8">
-            <Button variant={haveTokens ? 'secondary' : 'primary'} size="sm" icon={<ExternalLink size={13} aria-hidden />} disabled={!manifest}
+            <Button variant={appCard.create ? 'primary' : 'secondary'} size="sm" icon={<ExternalLink size={13} aria-hidden />} disabled={!manifest}
               onClick={() => { if (manifest) serra()?.app.openExternal(manifest.createUrl).catch((failure) => setError(errorText(failure))); }}>
               Create in Slack
             </Button>

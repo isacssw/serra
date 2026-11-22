@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test, { type TestContext } from 'node:test';
 import {
-  compareVersions, dmgFor, download, fetchReleases, includePrereleases, isPrerelease, parseSums, pickUpdate, releasesUrl, verifyChecksum,
+  compareVersions, dmgFor, download, DownloadStalledError, fetchReleases, includePrereleases, isPrerelease, parseSums, pickUpdate, releasesUrl, verifyChecksum,
   type GithubRelease,
 } from '../src/app-updates.ts';
 import { createAppUpdater, installPlan, SWAP_SCRIPT, type AppUpdateView, type InstallPlan } from '../app/main/app-updater.ts';
@@ -142,6 +142,61 @@ test('download writes the file, reports progress, and leaves nothing behind on f
   assert.equal(existsSync(join(dir, 'b.dmg')), false);
 });
 
+/** A server that sends the headers and `first` bytes of a larger file, then nothing, holding the connection open. */
+const serveStalled = async (t: TestContext, first: number): Promise<string> => {
+  const open: import('node:http').ServerResponse[] = [];
+  const server: Server = createServer((_request, response) => {
+    response.writeHead(200, { 'content-length': first * 10 });
+    response.write(Buffer.alloc(first, 1));
+    open.push(response);
+  });
+  await new Promise<void>((done) => server.listen(0, '127.0.0.1', done));
+  t.after(() => new Promise<void>((done) => { for (const response of open) response.destroy(); server.close(() => done()); }));
+  const address = server.address();
+  return `http://127.0.0.1:${typeof address === 'object' && address ? address.port : 0}/dmg`;
+};
+
+test('a download that stops receiving bytes fails as stalled and leaves nothing behind', async (t) => {
+  const dir = temp(t);
+  const url = await serveStalled(t, 1000);
+  const started = Date.now();
+  await assert.rejects(download(fetch, url, join(dir, 'a.dmg'), { stallMs: 150 }), (error: Error) => {
+    assert.ok(error instanceof DownloadStalledError);
+    assert.match(error.message, /^No data arrived for 1 second\. Check your connection and try again\.$/);
+    return true;
+  });
+  assert.ok(Date.now() - started < 5_000, 'gives up soon after the stall, not at a total-time cap');
+  assert.equal(existsSync(join(dir, 'a.dmg')), false);
+});
+
+test('a slow download that keeps receiving bytes is not cut off by the stall timeout', async (t) => {
+  const dir = temp(t);
+  const server: Server = createServer((_request, response) => {
+    response.writeHead(200, { 'content-length': 10 });
+    let sent = 0;
+    const tick = setInterval(() => {
+      response.write(Buffer.alloc(1, 2));
+      if (++sent === 10) { clearInterval(tick); response.end(); }
+    }, 40);
+  });
+  await new Promise<void>((done) => server.listen(0, '127.0.0.1', done));
+  t.after(() => new Promise<void>((done) => server.close(() => done())));
+  const address = server.address();
+  const url = `http://127.0.0.1:${typeof address === 'object' && address ? address.port : 0}/dmg`;
+  // 10 bytes over ~400 ms, well past the 150 ms stall limit in total, but never 150 ms without a byte.
+  await download(fetch, url, join(dir, 'slow.dmg'), { stallMs: 150 });
+  assert.equal(readFileSync(join(dir, 'slow.dmg')).length, 10);
+});
+
+test('cancelling a download still reports a cancel, not a stall', async (t) => {
+  const dir = temp(t);
+  const url = await serveStalled(t, 10);
+  const cancel = new AbortController();
+  setTimeout(() => cancel.abort(), 50);
+  await assert.rejects(download(fetch, url, join(dir, 'a.dmg'), { signal: cancel.signal, stallMs: 5_000 }), (error: Error) => !(error instanceof DownloadStalledError));
+  assert.equal(existsSync(join(dir, 'a.dmg')), false);
+});
+
 // ---------------------------------------------------------------------------------------------------------------
 // The app's updater
 // ---------------------------------------------------------------------------------------------------------------
@@ -157,14 +212,15 @@ test('the app replaces itself only from a writable .app outside a disk image or 
   assert.match((installPlan('/Applications/Serra.app', () => false) as { reason: string }).reason, /needs an administrator/);
 });
 
-const updaterFixture = async (t: TestContext, { dmgBody = 'disk image bytes', sumsBody, plan = { kind: 'replace' } }: { dmgBody?: string; sumsBody?: string; plan?: InstallPlan } = {}) => {
+const updaterFixture = async (t: TestContext, { dmgBody = 'disk image bytes', sumsBody, plan = { kind: 'replace' }, stalledDmg = false }: { dmgBody?: string; sumsBody?: string; plan?: InstallPlan; stalledDmg?: boolean } = {}) => {
   const dir = temp(t);
   const dmgName = 'Serra-0.1.0-alpha.3-arm64.dmg';
   const base = await serve(t, {
     '/dmg': dmgBody,
     '/SHA256SUMS': sumsBody ?? `${sha('disk image bytes')}  ${dmgName}\n`,
   });
-  const feed = [gh('v0.1.0-alpha.3', { assets: [{ name: dmgName, browser_download_url: `${base}/dmg`, size: dmgBody.length }, { name: 'SHA256SUMS', browser_download_url: `${base}/SHA256SUMS`, size: 1 }] })];
+  const dmgUrl = stalledDmg ? await serveStalled(t, 10) : `${base}/dmg`;
+  const feed = [gh('v0.1.0-alpha.3', { assets: [{ name: dmgName, browser_download_url: dmgUrl, size: dmgBody.length }, { name: 'SHA256SUMS', browser_download_url: `${base}/SHA256SUMS`, size: 1 }] })];
   const calls: string[] = [];
   const pushed: AppUpdateView[] = [];
   let choice: boolean | null = null;
@@ -181,6 +237,7 @@ const updaterFixture = async (t: TestContext, { dmgBody = 'disk image bytes', su
     quit: () => { calls.push('quit'); },
     openPath: async (path) => { calls.push(`open ${path.split('/').pop()}`); },
     push: (view) => pushed.push(view),
+    ...(stalledDmg ? { stallMs: 150 } : {}),
   });
   /** Waits for the download started by `download()` to settle. */
   const settle = async () => {
@@ -225,6 +282,18 @@ test('a download that fails its checksum is deleted and nothing is staged', asyn
   assert.equal(existsSync(join(f.dir, 'updates/0.1.0-alpha.3')), false);
   f.updater.install();
   assert.deepEqual(f.calls, [], 'nothing to install');
+});
+
+test('a stalled download ends in an error the screen can retry, and its partial file is removed', async (t) => {
+  const f = await updaterFixture(t, { stalledDmg: true });
+  await f.updater.check();
+  f.updater.download();
+  await f.settle();
+  const failed = f.updater.view();
+  assert.ok(failed.state === 'error' && failed.stage === 'download', failed.state);
+  assert.equal(failed.state === 'error' ? failed.message : '', 'The download stopped: No data arrived for 1 second. Check your connection and try again.');
+  assert.equal(existsSync(join(f.dir, 'updates/0.1.0-alpha.3')), false);
+  assert.deepEqual(f.calls, [], 'nothing staged');
 });
 
 test('turning prereleases off checks again and hides the alpha', async (t) => {

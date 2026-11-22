@@ -43,8 +43,11 @@ interface ActionArgument {
 
 type ActionGroup = 'Actions' | 'Go to';
 
-/** The order groups are listed in before the owner types anything. */
-const actionGroups: readonly ActionGroup[] = ['Actions', 'Go to'];
+/**
+ * The order groups are listed in before the owner types anything. Screens come first, so ⌘K then ↩ only ever moves
+ * the window; an action that changes something has to be picked on purpose.
+ */
+const actionGroups: readonly ActionGroup[] = ['Go to', 'Actions'];
 
 export interface Action {
   /** Unique across the registry, such as `bot:restart` or `go:settings-people`. */
@@ -58,6 +61,11 @@ export interface Action {
   /** Where the same action is a button in the app. Required: the palette must never be the only way to do something. */
   button: string;
   argument?: ActionArgument;
+  /**
+   * Interrupts something running, such as Restart bot. Listed last, and loses a tie on a typed query, so it is never
+   * pre-selected by accident.
+   */
+  destructive?: boolean;
   /** Throws to report a failure; the palette shows the message. */
   run(context: ActionContext, value?: string): void | Promise<void>;
 }
@@ -107,11 +115,12 @@ export interface ActionResult {
 const SECONDARY_PENALTY = 4;
 
 /**
- * What the palette lists for a query. No query: every action, by group, in registration order. Otherwise the
- * matching actions, best first, ties kept in that same order.
+ * What the palette lists for a query. No query: every action, by group, in registration order, destructive ones
+ * last. Otherwise the matching actions, best first, ties kept in that same order.
  */
 export const searchActions = (actions: readonly Action[], query: string): ActionResult[] => {
-  const ordered = actionGroups.flatMap((group) => actions.filter((action) => action.group === group));
+  const ordered = [false, true].flatMap((destructive) => actionGroups.flatMap((group) =>
+    actions.filter((action) => action.group === group && Boolean(action.destructive) === destructive)));
   if (query.trim() === '') return ordered.map((action) => ({ action, indices: [] }));
   const scored: (ActionResult & { score: number })[] = [];
   for (const action of ordered) {

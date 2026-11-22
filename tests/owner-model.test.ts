@@ -94,6 +94,15 @@ test('the people roster skips expired cards and never takes a line from replaced
   assert.doesNotMatch(about.text, /release manager/);
 });
 
+test('a person card without a # Name heading is named after its file instead of being left out', () => {
+  const about = compileAboutMe([
+    page('people/priya-nair.md', { type: 'person', audience: 'team' }, '- Product manager. Decides scope.'),
+    page('people/ben.md', { type: 'person', audience: 'team' }, '# Ben Ode\n\n- Design lead.'),
+  ], 'team', NOW);
+  assert.match(about.text, /- Priya Nair: Product manager\. Decides scope\./);
+  assert.match(about.text, /- Ben Ode: Design lead\./);
+});
+
 test('off-limits pages from before the cap share one budget in About me, and what\'s cut is listed', () => {
   const long = (n: number) => Array.from({ length: n }, (_, i) => `- Rule ${i}: never discuss this topic with anyone at all.`).join('\n');
   const about = compileAboutMe([

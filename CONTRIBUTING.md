@@ -78,6 +78,14 @@ pnpm knowledge   # checks the knowledge template
 pnpm app:dev     # build and run the app from the checkout
 ```
 
+If `pnpm` isn't found after `corepack enable pnpm` (common with nvm, where each Node version has its own bin folder and
+corepack can't write a shim to it), run every command as `corepack pnpm …` instead, or run `corepack enable pnpm` again
+after switching Node versions.
+
+pnpm can skip Electron's download when it reuses a cached install, most often in a second checkout or a git worktree.
+`pnpm app:dev` fetches it if it's missing; for anything else that starts Electron, run
+`node node_modules/electron/install.js` once (it does nothing when Electron is already there).
+
 `./scripts/install.sh --check` only checks prerequisites. Tests use temporary profiles, a fake `t3` and a simulated launchd driver.
 
 To try a change against a real bot, use a separate Slack app and profile from the one you rely on, run it in the foreground with `pnpm start --profile …`, and keep your service on its prepared release.
