@@ -142,7 +142,7 @@ The worker gets MCP servers (Sentry, Datadog and the like) from its T3 provider,
 
 The app's **Tools** screen and `pnpm bot tools --profile /absolute/profile` are read-only. They show:
 
-- **MCP servers**, for the provider in `worker.provider`, or for both when it isn't set:
+- **MCP servers**, for the provider in `worker.provider`, or for every provider turned on in T3 when it isn't set. The provider list comes from T3's own settings (`~/.t3/userdata/settings.json`, or `$T3CODE_HOME`), so Cursor, Antigravity and T3's other providers show up when they're on. Serra can read Claude's and Codex's MCP setup; any other provider is listed as **Not supported yet** rather than guessed. Without T3's settings, Serra lists both Claude and Codex and says why.
   - Listing runs the provider's own command, which does what the provider does when a job starts: `claude mcp list` connects to each server (starting local ones) to check its health, and `codex mcp list` loads Codex's own sign-in. Serra itself writes nothing. The provider CLIs run with your login shell's environment, as T3's jobs do, so a server that reads a token from it checks the same way. Serra reads that environment once and keeps it for five minutes; Check again reads it afresh.
   - Claude's come from `claude mcp list`, run in the project's checkout (or your home folder when the checkout is missing). That covers claude.ai connectors and plugin servers, with Claude's own health check (Connected, Needs sign-in, Failed, Needs approval).
   - Codex's come from `codex mcp list --json`, including servers Codex adds itself.

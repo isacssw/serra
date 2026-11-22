@@ -30,9 +30,7 @@ import { jobCounts, startStatusServer, type StatusServer } from './status-socket
 import type { IncomingMessage } from './types.ts';
 import { readAttachmentText } from './slack/attachments.ts';
 import { createMeetingCapture, meetingsFirst, type MeetingCaptureDeps } from './meeting-capture.ts';
-import { createExtractor } from './meeting-extractor.ts';
-import { createSourceReader } from './meeting-sources.ts';
-import { toolSearchPath } from './shell-path.ts';
+import { createMeetingRuns } from './meeting-runs.ts';
 
 const POLL_MS = 15_000;
 const HELD_REACTION = 'hourglass_flowing_sand';
@@ -149,14 +147,12 @@ export const startDaemon = async (deps: DaemonDeps): Promise<Daemon> => {
       bot.ownsThread(channel, threadTs) || heldIn(channel, threadTs) || (releasingNow?.channel === channel && releasingNow.threadTs === threadTs);
 
     // "Remember this meeting" in the owner's DM (SERRA-62): caught before the pause hold and before any job, so a
-    // transcript never reaches a T3 worker. Off until the owner turns it on in the app. One extractor per daemon,
-    // so its canary self-test runs once per Claude Code binary.
-    // Made on the first meeting, not at start: finding Claude Code asks the login shell.
-    let made: Promise<{ extractor: ReturnType<typeof createExtractor>; reader: ReturnType<typeof createSourceReader> }> | null = null;
-    const claude = () => (made ??= toolSearchPath().catch(() => process.env.PATH ?? '')
-      .then((path) => ({ extractor: createExtractor({ path }), reader: createSourceReader({ path }) })));
-    const extractor = deps.meetings?.extractor ?? { extract: async (prompt: string) => (await claude()).extractor.extract(prompt) };
-    const sources = deps.meetings?.sources ?? { fetchTranscript: async (link: Parameters<MeetingCaptureDeps['sources']['fetchTranscript']>[0]) => (await claude()).reader.fetchTranscript(link) };
+    // transcript never reaches a job's worker. Off until the owner turns it on in the app. Reading a link and picking
+    // out decisions are read-only T3 runs in Serra's own empty folder, on the worker's provider and model
+    // (src/meeting-runs.ts): T3 is Serra's only agent layer.
+    const runs = createMeetingRuns({ t3Bin: config.t3Bin, ...(config.workerProvider ? { provider: config.workerProvider } : {}), ...(config.workerModel ? { model: config.workerModel } : {}) });
+    const extractor = deps.meetings?.extractor ?? { extract: runs.extract };
+    const sources = deps.meetings?.sources ?? { fetchTranscript: runs.fetchTranscript };
     const meetings = createMeetingCapture({
       profileDir: config.profileDir, knowledgeDir: config.knowledgeDir, owner: config.owner,
       chat: {

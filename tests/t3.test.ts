@@ -3,7 +3,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
-import { findThreads, run, sendToThread, showThread, startThread } from '../src/t3.ts';
+import { ensureProject, findThreads, run, sendToThread, showThread, startFolderThread, startThread } from '../src/t3.ts';
 
 test('CLI contract preserves custom branches, stdin briefs, follow-ups and run IDs', async (t) => {
   const root = mkdtempSync(join(tmpdir(), 'bots-t3-')); t.after(() => rmSync(root, { recursive: true, force: true }));
@@ -18,6 +18,23 @@ test('CLI contract preserves custom branches, stdin briefs, follow-ups and run I
   await sendToThread('new-thread', 'Alex replied', bin);
   assert.equal(JSON.parse(readFileSync(capture, 'utf8')).input, 'Alex replied');
   assert.equal((await showThread('new-thread', bin)).thread.latestRunId, 'run-2');
+});
+
+test('a folder thread runs in the project\'s own folder, with no worktree; a project is added once, then reused', async (t) => {
+  const root = mkdtempSync(join(tmpdir(), 'bots-t3-')); t.after(() => rmSync(root, { recursive: true, force: true }));
+  const bin = join(root, 't3'); const log = join(root, 'calls.jsonl');
+  // Like T3: adding the same folder twice fails with ProjectAlreadyExistsError.
+  writeFileSync(bin, `#!${process.execPath}\nconst fs=require('fs'); const args=process.argv.slice(2); let input=''; process.stdin.on('data',x=>input+=x); process.stdin.on('end',()=>{fs.appendFileSync(${JSON.stringify(log)},JSON.stringify({args,input})+'\\n'); if(args[0]==='project'){ const seen=fs.readFileSync(${JSON.stringify(log)},'utf8').split('\\n').filter((l)=>l.includes('"project","add"')).length; if(seen>1){ console.error('ProjectAlreadyExistsError: An active project already exists'); process.exit(1);} console.log('Added project p1'); return;} console.log(JSON.stringify({threadId:'run-thread'}));});`, { mode: 0o700 });
+  await ensureProject('/Users/you/runs', 'Serra meetings', bin);
+  await ensureProject('/Users/you/runs', 'Serra meetings', bin);
+  assert.equal(await startFolderThread({ project: '/Users/you/runs', title: 'Serra meeting: pick out decisions', brief: 'read-only brief', provider: 'cursor', model: 'composer-2' }, bin), 'run-thread');
+  const calls = readFileSync(log, 'utf8').trim().split('\n').map((line) => JSON.parse(line) as { args: string[]; input: string });
+  assert.deepEqual(calls[0]!.args, ['project', 'add', '--title', 'Serra meetings', '/Users/you/runs']);
+  assert.deepEqual(calls[2]!.args, ['thread', 'start', '--title', 'Serra meeting: pick out decisions', '--provider', 'cursor', '--model', 'composer-2', '--json', '/Users/you/runs', '-']);
+  assert.equal(calls[2]!.input, 'read-only brief');
+  // Any other failure to add the project is an error.
+  writeFileSync(bin, `#!${process.execPath}\nconsole.error('T3 is not running'); process.exit(1);`, { mode: 0o700 });
+  await assert.rejects(ensureProject('/Users/you/runs', 'Serra meetings', bin), /not running/);
 });
 
 test('a hung CLI command fails within its timeout', async () => {

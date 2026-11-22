@@ -15,9 +15,9 @@ import { isRecord, parseJson } from './json-guards.ts';
 import { createJournal } from './knowledge-journal.ts';
 import { frontmatter, NOT_PAGES, PROPOSALS_DIR } from './knowledge-rules.ts';
 import { checkDigest, extractionPrompt, meetingStamp, parseDigestOutput, type Digest, type TeamPage } from './meeting-digest.ts';
-import type { Extractor } from './meeting-extractor.ts';
+import type { MeetingRuns } from './meeting-runs.ts';
 import { readMeetingSettings } from './meeting-settings.ts';
-import { meetingRequest, PROVIDERS, TRANSCRIPT_FILE, type MeetingLink, type SourceReader } from './meeting-sources.ts';
+import { meetingRequest, PROVIDERS, TRANSCRIPT_FILE, type MeetingLink } from './meeting-sources.ts';
 import { createMeetingStore, replyLines, type MeetingSourceKind, type MeetingStore } from './meeting-store.ts';
 import { MAX_TRANSCRIPT_CHARS, parseTranscript } from './meeting-transcript.ts';
 import type { IncomingFile, IncomingMessage } from './types.ts';
@@ -41,8 +41,10 @@ export interface MeetingCaptureDeps {
   chat: MeetingChat;
   /** Read an uploaded file's text, refusing anything over `maxChars`. Never written to disk. */
   readFile: (file: IncomingFile, maxChars: number) => Promise<{ name: string; text: string }>;
-  sources: Pick<SourceReader, 'fetchTranscript'>;
-  extractor: Pick<Extractor, 'extract'>;
+  /** Reads a linked meeting in a read-only T3 run (src/meeting-runs.ts). */
+  sources: Pick<MeetingRuns, 'fetchTranscript'>;
+  /** Picks the decisions out in a read-only T3 run with no tools. */
+  extractor: Pick<MeetingRuns, 'extract'>;
   /** Whether an update has paused new work. */
   paused: () => boolean;
   /** Whether Serra has a job or a held request in this thread. */

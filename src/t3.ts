@@ -2,7 +2,7 @@ import { spawn } from 'node:child_process';
 import { homedir } from 'node:os';
 import { branchName } from './branch.ts';
 import type { Config } from './config.ts';
-import type { StartThreadInput, T3Message, T3Thread, T3ThreadDetail } from './types.ts';
+import type { FolderThreadInput, StartThreadInput, T3Message, T3Thread, T3ThreadDetail } from './types.ts';
 
 const T3_BIN = process.env.T3_BIN ?? `${homedir()}/.t3/bin/t3`;
 
@@ -81,12 +81,12 @@ export const jobThreadInput = (
   ...(config.workerModel ? { model: config.workerModel } : {}),
 });
 
-/** Starts a thread in a new worktree with the brief on stdin, and returns its id. */
-export const startThread = async ({ project, baseRef, branch, title, brief, provider, model }: StartThreadInput, bin = T3_BIN): Promise<string> => {
+const start = async ({ project, baseRef, branch, title, brief, provider, model }: StartThreadInput | FolderThreadInput, bin: string): Promise<string> => {
   const worker = [...(provider ? ['--provider', provider] : []), ...(model ? ['--model', model] : [])];
+  const worktree = baseRef && branch ? ['--worktree', baseRef, '--branch', branch] : [];
   const raw = await run(
     bin,
-    ['thread', 'start', '--worktree', baseRef, '--branch', branch, '--title', title, ...worker, '--json', project, '-'],
+    ['thread', 'start', ...worktree, '--title', title, ...worker, '--json', project, '-'],
     { input: brief },
   );
   const out = parseJson(raw, 'thread start');
@@ -95,6 +95,15 @@ export const startThread = async ({ project, baseRef, branch, title, brief, prov
   }
   return out.threadId;
 };
+
+/** Starts a thread in a new worktree with the brief on stdin, and returns its id. */
+export const startThread = (input: StartThreadInput, bin = T3_BIN): Promise<string> => start(input, bin);
+
+/**
+ * Starts a thread in the project's own folder, with no worktree, and returns its id: a meeting run, in Serra's empty
+ * meetings folder (src/meeting-runs.ts). Same CLI, provider and model choice as a job.
+ */
+export const startFolderThread = (input: FolderThreadInput, bin = T3_BIN): Promise<string> => start(input, bin);
 
 /**
  * The threads in `project` titled `title` and created at or after `since`, newest first. A start cut off by a crash may
@@ -113,6 +122,18 @@ export const findThreads = async (project: string, title: string, since: string,
       && thread.title === title && typeof thread.threadId === 'string' && typeof thread.createdAt === 'string' && Date.parse(thread.createdAt) >= from)
     .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))
     .map((thread) => thread.threadId);
+};
+
+/**
+ * Makes `path` a T3 project of its own, if it isn't one yet. T3 resolves a path to the deepest project containing it,
+ * so a thread started at `path` then runs there, never in a project that happens to contain the folder.
+ */
+export const ensureProject = async (path: string, title: string, bin = T3_BIN): Promise<void> => {
+  try {
+    await run(bin, ['project', 'add', '--title', title, path]);
+  } catch (error) {
+    if (!/ProjectAlreadyExists|already exists/i.test(error instanceof Error ? error.message : String(error))) throw error;
+  }
 };
 
 /** Queues a message on a thread. A busy thread gets it as its next turn. */

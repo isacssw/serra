@@ -170,20 +170,24 @@ const ServerItem = ({ server }: { server: McpServer }) => (
 const ProviderGroup = ({ group, onError }: { group: DriverGroup; onError: (message: string) => void }) => {
   const id = useId();
   return (
-    <div className="@container flex flex-col gap-2" data-driver={group.driver}>
+    <div className="@container flex flex-col gap-2" data-driver={group.driver ?? group.key}>
       <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
         <h3 id={id} className="text-[13px] font-medium">
           {group.title} <span className="font-normal text-muted">· {group.summary}</span>
         </h3>
-        <div className="flex min-w-0 items-center gap-1 text-xs text-muted">
-          <span className="shrink-0">Managed in {group.title}</span>
-          <div className="min-w-0 max-w-[24rem]"><Command command={group.hint.command} compact /></div>
-          <Button size="sm" variant="ghost" icon={<ExternalLink size={13} aria-hidden />} aria-label={`${group.title} MCP docs`} onClick={() => openDocs(group.hint.docs, onError)}>Docs</Button>
-        </div>
+        {group.hint && (
+          <div className="flex min-w-0 items-center gap-1 text-xs text-muted">
+            <span className="shrink-0">Managed in {group.title}</span>
+            <div className="min-w-0 max-w-[24rem]"><Command command={group.hint.command} compact /></div>
+            <Button size="sm" variant="ghost" icon={<ExternalLink size={13} aria-hidden />} aria-label={`${group.title} MCP docs`} onClick={() => openDocs(group.hint!.docs, onError)}>Docs</Button>
+          </div>
+        )}
       </div>
       {group.listingNote && <p className="flex items-center gap-2 text-xs text-warn"><TriangleAlert size={13} aria-hidden /> {group.listingNote}</p>}
       {group.unreadable.map((path) => <p key={path} className="text-xs text-warn">Couldn&apos;t read {path}.</p>)}
-      {group.servers.length === 0
+      {group.unsupported
+        ? <p className="flex items-start gap-2 rounded-xl border border-dashed border-line px-4 py-4 text-sm text-muted"><Info size={14} aria-hidden className="mt-0.5 shrink-0" />{group.unsupported}</p>
+        : group.servers.length === 0
         ? <p className="rounded-xl border border-dashed border-line px-4 py-4 text-sm text-muted">No MCP servers in {group.title} yet.</p>
         : <ul aria-labelledby={id} className="@container divide-y divide-line-subtle rounded-xl border border-line">{group.servers.map((server) => <ServerItem key={`${server.scope}:${server.name}`} server={server} />)}</ul>}
     </div>
@@ -254,10 +258,10 @@ export const Tools = () => {
 
       <Section title="MCP servers" aside={mcp ? providerLine(mcp.worker) : undefined}>
         {mcpError && <Failed text={mcpError} />}
-        {!mcp && !mcpError && <Pending text="Asking Claude and Codex for their servers…" />}
+        {!mcp && !mcpError && <Pending text="Asking T3's providers for their servers…" />}
         {mcp && (
           <div className="flex flex-col gap-6">
-            {driverGroups(mcp).map((group) => <ProviderGroup key={group.driver} group={group} onError={onError} />)}
+            {driverGroups(mcp).map((group) => <ProviderGroup key={group.key} group={group} onError={onError} />)}
             <p className="text-xs text-muted">T3 also gives every job its own <code className="font-mono">t3-code</code> server.</p>
           </div>
         )}

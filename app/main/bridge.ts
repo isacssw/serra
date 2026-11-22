@@ -24,7 +24,8 @@ import type { BotSync } from './bot-sync.ts';
 import type { InterviewPreview, StartedTask } from '../../src/tasks.ts';
 import type { MeetingReviewed, MeetingView } from '../../src/meeting-store.ts';
 import type { MeetingSettings } from '../../src/meeting-settings.ts';
-import type { ProviderStatus } from '../../src/meeting-sources.ts';
+import type { MeetingRunner } from '../../src/meeting-runs.ts';
+import type { MeetingProvider, ProviderStatus } from '../../src/meeting-sources.ts';
 import type { DetectedProject, OwnerConfirmed, ProfileDraft, ProfileSummary, SetupProgress, SlackManifest } from '../../src/setup.ts';
 // The one value import: a pure module, so the preload bundle stays free of Node.
 import { SETUP_INCOMPLETE, SetupIncomplete } from '../../src/setup-incomplete.ts';
@@ -320,8 +321,13 @@ export interface SerraApi {
     /** Whether capture is on, and the notice the owner acknowledges by turning it on. */
     settings(): MeetingSettings & { notice: string };
     setEnabled(enabled: boolean): MeetingSettings & { notice: string };
-    /** Whether Granola and Google Meet can be read through Claude Code now, and what to do if not. Takes a few seconds. */
-    sources(): ProviderStatus[];
+    /**
+     * Which T3 provider and model meeting runs use, and the transcript sources, untested. Reads files only: no model
+     * call, no T3 run.
+     */
+    sources(): { runner: MeetingRunner; sources: ProviderStatus[] };
+    /** The owner's Test button: one read-only T3 run asks the provider whether it could read this source. */
+    testSource(provider: MeetingProvider): ProviderStatus;
     /** Meetings with edits waiting, each rendered against the page as it is now. */
     list(): MeetingView[];
     /** Every meeting Serra kept anything from, for Forget meeting. */
@@ -406,7 +412,7 @@ export const bridgeMethods = {
   diagnostics: methods<'diagnostics'>()(['run', 'logTail']),
   people: methods<'people'>()(['add']),
   tasks: methods<'tasks'>()(['preview', 'start', 'previewInterview', 'startInterview']),
-  meetings: methods<'meetings'>()(['settings', 'setEnabled', 'sources', 'list', 'history', 'approve', 'discard', 'discardMeeting', 'forget']),
+  meetings: methods<'meetings'>()(['settings', 'setEnabled', 'sources', 'testSource', 'list', 'history', 'approve', 'discard', 'discardMeeting', 'forget']),
 } satisfies { [N in Namespace]: readonly (keyof SerraApi[N])[] };
 
 const pushChannels = ['status', 'event', 'releaseLog', 'appUpdate', 'navigate', 'proposals', 'jobs'] as const satisfies readonly (keyof SerraPushes)[];

@@ -45,41 +45,75 @@ export const serverLabel = (server: Pick<McpServer, 'name' | 'scope'>): string =
   server.scope === 'connector' ? server.name.replace(/^claude\.ai\s+/, '') : server.name;
 
 export interface DriverGroup {
-  driver: WorkerDriver;
+  /** A stable key: the driver for a provider Serra reads, else the T3 instance id. */
+  key: string;
+  /** Serra's MCP reader for this group, or null for a provider it can't read yet. */
+  driver: WorkerDriver | null;
   title: string;
   servers: McpServer[];
-  /** "3 servers" or "No servers". */
+  /** "3 servers", "No servers" or "Not supported yet". */
   summary: string;
   /** Why the list came from config files instead of the provider's CLI, when it did. */
   listingNote: string | null;
   /** Config files that exist but couldn't be read. */
   unreadable: string[];
-  /** The provider's command to add a server, and its docs, for the hint line. Serra never runs it. */
-  hint: { command: string; docs: string };
+  /** The provider's command to add a server, and its docs, for the hint line. Serra never runs it. Null when unsupported. */
+  hint: { command: string; docs: string } | null;
+  /** For a provider Serra can't read yet: what to tell the owner instead of guessing. */
+  unsupported: string | null;
 }
 
-/** One group per provider the worker may use: problems first, then by where the server comes from, then by name. */
-export const driverGroups = (overview: McpOverview): DriverGroup[] => overview.worker.drivers.map((driver) => {
+const group = (overview: McpOverview, driver: WorkerDriver, title: string): DriverGroup => {
   const servers = overview.servers
     .filter((server) => server.driver === driver)
     .sort((a, b) => STATUS_ORDER[serverStatus(a).tone] - STATUS_ORDER[serverStatus(b).tone]
       || SCOPE_ORDER[a.scope] - SCOPE_ORDER[b.scope] || a.name.localeCompare(b.name));
   return {
+    key: driver,
     driver,
-    title: DRIVER_NAMES[driver],
+    title,
     servers,
     summary: servers.length ? `${servers.length} ${servers.length === 1 ? 'server' : 'servers'}` : 'No servers',
     listingNote: overview.listing.find((listing) => listing.driver === driver)?.note ?? null,
     unreadable: overview.files.filter((file) => file.driver === driver && file.state === 'unreadable').map((file) => file.path),
     hint: { command: PROVIDER_MCP[driver].add('<name>', '<url>'), docs: PROVIDER_MCP[driver].docs },
+    unsupported: null,
   };
-});
+};
 
-/** A few words beside the MCP heading: which provider the worker runs on, or why both are listed. */
+/**
+ * One group per provider the worker may use, in T3's order: the ones whose MCP setup Serra reads (problems first,
+ * then by where each server comes from, then by name), and a "not supported yet" group for each other provider T3
+ * has turned on (Cursor, Antigravity, …), so it's never mistaken for having no servers.
+ */
+export const driverGroups = (overview: McpOverview): DriverGroup[] => {
+  const providers = overview.worker.providers;
+  if (!providers.length) return overview.worker.drivers.map((driver) => group(overview, driver, DRIVER_NAMES[driver]));
+  const groups: DriverGroup[] = [];
+  for (const provider of providers) {
+    if (provider.driver) {
+      const existing = groups.find((entry) => entry.driver === provider.driver);
+      // Two T3 instances of one provider (two Claude accounts) read the same MCP config: one group, both names.
+      if (existing) existing.title = `${existing.title} · ${provider.label}`;
+      else if (overview.worker.drivers.includes(provider.driver)) groups.push(group(overview, provider.driver, provider.label));
+      continue;
+    }
+    groups.push({
+      key: `t3:${provider.instanceId}`, driver: null, title: provider.label, servers: [], summary: 'Not supported yet',
+      listingNote: null, unreadable: [], hint: null,
+      unsupported: `Serra can't read ${provider.label}'s MCP servers yet, so it doesn't guess. Check them in ${provider.label}.`,
+    });
+  }
+  return groups;
+};
+
+/** A few words beside the MCP heading: which provider the worker runs on, or which T3 has turned on. */
 export const providerLine = (worker: McpOverview['worker']): string => {
-  if (!worker.provider) return 'No worker provider set, so both are listed';
-  if (worker.drivers.length > 1) return `"${worker.provider}" isn't Claude or Codex, so both are listed`;
-  return `Worker: ${worker.provider}`;
+  const labels = worker.providers.map((provider) => provider.label);
+  if (worker.provider) return `Worker: ${labels[0] ?? worker.provider}`;
+  if (labels.length) return `No worker provider set: every provider on in T3 (${labels.join(', ')})`;
+  if (worker.drivers.length > 1) return 'No worker provider set, so both are listed';
+  return 'No worker provider set';
 };
 
 /** Where a server comes from, in a few words: "User config · ~/.claude.json", "claude.ai connector", "Added by Codex". */

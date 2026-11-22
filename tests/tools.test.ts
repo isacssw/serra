@@ -15,7 +15,7 @@ import { formatMcpOverview, mcpOverview, parseCodexServers, tomlScalar, type Mcp
 import { loginShellEnv, loginShellPath, mergePaths } from '../src/shell-path.ts';
 import { CLI_CATALOG, type CliSpec } from '../src/tool-catalog.ts';
 import {
-  cliRows, cliStatus, driverGroups, recommendationRows, recommendedCliIds, serverBrand, serverLabel, serverStatus,
+  cliRows, cliStatus, driverGroups, providerLine, recommendationRows, recommendedCliIds, serverBrand, serverLabel, serverStatus,
 } from '../app/renderer/screens/tools.logic.ts';
 
 const TOKEN = 'sntrys_fixture-secret-value';
@@ -389,7 +389,7 @@ test('recommendationSignals: Sentry SDK, vercel.json, Jira and Linear links; a b
 // ---------------------------------------------------------------------------------------------------------------
 
 const emptyMcp = (overrides: Partial<McpOverview> = {}): McpOverview => ({
-  worker: { provider: 'claude', drivers: ['claude'], note: null }, servers: [], warnings: [], files: [],
+  worker: { provider: 'claude', drivers: ['claude'], providers: [], note: null }, servers: [], warnings: [], files: [],
   listing: [{ driver: 'claude', method: 'cli', note: null }], ...overrides,
 });
 
@@ -420,8 +420,31 @@ test('driverGroups: problems first, a hint with the provider command, and the fa
   assert.deepEqual(claude!.servers.map((entry) => entry.name), ['a', 'b']);
   assert.equal(claude!.summary, '2 servers');
   assert.equal(claude!.listingNote, 'fallback');
-  assert.match(claude!.hint.command, /^claude mcp add --scope user/);
+  assert.match(claude!.hint!.command, /^claude mcp add --scope user/);
   assert.equal(driverGroups(emptyMcp())[0]!.summary, 'No servers');
+});
+
+test('driverGroups follow T3\'s providers: its names, and "not supported yet" for one Serra can\'t read instead of a guess', () => {
+  const groups = driverGroups(emptyMcp({
+    worker: {
+      provider: null, drivers: ['claude', 'codex'], note: null,
+      providers: [
+        { instanceId: 'claudeAgent', label: 'Claude', driver: 'claude' },
+        { instanceId: 'claude-work', label: 'Claude (work)', driver: 'claude' },
+        { instanceId: 'codex', label: 'Codex', driver: 'codex' },
+        { instanceId: 'cursor', label: 'Cursor', driver: null },
+        { instanceId: 'antigravity', label: 'Antigravity', driver: null },
+      ],
+    },
+  }));
+  assert.deepEqual(groups.map((group) => [group.title, group.summary]), [
+    ['Claude · Claude (work)', 'No servers'], ['Codex', 'No servers'], ['Cursor', 'Not supported yet'], ['Antigravity', 'Not supported yet'],
+  ]);
+  const cursor = groups[2]!;
+  assert.equal(cursor.hint, null, 'no made-up command for a provider Serra can\'t read');
+  assert.match(cursor.unsupported!, /Serra can't read Cursor's MCP servers yet/);
+  assert.equal(providerLine({ provider: null, drivers: [], note: null, providers: [{ instanceId: 'cursor', label: 'Cursor', driver: null }] }), 'No worker provider set: every provider on in T3 (Cursor)');
+  assert.equal(providerLine({ provider: 'cursor', drivers: [], note: null, providers: [{ instanceId: 'cursor', label: 'Cursor', driver: null }] }), 'Worker: Cursor');
 });
 
 test('recommendations: GitHub always, others only with a signal or a server; ready, sign-in and set-up commands', () => {
@@ -429,7 +452,7 @@ test('recommendations: GitHub always, others only with a signal or a server; rea
   let rows = recommendationRows(emptyMcp(), clis);
   assert.deepEqual(rows.map((row) => [row.rec.id, row.state.text, row.setup.length]), [['github', 'Ready', 0]]);
 
-  rows = recommendationRows(emptyMcp({ worker: { provider: null, drivers: ['claude', 'codex'], note: null } }), { ...clis, signals: { vercel: 'vercel.json in the repo' } });
+  rows = recommendationRows(emptyMcp({ worker: { provider: null, drivers: ['claude', 'codex'], providers: [], note: null } }), { ...clis, signals: { vercel: 'vercel.json in the repo' } });
   const vercel = rows.find((row) => row.rec.id === 'vercel')!;
   assert.equal(vercel.state.text, 'Not set up');
   assert.deepEqual(vercel.setup.map((step) => step.command), [
@@ -453,7 +476,7 @@ test('recommendations: GitHub always, others only with a signal or a server; rea
   rows = recommendationRows(emptyMcp({ servers: [{ ...linear, health: 'failed' }] }), { clis: [], signals: {} });
   assert.deepEqual(rows.find((row) => row.rec.id === 'linear')!.state, { tone: 'down', text: 'Failed' });
   const off = { ...linear, name: 'vercel', host: 'mcp.vercel.com', driver: 'codex' as const, load: 'disabled' as const, health: null };
-  rows = recommendationRows(emptyMcp({ worker: { provider: 'codex', drivers: ['codex'], note: null }, servers: [off] }), { clis: [], signals: { vercel: 'vercel.json in the repo' } });
+  rows = recommendationRows(emptyMcp({ worker: { provider: 'codex', drivers: ['codex'], providers: [], note: null }, servers: [off] }), { clis: [], signals: { vercel: 'vercel.json in the repo' } });
   const turnedOff = rows.find((row) => row.rec.id === 'vercel')!;
   assert.equal(turnedOff.state.text, 'Turned off');
   assert.ok(!turnedOff.setup.some((step) => step.command.includes('mcp add')), turnedOff.setup.map((step) => step.command).join('\n'));

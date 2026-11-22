@@ -1,11 +1,16 @@
-// Meetings (SERRA-62), on the services in src/meeting-store.ts, src/meeting-settings.ts and src/meeting-sources.ts.
-// Handlers only check input and call them. Approving, discarding and forgetting are the owner's, here in the app.
+// Meetings (SERRA-62, SERRA-69), on the services in src/meeting-store.ts, src/meeting-settings.ts and
+// src/meeting-runs.ts. Handlers only check input and call them. Approving, discarding and forgetting are the owner's,
+// here in the app. `sources` reads files only; a model call happens only in `testSource`, on the owner's button.
+import { existsSync } from 'node:fs';
 import { join } from 'node:path';
+import { profileT3Bin } from '../../../src/cleanup.ts';
+import { readProfileFile } from '../../../src/config.ts';
 import { isRecord } from '../../../src/json-guards.ts';
 import { createMeetingStore, type MeetingReviewed } from '../../../src/meeting-store.ts';
 import { MEETING_NOTICE, readMeetingSettings, writeMeetingSettings } from '../../../src/meeting-settings.ts';
-import { createSourceReader } from '../../../src/meeting-sources.ts';
-import { toolSearchPath } from '../../../src/shell-path.ts';
+import { createMeetingRuns, meetingRunner } from '../../../src/meeting-runs.ts';
+import { PROVIDER_IDS, PROVIDERS, type MeetingProvider } from '../../../src/meeting-sources.ts';
+import { readT3Providers } from '../../../src/t3-providers.ts';
 import type { Handlers } from '../bridge.ts';
 import type { HandlerContext } from './context.ts';
 
@@ -21,7 +26,22 @@ const reviewedInput = (value: unknown): MeetingReviewed => {
   return { rendered: value.rendered, page: value.page, evidence: value.evidence };
 };
 
-export const meetingsHandlers = (context: HandlerContext): Handlers<'meetings'> => {
+const source = (value: unknown): MeetingProvider => {
+  const found = PROVIDER_IDS.find((entry) => entry === value);
+  if (!found) throw new Error('Pick Granola or Google Meet.');
+  return found;
+};
+
+/** Tests swap the T3 runs and the T3 settings reader. */
+export interface MeetingsHandlerOptions {
+  runs?: typeof createMeetingRuns;
+  readProviders?: typeof readT3Providers;
+}
+
+export const meetingsHandlers = (context: HandlerContext, options: MeetingsHandlerOptions = {}): Handlers<'meetings'> => {
+  const makeRuns = options.runs ?? createMeetingRuns;
+  const readProviders = options.readProviders ?? readT3Providers;
+  const worker = () => readProfileFile(context.profileDir()).worker;
   // A new service per call: the profile folder can change while the app runs.
   const store = () => createMeetingStore({ knowledgeDir: join(context.profileDir(), 'knowledge') });
   const settings = () => ({ ...readMeetingSettings(context.profileDir()), notice: MEETING_NOTICE });
@@ -32,7 +52,20 @@ export const meetingsHandlers = (context: HandlerContext): Handlers<'meetings'> 
       writeMeetingSettings(context.profileDir(), enabled);
       return settings();
     },
-    sources: async () => createSourceReader({ path: await toolSearchPath() }).status(),
+    sources: () => {
+      const t3Bin = profileT3Bin(context.profileDir());
+      return {
+        runner: meetingRunner(worker(), readProviders(), existsSync(t3Bin)),
+        sources: PROVIDER_IDS.map((provider) => ({ provider, state: 'untested' as const, detail: PROVIDERS[provider].plan })),
+      };
+    },
+    testSource: (provider) => {
+      const chosen = worker();
+      return makeRuns({
+        t3Bin: profileT3Bin(context.profileDir()),
+        ...(chosen?.provider ? { provider: chosen.provider } : {}), ...(chosen?.model ? { model: chosen.model } : {}),
+      }).checkSource(source(provider));
+    },
     list: () => store().listMeetings(),
     history: () => store().history(),
     approve: (meeting, item, reviewed) => store().approve(id(meeting, 'Meeting'), id(item, 'Edit'), reviewedInput(reviewed)),

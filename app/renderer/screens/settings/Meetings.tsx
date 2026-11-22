@@ -1,7 +1,9 @@
-// Settings › Meetings (SERRA-62): turn meeting capture on (acknowledging what's sent and kept), see which transcript
-// sources Claude Code can read now and what to do when one can't, and forget a meeting.
+// Settings › Meetings (SERRA-62, SERRA-69): turn meeting capture on (acknowledging what's sent and kept), see which T3
+// provider and model meeting runs use, test a transcript source on demand, and forget a meeting. Opening this screen
+// never makes a model call: only the Test button does, one read-only T3 run per press.
 import { useCallback, useEffect, useState, type ComponentProps, type ReactNode } from 'react';
 import { FileText, LoaderCircle, RefreshCw } from 'lucide-react';
+import type { MeetingRunner } from '../../../../src/meeting-runs.ts';
 import type { MeetingSettings } from '../../../../src/meeting-settings.ts';
 import type { MeetingProvider, ProviderStatus } from '../../../../src/meeting-sources.ts';
 import type { MeetingView } from '../../../../src/meeting-store.ts';
@@ -33,6 +35,7 @@ const STATE: Record<ProviderStatus['state'], { label: string; tone: BadgeTone }>
   ready: { label: 'Ready', tone: 'up' },
   'needs-sign-in': { label: 'Sign in again', tone: 'warn' },
   missing: { label: 'Not connected', tone: 'neutral' },
+  untested: { label: 'Not tested', tone: 'neutral' },
   unknown: { label: 'Unknown', tone: 'neutral' },
 };
 
@@ -41,7 +44,7 @@ const PROVIDER_ROWS: { provider: MeetingProvider; label: string; how: string }[]
   { provider: 'google-meet', label: 'Google Meet', how: 'Send the transcript Doc’s link from Drive.' },
 ];
 
-const SourceRow = ({ icon, label, how, status }: { icon: ReactNode; label: string; how: string; status: { label: string; tone: BadgeTone; detail?: string } | null }) => (
+const SourceRow = ({ icon, label, how, status, action }: { icon: ReactNode; label: string; how: string; status: { label: string; tone: BadgeTone; detail?: string } | null; action?: ReactNode }) => (
   <li className="flex items-start gap-3 py-3">
     {icon}
     <div className="flex min-w-0 flex-1 flex-col gap-0.5">
@@ -52,14 +55,17 @@ const SourceRow = ({ icon, label, how, status }: { icon: ReactNode; label: strin
       <p className="text-[13px] text-muted">{how}</p>
       {status?.detail && <p className="text-[13px] text-muted">{status.detail}</p>}
     </div>
+    {action}
   </li>
 );
 
 export const Meetings = () => {
   const toast = useToast();
   const [settings, setSettings] = useState<(MeetingSettings & { notice: string }) | null>(null);
+  const [runner, setRunner] = useState<MeetingRunner | null>(null);
   const [sources, setSources] = useState<ProviderStatus[] | null>(null);
   const [checking, setChecking] = useState(false);
+  const [testing, setTesting] = useState<MeetingProvider | null>(null);
   const [history, setHistory] = useState<History>([]);
   const [error, setError] = useState<string | null>(null);
   const [acknowledging, setAcknowledging] = useState(false);
@@ -81,8 +87,24 @@ export const Meetings = () => {
     const bridge = serra();
     if (!bridge) return;
     setChecking(true);
-    try { setSources(await bridge.meetings.sources()); } catch (failure) { toast({ message: message(failure), tone: 'error' }); } finally { setChecking(false); }
+    try {
+      const next = await bridge.meetings.sources();
+      setRunner(next.runner);
+      // A source the owner tested keeps its answer until they test it again.
+      setSources((current) => next.sources.map((entry) => current?.find((seen) => seen.provider === entry.provider && seen.state !== 'untested') ?? entry));
+    } catch (failure) { toast({ message: message(failure), tone: 'error' }); } finally { setChecking(false); }
   }, [toast]);
+
+  /** One read-only T3 run, only on the owner's press. */
+  const test = async (provider: MeetingProvider): Promise<void> => {
+    const bridge = serra();
+    if (!bridge) return;
+    setTesting(provider);
+    try {
+      const result = await bridge.meetings.testSource(provider);
+      setSources((current) => (current ?? []).map((entry) => (entry.provider === provider ? result : entry)));
+    } catch (failure) { toast({ message: message(failure), tone: 'error' }); } finally { setTesting(null); }
+  };
 
   useEffect(() => { void load(); }, [load]);
   useEffect(() => { if (settings?.enabled && sources === null) void check(); }, [settings?.enabled, sources, check]);
@@ -133,12 +155,27 @@ export const Meetings = () => {
       {settings?.enabled && (
         <Card
           title="Sources"
-          description="Serra reads Granola and Meet through your own Claude Code connections. It never holds their keys."
-          actions={<Button size="sm" disabled={checking} icon={checking ? <LoaderCircle size={14} className="animate-spin" /> : <RefreshCw size={14} />} onClick={() => void check()}>Check</Button>}
+          description="Serra reads Granola and Meet links in a read-only T3 run, through the connections your AI provider in T3 already has. It never holds their keys. Test runs one short T3 run."
+          actions={<Button size="sm" disabled={checking} icon={checking ? <LoaderCircle size={14} className="animate-spin" /> : <RefreshCw size={14} />} onClick={() => void check()}>Refresh</Button>}
         >
+          {runner && (
+            <p className="flex flex-wrap items-center gap-2 text-sm">
+              <span className="font-medium">Runs on {runner.label}{runner.model ? ` · ${runner.model}` : ''}</span>
+              <Badge tone={runner.ready ? 'up' : 'warn'}>{runner.ready ? 'Ready' : 'Needs attention'}</Badge>
+              <span className="text-[13px] text-muted">{runner.detail}</span>
+            </p>
+          )}
           <ul className="flex flex-col divide-y divide-line">
-            <SourceRow icon={<SourceIcon source="granola" />} label="Granola" how={PROVIDER_ROWS[0]!.how} status={statusOf('granola')} />
-            <SourceRow icon={<SourceIcon source="google-meet" />} label="Google Meet" how={PROVIDER_ROWS[1]!.how} status={statusOf('google-meet')} />
+            {PROVIDER_ROWS.map((row) => (
+              <SourceRow
+                key={row.provider} icon={<SourceIcon source={row.provider} />} label={row.label} how={row.how} status={statusOf(row.provider)}
+                action={(
+                  <Button size="sm" disabled={testing !== null || runner?.ready === false} icon={testing === row.provider ? <LoaderCircle size={14} className="animate-spin" /> : undefined} onClick={() => void test(row.provider)}>
+                    {testing === row.provider ? 'Testing…' : 'Test'}
+                  </Button>
+                )}
+              />
+            ))}
             <SourceRow icon={<ToolIcon brand={null} fallback={<FileText size={14} />} label="File or text" />} label="File or pasted text" how="Attach a .txt, .md, .vtt or .srt export from any notetaker, or paste the summary." status={{ label: 'Ready', tone: 'up' }} />
           </ul>
         </Card>

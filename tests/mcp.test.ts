@@ -165,6 +165,31 @@ test('without a worker provider both kinds are listed and each is checked', (t) 
   assert.deepEqual(overview.warnings.map((warning) => warning.driver), ['codex']);
 });
 
+test('the worker\'s providers come from T3\'s settings: the profile\'s instance, else every one turned on', (t) => {
+  const f = fixture(t);
+  f.write(join(f.home, '.t3', 'userdata', 'settings.json'), {
+    providerInstances: {
+      codex: { driver: 'codex', enabled: false },
+      cursor: { driver: 'cursor', config: { enabled: true, apiKey: 'xoxb-1111-2222-fixturevalue' } },
+      'claude-work': { driver: 'claudeAgent', displayName: 'Claude (work)', environment: [{ name: 'TOKEN', value: 'xoxb-1111-2222-fixturevalue' }] },
+    },
+  });
+  const all = f.overview(f.profile({ worker: undefined }));
+  assert.deepEqual(all.worker.providers, [
+    { instanceId: 'claudeAgent', label: 'Claude', driver: 'claude' },
+    { instanceId: 'cursor', label: 'Cursor', driver: null },
+    { instanceId: 'claude-work', label: 'Claude (work)', driver: 'claude' },
+  ]);
+  assert.deepEqual(all.worker.drivers, ['claude'], 'Codex is off in T3, so its servers aren\'t listed');
+  assert.doesNotMatch(JSON.stringify(all), /fixturevalue/, 'no key or environment from T3\'s settings');
+  assert.match(formatMcpOverview(all), /Cursor: not supported yet/);
+  const cursor = f.overview(f.profile({ worker: { provider: 'cursor', model: 'composer-2' } }));
+  assert.deepEqual(cursor.worker.drivers, []);
+  assert.deepEqual(cursor.worker.providers, [{ instanceId: 'cursor', label: 'Cursor', driver: null }]);
+  assert.match(f.overview(f.profile({ worker: { provider: 'gone', model: 'x' } })).worker.note!, /T3 has no provider "gone"/);
+  assert.match(f.overview(f.profile({ worker: { provider: 'codex', model: 'x' } })).worker.note!, /Codex is turned off in T3/);
+});
+
 test('workerDrivers maps provider instance names to their kind', () => {
   assert.deepEqual(workerDrivers('claudeAgent').drivers, ['claude']);
   assert.deepEqual(workerDrivers('codex-work').drivers, ['codex']);

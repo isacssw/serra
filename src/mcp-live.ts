@@ -14,6 +14,7 @@ import {
   type McpHealth, type McpListing, type McpOptions, type McpOverview, type McpScope, type McpTransport, type ReadServer, type WorkerDriver,
 } from './mcp.ts';
 import { loginEnvironment } from './shell-path.ts';
+import { readT3Providers } from './t3-providers.ts';
 
 export interface LiveMcpOptions extends McpOptions {
   run?: Exec;
@@ -198,9 +199,9 @@ export const liveMcpOverview = async (
   const env: NodeJS.ProcessEnv = login.env
     ? { ...login.env, PATH: login.path, NO_COLOR: '1' }
     : toolEnv(login.path, { ...process.env, ...options.env });
-  const worker = workerDrivers(profile.worker?.provider);
   // The fallback reads the config folders the CLI would: CLAUDE_CONFIG_DIR and CODEX_HOME from the same environment.
   const configEnv = options.env ?? login.env ?? process.env;
+  const worker = workerDrivers(profile.worker?.provider, readT3Providers({ home, env: configEnv }));
   const reads = await Promise.all(worker.drivers.map((driver: WorkerDriver) =>
     (driver === 'claude' ? listClaude : listCodex)(profile.project.path, home, { ...options, env: configEnv }, run, env)));
   const servers = reads.flatMap((read) => read.servers);

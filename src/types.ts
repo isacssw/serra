@@ -102,6 +102,9 @@ export interface StartThreadInput {
   model?: string;
 }
 
+/** A thread that runs in the project's own folder, with no worktree: a meeting run, in Serra's empty meetings folder. */
+export type FolderThreadInput = Omit<StartThreadInput, 'baseRef' | 'branch'> & { baseRef?: undefined; branch?: undefined };
+
 export interface IncomingMessage {
   channel: string;
   threadTs: string;

@@ -1,20 +1,18 @@
-// Meeting capture routing, the extractor launch and the provider sources (SERRA-62), with fakes for Slack, Claude
-// Code and the providers. Nothing here runs a model.
+// Meeting capture routing, and the T3 runs that read links and pick out decisions (SERRA-62, SERRA-69), with fakes
+// for Slack and T3. Nothing here runs a model.
 import assert from 'node:assert/strict';
-import { EventEmitter } from 'node:events';
-import { PassThrough } from 'node:stream';
-import { chmodSync, cpSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { cpSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test, { type TestContext } from 'node:test';
-import type { ChildProcess } from 'node:child_process';
 import { codeRoot } from '../src/config.ts';
 import { createKnowledge } from '../src/knowledge.ts';
 import { COPY, createMeetingCapture, meetingsFirst, type MeetingChat } from '../src/meeting-capture.ts';
-import { createExtractor, EXTRACTOR_FLAGS, type SpawnClaude } from '../src/meeting-extractor.ts';
+import { createMeetingRuns, meetingRunner, type MeetingRunOptions } from '../src/meeting-runs.ts';
 import { writeMeetingSettings } from '../src/meeting-settings.ts';
-import { createSourceReader, meetingRequest, transcriptFromResult } from '../src/meeting-sources.ts';
-import type { IncomingMessage } from '../src/types.ts';
+import { meetingRequest, transcriptFromResult } from '../src/meeting-sources.ts';
+import { t3Providers } from '../src/t3-providers.ts';
+import type { FolderThreadInput, IncomingMessage, T3ThreadDetail } from '../src/types.ts';
 
 const OWNER = 'UROBIN0001';
 const DM = 'D0OWNER01';
@@ -212,163 +210,136 @@ test('Forget deletes the digest message through the daemon, and a deleted one co
   assert.equal(h.capture.store.readRegistry().meetings[meeting!.id]!.state, 'forgotten');
 });
 
-// --- The extractor launch -------------------------------------------------------------------------------------------
+// --- Meeting runs on T3 ---------------------------------------------------------------------------------------------
 
-/** A fake `claude`: records argv and stdin, answers with `lines` on stdout. */
-const fakeClaude = (answer: (args: readonly string[], stdin: string) => string[]) => {
-  const calls: { args: readonly string[]; stdin: string; cwd: string }[] = [];
-  const spawn: SpawnClaude = (_command, args, { cwd }) => {
-    const child = new EventEmitter() as ChildProcess;
-    const stdin = new PassThrough();
-    const stdout = new PassThrough();
-    Object.assign(child, { stdin, stdout, stderr: new PassThrough(), kill: () => { stdout.end(); return true; } });
-    let input = '';
-    stdin.on('data', (chunk: Buffer) => { input += chunk.toString(); });
-    stdin.on('finish', () => {
-      calls.push({ args, stdin: input, cwd });
-      for (const line of answer(args, input)) if (!stdout.writableEnded) stdout.write(`${line}\n`);
-      if (!stdout.writableEnded) stdout.end();
-    });
-    stdout.on('end', () => setImmediate(() => child.emit('close', 0)));
-    return child;
+/** A fake T3: records each project added and thread started, and answers each thread with `answer(brief)`. */
+const fakeT3 = (t: TestContext, answer: (brief: string) => string, { pending = false, write = false, running = 0 } = {}) => {
+  const workspace = mkdtempSync(join(tmpdir(), 'serra-meeting-runs-'));
+  t.after(() => rmSync(workspace, { recursive: true, force: true }));
+  const projects: string[] = [];
+  const started: { input: FolderThreadInput; bin: string }[] = [];
+  const shows: Record<string, number> = {};
+  const t3 = {
+    ensureProject: async (path: string) => { projects.push(path); },
+    startFolderThread: async (input: FolderThreadInput, bin = '') => {
+      started.push({ input, bin });
+      if (write) writeFileSync(join(workspace, 'notes.md'), 'written by the run');
+      return `thread-${started.length}`;
+    },
+    showThread: async (threadId: string): Promise<T3ThreadDetail> => {
+      shows[threadId] = (shows[threadId] ?? 0) + 1;
+      const busy = shows[threadId]! <= running;
+      const brief = started[Number(threadId.split('-')[1]) - 1]!.input.brief;
+      return {
+        thread: { threadId, link: `https://app.t3.codes/threads/${threadId}`, status: busy ? 'running' : 'idle', latestRunId: 'run-1', activeRunId: busy ? 'run-1' : null, pendingRequestCount: pending ? 1 : 0 },
+        messages: [{ role: 'user', runId: 'run-1', text: brief }, { role: 'assistant', runId: 'run-1', text: 'working on it' }, { role: 'assistant', runId: 'run-1', text: answer(brief) }],
+      };
+    },
   };
-  return { spawn, calls };
+  const runs = (over: Partial<MeetingRunOptions> = {}) => createMeetingRuns({ t3Bin: '/Users/you/.t3/bin/t3', workspace, t3, pollMs: 0, sleep: async () => {}, ...over });
+  return { workspace, projects, started, runs };
 };
 
-const binDir = (t: TestContext): string => {
-  const dir = mkdtempSync(join(tmpdir(), 'serra-bin-'));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
-  writeFileSync(join(dir, 'claude'), '#!/bin/sh\n');
-  chmodSync(join(dir, 'claude'), 0o755);
-  return dir;
-};
+test('extraction is one read-only T3 thread in Serra\'s empty meetings folder, on the provider and model the owner picked', async (t) => {
+  const f = fakeT3(t, () => DIGEST);
+  const text = await f.runs({ provider: 'cursor', model: 'composer-2' }).extract('TRANSCRIPT-BYTES');
+  assert.equal(text, DIGEST, 'the run\'s final answer, not its progress lines');
+  assert.deepEqual(f.projects, [f.workspace], 'the folder is a T3 project of its own');
+  const { input, bin } = f.started[0]!;
+  assert.equal(bin, '/Users/you/.t3/bin/t3');
+  assert.equal(input.project, f.workspace);
+  assert.equal(input.baseRef, undefined, 'never a worktree of the team\'s repository');
+  assert.equal(input.provider, 'cursor');
+  assert.equal(input.model, 'composer-2');
+  assert.doesNotMatch(input.title, /TRANSCRIPT/, 'the title never holds meeting text');
+  assert.match(input.brief, /read-only task/);
+  assert.match(input.brief, /Do not create, edit, move or delete any file/);
+  assert.match(input.brief, /Use no tools at all/);
+  assert.match(input.brief, /TRANSCRIPT-BYTES/);
+  // Without a choice, T3's own default runs it.
+  const plain = fakeT3(t, () => DIGEST);
+  await plain.runs().extract('x');
+  assert.equal('provider' in plain.started[0]!.input, false);
+  assert.equal('model' in plain.started[0]!.input, false);
+});
 
-const init = (over: Record<string, unknown> = {}) => JSON.stringify({ type: 'system', subtype: 'init', tools: [], mcp_servers: [], plugins: [{ path: 'builtin' }], claude_code_version: '2.1.330', ...over });
-const result = (text: string, turns = 1) => JSON.stringify({ type: 'result', result: text, is_error: false, num_turns: turns });
+test('a link is read by a T3 run allowed one read tool; the answer is unwrapped, and its errors never quote it', async (t) => {
+  const f = fakeT3(t, () => '<meeting-title>Payments sync</meeting-title>\n<meeting-transcript>\nAna: three attempts.\nBo: ok.\n</meeting-transcript>');
+  const fetched = await f.runs().fetchTranscript({ provider: 'granola', id: 'abc-123', url: 'https://notes.granola.ai/d/abc-123' });
+  assert.deepEqual(fetched, { text: 'Ana: three attempts.\nBo: ok.', title: 'Payments sync' });
+  const brief = f.started[0]!.input.brief;
+  assert.match(brief, /meeting with ID "abc-123"/);
+  assert.match(brief, /one call of one read tool/);
+  assert.match(brief, /Do not change anything anywhere/);
 
-test('the extractor refuses before any transcript byte when the probe shows tools, MCP servers, plugins or an untested build', async (t) => {
-  const path = binDir(t);
-  for (const [over, reason] of [
-    [{ tools: ['Read'] }, /offered the extractor tools/],
-    [{ mcp_servers: [{ name: 'x' }] }, /loaded MCP servers/],
-    [{ plugins: [{ path: '/tmp/evil' }] }, /loaded plugins/],
-    [{ claude_code_version: '9.9.9' }, /tested with Claude Code 2\.1\.330/],
+  const meet = fakeT3(t, () => `<meeting-transcript>${JSON.stringify({ title: 'Sync', transcript: [{ speaker: { name: 'Ana' }, text: 'Hi' }] })}</meeting-transcript>`);
+  assert.deepEqual(await meet.runs().fetchTranscript({ provider: 'google-meet', id: 'doc1', url: 'x' }), { text: 'Ana: Hi', title: 'Sync' });
+  assert.match(meet.started[0]!.input.brief, /Google Doc with file ID "doc1"/);
+
+  for (const [answer, reason] of [
+    ['<meeting-error>not-connected</meeting-error>', /no Granola connection\. Connect Granola/],
+    ['<meeting-error>sign-in</meeting-error>', /sign in again/],
+    ['<meeting-error>too-long</meeting-error>', /too long/],
+    ['<meeting-error>SECRET-TRANSCRIPT says hi</meeting-error>', /couldn.t give Serra that meeting/],
+    ['Here is a summary: SECRET-TRANSCRIPT', /didn.t give back the Granola transcript/],
+    ['<meeting-transcript>  </meeting-transcript>', /empty transcript/],
   ] as const) {
-    const fake = fakeClaude((args) => (args.includes('stream-json') ? [init(over)] : [result(DIGEST)]));
-    const extractor = createExtractor({ path, spawn: fake.spawn, managedSettingsDir: join(path, 'none') });
-    await assert.rejects(extractor.extract('TRANSCRIPT-BYTES'), reason);
-    assert.ok(fake.calls.every((call) => !call.stdin.includes('TRANSCRIPT-BYTES')), 'the transcript was never sent');
+    const failing = fakeT3(t, () => answer);
+    await assert.rejects(failing.runs().fetchTranscript({ provider: 'granola', id: 'abc', url: 'x' }), (error: Error) => reason.test(error.message) && !error.message.includes('SECRET-TRANSCRIPT'));
   }
 });
 
-test('managed hooks refuse capture; the prompt goes on stdin from an empty folder with the fixed flags', async (t) => {
-  const path = binDir(t);
-  const managed = join(path, 'managed');
-  mkdirSync(managed);
-  writeFileSync(join(managed, 'managed-settings.json'), JSON.stringify({ hooks: { UserPromptSubmit: [{ hooks: [{ type: 'command', command: 'tee' }] }] } }));
-  const fake = fakeClaude((args) => (args.includes('stream-json') ? [init()] : [result(DIGEST)]));
-  await assert.rejects(createExtractor({ path, spawn: fake.spawn, managedSettingsDir: managed }).extract('x'), /managed hooks/);
-  assert.equal(fake.calls.length, 0);
-
-  const clean = fakeClaude((args) => (args.includes('stream-json') ? [init()] : [result(DIGEST)]));
-  const text = await createExtractor({ path, spawn: clean.spawn, managedSettingsDir: join(path, 'none') }).extract('TRANSCRIPT-BYTES');
-  assert.equal(text, DIGEST);
-  const launch = clean.calls.at(-1)!;
-  assert.equal(launch.stdin, 'TRANSCRIPT-BYTES');
-  assert.ok(!launch.args.some((arg) => arg.includes('TRANSCRIPT-BYTES')), 'never in argv');
-  for (const flag of EXTRACTOR_FLAGS) assert.ok(launch.args.includes(flag), flag);
-  assert.equal(readdirSync(tmpdir()).includes(launch.cwd.split('/').pop()!), false, 'the run folder is removed');
+test('a run that writes in the meetings folder is thrown away, and a folder with files in it gets no run', async (t) => {
+  const writer = fakeT3(t, () => DIGEST, { write: true });
+  await assert.rejects(writer.runs().extract('x'), /wrote files .* thrown away/);
+  // The file it left stops the next run before it starts.
+  await assert.rejects(writer.runs().extract('x'), /has files in it/);
+  assert.equal(writer.started.length, 1);
 });
 
-test('a self-test that leaks the canary or uses a tool refuses capture', async (t) => {
-  const path = binDir(t);
-  const leaky = fakeClaude((args, stdin) => {
-    if (args.includes('stream-json')) return [init()];
-    // The fake can't read the file: model a leak by answering with the canary the self-test planted in the folder.
-    const folder = leakyFolder.value;
-    return stdin.includes('canary.txt') && folder ? [result(readFileSync(join(folder, 'canary.txt'), 'utf8'))] : [result(DIGEST)];
-  });
-  const leakyFolder: { value: string | null } = { value: null };
-  const wrapped: SpawnClaude = (command, args, options) => { leakyFolder.value = options.cwd; return leaky.spawn(command, args, options); };
-  const extractor = createExtractor({ path, spawn: wrapped, managedSettingsDir: join(path, 'none') });
-  const checked = await extractor.preflight();
-  assert.equal((await extractor.selfTest(checked)).reason, 'The extractor read a file it must not be able to read.');
-  await assert.rejects(extractor.extract('x'), /read a file/);
-  const planted = fakeClaude((args, stdin) => {
-    if (args.includes('stream-json')) return [init()];
-    if (!stdin.includes('canary.txt')) return [result(DIGEST)];
-    return [result('<meeting-digest>{"items":[]}</meeting-digest>', 3)];
-  });
-  assert.equal((await createExtractor({ path, spawn: planted.spawn, managedSettingsDir: join(path, 'none') }).selfTest(checked)).reason, 'The extractor used a tool.');
+test('a run that asks for approval or a question is not waited on; a run that never ends times out', async (t) => {
+  const asking = fakeT3(t, () => DIGEST, { pending: true });
+  await assert.rejects(asking.runs().extract('x'), /stopped to ask .* Stop it in T3: https:\/\/app\.t3\.codes\/threads\/thread-1/);
+  let clock = 0;
+  const slow = fakeT3(t, () => DIGEST, { running: 1000 });
+  await assert.rejects(slow.runs({ timeoutMs: 10, now: () => (clock += 5) }).extract('x'), /took too long/);
+  const steady = fakeT3(t, () => DIGEST, { running: 2 });
+  assert.equal(await steady.runs().extract('x'), DIGEST, 'a run that is still going is followed until it ends');
 });
 
-// --- Provider sources -----------------------------------------------------------------------------------------------
-
-test('a provider fetch allows one tool, stops at its result, and refuses any other tool', async (t) => {
-  const path = binDir(t);
-  const server = { name: 'claude.ai Granola', status: 'connected' };
-  const tool = 'mcp__claude_ai_Granola__get_meeting_transcript';
-  const fake = fakeClaude((args) => {
-    if (!args.includes('--allowedTools')) return [init({ mcp_servers: [server], tools: [tool] })];
-    return [
-      init({ mcp_servers: [server], tools: [tool] }),
-      JSON.stringify({ type: 'assistant', message: { content: [{ type: 'tool_use', id: 't1', name: tool, input: { meeting_id: 'abc' } }] } }),
-      JSON.stringify({ type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: 't1', content: [{ type: 'text', text: 'Ana: three attempts.\nBo: ok.' }] }] } }),
-      JSON.stringify({ type: 'assistant', message: { content: [{ type: 'text', text: 'SHOULD NOT BE READ' }] } }),
-    ];
-  });
-  const reader = createSourceReader({ path, spawn: fake.spawn });
-  const fetched = await reader.fetchTranscript({ provider: 'granola', id: 'abc', url: 'x' });
-  assert.equal(fetched.text, 'Ana: three attempts.\nBo: ok.');
-  const launch = fake.calls.at(-1)!;
-  assert.deepEqual(launch.args.slice(launch.args.indexOf('--allowedTools'), launch.args.indexOf('--allowedTools') + 2), ['--allowedTools', tool]);
-  assert.ok(launch.args.includes('--restricted') && launch.args.includes('dontAsk'));
-  assert.deepEqual(launch.args.slice(launch.args.indexOf('--max-turns'), launch.args.indexOf('--max-turns') + 2), ['--max-turns', '1'], 'one turn: no model sees the result');
-  assert.doesNotMatch(launch.stdin, /three attempts/);
-
-  const rogue = fakeClaude((args) => (!args.includes('--allowedTools') ? [init({ mcp_servers: [server], tools: [tool] })] : [
-    JSON.stringify({ type: 'assistant', message: { content: [{ type: 'tool_use', id: 't9', name: 'mcp__claude_ai_Gmail__send', input: {} }] } }),
-  ]));
-  await assert.rejects(createSourceReader({ path, spawn: rogue.spawn }).fetchTranscript({ provider: 'granola', id: 'abc', url: 'x' }), /one call Serra asked for/);
+test('Test asks one T3 run about a source without calling a tool; its answer becomes a status with what to do', async (t) => {
+  for (const [answer, state, detail] of [
+    ['<meeting-source>ready</meeting-source>', 'ready', /Business and Enterprise/],
+    ['<meeting-source>missing</meeting-source>', 'missing', /Connect Granola in the AI provider you use in T3/],
+    ['<meeting-source>sign-in</meeting-source>', 'needs-sign-in', /sign in again/],
+    ['I am not sure', 'unknown', /didn't say/],
+  ] as const) {
+    const f = fakeT3(t, () => answer);
+    const status = await f.runs().checkSource('granola');
+    assert.equal(status.state, state);
+    assert.match(status.detail, detail);
+    assert.match(f.started[0]!.input.brief, /Do not call any tool/);
+  }
 });
 
-test('provider status says what the owner must do: connect, sign in again, or nothing', async (t) => {
-  const path = binDir(t);
-  const fake = fakeClaude(() => [init({ mcp_servers: [{ name: 'claude.ai Google Drive', status: 'needs-auth' }], tools: [] })]);
-  const status = await createSourceReader({ path, spawn: fake.spawn }).status();
-  assert.equal(status.find((entry) => entry.provider === 'granola')!.state, 'missing');
-  assert.match(status.find((entry) => entry.provider === 'granola')!.detail, /claude mcp add granola/);
-  assert.equal(status.find((entry) => entry.provider === 'google-meet')!.state, 'needs-sign-in');
+test('who runs meetings is read from the profile and T3\'s settings, never from a model call', () => {
+  const t3 = t3Providers({
+    defaultModelSelection: { instanceId: 'codex', model: 'gpt-6.1-sol' },
+    providerInstances: { cursor: { driver: 'cursor', enabled: true }, grok: { driver: 'grok' } },
+  });
+  assert.deepEqual(meetingRunner(undefined, t3, true), { label: 'Codex', model: 'gpt-6.1-sol', ready: true, detail: 'Runs on Codex in T3 (T3’s default), in Serra’s own empty folder.' });
+  assert.equal(meetingRunner({ provider: 'cursor', model: 'composer-2' }, t3, true).label, 'Cursor');
+  assert.equal(meetingRunner({ provider: 'cursor', model: 'composer-2' }, t3, true).model, 'composer-2');
+  assert.match(meetingRunner({ provider: 'grok' }, t3, true).detail, /Grok is turned off in T3/);
+  assert.equal(meetingRunner({ provider: 'grok' }, t3, true).ready, false);
+  assert.match(meetingRunner({ provider: 'nope' }, t3, true).detail, /T3 has no provider "nope"/);
+  assert.match(meetingRunner(undefined, t3, false).detail, /can't find T3 Code/);
+  assert.equal(meetingRunner(undefined, null, true).ready, true, 'without T3\'s settings, T3 decides');
 });
 
 test('JSON transcripts from a provider are unwrapped into speaker lines', () => {
   assert.equal(transcriptFromResult(JSON.stringify({ title: 'Sync', transcript: [{ speaker: { name: 'Ana' }, text: 'Hi' }, { speaker: 'Bo', text: 'Yo' }] })).text, 'Ana: Hi\nBo: Yo');
   assert.equal(transcriptFromResult('Ana: plain').text, 'Ana: plain');
-});
-
-test('a provider fetch refuses other arguments, an untested build, and managed hooks; errors never quote the result', async (t) => {
-  const path = binDir(t);
-  const server = { name: 'claude.ai Granola', status: 'connected' };
-  const tool = 'mcp__claude_ai_Granola__get_meeting_transcript';
-  const answer = (input: Record<string, unknown>, over: Record<string, unknown> = {}, result: Record<string, unknown> = {}) => fakeClaude((args) => (!args.includes('--allowedTools')
-    ? [init({ mcp_servers: [server], tools: [tool], ...over })]
-    : [
-      init({ mcp_servers: [server], tools: [tool], ...over }),
-      JSON.stringify({ type: 'assistant', message: { content: [{ type: 'tool_use', id: 't1', name: tool, input }] } }),
-      JSON.stringify({ type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: 't1', content: 'Ana: permission denied is what the customer saw. SECRET-TRANSCRIPT', ...result }] } }),
-    ]));
-  const link = { provider: 'granola' as const, id: 'abc', url: 'x' };
-  await assert.rejects(createSourceReader({ path, spawn: answer({ meeting_id: 'other' }).spawn, managedSettingsDir: join(path, 'none') }).fetchTranscript(link), /one call Serra asked for/);
-  await assert.rejects(createSourceReader({ path, spawn: answer({ meeting_id: 'abc' }, { claude_code_version: '9.9.9' }).spawn, managedSettingsDir: join(path, 'none') }).fetchTranscript(link), /tested with Claude Code/);
-  const managed = join(path, 'managed');
-  mkdirSync(managed);
-  writeFileSync(join(managed, 'managed-settings.json'), JSON.stringify({ hooks: { PostToolUse: [{}] } }));
-  await assert.rejects(createSourceReader({ path, spawn: answer({ meeting_id: 'abc' }).spawn, managedSettingsDir: managed }).fetchTranscript(link), /managed hooks/);
-  // A transcript that happens to start like an error is read as a transcript, not echoed as one.
-  const ok = await createSourceReader({ path, spawn: answer({ meeting_id: 'abc' }).spawn, managedSettingsDir: join(path, 'none') }).fetchTranscript(link);
-  assert.match(ok.text, /SECRET-TRANSCRIPT/);
-  const failed = createSourceReader({ path, spawn: answer({ meeting_id: 'abc' }, {}, { is_error: true }).spawn, managedSettingsDir: join(path, 'none') }).fetchTranscript(link);
-  await assert.rejects(failed, (error: Error) => !error.message.includes('SECRET-TRANSCRIPT') && /couldn.t give Serra that meeting/.test(error.message));
 });
 
 test('meetings come first: a meeting message never reaches the hold or a job; anything else does, unchanged', async () => {
@@ -455,23 +426,4 @@ test('with capture off, the owner\'s channel message about a meeting is still tu
   const h = harness(t, { enabled: false });
   const result = h.capture.intercept(message({ channel: 'C0TEAM001', im: false, text: 'remember this meeting: Ana: TRANSCRIPT' }));
   assert.notEqual(result, null);
-});
-
-test('a provider fetch refuses a cut-off result and a binary replaced between the probe and the run', async (t) => {
-  const path = binDir(t);
-  const server = { name: 'claude.ai Granola', status: 'connected' };
-  const tool = 'mcp__claude_ai_Granola__get_meeting_transcript';
-  const lines = (content: string) => [
-    init({ mcp_servers: [server], tools: [tool] }),
-    JSON.stringify({ type: 'assistant', message: { content: [{ type: 'tool_use', id: 't1', name: tool, input: { meeting_id: 'abc' } }] } }),
-    JSON.stringify({ type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: 't1', content }] } }),
-  ];
-  const cut = fakeClaude((args) => (args.includes('--allowedTools') ? lines('Output too large (180KB). Full output saved to: /x/tool-results/y.txt') : [init({ mcp_servers: [server], tools: [tool] })]));
-  await assert.rejects(createSourceReader({ path, spawn: cut.spawn, managedSettingsDir: join(path, 'none') }).fetchTranscript({ provider: 'granola', id: 'abc', url: 'x' }), /too long to read through Claude Code/);
-  // The binary is rewritten while the probe runs.
-  const swapped = fakeClaude((args) => {
-    if (!args.includes('--allowedTools')) writeFileSync(join(path, 'claude'), '#!/bin/sh\necho replaced\n');
-    return args.includes('--allowedTools') ? lines('Ana: hi') : [init({ mcp_servers: [server], tools: [tool] })];
-  });
-  await assert.rejects(createSourceReader({ path, spawn: swapped.spawn, managedSettingsDir: join(path, 'none') }).fetchTranscript({ provider: 'granola', id: 'abc', url: 'x' }), /changed while Serra was checking/);
 });

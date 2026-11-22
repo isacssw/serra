@@ -1,6 +1,7 @@
 // The MCP servers a bot's worker will have in T3 (APP-23), read-only.
 //
-// T3 runs each job through a provider (Claude or Codex), and that provider loads MCP servers from its own config.
+// T3 runs each job through a provider (Claude, Codex, Cursor, …: the list is T3's, src/t3-providers.ts), and that
+// provider loads MCP servers from its own config. Serra reads Claude's and Codex's; the others show as not supported yet.
 // Serra never configures them: this module only reads those files to show what a job will get, and warns when the
 // profile clearly needs a server that isn't there (an alert trigger that investigates Sentry alerts, with no Sentry
 // server). MCP configs hold tokens in `env`, `headers` and command arguments, so a server is reported only by its
@@ -10,9 +11,10 @@ import { existsSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import type { MessageTrigger, Profile } from './config.ts';
+import { providerFor, readT3Providers, type McpReader, type T3Provider, type T3Providers } from './t3-providers.ts';
 
-/** The kind of provider T3 runs the worker with. Each kind reads its own MCP config. */
-export type WorkerDriver = 'claude' | 'codex';
+/** A provider kind whose MCP config Serra can read. T3's other providers are listed as "not supported yet". */
+export type WorkerDriver = McpReader;
 
 export type McpTransport = 'stdio' | 'http' | 'sse';
 
@@ -70,13 +72,26 @@ export interface McpConfigFile {
   state: 'missing' | 'read' | 'unreadable';
 }
 
+/** A provider T3 can run the worker with, from T3's settings, and whether Serra can read its MCP setup. */
+interface WorkerProvider {
+  instanceId: string;
+  label: string;
+  /** Serra's reader for its MCP servers, or null: "not supported yet". */
+  driver: WorkerDriver | null;
+}
+
 export interface McpOverview {
   worker: {
     /** `worker.provider` from the profile, or null when T3 uses the project's default. */
     provider: string | null;
-    /** The provider kinds whose servers are listed. Both when Serra can't tell which one T3 will use. */
+    /** The provider kinds whose servers are listed. */
     drivers: WorkerDriver[];
-    /** Why both are listed, when they are. */
+    /**
+     * The providers the worker may run on, from T3's settings: the profile's one, else every one turned on in T3.
+     * Empty when Serra couldn't read T3's settings (then `drivers` is a guess and `note` says so).
+     */
+    providers: WorkerProvider[];
+    /** Why the list is what it is, when that isn't obvious. */
     note: string | null;
   };
   servers: McpServer[];
@@ -109,20 +124,36 @@ const KNOWN_TOOLS: readonly { id: string; label: string; mentioned: RegExp; serv
 export interface McpOptions {
   /** The user's home folder. */
   home?: string;
-  /** Only `CLAUDE_CONFIG_DIR` and `CODEX_HOME` are read. */
+  /** Only `CLAUDE_CONFIG_DIR`, `CODEX_HOME` and `T3CODE_HOME` are read. */
   env?: Record<string, string | undefined>;
 }
 
 const DRIVER_LABELS: Record<WorkerDriver, string> = { claude: 'Claude', codex: 'Codex' };
 
-/** Which provider kinds a profile's `worker.provider` can mean. */
-export const workerDrivers = (provider: string | undefined): McpOverview['worker'] => {
-  if (!provider) {
-    return { provider: null, drivers: ['claude', 'codex'], note: 'Servers for both Claude and Codex are listed.' };
+/**
+ * Which providers a profile's worker can run on, and so whose MCP servers to list. The list comes from T3's own
+ * settings (src/t3-providers.ts): the profile's `worker.provider` instance, else every provider turned on in T3.
+ * Without T3's settings, Serra falls back to guessing from the instance name, and says so.
+ */
+export const workerDrivers = (provider: string | undefined, t3: T3Providers | null = null): McpOverview['worker'] => {
+  if (t3) {
+    const view = (entry: T3Provider): WorkerProvider => ({ instanceId: entry.instanceId, label: entry.label, driver: entry.mcp });
+    const chosen = provider ? providerFor(t3, provider) : null;
+    if (provider && !chosen) {
+      return { provider, drivers: [], providers: [], note: `T3 has no provider "${provider}". Pick one that exists in the profile's worker settings.` };
+    }
+    const on = chosen ? [chosen] : t3.providers.filter((entry) => entry.enabled);
+    const drivers = [...new Set(on.flatMap((entry) => (entry.mcp ? [entry.mcp] : [])))];
+    const note = chosen && !chosen.enabled ? `${chosen.label} is turned off in T3, so jobs can't start until it's on.`
+      : !chosen && !on.length ? 'No provider is turned on in T3.' : null;
+    return { provider: provider ?? null, drivers, providers: on.map(view), note };
   }
-  if (/claude/i.test(provider)) return { provider, drivers: ['claude'], note: null };
-  if (/codex/i.test(provider)) return { provider, drivers: ['codex'], note: null };
-  return { provider, drivers: ['claude', 'codex'], note: `Serra can't tell whether "${provider}" is Claude or Codex, so servers for both are listed.` };
+  const guess = (drivers: WorkerDriver[], note: string | null): McpOverview['worker'] => ({ provider: provider ?? null, drivers, providers: [], note });
+  const unread = "Serra couldn't read T3's provider settings";
+  if (!provider) return guess(['claude', 'codex'], `${unread}, so servers for both Claude and Codex are listed.`);
+  if (/claude/i.test(provider)) return guess(['claude'], null);
+  if (/codex/i.test(provider)) return guess(['codex'], null);
+  return guess(['claude', 'codex'], `${unread}, and can't tell whether "${provider}" is Claude or Codex, so servers for both are listed.`);
 };
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -424,7 +455,7 @@ export const missingToolWarnings = (
 export const mcpOverview = (profile: Pick<Profile, 'project' | 'worker' | 'messageTriggers'>, options: McpOptions = {}): McpOverview => {
   const home = options.home ?? homedir();
   const env = options.env ?? process.env;
-  const worker = workerDrivers(profile.worker?.provider);
+  const worker = workerDrivers(profile.worker?.provider, readT3Providers({ home, env }));
   const read = worker.drivers.map((driver) => (driver === 'claude' ? readClaude : readCodex)(profile.project.path, home, env));
   const servers = read.flatMap((result) => result.servers);
   const warnings = missingToolWarnings(requiredTools(profile.messageTriggers), servers, worker.drivers);
@@ -446,6 +477,9 @@ export const formatMcpOverview = (overview: McpOverview): string => {
   const lines: string[] = [];
   lines.push(overview.worker.provider ? `Worker provider: ${overview.worker.provider}` : "Worker provider: T3's project default");
   if (overview.worker.note) lines.push(overview.worker.note);
+  for (const provider of overview.worker.providers) {
+    if (!provider.driver) lines.push(`${provider.label}: not supported yet. Serra can't read its MCP servers; check them in ${provider.label}.`);
+  }
   for (const listing of overview.listing) if (listing.note) lines.push(`${DRIVER_LABELS[listing.driver]}: ${listing.note}`);
   for (const warning of overview.warnings) lines.push(`! ${warning.text}`);
   for (const driver of overview.worker.drivers) {

@@ -20,32 +20,31 @@ Only your own messages count, and only as a new message in your DM. With capture
 - Decisions and undated constraints, at most 8 per meeting, as one bullet each under `## Decisions` on a page your team may read, or on one new page under `decisions/`. Never `owner/` or `people/`.
 - Each bullet only after you approve it, with the quote and the turns around it in front of you.
 - Pending quotes for review, up to 30 days, in the profile folder (not `knowledge/`).
-- **Not the transcript.** It's read in memory, secrets are redacted before Claude sees it, and it's never written to disk.
+- **Not the transcript.** Serra reads it in memory, redacts secrets before any model sees it, and never writes it to disk, Slack, a pull request or knowledge. T3 keeps the runs that read it in its own history, like any thread (see below).
 
 Only team meetings for now: until workers are isolated from the profile folder, any worker could read pending quotes.
 
 ## Sources
 
-Serra never holds a Granola or Google key. It reads through **your own Claude Code connections**, the same ones your workers use:
+Serra never holds a Granola or Google key. It reads through **the connections of the AI provider you use in T3**, the same ones your workers use:
 
 | Source | What you need |
 |---|---|
-| Granola | The Granola connector in Claude (claude.ai › Settings › Connectors), or `claude mcp add granola --transport http https://mcp.granola.ai/mcp`, then sign in with `/mcp`. Transcripts need a Granola Business or Enterprise plan. |
-| Google Meet | The Google Drive connector in Claude, signed in. Meet saves transcripts to Drive on Workspace Business Standard and above, when transcription is on. |
+| Granola | A Granola connection in that provider, signed in. For Claude: claude.ai › Settings › Connectors › Granola. For others, add Granola's MCP server (`https://mcp.granola.ai/mcp`). Transcripts need a Granola Business or Enterprise plan. |
+| Google Meet | A Google Drive connection in that provider, signed in. Meet saves transcripts to Drive on Workspace Business Standard and above, when transcription is on. |
 | File or paste | Nothing. Every notetaker exports text. |
 
-Settings › Meetings › Sources › **Check** shows whether each works now and what to do if not.
-
-To read a meeting, Serra starts Claude Code (the same tested build, no managed hooks) for one turn with exactly one read tool allowed (Granola's `get_meeting_transcript`, or Drive's `read_file_content`), with exactly Serra's arguments, every built-in tool off, and the meeting's ID as the only input. Claude Code runs the tool and stops before any model sees the result; Serra takes the transcript from it.
+Settings › Meetings › Sources shows which T3 provider and model meeting runs use (the profile's worker, else T3's default) and whether T3 has it turned on. That reads files only. **Test** on a source starts one short T3 run that asks the provider whether it has that connection: it's the only time the screen makes a model call, and only when you press it.
 
 ## How it's read
 
-The extractor is one Claude Code call with **no tools, no MCP servers and no saved session**, from an empty folder, with the prompt on stdin. Before any transcript is sent, Serra checks:
+T3 is Serra's only agent layer: Serra never starts Claude Code, Codex or any other provider itself. Reading a link and picking out decisions are each **one T3 thread**, on the provider and model you picked, so it works with any provider T3 has (Claude, Codex, Cursor, Antigravity and the others).
 
-- the Claude Code version is one it was tested with;
-- managed settings define no hooks;
-- a probe of the same launch reports zero tools and zero MCP servers;
-- a canary self-test passes.
+- **Where:** every run starts in Serra's own empty folder, `~/.local/share/serra-meeting-runs`, which Serra adds to T3 as a project of its own ("Serra meetings"). Never your repository, a worktree or the profile folder.
+- **Read-only brief:** no files, no commands, no web, no changes anywhere, no questions; the transcript is untrusted text. A link run may make one call of one read tool of the source's connection (Granola's transcript tool, or Drive's file reader) for the meeting's ID, and must give the transcript back unchanged. The extraction run is told to use no tools at all.
+- **Checked after:** the folder must be empty before a run and still empty after it, or the answer is thrown away. A run that stops for an approval or a question isn't waited on. A run's error is turned into a fixed sentence; Serra never repeats what the run wrote.
+- **No secrets in briefs:** a brief holds Serra's rules, the meeting's ID, the pages a decision may go on, and the transcript after secret redaction. Thread titles never hold meeting text.
+- **What stays:** T3 keeps those threads in its history on this Mac, and the provider processes the text under its own terms. Delete the threads in T3 (project "Serra meetings") if you want them gone.
 
 Serra's checks narrow what reaches you:
 - each quote must be in the transcript;
@@ -65,4 +64,4 @@ Settings › Meetings › **Forget** removes everything a meeting added:
 - its pending quotes;
 - its digest message.
 
-It can't reach your upload in Slack, the copy Claude processed, or T3 threads that already read it.
+It can't reach your upload in Slack, the T3 runs that read the meeting (delete them in T3's "Serra meetings" project), the provider's copy, or T3 threads that already read it.
