@@ -456,7 +456,7 @@ export const createBot = ({
       if (sent.ok) id = sent.value;
       else {
         instead = refusalNotice(sent);
-        if (!sent.ok && sent.why === 'unconfirmed' && sent.error.kind === 'setup') {
+        if (sent.why === 'unconfirmed' && sent.error.kind === 'setup') {
           logger.error(`The chat won't say who can see ${key} (${sent.error.code}): update the chat app's permissions (docs/configuration.md) and reinstall it.`);
           events('failure', { key, error: `The chat won't say who can see this thread (${sent.error.code}). Update the chat app's permissions and reinstall it; until then replies there are held.` });
         }

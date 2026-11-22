@@ -24,9 +24,9 @@ const { heard: told, loadKnowledge } = onePage();
 const fixture = (options: Parameters<typeof createFakeSlack>[0] = {}) => {
   const clock = fakeClock('2026-11-18T10:00:00Z');
   const slack = createFakeSlack({ botUserId: 'UBOT', now: () => clock.now(), ...options });
-  const { chat, writer } = createSlackChat({ client: slack.client, owner: OWNER, botUserId: () => 'UBOT', botToken: 'xoxb-1111-2222-fixturevalue',
+  const { chat, writer, sawDm } = createSlackChat({ client: slack.client, owner: OWNER, botUserId: () => 'UBOT', botToken: 'xoxb-1111-2222-fixturevalue',
     profileDir: '/tmp', logger: { info: quiet, warn: quiet, error: quiet, debug: quiet }, clock });
-  return { slack, chat, writer, clock, deliver: createDeliver(writer, loadKnowledge) };
+  return { slack, chat, writer, sawDm, clock, deliver: createDeliver(writer, loadKnowledge) };
 };
 
 test('[KB-002] deliver writes worker words only after the chat says who can see the target, and only if they may hear them', async () => {
@@ -49,13 +49,17 @@ test('[KB-002] text only the owner may see goes only to the owner\'s own DM', as
   assert.equal(f.slack.callsTo('chat.postMessage').length, 1);
 });
 
-test('[REPLY-005] an error\'s detail goes out only under the owner-only rule, and only to a DM Slack confirms is the owner\'s', async () => {
-  const f = fixture({ dms: { D2: 'USAM' } });
+test('[REPLY-005] an error\'s detail goes out only under the owner-only rule, and only to a DM no one else has written in', async () => {
+  const f = fixture();
   const detail = { op: 'send', out: { kind: 'failure-detail', line: 'exited 1' } } as const;
   await assert.rejects(f.deliver({ target: { conversation: 'D1', thread: '1.0' }, requester: OWNER, hearing: { kind: 'thread', heard: told } }, detail), /only under the owner-only rule/);
-  // Passed off as the owner's, a teammate's DM is still theirs: Slack says whose it is.
+  // The owner's own DM needs no lookup: describing a DM would need a scope the app doesn't have.
+  assert.equal((await f.deliver({ target: { conversation: 'D1', thread: '1.0' }, requester: OWNER, hearing: { kind: 'owner-only' } }, detail)).ok, true);
+  assert.equal(f.slack.callsTo('conversations.info').length, 0);
+  // Passed off as the owner's, a DM a teammate wrote in is still theirs.
+  f.sawDm('D2', 'USAM');
   assert.deepEqual(await f.deliver({ target: { conversation: 'D2', thread: '1.0' }, requester: OWNER, hearing: { kind: 'owner-only' } }, detail), { ok: false, why: 'withheld' });
-  assert.equal(f.slack.callsTo('chat.postMessage').length, 0);
+  assert.equal(f.slack.callsTo('chat.postMessage').length, 1);
 });
 
 test('[REPLY-008] a review request goes elsewhere only when its channel and the thread it came from may both hear it', async () => {
