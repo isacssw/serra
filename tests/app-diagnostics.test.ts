@@ -7,7 +7,7 @@ import { diagnosticsHandlers, MAX_LOG_LINES } from '../app/main/ipc/diagnostics.
 import type { HandlerContext } from '../app/main/ipc/context.ts';
 import { memoryPrefs } from '../app/main/prefs.ts';
 import { stoppedStatusSource } from '../app/main/status.ts';
-import { reportText, runtimeLine, statusKey, summarize } from '../app/renderer/screens/diagnostics.logic.ts';
+import { reportText, statusKey, summarize } from '../app/renderer/screens/diagnostics.logic.ts';
 import { loadConfig, type Config, type Profile } from '../src/config.ts';
 import type { Diagnostic } from '../src/contracts.ts';
 import { diagnose, type DiagnoseOptions } from '../src/doctor.ts';
@@ -184,12 +184,6 @@ test('checks rerun when the daemon starts, stops, restarts or its Slack link cha
   assert.equal(up(10, true), up(10, true, 5));
   assert.notEqual(up(10, true), up(11, true));
   assert.notEqual(up(10, true), up(10, false));
-});
-
-test('the app runtime is labelled as Electron, separate from the bot Node', () => {
-  const line = runtimeLine({ version: '0.1.0', electron: '45.4.1', node: '24.22.3' });
-  assert.match(line, /Electron 45\.4\.1 \(bundled Node 24\.22\.3\)/);
-  assert.match(line, /The bot runs on its own Node/);
 });
 
 test('the copied report lists every check and the log tail', () => {

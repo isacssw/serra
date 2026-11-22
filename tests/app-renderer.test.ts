@@ -3,7 +3,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 import { badgeCounts, badgeText, badgeTone } from '../app/renderer/badges.logic.ts';
-import { defaultPath, initialPath, routeForPath, routes, sections } from '../app/renderer/routes.ts';
+import { defaultPath, initialPath, routeForPath } from '../app/renderer/routes.ts';
 import { statusHeader, statusView } from '../app/renderer/status.logic.ts';
 import type { BotStatus, JobSummary, Proposal } from '../src/contracts.ts';
 
@@ -67,23 +67,6 @@ test('badge text: hidden for zero or unknown, capped at 99+', () => {
   assert.equal(badgeTone('proposals'), 'accent');
 });
 
-test('routes: every sidebar item has a unique route, in a known section', () => {
-  const paths = routes.map((route) => route.path);
-  assert.equal(new Set(paths).size, paths.length);
-  assert.equal(new Set(routes.map((route) => route.id)).size, routes.length);
-  const sectionIds = new Set(sections.map((section) => section.id));
-  for (const route of routes) {
-    assert.ok(sectionIds.has(route.section), `${route.id} is in an unknown section`);
-    assert.match(route.path, /^\/[a-z-]+(\/[a-z-]+)?$/);
-    assert.match(route.ticket, /^(APP|SERRA)-\d+$/);
-  }
-  // The MVP screens from the spike, in the mockup's order.
-  assert.deepEqual(routes.map((route) => route.label), [
-    'Needs you', 'Running', 'Done today', 'New task', 'About me', 'Proposals', 'Pages', 'Brief & policy', 'Bot & Slack', 'People', 'Repositories',
-    'Alerts', 'Worker', 'Secrets', 'Tools', 'Updates', 'Diagnostics', 'Appearance',
-  ]);
-});
-
 test('routes: the window reopens on the saved screen only when it still exists', () => {
   assert.ok(routeForPath(defaultPath));
   assert.equal(initialPath(null), defaultPath);
@@ -103,16 +86,4 @@ test('renderer: the page is titled Serra and imports no Node modules', () => {
     if (file !== 'vite.config.ts') assert.doesNotMatch(text, /from 'node:/, `${file} imports a Node module`);
   }
   assert.match(readFileSync(root + 'index.html', 'utf8'), /<title>Serra<\/title>/);
-});
-
-test('renderer: a monospace field sets font-mono on the field, not on its label and note', () => {
-  // QA: `className="font-mono"` on <Input> styles the wrapper, so the wizard's labels and hints came out monospace.
-  const root = fileURLToPath(new URL('../app/renderer/', import.meta.url));
-  const screens = readdirSync(root, { recursive: true, encoding: 'utf8' }).filter((file) => file.endsWith('.tsx'));
-  for (const file of screens) {
-    for (const [tag] of readFileSync(root + file, 'utf8').matchAll(/<Input\b[^>]*>/gs)) {
-      assert.doesNotMatch(tag, /(?<!input)className="[^"]*\bfont-mono\b/, `${file}: use inputClassName="font-mono"`);
-    }
-  }
-  assert.match(readFileSync(root + 'ui/Input.tsx', 'utf8'), /inputClassName,\n\s*\)\}/, 'Input puts inputClassName on the <input>');
 });

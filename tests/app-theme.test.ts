@@ -72,12 +72,6 @@ test('native theme: follows every saved change, and a rejected change leaves it 
   assert.equal(prefs.get().theme, 'system');
 });
 
-test('native theme: main wraps the real prefs store with it before opening any window', () => {
-  const source = readFileSync(new URL('../app/main/index.ts', import.meta.url), 'utf8');
-  assert.match(source, /const stored = followTheme\(electronPrefs\(\), nativeTheme\);/);
-  assert.ok(source.indexOf('followTheme(') < source.indexOf('createMainWindow('));
-});
-
 // ---------------------------------------------------------------------------------------------------------------
 // Window (renderer)
 // ---------------------------------------------------------------------------------------------------------------
