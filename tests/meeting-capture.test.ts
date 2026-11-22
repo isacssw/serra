@@ -1,17 +1,21 @@
 // Meeting capture routing, and the T3 runs that read links and pick out decisions (SERRA-62, SERRA-69), with fakes
 // for Slack and T3. Nothing here runs a model.
 import assert from 'node:assert/strict';
-import { cpSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { cpSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test, { type TestContext } from 'node:test';
 import { codeRoot } from '../src/config.ts';
 import { createKnowledge } from '../src/knowledge.ts';
 import { COPY, createMeetingCapture, meetingsFirst, type MeetingChat } from '../src/meeting-capture.ts';
-import { createMeetingRuns, meetingRunner, type MeetingRunOptions } from '../src/meeting-runs.ts';
+import { createMeetingRuns, meetingRunner, type MeetingRunOptions, type MeetingT3 } from '../src/meeting-runs.ts';
 import { MEETING_NOTICE, readMeetingSettings, writeMeetingSettings } from '../src/meeting-settings.ts';
 import { meetingRequest, transcriptFromResult } from '../src/meeting-sources.ts';
+import { shortError } from '../src/lib/errors.ts';
+import { ensureProject, showThread, startFolderThread } from '../src/t3.ts';
 import { t3Providers } from '../src/t3-providers.ts';
+import { openT3Session, type T3Session } from '../src/t3-session.ts';
+import { fakeT3Cli } from './fakes/t3-cli.ts';
 import type { FolderThreadInput, IncomingMessage, T3ThreadDetail } from '../src/types.ts';
 
 const OWNER = 'UROBIN0001';
@@ -189,6 +193,43 @@ test('a Granola or Meet link is read through the provider, then checked like an 
   assert.match(h.posts.at(-1)!.text, /from Granola/);
 });
 
+test('the same meeting sent twice is caught before a T3 run, however it arrives; after Forget it can be sent again', async (t) => {
+  const h = harness(t);
+  await run(h, message());
+  assert.equal(h.prompts.length, 1);
+  // Pasted this time, with different spacing: the same normalised turns.
+  await run(h, message({ threadTs: '2.0', messageTs: '2.0', files: [], text: `remember this meeting\n${TRANSCRIPT.replace(/ +/g, '  ')}\n` }));
+  assert.equal(h.prompts.length, 1, 'no second extraction');
+  assert.equal(h.posts.at(-1)!.text, 'Serra already has this meeting (Payments sync, 2026-11-20), so it didn’t read it again. Its decisions are in Serra › Knowledge › Proposals.');
+  assert.equal(h.posts.at(-1)!.thread, '2.0');
+  assert.equal(h.capture.store.listMeetings().length, 1, 'one meeting, one set of proposals');
+  // A different meeting is read as usual.
+  h.state.extract = async () => DIGEST;
+  await run(h, message({ threadTs: '3.0', messageTs: '3.0', files: [], text: 'remember this meeting\nAna: A different meeting entirely.\nBo: Agreed.' }));
+  assert.equal(h.prompts.length, 2);
+  // Forget drops the fingerprint with everything else: the meeting can be sent again.
+  const first = Object.values(h.capture.store.readRegistry().meetings).find((record) => record.speakers.includes('Robin'))!;
+  assert.ok(first.transcript);
+  h.capture.store.forget(first.id);
+  assert.equal(h.capture.store.readRegistry().meetings[first.id]!.transcript, undefined);
+  await run(h, message({ threadTs: '4.0', messageTs: '4.0' }));
+  assert.equal(h.prompts.length, 3);
+});
+
+test('two copies of a meeting sent at once make one meeting: the second is refused when it\'s recorded', async (t) => {
+  const h = harness(t);
+  let release = (): void => {};
+  const gate = new Promise<void>((resolve) => { release = resolve; });
+  h.state.extract = async () => { await gate; return DIGEST; };
+  const first = h.capture.intercept(message())!;
+  const second = h.capture.intercept(message({ threadTs: '2.0', messageTs: '2.0' }))!;
+  await new Promise((resolve) => { setImmediate(resolve); });
+  release();
+  await Promise.all([first.work, second.work]);
+  assert.equal(h.capture.store.listMeetings().length, 1);
+  assert.match(h.posts.map((post) => post.text).join('\n'), /Serra already has this meeting/);
+});
+
 test('nothing to read, or two files, gets a plain instruction', async (t) => {
   const h = harness(t);
   await run(h, message({ files: [] }));
@@ -212,41 +253,108 @@ test('Forget deletes the digest message through the daemon, and a deleted one co
 
 // --- Meeting runs on T3 ---------------------------------------------------------------------------------------------
 
-/** A fake T3: records each project added and thread started, and answers each thread with `answer(brief)`. */
-const fakeT3 = (t: TestContext, answer: (brief: string) => string, { pending = false, write = false, running = 0 } = {}) => {
+interface FakeRunOptions {
+  /** The run is waiting on approval or a question. */
+  pending?: boolean;
+  /** The run writes a file in the meetings folder. */
+  write?: boolean;
+  /** How many polls the run is still going for. */
+  running?: number;
+  /** The tool call T3 records for a fetch run, as T3 writes the item's text; null for none. */
+  tool?: (brief: string) => string | null;
+  /** T3 gives item text in pages of this many characters. */
+  page?: number;
+}
+
+/**
+ * A fake T3 with both halves of Serra's T3 layer: the CLI (`ensureProject`, `startFolderThread`, `showThread`) and
+ * a session on T3's tool endpoint (`t3_thread_launch`, `t3_thread_read`, `t3_thread_interrupt`). Like real T3, a
+ * session can stop an `approval-required` thread and is refused for a full-access one (what the CLI starts).
+ */
+const fakeT3 = (t: TestContext, answer: (brief: string) => string, { pending = false, write = false, running = 0, tool, page = 20_000 }: FakeRunOptions = {}) => {
   const workspace = mkdtempSync(join(tmpdir(), 'serra-meeting-runs-'));
   t.after(() => rmSync(workspace, { recursive: true, force: true }));
+  t.after(() => rmSync(`${workspace}-leftovers`, { recursive: true, force: true }));
   const projects: string[] = [];
-  const started: { input: FolderThreadInput; bin: string }[] = [];
+  const started: { input: FolderThreadInput; bin: string; mode: 'full-access' | 'approval-required' }[] = [];
+  const interrupted: string[] = [];
+  const events: string[] = [];
+  const sessions = { opened: 0, closed: 0 };
   const shows: Record<string, number> = {};
-  const t3 = {
-    ensureProject: async (path: string) => { projects.push(path); },
-    startFolderThread: async (input: FolderThreadInput, bin = '') => {
-      started.push({ input, bin });
-      if (write) writeFileSync(join(workspace, 'notes.md'), 'written by the run');
-      return `thread-${started.length}`;
-    },
+  const brief = (threadId: string): string => started[Number(threadId.split('-')[1]) - 1]!.input.brief;
+  const begin = (input: FolderThreadInput, bin: string, mode: 'full-access' | 'approval-required'): string => {
+    started.push({ input, bin, mode });
+    events.push(`start thread-${started.length}`);
+    if (write) writeFileSync(join(workspace, `notes-${started.length}.md`), 'written by the run');
+    return `thread-${started.length}`;
+  };
+  const toolItem = (threadId: string) => {
+    const text = tool?.(brief(threadId)) ?? null;
+    return text === null ? [] : [{ position: 3, itemId: `item-${threadId}`, runId: 'run-1', type: 'dynamic_tool', status: 'completed', text }];
+  };
+  const paged = (item: { text: string }, offset: number) => ({
+    ...item, text: item.text.slice(offset, offset + page),
+    textTruncated: offset + page < item.text.length, nextTextOffset: offset + page < item.text.length ? offset + page : null,
+  });
+  const session = async (): Promise<T3Session> => {
+    sessions.opened += 1;
+    return {
+      call: async (name, args) => {
+        if (name === 't3_project_list') return { projects: projects.map((path, n) => ({ id: `project-${n}`, workspaceRoot: realpathSync(path), deletedAt: null })), nextCursor: null };
+        if (name === 't3_thread_launch') {
+          assert.equal(args.projectId, 'project-0');
+          const selection = args.modelSelection as { instanceId?: string; model?: string } | undefined;
+          const input: FolderThreadInput = { project: workspace, title: String(args.title), brief: String(args.message), ...(selection?.instanceId ? { provider: selection.instanceId } : {}), ...(selection?.model ? { model: selection.model } : {}) };
+          return { threadId: begin(input, '', args.runtimeMode === 'approval-required' ? 'approval-required' : 'full-access') };
+        }
+        if (name === 't3_thread_read') {
+          const threadId = String(args.threadId);
+          const items = toolItem(threadId);
+          if (args.itemId) return { items: items.map((item) => paged(item, Number(args.textOffset))) };
+          return { items: [{ position: 0, itemId: 'user', runId: 'run-1', type: 'user_message', text: brief(threadId) }, ...items.map((item) => paged(item, 0))], hasMore: false, nextPosition: 3 };
+        }
+        if (name === 't3_thread_interrupt') {
+          const threadId = String(args.threadId);
+          // Real T3: a session the CLI issues is capped at approval-required, and can't stop a full-access thread.
+          if (started[Number(threadId.split('-')[1]) - 1]!.mode === 'full-access') throw new Error('T3 Code’s t3_thread_interrupt failed: Thread runs in full-access/default, above this caller\'s approval-required/default limit.');
+          interrupted.push(threadId);
+          return { threadId, status: 'interrupt_requested' };
+        }
+        throw new Error(`unexpected tool ${name}`);
+      },
+      close: async () => { sessions.closed += 1; },
+    };
+  };
+  const t3: MeetingT3 = {
+    ensureProject: async (path: string) => { if (!projects.includes(path)) projects.push(path); },
+    startFolderThread: async (input: FolderThreadInput, bin?: string) => begin(input, bin ?? '', 'full-access'),
     showThread: async (threadId: string): Promise<T3ThreadDetail> => {
       shows[threadId] = (shows[threadId] ?? 0) + 1;
+      events.push(`show ${threadId}`);
+      await new Promise((resolve) => { setImmediate(resolve); });
       const busy = shows[threadId]! <= running;
-      const brief = started[Number(threadId.split('-')[1]) - 1]!.input.brief;
       return {
         thread: { threadId, link: `https://app.t3.codes/threads/${threadId}`, status: busy ? 'running' : 'idle', latestRunId: 'run-1', activeRunId: busy ? 'run-1' : null, pendingRequestCount: pending ? 1 : 0 },
-        messages: [{ role: 'user', runId: 'run-1', text: brief }, { role: 'assistant', runId: 'run-1', text: 'working on it' }, { role: 'assistant', runId: 'run-1', text: answer(brief) }],
+        messages: [{ role: 'user', runId: 'run-1', text: brief(threadId) }, { role: 'assistant', runId: 'run-1', text: 'working on it' }, { role: 'assistant', runId: 'run-1', text: answer(brief(threadId)) }],
       };
     },
+    session,
   };
-  const runs = (over: Partial<MeetingRunOptions> = {}) => createMeetingRuns({ t3Bin: '/Users/you/.t3/bin/t3', workspace, t3, pollMs: 0, sleep: async () => {}, ...over });
-  return { workspace, projects, started, runs };
+  const logs: string[] = [];
+  const runs = (over: Partial<MeetingRunOptions> = {}) => createMeetingRuns({ t3Bin: '/Users/you/.t3/bin/t3', workspace, t3, pollMs: 0, sleep: async () => {}, log: (line) => logs.push(line), ...over });
+  return { workspace, projects, started, interrupted, events, sessions, logs, runs };
 };
+
+/** A tool call as T3 records it in a run's activity: the item's text is JSON of the tool's name, input and output. */
+const toolText = (input: unknown, output: unknown, toolName = 'mcp__granola__get_meeting_transcript'): string => JSON.stringify({ toolName, input, output }, null, 2);
 
 test('extraction is one read-only T3 thread in Serra\'s empty meetings folder, on the provider and model the owner picked', async (t) => {
   const f = fakeT3(t, () => DIGEST);
   const text = await f.runs({ provider: 'cursor', model: 'composer-2' }).extract('TRANSCRIPT-BYTES');
   assert.equal(text, DIGEST, 'the run\'s final answer, not its progress lines');
   assert.deepEqual(f.projects, [f.workspace], 'the folder is a T3 project of its own');
-  const { input, bin } = f.started[0]!;
-  assert.equal(bin, '/Users/you/.t3/bin/t3');
+  const { input, mode } = f.started[0]!;
+  assert.equal(mode, 'approval-required', 'a run that needs no tools can\'t use one without stopping for approval');
   assert.equal(input.project, f.workspace);
   assert.equal(input.baseRef, undefined, 'never a worktree of the team\'s repository');
   assert.equal(input.provider, 'cursor');
@@ -256,93 +364,129 @@ test('extraction is one read-only T3 thread in Serra\'s empty meetings folder, o
   assert.match(input.brief, /Do not create, edit, move or delete any file/);
   assert.match(input.brief, /Use no tools at all/);
   assert.match(input.brief, /TRANSCRIPT-BYTES/);
+  assert.deepEqual(f.sessions, { opened: 1, closed: 1 }, 'the session is revoked after the run');
   // Without a choice, T3's own default runs it.
   const plain = fakeT3(t, () => DIGEST);
   await plain.runs().extract('x');
   assert.equal('provider' in plain.started[0]!.input, false);
   assert.equal('model' in plain.started[0]!.input, false);
+  // A brief longer than T3 takes is refused before any run.
+  await assert.rejects(plain.runs().extract('x'.repeat(130_000)), /too long for one T3 run/);
+  assert.equal(plain.started.length, 1);
 });
 
-test('a link is read by a T3 run allowed one read tool; the answer is unwrapped, and its errors never quote it', async (t) => {
-  const f = fakeT3(t, () => '<meeting-title>Payments sync</meeting-title>\n<meeting-transcript>\nAna: three attempts.\nBo: ok.\n</meeting-transcript>');
+test('a link\'s transcript is the tool\'s own result from T3\'s record of the run, never the model\'s copy', async (t) => {
+  const transcript = Array.from({ length: 400 }, (_, n) => `${n % 2 ? 'Bo' : 'Ana'}: line ${n} of the real transcript.`).join('\n');
+  const f = fakeT3(t, () => '<meeting-title>Payments sync</meeting-title>\n<meeting-read>done</meeting-read>\nAna: a shortened copy.', {
+    tool: (brief) => (brief.includes('abc-123') ? toolText({ meeting_id: 'abc-123' }, { content: transcript }) : null),
+    page: 5000,
+  });
   const fetched = await f.runs().fetchTranscript({ provider: 'granola', id: 'abc-123', url: 'https://notes.granola.ai/d/abc-123' });
-  assert.deepEqual(fetched, { text: 'Ana: three attempts.\nBo: ok.', title: 'Payments sync' });
-  const brief = f.started[0]!.input.brief;
-  assert.match(brief, /meeting with ID "abc-123"/);
-  assert.match(brief, /one call of one read tool/);
-  assert.match(brief, /Do not change anything anywhere/);
+  assert.equal(fetched.text, transcript, 'read whole, across pages, exactly as the tool returned it');
+  assert.equal(fetched.title, 'Payments sync');
+  const { mode, input } = f.started[0]!;
+  assert.equal(mode, 'full-access', 'a fetch uses its read tool without stopping for approval');
+  assert.match(input.brief, /meeting with ID "abc-123"/);
+  assert.match(input.brief, /one call of one read tool/);
+  assert.match(input.brief, /don't repeat it/);
+  assert.doesNotMatch(input.brief, /character for character/, 'the model never retypes the transcript');
 
-  const meet = fakeT3(t, () => `<meeting-transcript>${JSON.stringify({ title: 'Sync', transcript: [{ speaker: { name: 'Ana' }, text: 'Hi' }] })}</meeting-transcript>`);
-  assert.deepEqual(await meet.runs().fetchTranscript({ provider: 'google-meet', id: 'doc1', url: 'x' }), { text: 'Ana: Hi', title: 'Sync' });
-  assert.match(meet.started[0]!.input.brief, /Google Doc with file ID "doc1"/);
+  // Every provider's shape: MCP text parts (Claude, Cursor), structured JSON (Codex), a plain string.
+  for (const output of [{ content: [{ type: 'text', text: 'Ana: Hi' }] }, { title: 'Sync', transcript: [{ speaker: { name: 'Ana' }, text: 'Hi' }] }, 'Ana: Hi']) {
+    const shaped = fakeT3(t, () => '<meeting-read>done</meeting-read>', { tool: () => toolText({ fileId: 'doc1' }, output, 'google-drive.read_file_content') });
+    assert.equal((await shaped.runs().fetchTranscript({ provider: 'google-meet', id: 'doc1', url: 'x' })).text, 'Ana: Hi');
+  }
+});
 
-  for (const [answer, reason] of [
-    ['<meeting-error>not-connected</meeting-error>', /no Granola connection\. Connect Granola/],
-    ['<meeting-error>sign-in</meeting-error>', /sign in again/],
-    ['<meeting-error>too-long</meeting-error>', /too long/],
-    ['<meeting-error>SECRET-TRANSCRIPT says hi</meeting-error>', /couldn.t give Serra that meeting/],
-    ['Here is a summary: SECRET-TRANSCRIPT', /didn.t give back the Granola transcript/],
-    ['<meeting-transcript>  </meeting-transcript>', /empty transcript/],
+test('a link\'s transcript that was cut short, failed or is missing from T3\'s record is refused, and errors never quote it', async (t) => {
+  const link = { provider: 'granola', id: 'abc', url: 'x' } as const;
+  for (const [answer, tool, reason] of [
+    ['<meeting-read>done</meeting-read>', toolText({ id: 'abc' }, { content: 'Ana: SECRET-TRANSCRIPT…\n[truncated: 340 KB; only the first 100 KB is included]' }), /too long to read through a T3 run/],
+    ['<meeting-read>done</meeting-read>', toolText({ id: 'abc' }, 'Error: MCP tool "get_meeting_transcript" response (61000 tokens) exceeds maximum allowed tokens (25000).'), /too long/],
+    ['<meeting-read>done</meeting-read>', toolText({ id: 'abc' }, { content: [{ type: 'text', text: 'SECRET-TRANSCRIPT' }], isError: true }), /gave the T3 run an error/],
+    ['<meeting-read>done</meeting-read>', '{"toolName":"get_meeting_transcript","input":{"id":"abc"},"output":"SECRET-TRANSCRIPT', /too long/],
+    ['<meeting-title>x</meeting-title><meeting-transcript>SECRET-TRANSCRIPT</meeting-transcript>', null, /T3 has no Granola tool result/],
+    ['<meeting-read>done</meeting-read>', toolText({ id: 'abc' }, '   '), /empty transcript/],
+    ['<meeting-error>not-connected</meeting-error>', null, /no Granola connection\. Connect Granola/],
+    ['<meeting-error>sign-in</meeting-error>', null, /sign in again/],
+    ['<meeting-error>too-long</meeting-error>', toolText({ id: 'abc' }, 'SECRET-TRANSCRIPT part'), /too long/],
+    ['<meeting-error>SECRET-TRANSCRIPT says hi</meeting-error>', null, /couldn.t give Serra that meeting/],
   ] as const) {
-    const failing = fakeT3(t, () => answer);
-    await assert.rejects(failing.runs().fetchTranscript({ provider: 'granola', id: 'abc', url: 'x' }), (error: Error) => reason.test(error.message) && !error.message.includes('SECRET-TRANSCRIPT'));
+    const failing = fakeT3(t, () => answer, { tool: () => tool });
+    await assert.rejects(failing.runs().fetchTranscript(link), (error: Error) => reason.test(error.message) && !error.message.includes('SECRET-TRANSCRIPT'));
   }
 });
 
 test('meetings work again and again: the second capture and a Test reuse the "Serra meetings" project T3 already has', async (t) => {
-  // A fake `t3` that answers like the real CLI: a second `project add` of the same folder exits 1 with
-  // ProjectAlreadyExistsError on stdout (stderr stays empty), and `thread show` gives the run's final answer.
-  const root = mkdtempSync(join(tmpdir(), 'serra-meeting-t3-'));
-  t.after(() => rmSync(root, { recursive: true, force: true }));
-  const workspace = join(root, 'runs');
-  const bin = join(root, 't3');
-  const projects = join(root, 'projects.txt');
-  const answer = join(root, 'answer.txt');
-  writeFileSync(answer, DIGEST);
-  writeFileSync(bin, `#!${process.execPath}
-const fs = require('fs'); const args = process.argv.slice(2); let input = '';
-process.stdin.on('data', (x) => { input += x; });
-process.stdin.on('end', () => {
-  if (args[0] === 'project' && args[1] === 'add') {
-    const known = fs.existsSync(${JSON.stringify(projects)}) ? fs.readFileSync(${JSON.stringify(projects)}, 'utf8').split('\\n') : [];
-    if (known.includes(args.at(-1))) { console.log('ProjectAlreadyExistsError: An active project already exists for ' + args.at(-1)); process.exit(1); }
-    fs.appendFileSync(${JSON.stringify(projects)}, args.at(-1) + '\\n'); console.log('Added project'); return;
-  }
-  if (args[0] === 'thread' && args[1] === 'start') { console.log(JSON.stringify({ threadId: 'run-thread' })); return; }
-  if (args[0] === 'thread' && args[1] === 'show') {
-    console.log(JSON.stringify({ thread: { threadId: 'run-thread', link: 'https://app.t3.codes/threads/run-thread', status: 'idle', latestRunId: 'run-1', activeRunId: null, pendingRequestCount: 0 },
-      messages: [{ role: 'assistant', runId: 'run-1', text: fs.readFileSync(${JSON.stringify(answer)}, 'utf8') }] }));
-    return;
-  }
-  console.log('Unknown command'); process.exit(2);
-});`, { mode: 0o700 });
-  const runs = createMeetingRuns({ t3Bin: bin, workspace, pollMs: 0, sleep: async () => {} });
+  // A fake `t3` that answers like the real CLI, errors on stdout: a second `project add` of the same folder exits 1
+  // with ProjectAlreadyExistsError, `thread show` gives the run's final answer, and `auth session issue` gives a
+  // session for T3's tool endpoint, served here like T3 serves it.
+  const fake = await fakeT3Cli(t, DIGEST);
+  const runs = createMeetingRuns({ t3Bin: fake.bin, workspace: fake.workspace, pollMs: 0, sleep: async () => {}, t3: { startFolderThread, showThread, ensureProject, session: () => openT3Session({ bin: fake.bin, home: fake.home }) } });
   assert.equal(await runs.extract('first meeting'), DIGEST);
   assert.equal(await runs.extract('second meeting'), DIGEST, 'the second capture reuses the project');
-  writeFileSync(answer, '<meeting-source>ready</meeting-source>');
+  writeFileSync(fake.answer, '<meeting-source>ready</meeting-source>');
   assert.equal((await runs.checkSource('granola')).state, 'ready', 'and so does Test');
-  assert.equal(readFileSync(projects, 'utf8').trim().split('\n').length, 1, 'the folder is added to T3 once');
+  assert.equal(readFileSync(fake.projects, 'utf8').trim().split('\n').length, 1, 'the folder is added to T3 once');
+  assert.deepEqual(fake.launched.map((launch) => launch.runtimeMode), ['approval-required', 'approval-required', 'approval-required']);
+  assert.equal(readFileSync(fake.revoked, 'utf8').trim().split('\n').length, 3, 'every session is revoked');
+  assert.ok(fake.requests.every((request) => request.authorization === 'Bearer fixture-session-token'));
 });
 
-test('a run that writes in the meetings folder is thrown away, and a folder with files in it gets no run', async (t) => {
+test('T3\'s session errors are plain sentences that never carry the token', async (t) => {
+  const fake = await fakeT3Cli(t);
+  // T3 isn't running: no server-runtime.json.
+  await assert.rejects(openT3Session({ bin: fake.bin, home: join(fake.home, 'missing') }), /T3 Code isn’t running/);
+  // The CLI refuses (on stdout, like T3): the CommandError keeps its words for shortError.
+  writeFileSync(fake.refuse, 'No running T3 Code server uses /Users/you/.t3. Start T3 Code, then retry.');
+  await assert.rejects(openT3Session({ bin: fake.bin, home: fake.home }), (error: Error) => /T3 Code isn’t running/.test(shortError(error)));
+  rmSync(fake.refuse);
+  // The server refuses a call: T3's own message, never the token.
+  const session = await openT3Session({ bin: fake.bin, home: fake.home });
+  await assert.rejects(session.call('t3_thread_interrupt', { threadId: 'full' }), (error: Error) => /above this caller/.test(error.message) && !error.message.includes('fixture-session-token'));
+  await session.close();
+});
+
+test('a run that writes in the meetings folder is thrown away, and its files are moved aside so the next run can start', async (t) => {
   const writer = fakeT3(t, () => DIGEST, { write: true });
-  await assert.rejects(writer.runs().extract('x'), /wrote files .* thrown away/);
-  // The file it left stops the next run before it starts.
-  await assert.rejects(writer.runs().extract('x'), /has files in it/);
-  assert.equal(writer.started.length, 1);
+  await assert.rejects(writer.runs().extract('x'), /wrote files .* thrown away\. Serra moved them to .*serra-meeting-runs-.*-leftovers/);
+  assert.deepEqual(readdirSync(writer.workspace), [], 'the folder is empty again');
+  const [aside] = readdirSync(`${writer.workspace}-leftovers`);
+  assert.deepEqual(readdirSync(join(`${writer.workspace}-leftovers`, aside!)), ['notes-1.md'], 'moved, never deleted');
+  // A file left by a run Serra stopped waiting for doesn't block the next run either: it's moved aside first.
+  const clean = fakeT3(t, () => DIGEST);
+  writeFileSync(join(clean.workspace, 'late.md'), 'written after Serra gave up');
+  assert.equal(await clean.runs().extract('x'), DIGEST);
+  assert.match(clean.logs.join('\n'), /had files in it, left by an earlier run\. Moved them to/);
+  assert.deepEqual(readdirSync(clean.workspace), []);
 });
 
-test('a run that asks for approval or a question is not waited on; a run that never ends times out', async (t) => {
+test('runs in one meetings folder go one at a time, so a run\'s checks never see a neighbour\'s files', async (t) => {
+  const f = fakeT3(t, () => DIGEST, { running: 2 });
+  const runs = f.runs();
+  assert.deepEqual(await Promise.all([runs.extract('a'), runs.extract('b'), runs.checkSource('granola')]).then((done) => done.length), 3);
+  const lastOfFirst = f.events.lastIndexOf('show thread-1');
+  assert.ok(lastOfFirst < f.events.indexOf('start thread-2') && f.events.lastIndexOf('show thread-2') < f.events.indexOf('start thread-3'), f.events.join(', '));
+});
+
+test('a run Serra gives up on is stopped in T3: one that asks for approval or a question, or never ends', async (t) => {
   const asking = fakeT3(t, () => DIGEST, { pending: true });
-  await assert.rejects(asking.runs().extract('x'), /stopped to ask .* Stop it in T3: https:\/\/app\.t3\.codes\/threads\/thread-1/);
+  await assert.rejects(asking.runs().extract('x'), /stopped to ask for approval or a question, which a meeting run never needs\. Serra stopped it in T3\.$/);
+  assert.deepEqual(asking.interrupted, ['thread-1']);
   let clock = 0;
   const slow = fakeT3(t, () => DIGEST, { running: 1000 });
-  await assert.rejects(slow.runs({ timeoutMs: 10, now: () => (clock += 5) }).extract('x'), /took too long/);
+  await assert.rejects(slow.runs({ timeoutMs: 10, now: () => (clock += 5) }).extract('x'), /took too long\. Serra stopped it in T3\./);
+  assert.deepEqual(slow.interrupted, ['thread-1']);
   const steady = fakeT3(t, () => DIGEST, { running: 2 });
   assert.equal(await steady.runs().extract('x'), DIGEST, 'a run that is still going is followed until it ends');
+  assert.deepEqual(steady.interrupted, []);
+  // A fetch runs in full-access mode, which T3 doesn't let Serra stop: the owner gets the link.
+  const fetching = fakeT3(t, () => DIGEST, { pending: true });
+  await assert.rejects(fetching.runs().fetchTranscript({ provider: 'granola', id: 'abc', url: 'x' }), /Serra couldn't stop it: stop it in T3: https:\/\/app\.t3\.codes\/threads\/thread-1/);
+  assert.match(fetching.logs.join('\n'), /Couldn't stop meeting run thread-1/);
 });
 
-test('Test asks one T3 run about a source without calling a tool; its answer becomes a status with what to do', async (t) => {
+test('Test asks one guarded T3 run about a source without calling a tool; its answer becomes a status with what to do', async (t) => {
   for (const [answer, state, detail] of [
     ['<meeting-source>ready</meeting-source>', 'ready', /Business and Enterprise/],
     ['<meeting-source>missing</meeting-source>', 'missing', /Connect Granola in the AI provider you use in T3/],
@@ -354,6 +498,7 @@ test('Test asks one T3 run about a source without calling a tool; its answer bec
     assert.equal(status.state, state);
     assert.match(status.detail, detail);
     assert.match(f.started[0]!.input.brief, /Do not call any tool/);
+    assert.equal(f.started[0]!.mode, 'approval-required');
   }
 });
 

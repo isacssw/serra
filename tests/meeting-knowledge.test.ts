@@ -8,7 +8,7 @@ import test, { type TestContext } from 'node:test';
 import { codeRoot } from '../src/config.ts';
 import { createKnowledge } from '../src/knowledge.ts';
 import { withKnowledgeLock } from '../src/knowledge-lock.ts';
-import { checkDigest, extractionPrompt, MAX_MEMORY_ITEMS, parseDigestOutput, type TeamPage } from '../src/meeting-digest.ts';
+import { checkDigest, extractionPrompt, EXTRACTOR_SYSTEM_PROMPT, MAX_MEMORY_ITEMS, parseDigestOutput, type TeamPage } from '../src/meeting-digest.ts';
 import { applyEdit, decisionBullets, replacedBullets, scrubMeeting, type MeetingStamp } from '../src/meeting-page.ts';
 import { createMeetingStore, sha } from '../src/meeting-store.ts';
 import { isSensitive, locateQuote, parseTranscript, redactSecrets } from '../src/meeting-transcript.ts';
@@ -96,6 +96,22 @@ test('a replace moves the old bullet under Replaced with its own tag, and Forget
   assert.match(forgotOld, /3 times, then dead-letter/);
 });
 
+test('a replace can retire a rule written anywhere on the page, not only under Decisions, and Forget brings it back', () => {
+  const releases = page('- Releases go out on Tuesdays.\n- The release PR needs one approval.\n\n## Decisions\n\n- Hotfixes skip the freeze.\n');
+  const result = applyEdit(releases, { op: 'replace', old: 'Releases go out on Tuesdays.', text: 'Releases go out on Wednesdays.' }, MEETING);
+  assert.ok('text' in result);
+  const current = result.text.slice(0, result.text.indexOf('## Replaced'));
+  assert.doesNotMatch(current, /Tuesdays/, 'the old rule no longer reads as current');
+  assert.match(current, /# Webhooks\n\n- The release PR needs one approval\.\n/, 'other lines stay where they were');
+  assert.deepEqual(decisionBullets(result.text).map((bullet) => bullet.text), ['Hotfixes skip the freeze.', 'Releases go out on Wednesdays.']);
+  assert.deepEqual(replacedBullets(result.text).map((bullet) => bullet.line), ['- Releases go out on Tuesdays. (stopped applying 2026-11-20, replaced by m:7f3a01)']);
+  // The review screen's diff shows the old line removed.
+  assert.equal(releases.split('\n').filter((line) => !result.text.split('\n').includes(line)).join('\n'), '- Releases go out on Tuesdays.');
+  const forgotten = scrubMeeting(result.text, MEETING.id);
+  assert.doesNotMatch(forgotten, /Wednesdays|7f3a01/);
+  assert.deepEqual(decisionBullets(forgotten).map((bullet) => bullet.text), ['Hotfixes skip the freeze.', 'Releases go out on Tuesdays.'], 'current again');
+});
+
 test('a replace whose old bullet is gone can only be discarded; a full page takes no more', () => {
   assert.match(String((applyEdit(page(''), { op: 'replace', old: 'Not there', text: 'New rule.' }, MEETING) as { problem: string }).problem), /Discard/);
   const full = page(`## Decisions\n\n${Array.from({ length: 15 }, (_, n) => `- Rule ${n}.`).join('\n')}\n`);
@@ -115,6 +131,8 @@ const TRANSCRIPT = parseTranscript([
 
 const PAGES: TeamPage[] = [{ path: 'product/webhooks.md', description: 'How webhooks are delivered', text: page('- Deliveries retry.\n\n## Decisions\n\n- Retry webhooks 5 times.\n') }];
 const EXISTING = new Set(['product/webhooks.md', 'owner/voice.md', 'people/bo.md', 'product/private.md']);
+
+const RETRY_ITEM = { kind: 'decision', text: 'Webhook retries: 3 attempts, then dead-letter.', quote: 'three attempts and then dead-letter it', turns: [1], assent_turn: 2, who: ['Ana', 'Isac'], links: [], target: 'product/webhooks.md' };
 
 const check = (items: unknown[], reply: unknown[] = []) => checkDigest({ meeting: { title: 'x', date: null }, items, reply, dropped: { 'chit-chat': 2 } }, { transcript: TRANSCRIPT, pages: PAGES, existing: EXISTING, meeting: MEETING });
 
@@ -173,6 +191,19 @@ test('at most one new page, under decisions/, and at most 8 items', () => {
   assert.ok(digest.items.every((item) => item.target === 'decisions/ledger-access.md' && item.newPage?.topic === 'Ledger access'));
   assert.equal(digest.dropped['second new page'], 2);
   assert.equal(digest.dropped['over the cap'], 2);
+});
+
+test('the extractor sees every current rule on a page, and a replace of any of them passes; a retired one replaces nothing', () => {
+  const prompt = extractionPrompt(TRANSCRIPT, PAGES, '2026-11-22');
+  assert.match(prompt, /Current rules on the pages most related to this meeting[\s\S]*product\/webhooks\.md\n {2}- Deliveries retry\.\n {2}- Retry webhooks 5 times\./);
+  assert.match(EXTRACTOR_SYSTEM_PROMPT, /"replace" when it supersedes or contradicts one of the target page's listed rules/);
+  const replace = { ...RETRY_ITEM, op: 'replace', old: 'Deliveries retry.' };
+  const digest = check([replace]);
+  assert.equal(digest.items.length, 1);
+  assert.deepEqual(digest.items[0]!.edit, { op: 'replace', text: replace.text, old: 'Deliveries retry.', who: ['Ana', 'Isac'] });
+  const retired = { ...PAGES[0]!, text: page('## Decisions\n\n- Retry webhooks 3 times.\n\n## Replaced\n\n- Deliveries retry. (stopped applying 2026-11-01, replaced by m:41c201)\n') };
+  const stale = checkDigest({ items: [replace] }, { transcript: TRANSCRIPT, pages: [retired], existing: EXISTING, meeting: MEETING });
+  assert.deepEqual([stale.items.length, stale.dropped['replaces nothing']], [0, 1]);
 });
 
 test('the extractor output must be one JSON object; the prompt marks the transcript untrusted and lists only team pages', () => {

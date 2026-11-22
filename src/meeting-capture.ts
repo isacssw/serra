@@ -19,7 +19,7 @@ import { checkDigest, extractionPrompt, meetingStamp, parseDigestOutput, type Di
 import type { MeetingRuns } from './meeting-runs.ts';
 import { readMeetingSettings } from './meeting-settings.ts';
 import { meetingRequest, PROVIDERS, TRANSCRIPT_FILE, type MeetingLink } from './meeting-sources.ts';
-import { createMeetingStore, replyLines, type MeetingSourceKind, type MeetingStore } from './meeting-store.ts';
+import { createMeetingStore, DuplicateMeeting, replyLines, transcriptHash, type MeetingSourceKind, type MeetingStore } from './meeting-store.ts';
 import { MAX_TRANSCRIPT_CHARS, parseTranscript } from './meeting-transcript.ts';
 import type { IncomingFile, IncomingMessage } from './types.ts';
 
@@ -175,6 +175,10 @@ export const createMeetingCapture = (deps: MeetingCaptureDeps) => {
       const transcript = parseTranscript(source.raw, { ...(source.name ? { name: source.name } : {}), ...(source.title ? { title: source.title } : {}) });
       // The raw text is no longer needed: only the redacted, normalised transcript goes further.
       source = { ...source, raw: '' };
+      // The same meeting sent twice is caught before a T3 run, and again when it's recorded (two sent at once).
+      const hash = transcriptHash(transcript);
+      const earlier = store.findTranscript(hash);
+      if (earlier) throw new DuplicateMeeting(earlier);
       const today = now().toISOString().slice(0, 10);
       const { team, existing } = meetingPages(deps.knowledgeDir);
       const id = store.newId();
@@ -183,7 +187,7 @@ export const createMeetingCapture = (deps: MeetingCaptureDeps) => {
       const meeting = meetingStamp(raw, transcript, id, today);
       const digest = checkDigest(raw, { transcript, pages: team, existing, meeting });
       if (transcript.redacted) digest.dropped['secret redacted'] = transcript.redacted;
-      store.addMeeting({ meeting, items: digest.items, source: source.source, speakers: transcript.speakers, dropped: digest.dropped, pages: new Map(team.map((page) => [page.path, page.text])) });
+      store.addMeeting({ meeting, items: digest.items, source: source.source, speakers: transcript.speakers, dropped: digest.dropped, pages: new Map(team.map((page) => [page.path, page.text])), transcript: hash });
       await say(msg.channel, COPY.done, thread);
       const ts = await say(msg.channel, digestText(digest, source.from));
       // The digest holds unreviewed text from the meeting (action items aren't quote-checked): its thread is closed
@@ -194,7 +198,9 @@ export const createMeetingCapture = (deps: MeetingCaptureDeps) => {
       const reason = error instanceof Error ? error.message : String(error);
       log(`Meeting capture failed: ${reason}`);
       // The DM gets a short reason: never a command's raw output or a local path. The log keeps the detail.
-      await say(msg.channel, reason === COPY.nothing || reason === COPY.oneFile ? reason : COPY.failed(shortError(error)), thread);
+      // A duplicate names the earlier meeting's title, which came from the meeting: plain text only.
+      const text = error instanceof DuplicateMeeting ? plain(reason) : reason === COPY.nothing || reason === COPY.oneFile ? reason : COPY.failed(shortError(error));
+      await say(msg.channel, text, thread);
     }
   };
 

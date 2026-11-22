@@ -23,7 +23,7 @@ import { processAlive, withKnowledgeLock } from './knowledge-lock.ts';
 import { frontmatter, INDEX_MAX_LINES, lineCount, pageProblems, PROPOSALS_DIR } from './knowledge-rules.ts';
 import type { CheckedItem, ReplyLine } from './meeting-digest.ts';
 import { applyEdit, audienceLine, decisionBullets, indexRow, MEETING_ID, mentionsMeeting, newDecisionPage, scrubMeeting, type MeetingStamp } from './meeting-page.ts';
-import { hasSecret } from './meeting-transcript.ts';
+import { fold, hasSecret, type Transcript } from './meeting-transcript.ts';
 import { isRecord, parseJson } from './json-guards.ts';
 
 const MEETING_PROPOSALS = 'from-meeting';
@@ -65,6 +65,8 @@ export interface MeetingRecord {
   created?: string[];
   /** Serra's digest message in the owner's DM, for Forget to delete. */
   digest?: { channel: string; ts: string };
+  /** sha256 of the normalised, redacted transcript, so the same meeting sent again is caught. Removed on Forget. */
+  transcript?: string;
   /** Speakers as named in the transcript, for the review screen. */
   speakers: string[];
   /** Counts for the review screen and the reply. */
@@ -151,6 +153,21 @@ const pagePaths = (dir: string, relativeDir = ''): string[] => {
 };
 
 export const sha = (text: string): string => createHash('sha256').update(text).digest('hex');
+
+/** A transcript's fingerprint: its normalised turns, with case and spacing folded, hashed. The text isn't kept. */
+export const transcriptHash = (transcript: Pick<Transcript, 'text'>): string => sha(fold(transcript.text));
+
+const sameTranscript = (registry: Registry, hash: string): MeetingRecord | null =>
+  Object.values(registry.meetings).find((record) => record.state === 'open' && record.transcript === hash) ?? null;
+
+/** The owner sent a meeting Serra already has: its message is the plain reply. */
+export class DuplicateMeeting extends Error {
+  readonly earlier: Pick<MeetingRecord, 'id' | 'title' | 'date'>;
+  constructor(earlier: Pick<MeetingRecord, 'id' | 'title' | 'date'>) {
+    super(`Serra already has this meeting (${earlier.title}, ${earlier.date}), so it didn’t read it again. Its decisions are in Serra › Knowledge › Proposals.`);
+    this.earlier = earlier;
+  }
+}
 
 export interface MeetingStoreOptions {
   knowledgeDir: string;
@@ -264,12 +281,16 @@ export const createMeetingStore = ({ knowledgeDir, now = () => new Date(), backu
    * Record a checked meeting: evidence, one stub per item, and the registry entry. Returns the meeting's record.
    * `pages` are the approved texts the items were checked against, so an approval can tell the page moved since.
    */
-  const addMeeting = ({ meeting, items, source, speakers, dropped, pages }: {
+  const addMeeting = ({ meeting, items, source, speakers, dropped, pages, transcript }: {
     meeting: MeetingStamp; items: CheckedItem[]; source: MeetingSourceKind; speakers: string[]; dropped: Record<string, number>; pages: Map<string, string>;
+    /** The transcript's hash (`transcriptHash`). A meeting Serra already has with the same hash is refused. */
+    transcript?: string;
   }): MeetingRecord => locked(() => {
     checkId(meeting.id);
     const registry = readRegistry();
     if (registry.meetings[meeting.id] || registry.revoked.includes(meeting.id)) throw new Error(`Meeting ${meeting.id} already exists.`);
+    const earlier = transcript ? sameTranscript(registry, transcript) : null;
+    if (earlier) throw new DuplicateMeeting(earlier);
     const evidence: EvidenceFile = { id: meeting.id, meeting, items: Object.fromEntries(items.map((item) => [item.id, item])) };
     writeEvidence(evidence);
     for (const item of items) {
@@ -281,12 +302,15 @@ export const createMeetingStore = ({ knowledgeDir, now = () => new Date(), backu
       items: Object.fromEntries(items.map((item) => [item.id, {
         status: 'pending' as const, target: item.target, evidence: itemHash(item), targetAt: pages.has(item.target) ? sha(pages.get(item.target)!) : null,
       }])),
-      pages: [], derived: [], speakers: speakers.slice(0, 12), dropped,
+      pages: [], derived: [], ...(transcript ? { transcript } : {}), speakers: speakers.slice(0, 12), dropped,
     };
     registry.meetings[meeting.id] = record;
     writeRegistry(registry);
     return record;
   });
+
+  /** The meeting Serra already has from this transcript (`transcriptHash`), or null. A forgotten one doesn't count. */
+  const findTranscript = (hash: string): MeetingRecord | null => sameTranscript(readRegistry(), hash);
 
   /** Remember the digest message Serra posted for a meeting, so Forget can delete it. */
   const setDigest = (id: string, digest: { channel: string; ts: string }): void => locked(() => {
@@ -570,6 +594,7 @@ export const createMeetingStore = ({ knowledgeDir, now = () => new Date(), backu
     record.title = 'Forgotten meeting';
     for (const entry of Object.values(record.items)) entry.target = '';
     record.speakers = [];
+    delete record.transcript;
     record.dropped = {};
     record.pages = [];
     record.derived = [];
@@ -649,7 +674,7 @@ export const createMeetingStore = ({ knowledgeDir, now = () => new Date(), backu
   const touchedAt = (): number => (existsSync(registryPath) ? statSync(registryPath).mtimeMs : 0);
 
   return {
-    recover, addMeeting, setDigest, listMeetings, history, approve, discard, discardMeeting, forget, digestsToDelete, digestDeleted,
+    recover, addMeeting, findTranscript, setDigest, listMeetings, history, approve, discard, discardMeeting, forget, digestsToDelete, digestDeleted,
     resumeForgets, expire, newId, known, touchedAt, readRegistry,
   };
 };

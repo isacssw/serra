@@ -22,7 +22,7 @@ export class CommandError extends Error {
   }
 }
 
-const NOT_RUNNING = /ECONNREFUSED|not running|could ?n[o']t connect|unable to connect|connection refused/i;
+const NOT_RUNNING = /ECONNREFUSED|not running|no running t3 code server|could ?n[o']t connect|unable to connect|connection refused/i;
 
 /** Absolute paths become their last part, so a message never shows a home folder or where an app lives. */
 const withoutPaths = (text: string): string =>

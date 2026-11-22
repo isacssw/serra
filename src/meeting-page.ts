@@ -1,9 +1,9 @@
 // The edits a meeting makes to a knowledge page (SERRA-62), as pure functions with no Node imports, so the app's
 // review screen renders exactly what an approval writes.
 //
-// A meeting only ever touches one section of a page: it adds or replaces one bullet under `## Decisions`, moves a
-// replaced bullet under `## Replaced`, and adds a `sources:` entry. Every line it writes carries the meeting's tag,
-// `<!-- m:ID -->`, so Forget meeting finds exactly those lines and nothing else.
+// A meeting only ever adds or replaces one bullet under `## Decisions`, moves a replaced line (from Decisions or
+// anywhere else on the page) under `## Replaced`, and adds a `sources:` entry. Every line it writes carries the
+// meeting's tag, `<!-- m:ID -->`, so Forget meeting finds exactly those lines and nothing else.
 import { frontmatter } from './knowledge-rules.ts';
 
 /** A page's `## Decisions` takes at most this many bullets from all sources. A full page takes no more. */
@@ -76,6 +76,32 @@ export const decisionBullets = (page: string): Bullet[] => {
   if (!found) return [];
   return found.lines.slice(found.start + 1, found.end).flatMap((line) => bulletOf(line) ?? []);
 };
+
+/** One current bullet on the page, wherever it sits, and its line number. */
+interface PlacedBullet extends Bullet { at: number; inDecisions: boolean }
+
+/**
+ * Every bullet on the page that still applies: top-level bullets in the body, in any section but `## Replaced`. A rule
+ * the owner wrote above `## Decisions` ("- Releases go out on Tuesdays.") is one a meeting can replace too.
+ */
+const placedBullets = (page: string): PlacedBullet[] => {
+  const lines = page.split('\n');
+  const body = /^---\n[\s\S]*?\n---\n/.exec(page)?.[0].split('\n').length ?? 1;
+  let heading: string | null = null;
+  const found: PlacedBullet[] = [];
+  for (let at = body - 1; at < lines.length; at += 1) {
+    const line = lines[at]!;
+    const title = /^(#{1,2})\s+(.*?)\s*$/.exec(line);
+    if (title) { heading = title[1] === '##' ? title[2]!.toLowerCase() : null; continue; }
+    if (heading === 'replaced') continue;
+    const bullet = bulletOf(line);
+    if (bullet) found.push({ ...bullet, at, inDecisions: heading === 'decisions' });
+  }
+  return found;
+};
+
+/** The page's current rules, for the extractor and its checks: every bullet a meeting may replace. */
+export const currentBullets = (page: string): Bullet[] => placedBullets(page).map(({ line, text, meeting }) => ({ line, text, meeting }));
 
 /** The bullets under `## Replaced`. */
 export const replacedBullets = (page: string): Bullet[] => {
@@ -163,23 +189,28 @@ const roomProblem = (page: string, line: string, replacing: boolean): string | n
 
 /**
  * The page after a meeting's edit, or why it can't be applied. `add` appends a bullet to `## Decisions`; `replace`
- * puts the new bullet where the old one was and moves the old one under `## Replaced` with the date it stopped
- * applying, keeping the old bullet's own meeting tag. The page's `sources:` gains the meeting. `verified:` is left
+ * takes the old line out of the page's current rules (any bullet `currentBullets` lists), puts the new bullet under
+ * `## Decisions`, and moves the old line under `## Replaced` with the date it stopped applying, keeping the old
+ * bullet's own meeting tag. The page's `sources:` gains the meeting. `verified:` is left
  * alone: one bullet doesn't re-verify a page the owner didn't review.
  */
 export const applyEdit = (page: string, edit: PageEdit, meeting: MeetingStamp): { text: string } | { problem: string } => {
   const line = renderBullet(edit, meeting);
-  const room = roomProblem(page, line, edit.op === 'replace');
+  const old = edit.op === 'replace' ? placedBullets(page).find((bullet) => sameDecision(bullet.text, edit.old ?? '')) : undefined;
+  if (edit.op === 'replace' && !old) return { problem: "The page changed: the line this replaces isn't on it any more. Discard this edit." };
+  const room = roomProblem(page, line, old?.inDecisions === true);
   if (room) return { problem: `This page can't take more: ${room}.` };
   let text: string;
-  if (edit.op === 'replace') {
-    const old = decisionBullets(page).find((bullet) => sameDecision(bullet.text, edit.old ?? ''));
-    if (!old) return { problem: "The page changed: the decision this replaces isn't on it any more. Discard this edit." };
+  if (old) {
+    // The old line leaves the page's current rules: a Decisions bullet is swapped in place; a line elsewhere on the
+    // page is removed and the new bullet goes under Decisions. Either way the old one moves under Replaced.
     const tag = TAG.exec(old.line)?.[0] ?? '';
     const retired = `${old.line.replace(TAG, '')} (stopped applying ${meeting.date}, replaced by m:${meeting.id})${tag ? ` ${tag.trim()}` : ''}`;
     const lines = page.split('\n');
-    lines[lines.indexOf(old.line)] = line;
-    text = trimReplaced(appendTo(lines.join('\n'), 'Replaced', retired));
+    if (old.inDecisions) lines[old.at] = line;
+    else lines.splice(old.at, 1);
+    const swapped = old.inDecisions ? lines.join('\n') : appendTo(lines.join('\n'), 'Decisions', line);
+    text = trimReplaced(appendTo(swapped, 'Replaced', retired));
   } else {
     text = appendTo(page, 'Decisions', line);
   }

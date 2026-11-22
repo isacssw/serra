@@ -150,7 +150,7 @@ export const startDaemon = async (deps: DaemonDeps): Promise<Daemon> => {
     // transcript never reaches a job's worker. Off until the owner turns it on in the app. Reading a link and picking
     // out decisions are T3 runs with a read-only brief in Serra's own empty folder, on the worker's provider and model
     // (src/meeting-runs.ts): T3 is Serra's only agent layer.
-    const runs = createMeetingRuns({ t3Bin: config.t3Bin, ...(config.workerProvider ? { provider: config.workerProvider } : {}), ...(config.workerModel ? { model: config.workerModel } : {}) });
+    const runs = createMeetingRuns({ t3Bin: config.t3Bin, ...(config.workerProvider ? { provider: config.workerProvider } : {}), ...(config.workerModel ? { model: config.workerModel } : {}), log: (message) => logger.warn(message) });
     const extractor = deps.meetings?.extractor ?? { extract: runs.extract };
     const sources = deps.meetings?.sources ?? { fetchTranscript: runs.fetchTranscript };
     const meetings = createMeetingCapture({
