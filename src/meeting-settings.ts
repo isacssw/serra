@@ -4,6 +4,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { writeFileAtomic } from './config.ts';
+import { isRecord, parseJson } from './json-guards.ts';
 
 export const MEETING_SETTINGS_FILE = 'meeting-capture.json';
 
@@ -23,12 +24,14 @@ export interface MeetingSettings {
 }
 
 export const readMeetingSettings = (profileDir: string): MeetingSettings => {
-  try {
-    const value = JSON.parse(readFileSync(join(profileDir, MEETING_SETTINGS_FILE), 'utf8')) as Partial<MeetingSettings>;
-    const acknowledged = value.acknowledged && typeof value.acknowledged.at === 'string' && typeof value.acknowledged.version === 'number' ? value.acknowledged : null;
-    // On only with the current notice acknowledged: a changed notice turns capture off until the owner reads it.
-    return { enabled: value.enabled === true && acknowledged?.version === MEETING_NOTICE_VERSION, acknowledged };
-  } catch { return { enabled: false, acknowledged: null }; }
+  let text: string;
+  try { text = readFileSync(join(profileDir, MEETING_SETTINGS_FILE), 'utf8'); } catch { return { enabled: false, acknowledged: null }; }
+  const value = parseJson(text);
+  if (!isRecord(value)) return { enabled: false, acknowledged: null };
+  const ack = value.acknowledged;
+  const acknowledged = isRecord(ack) && typeof ack.at === 'string' && typeof ack.version === 'number' ? { at: ack.at, version: ack.version } : null;
+  // On only with the current notice acknowledged: a changed notice turns capture off until the owner reads it.
+  return { enabled: value.enabled === true && acknowledged?.version === MEETING_NOTICE_VERSION, acknowledged };
 };
 
 /** Turn capture on (acknowledging the notice now) or off. */

@@ -1,0 +1,17 @@
+{
+  "transcript": "owner-only-topic.txt",
+  "heldOut": true,
+  "tests": "a decision whose natural page is under owner/: it goes to a team page, a new decisions/ page or the reply; owner/ is never touched",
+  "memory": [
+    { "id": "release-days", "kind": "decision", "match": ["monday", "tuesday"], "quote": "Risky releases can ship on Monday or Tuesday from now on.", "target": "workflows/release.md" },
+    { "id": "two-reviewers", "kind": "decision", "match": ["two reviewers|2 reviewers"], "quote": "any two reviewers from the payments team can approve a release.", "target": "workflows/release.md" },
+    { "id": "watch-60", "kind": "decision", "match": ["(60|hour)"], "quote": "Watch the webhook dashboard for an hour after every deploy.", "target": "workflows/release.md" },
+    { "id": "flags-30", "kind": "constraint", "match": ["flag", "30"], "quote": "Feature flags are removed within 30 days of a full rollout.", "target": "product/feature-flags.md" }
+  ],
+  "reply": [
+    { "kind": "action", "match": ["runbook"] },
+    { "kind": "action", "match": ["flags"] },
+    { "kind": "question", "match": ["mobile|sdk"] }
+  ],
+  "forbidden": []
+}

@@ -1,0 +1,16 @@
+{
+  "transcript": "payments-sync.vtt",
+  "heldOut": false,
+  "tests": "3 decisions, 2 actions, 1 question among chit-chat; timestamps, cue numbers and wraps",
+  "memory": [
+    { "id": "retries", "kind": "decision", "match": ["(3|three)", "dead.?letter"], "quote": "three attempts and then we dead-letter it", "target": "product/webhooks.md", "who": ["Mei", "Robin"] },
+    { "id": "dlq-retention", "kind": "decision", "match": ["(14|fourteen)"], "quote": "Dead-lettered events are kept for 14 days, then deleted.", "target": "product/webhooks.md" },
+    { "id": "ledger", "kind": "constraint", "match": ["ledger", "(never|only|always)"], "quote": "payments-api never calls the ledger directly. It always goes through the ledger service.", "target": "product/architecture.md" }
+  ],
+  "reply": [
+    { "kind": "action", "match": ["retry config"] },
+    { "kind": "action", "match": ["(customer note|retry change|ask .*merchants)"] },
+    { "kind": "question", "match": ["(email|notify|tell|alert)"] }
+  ],
+  "forbidden": []
+}

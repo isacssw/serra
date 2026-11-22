@@ -1,0 +1,1213 @@
+Quarterly planning - 2026-11-12 - Transcript
+Fake meeting for Serra's evals: every person and company is invented.
+
+Robin: I had a look at the sales demo, there's more work than we thought but it's fine, I'll keep going.
+Priya: On the dashboard redesign I spent most of the week in meetings, honestly. Hoping to make real progress tomorrow.
+Mei: Did anyone else get the email about the CI flakiness? I wasn't sure if it needed a reply.
+Robin: Can you share your screen? I can't see the board. Oh, there it is.
+Ana: For the quarterly survey, we're waiting on feedback from the other team. I pinged them again this morning.
+Priya: Small thing on the onboarding emails: the copy needs another pass, but that's not urgent.
+Jonas: Let me check my notes on the partner portal... yes, we said we'd revisit it after the holidays.
+Tomás: Quick update on the docs site: still in progress, nothing blocking, should be done next week.
+Mei: I had a look at the analytics migration, there's more work than we thought but it's fine, I'll keep going.
+Jonas: Did anyone else get the email about the dashboard redesign? I wasn't sure if it needed a reply.
+Jonas: I had a look at the docs site, there's more work than we thought but it's fine, I'll keep going.
+Mei: Nothing new on the quarterly survey. Same as last time.
+Tomás: I had a look at the support rota, there's more work than we thought but it's fine, I'll keep going.
+Priya: I think the quarterly survey is fine for now, no need to discuss it today.
+Robin: I think the docs site is fine for now, no need to discuss it today.
+Tomás: Nothing new on the dashboard redesign. Same as last time.
+Priya: Nothing new on the Q1 roadmap deck. Same as last time.
+Robin: Coffee break in five minutes? My laptop is about to die.
+Mei: Did anyone else get the email about the office move? I wasn't sure if it needed a reply.
+Bo: Nothing new on the analytics migration. Same as last time.
+Tomás: For the analytics migration, we're waiting on feedback from the other team. I pinged them again this morning.
+Priya: Sorry, I was on mute. I said the CI flakiness is mostly done, just polishing.
+Ana: Sorry, I was on mute. I said the analytics migration is mostly done, just polishing.
+Mei: Did anyone else get the email about the dashboard redesign? I wasn't sure if it needed a reply.
+Jonas: Let me check my notes on the CI flakiness... yes, we said we'd revisit it after the holidays.
+Robin: On the dashboard redesign I spent most of the week in meetings, honestly. Hoping to make real progress tomorrow.
+Ana: Coffee break in five minutes? My laptop is about to die.
+Robin: Small thing on the sales demo: the copy needs another pass, but that's not urgent.
+Priya: Coffee break in five minutes? My laptop is about to die.
+Jonas: Can you share your screen? I can't see the board. Oh, there it is.
+Ana: For the design system, we're waiting on feedback from the other team. I pinged them again this morning.
+Robin: Coffee break in five minutes? My laptop is about to die.
+Jonas: On the design system I spent most of the week in meetings, honestly. Hoping to make real progress tomorrow.
+Jonas: Did anyone else get the email about the docs site? I wasn't sure if it needed a reply.
+Jonas: Quick update on the design system: still in progress, nothing blocking, should be done next week.
+Robin: Did anyone else get the email about the sales demo? I wasn't sure if it needed a reply.
+Jonas: Sorry, I was on mute. I said the design system is mostly done, just polishing.
+Ana: Nothing new on the docs site. Same as last time.
+Ana: For the Q1 roadmap deck, we're waiting on feedback from the other team. I pinged them again this morning.
+Tomás: Small thing on the dashboard redesign: the copy needs another pass, but that's not urgent.
+Ana: Sorry, I was on mute. I said the analytics migration is mostly done, just polishing.
+Bo: Sorry, I was on mute. I said the partner portal is mostly done, just polishing.
+Jonas: For the dashboard redesign, we're waiting on feedback from the other team. I pinged them again this morning.
+Robin: For the sales demo, we're waiting on feedback from the other team. I pinged them again this morning.
+Jonas: On the office move I spent most of the week in meetings, honestly. Hoping to make real progress tomorrow.
+Bo: I think the support rota is fine for now, no need to discuss it today.
+Jonas: Quick update on the Q1 roadmap deck: still in progress, nothing blocking, should be done next week.
+Bo: Small thing on the sales demo: the copy needs another pass, but that's not urgent.
+Tomás: I had a look at the onboarding emails, there's more work than we thought but it's fine, I'll keep going.
+Ana: Did anyone else get the email about the quarterly survey? I wasn't sure if it needed a reply.
+Tomás: I had a look at the quarterly survey, there's more work than we thought but it's fine, I'll keep going.
+Mei: Can you share your screen? I can't see the board. Oh, there it is.
+Tomás: I had a look at the Q1 roadmap deck, there's more work than we thought but it's fine, I'll keep going.
+Tomás: Coffee break in five minutes? My laptop is about to die.
+Tomás: I had a look at the partner portal, there's more work than we thought but it's fine, I'll keep going.
+Priya: Can you share your screen? I can't see the board. Oh, there it is.
+Mei: Let me check my notes on the dashboard redesign... yes, we said we'd revisit it after the holidays.
+Priya: Small thing on the analytics migration: the copy needs another pass, but that's not urgent.
+Robin: Sorry, I was on mute. I said the Q1 roadmap deck is mostly done, just polishing.
+Mei: Small thing on the quarterly survey: the copy needs another pass, but that's not urgent.
+Jonas: I think the Q1 roadmap deck is fine for now, no need to discuss it today.
+Mei: Small thing on the design system: the copy needs another pass, but that's not urgent.
+Bo: Can you share your screen? I can't see the board. Oh, there it is.
+Tomás: Sorry, I was on mute. I said the CI flakiness is mostly done, just polishing.
+Tomás: Let me check my notes on the analytics migration... yes, we said we'd revisit it after the holidays.
+Tomás: On the CI flakiness I spent most of the week in meetings, honestly. Hoping to make real progress tomorrow.
+Ana: Can you share your screen? I can't see the board. Oh, there it is.
+Priya: Coffee break in five minutes? My laptop is about to die.
+Bo: Quick update on the office move: still in progress, nothing blocking, should be done next week.
+Priya: Let me check my notes on the sales demo... yes, we said we'd revisit it after the holidays.
+Robin: Sorry, I was on mute. I said the office move is mostly done, just polishing.
+Priya: Coffee break in five minutes? My laptop is about to die.
+Priya: Quick update on the design system: still in progress, nothing blocking, should be done next week.
+Jonas: Sorry, I was on mute. I said the dashboard redesign is mostly done, just polishing.
+Jonas: Can you share your screen? I can't see the board. Oh, there it is.
+Priya: Let me check my notes on the quarterly survey... yes, we said we'd revisit it after the holidays.
+Jonas: I had a look at the sales demo, there's more work than we thought but it's fine, I'll keep going.
+Ana: I think the docs site is fine for now, no need to discuss it today.
+Priya: On the quarterly survey I spent most of the week in meetings, honestly. Hoping to make real progress tomorrow.
+Tomás: For the support rota, we're waiting on feedback from the other team. I pinged them again this morning.
+Bo: On the quarterly survey I spent most of the week in meetings, honestly. Hoping to make real progress tomorrow.
+Ana: Can you share your screen? I can't see the board. Oh, there it is.
+Tomás: Did anyone else get the email about the design system? I wasn't sure if it needed a reply.
+Robin: For the analytics migration, we're waiting on feedback from the other team. I pinged them again this morning.
+Tomás: Quick update on the docs site: still in progress, nothing blocking, should be done next week.
+Jonas: I think the partner portal is fine for now, no need to discuss it today.
+Ana: I had a look at the design system, there's more work than we thought but it's fine, I'll keep going.
+Robin: Can you share your screen? I can't see the board. Oh, there it is.
+Jonas: I had a look at the CI flakiness, there's more work than we thought but it's fine, I'll keep going.
+Tomás: Let me check my notes on the analytics migration... yes, we said we'd revisit it after the holidays.
+Priya: Nothing new on the support rota. Same as last time.
+Mei: I had a look at the partner portal, there's more work than we thought but it's fine, I'll keep going.
+Robin: I think the analytics migration is fine for now, no need to discuss it today.
+Jonas: I think the onboarding emails is fine for now, no need to discuss it today.
+Priya: Let me check my notes on the support rota... yes, we said we'd revisit it after the holidays.
+Robin: Did anyone else get the email about the docs site? I wasn't sure if it needed a reply.
+Tomás: Nothing new on the dashboard redesign. Same as last time.
+Priya: Nothing new on the dashboard redesign. Same as last time.
+Tomás: For the office move, we're waiting on feedback from the other team. I pinged them again this morning.
+Bo: Let me check my notes on the support rota... yes, we said we'd revisit it after the holidays.
+Bo: Can you share your screen? I can't see the board. Oh, there it is.
+Mei: Small thing on the CI flakiness: the copy needs another pass, but that's not urgent.
+Ana: Small thing on the sales demo: the copy needs another pass, but that's not urgent.
+Ana: Quick update on the sales demo: still in progress, nothing blocking, should be done next week.
+Mei: I think the CI flakiness is fine for now, no need to discuss it today.
+Jonas: I had a look at the analytics migration, there's more work than we thought but it's fine, I'll keep going.
+Priya: Did anyone else get the email about the Q1 roadmap deck? I wasn't sure if it needed a reply.
+Robin: I think the support rota is fine for now, no need to discuss it today.
+Tomás: Quick update on the onboarding emails: still in progress, nothing blocking, should be done next week.
+Ana: Did anyone else get the email about the docs site? I wasn't sure if it needed a reply.
+Jonas: I think the design system is fine for now, no need to discuss it today.
+Priya: Quick update on the design system: still in progress, nothing blocking, should be done next week.
+Bo: Can you share your screen? I can't see the board. Oh, there it is.
+Priya: Nothing new on the support rota. Same as last time.
+Ana: Did anyone else get the email about the support rota? I wasn't sure if it needed a reply.
+Robin: Small thing on the dashboard redesign: the copy needs another pass, but that's not urgent.
+Tomás: Sorry, I was on mute. I said the dashboard redesign is mostly done, just polishing.
+Mei: I had a look at the office move, there's more work than we thought but it's fine, I'll keep going.
+Jonas: Did anyone else get the email about the office move? I wasn't sure if it needed a reply.
+Robin: Let me check my notes on the onboarding emails... yes, we said we'd revisit it after the holidays.
+Priya: For the design system, we're waiting on feedback from the other team. I pinged them again this morning.
+Ana: Can you share your screen? I can't see the board. Oh, there it is.
+Robin: Nothing new on the office move. Same as last time.
+Priya: Nothing new on the quarterly survey. Same as last time.
+Jonas: Did anyone else get the email about the office move? I wasn't sure if it needed a reply.
+Jonas: Let me check my notes on the onboarding emails... yes, we said we'd revisit it after the holidays.
+Robin: On the design system I spent most of the week in meetings, honestly. Hoping to make real progress tomorrow.
+Mei: I think the design system is fine for now, no need to discuss it today.
+Robin: Sorry, I was on mute. I said the onboarding emails is mostly done, just polishing.
+Robin: Sorry, I was on mute. I said the onboarding emails is mostly done, just polishing.
+Bo: Can you share your screen? I can't see the board. Oh, there it is.
+Jonas: Sorry, I was on mute. I said the CI flakiness is mostly done, just polishing.
+Tomás: Sorry, I was on mute. I said the onboarding emails is mostly done, just polishing.
+Priya: Did anyone else get the email about the onboarding emails? I wasn't sure if it needed a reply.
+Tomás: I had a look at the docs site, there's more work than we thought but it's fine, I'll keep going.
+Tomás: Small thing on the CI flakiness: the copy needs another pass, but that's not urgent.
+Mei: Did anyone else get the email about the Q1 roadmap deck? I wasn't sure if it needed a reply.
+Ana: Small thing on the sales demo: the copy needs another pass, but that's not urgent.
+Jonas: Did anyone else get the email about the analytics migration? I wasn't sure if it needed a reply.
+Robin: Quick update on the dashboard redesign: still in progress, nothing blocking, should be done next week.
+Bo: On the CI flakiness I spent most of the week in meetings, honestly. Hoping to make real progress tomorrow.
+Jonas: On the CI flakiness I spent most of the week in meetings, honestly. Hoping to make real progress tomorrow.
+Tomás: Let me check my notes on the sales demo... yes, we said we'd revisit it after the holidays.
+Tomás: I think the Q1 roadmap deck is fine for now, no need to discuss it today.
+Ana: Can you share your screen? I can't see the board. Oh, there it is.
+Robin: Can you share your screen? I can't see the board. Oh, there it is.
+Mei: Let me check my notes on the Q1 roadmap deck... yes, we said we'd revisit it after the holidays.
+Ana: I had a look at the partner portal, there's more work than we thought but it's fine, I'll keep going.
+Bo: Small thing on the design system: the copy needs another pass, but that's not urgent.
+Robin: Can you share your screen? I can't see the board. Oh, there it is.
+Bo: Small thing on the analytics migration: the copy needs another pass, but that's not urgent.
+Ana: Let me check my notes on the analytics migration... yes, we said we'd revisit it after the holidays.
+Tomás: I had a look at the onboarding emails, there's more work than we thought but it's fine, I'll keep going.
+Tomás: I had a look at the docs site, there's more work than we thought but it's fine, I'll keep going.
+Robin: Did anyone else get the email about the onboarding emails? I wasn't sure if it needed a reply.
+Tomás: Sorry, I was on mute. I said the quarterly survey is mostly done, just polishing.
+Bo: For the docs site, we're waiting on feedback from the other team. I pinged them again this morning.
+Tomás: Did anyone else get the email about the quarterly survey? I wasn't sure if it needed a reply.
+Mei: Small thing on the dashboard redesign: the copy needs another pass, but that's not urgent.
+Jonas: Quick update on the quarterly survey: still in progress, nothing blocking, should be done next week.
+Tomás: Nothing new on the design system. Same as last time.
+Bo: Did anyone else get the email about the sales demo? I wasn't sure if it needed a reply.
+Tomás: For the design system, we're waiting on feedback from the other team. I pinged them again this morning.
+Jonas: Coffee break in five minutes? My laptop is about to die.
+Jonas: I think the design system is fine for now, no need to discuss it today.
+Mei: Can you share your screen? I can't see the board. Oh, there it is.
+Tomás: Small thing on the office move: the copy needs another pass, but that's not urgent.
+Jonas: On the CI flakiness I spent most of the week in meetings, honestly. Hoping to make real progress tomorrow.
+Mei: Did anyone else get the email about the Q1 roadmap deck? I wasn't sure if it needed a reply.
+Bo: I think the dashboard redesign is fine for now, no need to discuss it today.
+Mei: Nothing new on the partner portal. Same as last time.
+Ana: Let me check my notes on the onboarding emails... yes, we said we'd revisit it after the holidays.
+Jonas: On the quarterly survey I spent most of the week in meetings, honestly. Hoping to make real progress tomorrow.
+Robin: Decision on refunds: refunds over 10,000 euros need a second approver in the dashboard.
+Bo: Agreed, second approver over 10,000.
+Priya: Can you share your screen? I can't see the board. Oh, there it is.
+Bo: Nothing new on the Q1 roadmap deck. Same as last time.
+Robin: For the onboarding emails, we're waiting on feedback from the other team. I pinged them again this morning.
+Jonas: Coffee break in five minutes? My laptop is about to die.
+Priya: For the CI flakiness, we're waiting on feedback from the other team. I pinged them again this morning.
+Jonas: I had a look at the partner portal, there's more work than we thought but it's fine, I'll keep going.
+Jonas: Let me check my notes on the office move... yes, we said we'd revisit it after the holidays.
+Robin: Nothing new on the office move. Same as last time.
+Jonas: On the CI flakiness I spent most of the week in meetings, honestly. Hoping to make real progress tomorrow.
+Priya: Can you share your screen? I can't see the board. Oh, there it is.
+Priya: Let me check my notes on the CI flakiness... yes, we said we'd revisit it after the holidays.
+Mei: Let me check my notes on the dashboard redesign... yes, we said we'd revisit it after the holidays.
+Jonas: On the dashboard redesign I spent most of the week in meetings, honestly. Hoping to make real progress tomorrow.
+Robin: I had a look at the design system, there's more work than we thought but it's fine, I'll keep going.
+Bo: On the support rota I spent most of the week in meetings, honestly. Hoping to make real progress tomorrow.
+Mei: I had a look at the support rota, there's more work than we thought but it's fine, I'll keep going.
+Mei: On the sales demo I spent most of the week in meetings, honestly. Hoping to make real progress tomorrow.
+Bo: Quick update on the design system: still in progress, nothing blocking, should be done next week.
+Robin: Sorry, I was on mute. I said the dashboard redesign is mostly done, just polishing.
+Jonas: Let me check my notes on the analytics migration... yes, we said we'd revisit it after the holidays.
+Tomás: Let me check my notes on the office move... yes, we said we'd revisit it after the holidays.
+Jonas: Quick update on the docs site: still in progress, nothing blocking, should be done next week.
+Robin: Quick update on the office move: still in progress, nothing blocking, should be done next week.
+Ana: Coffee break in five minutes? My laptop is about to die.
+Priya: Did anyone else get the email about the onboarding emails? I wasn't sure if it needed a reply.
+Mei: I had a look at the office move, there's more work than we thought but it's fine, I'll keep going.
+Jonas: Quick update on the docs site: still in progress, nothing blocking, should be done next week.
+Tomás: For the analytics migration, we're waiting on feedback from the other team. I pinged them again this morning.
+Tomás: Coffee break in five minutes? My laptop is about to die.
+Ana: Coffee break in five minutes? My laptop is about to die.
+Mei: Did anyone else get the email about the Q1 roadmap deck? I wasn't sure if it needed a reply.
+Robin: I think the dashboard redesign is fine for now, no need to discuss it today.
+Tomás: For the office move, we're waiting on feedback from the other team. I pinged them again this morning.
+Robin: Did anyone else get the email about the Q1 roadmap deck? I wasn't sure if it needed a reply.
+Priya: Sorry, I was on mute. I said the onboarding emails is mostly done, just polishing.
+Priya: Nothing new on the sales demo. Same as last time.
+Bo: Nothing new on the design system. Same as last time.
+Mei: Nothing new on the support rota. Same as last time.
+Robin: I had a look at the analytics migration, there's more work than we thought but it's fine, I'll keep going.
+Priya: Nothing new on the Q1 roadmap deck. Same as last time.
+Robin: Did anyone else get the email about the CI flakiness? I wasn't sure if it needed a reply.
+Jonas: Can you share your screen? I can't see the board. Oh, there it is.
+Jonas: Nothing new on the support rota. Same as last time.
+Robin: Small thing on the Q1 roadmap deck: the copy needs another pass, but that's not urgent.
+Robin: For the dashboard redesign, we're waiting on feedback from the other team. I pinged them again this morning.
+Robin: Let me check my notes on the partner portal... yes, we said we'd revisit it after the holidays.
+Robin: Quick update on the Q1 roadmap deck: still in progress, nothing blocking, should be done next week.
+Jonas: Can you share your screen? I can't see the board. Oh, there it is.
+Mei: Did anyone else get the email about the support rota? I wasn't sure if it needed a reply.
+Tomás: Coffee break in five minutes? My laptop is about to die.
+Ana: Let me check my notes on the docs site... yes, we said we'd revisit it after the holidays.
+Ana: Can you share your screen? I can't see the board. Oh, there it is.
+Priya: Nothing new on the Q1 roadmap deck. Same as last time.
+Tomás: Sorry, I was on mute. I said the quarterly survey is mostly done, just polishing.
+Mei: Let me check my notes on the onboarding emails... yes, we said we'd revisit it after the holidays.
+Bo: Let me check my notes on the dashboard redesign... yes, we said we'd revisit it after the holidays.
+Jonas: Coffee break in five minutes? My laptop is about to die.
+Ana: Can you share your screen? I can't see the board. Oh, there it is.
+Jonas: I think the office move is fine for now, no need to discuss it today.
+Mei: Can you share your screen? I can't see the board. Oh, there it is.
+Mei: Let me check my notes on the Q1 roadmap deck... yes, we said we'd revisit it after the holidays.
+Ana: Let me check my notes on the dashboard redesign... yes, we said we'd revisit it after the holidays.
+Bo: On the CI flakiness I spent most of the week in meetings, honestly. Hoping to make real progress tomorrow.
+Mei: For the docs site, we're waiting on feedback from the other team. I pinged them again this morning.
+Tomás: Can you share your screen? I can't see the board. Oh, there it is.
+Tomás: For the Q1 roadmap deck, we're waiting on feedback from the other team. I pinged them again this morning.
+Mei: For the quarterly survey, we're waiting on feedback from the other team. I pinged them again this morning.
+Ana: Can you share your screen? I can't see the board. Oh, there it is.
+Tomás: Can you share your screen? I can't see the board. Oh, there it is.
+Tomás: Quick update on the analytics migration: still in progress, nothing blocking, should be done next week.
+Priya: Nothing new on the CI flakiness. Same as last time.
+Tomás: Nothing new on the dashboard redesign. Same as last time.
+Ana: Sorry, I was on mute. I said the office move is mostly done, just polishing.
+Mei: I think the support rota is fine for now, no need to discuss it today.
+Priya: Coffee break in five minutes? My laptop is about to die.
+Mei: On the support rota I spent most of the week in meetings, honestly. Hoping to make real progress tomorrow.
+Ana: Nothing new on the sales demo. Same as last time.
+Bo: Let me check my notes on the sales demo... yes, we said we'd revisit it after the holidays.
+Ana: Coffee break in five minutes? My laptop is about to die.
+Ana: I think the quarterly survey is fine for now, no need to discuss it today.
+Robin: Did anyone else get the email about the dashboard redesign? I wasn't sure if it needed a reply.
+Ana: Quick update on the analytics migration: still in progress, nothing blocking, should be done next week.
+Bo: Small thing on the onboarding emails: the copy needs another pass, but that's not urgent.
+Priya: Coffee break in five minutes? My laptop is about to die.
+Ana: Coffee break in five minutes? My laptop is about to die.
+Tomás: Did anyone else get the email about the office move? I wasn't sure if it needed a reply.
+Ana: Let me check my notes on the CI flakiness... yes, we said we'd revisit it after the holidays.
+Mei: On the analytics migration I spent most of the week in meetings, honestly. Hoping to make real progress tomorrow.
+Priya: Nothing new on the quarterly survey. Same as last time.
+Priya: Coffee break in five minutes? My laptop is about to die.
+Jonas: Let me check my notes on the office move... yes, we said we'd revisit it after the holidays.
+Tomás: Can you share your screen? I can't see the board. Oh, there it is.
+Bo: Nothing new on the support rota. Same as last time.
+Ana: Let me check my notes on the support rota... yes, we said we'd revisit it after the holidays.
+Jonas: On the onboarding emails I spent most of the week in meetings, honestly. Hoping to make real progress tomorrow.
+Ana: For the office move, we're waiting on feedback from the other team. I pinged them again this morning.
+Robin: Quick update on the CI flakiness: still in progress, nothing blocking, should be done next week.
+Priya: I had a look at the office move, there's more work than we thought but it's fine, I'll keep going.
+Tomás: Let me check my notes on the analytics migration... yes, we said we'd revisit it after the holidays.
+Tomás: Let me check my notes on the partner portal... yes, we said we'd revisit it after the holidays.
+Robin: I think the analytics migration is fine for now, no need to discuss it today.
+Priya: Coffee break in five minutes? My laptop is about to die.
+Mei: Coffee break in five minutes? My laptop is about to die.
+Bo: Sorry, I was on mute. I said the CI flakiness is mostly done, just polishing.
+Jonas: Nothing new on the support rota. Same as last time.
+Bo: For the office move, we're waiting on feedback from the other team. I pinged them again this morning.
+Jonas: Let me check my notes on the onboarding emails... yes, we said we'd revisit it after the holidays.
+Jonas: On the onboarding emails I spent most of the week in meetings, honestly. Hoping to make real progress tomorrow.
+Bo: Nothing new on the docs site. Same as last time.
+Bo: On the analytics migration I spent most of the week in meetings, honestly. Hoping to make real progress tomorrow.
+Tomás: Coffee break in five minutes? My laptop is about to die.
+Jonas: Nothing new on the office move. Same as last time.
+Bo: I had a look at the support rota, there's more work than we thought but it's fine, I'll keep going.
+Mei: Nothing new on the office move. Same as last time.
+Ana: Did anyone else get the email about the support rota? I wasn't sure if it needed a reply.
+Ana: I think the docs site is fine for now, no need to discuss it today.
+Robin: Nothing new on the onboarding emails. Same as last time.
+Mei: Small thing on the partner portal: the copy needs another pass, but that's not urgent.
+Robin: On the office move I spent most of the week in meetings, honestly. Hoping to make real progress tomorrow.
+Mei: Did anyone else get the email about the support rota? I wasn't sure if it needed a reply.
+Jonas: Nothing new on the quarterly survey. Same as last time.
+Priya: For the CI flakiness, we're waiting on feedback from the other team. I pinged them again this morning.
+Bo: Nothing new on the support rota. Same as last time.
+Robin: Nothing new on the docs site. Same as last time.
+Mei: Quick update on the sales demo: still in progress, nothing blocking, should be done next week.
+Mei: I think the partner portal is fine for now, no need to discuss it today.
+Robin: Mei, can you write up the refund approval flow for support by Friday?
+Ana: Small thing on the partner portal: the copy needs another pass, but that's not urgent.
+Robin: For the dashboard redesign, we're waiting on feedback from the other team. I pinged them again this morning.
+Mei: I think the analytics migration is fine for now, no need to discuss it today.
+Bo: Did anyone else get the email about the Q1 roadmap deck? I wasn't sure if it needed a reply.
+Mei: Let me check my notes on the onboarding emails... yes, we said we'd revisit it after the holidays.
+Tomás: I think the CI flakiness is fine for now, no need to discuss it today.
+Tomás: Sorry, I was on mute. I said the docs site is mostly done, just polishing.
+Tomás: I had a look at the docs site, there's more work than we thought but it's fine, I'll keep going.
+Bo: I had a look at the docs site, there's more work than we thought but it's fine, I'll keep going.
+Ana: Let me check my notes on the design system... yes, we said we'd revisit it after the holidays.
+Bo: Coffee break in five minutes? My laptop is about to die.
+Jonas: On the office move I spent most of the week in meetings, honestly. Hoping to make real progress tomorrow.
+Tomás: Quick update on the onboarding emails: still in progress, nothing blocking, should be done next week.
+Ana: Small thing on the CI flakiness: the copy needs another pass, but that's not urgent.
+Tomás: I think the dashboard redesign is fine for now, no need to discuss it today.
+Bo: Coffee break in five minutes? My laptop is about to die.
+Ana: I had a look at the office move, there's more work than we thought but it's fine, I'll keep going.
+Mei: Coffee break in five minutes? My laptop is about to die.
+Tomás: Coffee break in five minutes? My laptop is about to die.
+Mei: For the partner portal, we're waiting on feedback from the other team. I pinged them again this morning.
+Bo: I had a look at the design system, there's more work than we thought but it's fine, I'll keep going.
+Priya: For the analytics migration, we're waiting on feedback from the other team. I pinged them again this morning.
+Priya: Did anyone else get the email about the partner portal? I wasn't sure if it needed a reply.
+Mei: Small thing on the docs site: the copy needs another pass, but that's not urgent.
+Jonas: I had a look at the docs site, there's more work than we thought but it's fine, I'll keep going.
+Tomás: Did anyone else get the email about the support rota? I wasn't sure if it needed a reply.
+Jonas: Sorry, I was on mute. I said the analytics migration is mostly done, just polishing.
+Priya: Coffee break in five minutes? My laptop is about to die.
+Robin: Let me check my notes on the office move... yes, we said we'd revisit it after the holidays.
+Bo: Let me check my notes on the analytics migration... yes, we said we'd revisit it after the holidays.
+Bo: I had a look at the Q1 roadmap deck, there's more work than we thought but it's fine, I'll keep going.
+Robin: Did anyone else get the email about the dashboard redesign? I wasn't sure if it needed a reply.
+Jonas: I had a look at the support rota, there's more work than we thought but it's fine, I'll keep going.
+Bo: Sorry, I was on mute. I said the office move is mostly done, just polishing.
+Priya: I had a look at the Q1 roadmap deck, there's more work than we thought but it's fine, I'll keep going.
+Ana: Can you share your screen? I can't see the board. Oh, there it is.
+Robin: I had a look at the onboarding emails, there's more work than we thought but it's fine, I'll keep going.
+Priya: Let me check my notes on the design system... yes, we said we'd revisit it after the holidays.
+Mei: I had a look at the analytics migration, there's more work than we thought but it's fine, I'll keep going.
+Robin: Quick update on the analytics migration: still in progress, nothing blocking, should be done next week.
+Priya: Can you share your screen? I can't see the board. Oh, there it is.
+Priya: Can you share your screen? I can't see the board. Oh, there it is.
+Mei: Can you share your screen? I can't see the board. Oh, there it is.
+Priya: Let me check my notes on the analytics migration... yes, we said we'd revisit it after the holidays.
+Ana: Nothing new on the design system. Same as last time.
+Priya: For the Q1 roadmap deck, we're waiting on feedback from the other team. I pinged them again this morning.
+Priya: Coffee break in five minutes? My laptop is about to die.
+Mei: I had a look at the CI flakiness, there's more work than we thought but it's fine, I'll keep going.
+Mei: Quick update on the onboarding emails: still in progress, nothing blocking, should be done next week.
+Tomás: Quick update on the Q1 roadmap deck: still in progress, nothing blocking, should be done next week.
+Robin: Coffee break in five minutes? My laptop is about to die.
+Priya: Nothing new on the office move. Same as last time.
+Bo: Did anyone else get the email about the Q1 roadmap deck? I wasn't sure if it needed a reply.
+Priya: Let me check my notes on the partner portal... yes, we said we'd revisit it after the holidays.
+Bo: I had a look at the onboarding emails, there's more work than we thought but it's fine, I'll keep going.
+Ana: On the partner portal I spent most of the week in meetings, honestly. Hoping to make real progress tomorrow.
+Bo: Quick update on the sales demo: still in progress, nothing blocking, should be done next week.
+Priya: I think the design system is fine for now, no need to discuss it today.
+Jonas: Small thing on the sales demo: the copy needs another pass, but that's not urgent.
+Robin: I think the partner portal is fine for now, no need to discuss it today.
+Robin: Small thing on the design system: the copy needs another pass, but that's not urgent.
+Robin: Small thing on the partner portal: the copy needs another pass, but that's not urgent.
+Bo: I had a look at the partner portal, there's more work than we thought but it's fine, I'll keep going.
+Tomás: Let me check my notes on the Q1 roadmap deck... yes, we said we'd revisit it after the holidays.
+Jonas: On the partner portal I spent most of the week in meetings, honestly. Hoping to make real progress tomorrow.
+Robin: Sorry, I was on mute. I said the quarterly survey is mostly done, just polishing.
+Tomás: Sorry, I was on mute. I said the support rota is mostly done, just polishing.
+Jonas: Coffee break in five minutes? My laptop is about to die.
+Jonas: Sorry, I was on mute. I said the dashboard redesign is mostly done, just polishing.
+Robin: For the ledger: ledger entries are append-only, we never update or delete a posted entry, we post a reversal instead.
+Jonas: Yes, append-only.
+Bo: I had a look at the analytics migration, there's more work than we thought but it's fine, I'll keep going.
+Priya: I think the partner portal is fine for now, no need to discuss it today.
+Mei: Coffee break in five minutes? My laptop is about to die.
+Robin: Sorry, I was on mute. I said the Q1 roadmap deck is mostly done, just polishing.
+Bo: I had a look at the dashboard redesign, there's more work than we thought but it's fine, I'll keep going.
+Jonas: I had a look at the docs site, there's more work than we thought but it's fine, I'll keep going.
+Mei: Can you share your screen? I can't see the board. Oh, there it is.
+Mei: I had a look at the Q1 roadmap deck, there's more work than we thought but it's fine, I'll keep going.
+Jonas: Can you share your screen? I can't see the board. Oh, there it is.
+Ana: I think the quarterly survey is fine for now, no need to discuss it today.
+Priya: Did anyone else get the email about the Q1 roadmap deck? I wasn't sure if it needed a reply.
+Ana: Let me check my notes on the sales demo... yes, we said we'd revisit it after the holidays.
+Mei: Quick update on the design system: still in progress, nothing blocking, should be done next week.
+Mei: On the support rota I spent most of the week in meetings, honestly. Hoping to make real progress tomorrow.
+Robin: I had a look at the onboarding emails, there's more work than we thought but it's fine, I'll keep going.
+Jonas: Nothing new on the support rota. Same as last time.
+Ana: For the dashboard redesign, we're waiting on feedback from the other team. I pinged them again this morning.
+Ana: I had a look at the support rota, there's more work than we thought but it's fine, I'll keep going.
+Jonas: Nothing new on the office move. Same as last time.
+Robin: Data retention: we delete raw card-network logs after 90 days. That's final.
+Jonas: Okay, 90 days.
+Jonas: Let me check my notes on the Q1 roadmap deck... yes, we said we'd revisit it after the holidays.
+Robin: Small thing on the onboarding emails: the copy needs another pass, but that's not urgent.
+Robin: I had a look at the design system, there's more work than we thought but it's fine, I'll keep going.
+Robin: Webhooks: every webhook payload carries an api_version field from now on.
+Jonas: Agreed, api_version on every payload.
+Priya: I think the sales demo is fine for now, no need to discuss it today.
+Robin: Quick update on the docs site: still in progress, nothing blocking, should be done next week.
+Jonas: I had a look at the onboarding emails, there's more work than we thought but it's fine, I'll keep going.
+Mei: Quick update on the support rota: still in progress, nothing blocking, should be done next week.
+Jonas: Quick update on the design system: still in progress, nothing blocking, should be done next week.
+Ana: I think the analytics migration is fine for now, no need to discuss it today.
+Priya: Can you share your screen? I can't see the board. Oh, there it is.
+Robin: Sorry, I was on mute. I said the support rota is mostly done, just polishing.
+Priya: I think the quarterly survey is fine for now, no need to discuss it today.
+Bo: Let me check my notes on the Q1 roadmap deck... yes, we said we'd revisit it after the holidays.
+Ana: I think the sales demo is fine for now, no need to discuss it today.
+Tomás: Coffee break in five minutes? My laptop is about to die.
+Bo: Let me check my notes on the docs site... yes, we said we'd revisit it after the holidays.
+Jonas: For the analytics migration, we're waiting on feedback from the other team. I pinged them again this morning.
+Robin: For the sales demo, we're waiting on feedback from the other team. I pinged them again this morning.
+Robin: Small thing on the CI flakiness: the copy needs another pass, but that's not urgent.
+Bo: I think the analytics migration is fine for now, no need to discuss it today.
+Jonas: Nothing new on the support rota. Same as last time.
+Robin: I had a look at the Q1 roadmap deck, there's more work than we thought but it's fine, I'll keep going.
+Bo: Did anyone else get the email about the support rota? I wasn't sure if it needed a reply.
+Bo: Sorry, I was on mute. I said the partner portal is mostly done, just polishing.
+Ana: Quick update on the onboarding emails: still in progress, nothing blocking, should be done next week.
+Ana: Sorry, I was on mute. I said the docs site is mostly done, just polishing.
+Jonas: Small thing on the docs site: the copy needs another pass, but that's not urgent.
+Ana: Sorry, I was on mute. I said the CI flakiness is mostly done, just polishing.
+Jonas: Did anyone else get the email about the design system? I wasn't sure if it needed a reply.
+Bo: On the Q1 roadmap deck I spent most of the week in meetings, honestly. Hoping to make real progress tomorrow.
+Ana: Nothing new on the CI flakiness. Same as last time.
+Robin: Invoices: invoice PDFs use the merchant's locale for number and date formats.
+Tomás: Yes, merchant locale.
+Mei: Quick update on the sales demo: still in progress, nothing blocking, should be done next week.
+Tomás: Quick update on the analytics migration: still in progress, nothing blocking, should be done next week.
+Tomás: Coffee break in five minutes? My laptop is about to die.
+Jonas: Nothing new on the quarterly survey. Same as last time.
+Ana: On the partner portal I spent most of the week in meetings, honestly. Hoping to make real progress tomorrow.
+Ana: Nothing new on the sales demo. Same as last time.
+Jonas: I think the sales demo is fine for now, no need to discuss it today.
+Tomás: I had a look at the partner portal, there's more work than we thought but it's fine, I'll keep going.
+Robin: Coffee break in five minutes? My laptop is about to die.
+Priya: Let me check my notes on the support rota... yes, we said we'd revisit it after the holidays.
+Priya: Coffee break in five minutes? My laptop is about to die.
+Priya: Quick update on the docs site: still in progress, nothing blocking, should be done next week.
+Ana: Nothing new on the sales demo. Same as last time.
+Jonas: Sorry, I was on mute. I said the sales demo is mostly done, just polishing.
+Tomás: Small thing on the quarterly survey: the copy needs another pass, but that's not urgent.
+Tomás: Sorry, I was on mute. I said the docs site is mostly done, just polishing.
+Priya: Let me check my notes on the design system... yes, we said we'd revisit it after the holidays.
+Bo: Did anyone else get the email about the design system? I wasn't sure if it needed a reply.
+Bo: I had a look at the CI flakiness, there's more work than we thought but it's fine, I'll keep going.
+Tomás: Coffee break in five minutes? My laptop is about to die.
+Priya: Coffee break in five minutes? My laptop is about to die.
+Robin: Nothing new on the analytics migration. Same as last time.
+Mei: I had a look at the quarterly survey, there's more work than we thought but it's fine, I'll keep going.
+Bo: For the dashboard redesign, we're waiting on feedback from the other team. I pinged them again this morning.
+Priya: Small thing on the partner portal: the copy needs another pass, but that's not urgent.
+Tomás: Let me check my notes on the partner portal... yes, we said we'd revisit it after the holidays.
+Bo: Small thing on the office move: the copy needs another pass, but that's not urgent.
+Ana: Did anyone else get the email about the analytics migration? I wasn't sure if it needed a reply.
+Tomás: I had a look at the sales demo, there's more work than we thought but it's fine, I'll keep going.
+Tomás: On the dashboard redesign I spent most of the week in meetings, honestly. Hoping to make real progress tomorrow.
+Priya: I think the Q1 roadmap deck is fine for now, no need to discuss it today.
+Tomás: Did anyone else get the email about the sales demo? I wasn't sure if it needed a reply.
+Tomás: Can you share your screen? I can't see the board. Oh, there it is.
+Jonas: Quick update on the onboarding emails: still in progress, nothing blocking, should be done next week.
+Tomás: For the CI flakiness, we're waiting on feedback from the other team. I pinged them again this morning.
+Robin: For the partner portal, we're waiting on feedback from the other team. I pinged them again this morning.
+Priya: Small thing on the partner portal: the copy needs another pass, but that's not urgent.
+Tomás: I had a look at the office move, there's more work than we thought but it's fine, I'll keep going.
+Jonas: Coffee break in five minutes? My laptop is about to die.
+Mei: Sorry, I was on mute. I said the docs site is mostly done, just polishing.
+Robin: On the CI flakiness I spent most of the week in meetings, honestly. Hoping to make real progress tomorrow.
+Mei: Nothing new on the Q1 roadmap deck. Same as last time.
+Jonas: For the CI flakiness, we're waiting on feedback from the other team. I pinged them again this morning.
+Tomás: I think the design system is fine for now, no need to discuss it today.
+Priya: I had a look at the quarterly survey, there's more work than we thought but it's fine, I'll keep going.
+Tomás: Small thing on the onboarding emails: the copy needs another pass, but that's not urgent.
+Tomás: Quick update on the docs site: still in progress, nothing blocking, should be done next week.
+Ana: Let me check my notes on the quarterly survey... yes, we said we'd revisit it after the holidays.
+Ana: Small thing on the onboarding emails: the copy needs another pass, but that's not urgent.
+Tomás: On the onboarding emails I spent most of the week in meetings, honestly. Hoping to make real progress tomorrow.
+Bo: I had a look at the Q1 roadmap deck, there's more work than we thought but it's fine, I'll keep going.
+Jonas: I had a look at the analytics migration, there's more work than we thought but it's fine, I'll keep going.
+Robin: I had a look at the quarterly survey, there's more work than we thought but it's fine, I'll keep going.
+Mei: Coffee break in five minutes? My laptop is about to die.
+Tomás: Nothing new on the CI flakiness. Same as last time.
+Mei: Nothing new on the sales demo. Same as last time.
+Priya: Can you share your screen? I can't see the board. Oh, there it is.
+Bo: For the analytics migration, we're waiting on feedback from the other team. I pinged them again this morning.
+Bo: I had a look at the office move, there's more work than we thought but it's fine, I'll keep going.
+Mei: Coffee break in five minutes? My laptop is about to die.
+Ana: For the dashboard redesign, we're waiting on feedback from the other team. I pinged them again this morning.
+Jonas: Quick update on the analytics migration: still in progress, nothing blocking, should be done next week.
+Jonas: Did anyone else get the email about the sales demo? I wasn't sure if it needed a reply.
+Jonas: I think the partner portal is fine for now, no need to discuss it today.
+Ana: Can you share your screen? I can't see the board. Oh, there it is.
+Robin: Did anyone else get the email about the CI flakiness? I wasn't sure if it needed a reply.
+Tomás: Coffee break in five minutes? My laptop is about to die.
+Jonas: Did anyone else get the email about the partner portal? I wasn't sure if it needed a reply.
+Ana: Sorry, I was on mute. I said the quarterly survey is mostly done, just polishing.
+Priya: Coffee break in five minutes? My laptop is about to die.
+Bo: For the sales demo, we're waiting on feedback from the other team. I pinged them again this morning.
+Tomás: On the onboarding emails I spent most of the week in meetings, honestly. Hoping to make real progress tomorrow.
+Priya: I think the support rota is fine for now, no need to discuss it today.
+Mei: Quick update on the design system: still in progress, nothing blocking, should be done next week.
+Robin: For the Q1 roadmap deck, we're waiting on feedback from the other team. I pinged them again this morning.
+Tomás: Quick update on the quarterly survey: still in progress, nothing blocking, should be done next week.
+Robin: Coffee break in five minutes? My laptop is about to die.
+Jonas: For the design system, we're waiting on feedback from the other team. I pinged them again this morning.
+Priya: Sorry, I was on mute. I said the support rota is mostly done, just polishing.
+Tomás: For the sales demo, we're waiting on feedback from the other team. I pinged them again this morning.
+Robin: I think the Q1 roadmap deck is fine for now, no need to discuss it today.
+Jonas: Did anyone else get the email about the docs site? I wasn't sure if it needed a reply.
+Mei: Quick update on the CI flakiness: still in progress, nothing blocking, should be done next week.
+Robin: Nothing new on the design system. Same as last time.
+Jonas: Small thing on the Q1 roadmap deck: the copy needs another pass, but that's not urgent.
+Priya: Let me check my notes on the quarterly survey... yes, we said we'd revisit it after the holidays.
+Ana: Coffee break in five minutes? My laptop is about to die.
+Ana: Small thing on the analytics migration: the copy needs another pass, but that's not urgent.
+Jonas: For the analytics migration, we're waiting on feedback from the other team. I pinged them again this morning.
+Mei: Did anyone else get the email about the docs site? I wasn't sure if it needed a reply.
+Robin: Did anyone else get the email about the partner portal? I wasn't sure if it needed a reply.
+Mei: Can you share your screen? I can't see the board. Oh, there it is.
+Priya: Quick update on the quarterly survey: still in progress, nothing blocking, should be done next week.
+Robin: Nothing new on the dashboard redesign. Same as last time.
+Jonas: Quick update on the dashboard redesign: still in progress, nothing blocking, should be done next week.
+Jonas: Sorry, I was on mute. I said the design system is mostly done, just polishing.
+Robin: On the quarterly survey I spent most of the week in meetings, honestly. Hoping to make real progress tomorrow.
+Priya: I think the dashboard redesign is fine for now, no need to discuss it today.
+Tomás: Small thing on the Q1 roadmap deck: the copy needs another pass, but that's not urgent.
+Robin: Did anyone else get the email about the CI flakiness? I wasn't sure if it needed a reply.
+Bo: Quick update on the onboarding emails: still in progress, nothing blocking, should be done next week.
+Mei: I had a look at the docs site, there's more work than we thought but it's fine, I'll keep going.
+Priya: Can you share your screen? I can't see the board. Oh, there it is.
+Robin: Tax: we store the tax ID exactly as the merchant entered it and validate it separately, we never rewrite it.
+Bo: Agreed, never rewrite tax IDs.
+Jonas: I had a look at the docs site, there's more work than we thought but it's fine, I'll keep going.
+Bo: I think the CI flakiness is fine for now, no need to discuss it today.
+Tomás: Coffee break in five minutes? My laptop is about to die.
+Bo: I had a look at the dashboard redesign, there's more work than we thought but it's fine, I'll keep going.
+Bo: Coffee break in five minutes? My laptop is about to die.
+Robin: I had a look at the quarterly survey, there's more work than we thought but it's fine, I'll keep going.
+Priya: Can you share your screen? I can't see the board. Oh, there it is.
+Jonas: Quick update on the quarterly survey: still in progress, nothing blocking, should be done next week.
+Tomás: On the partner portal I spent most of the week in meetings, honestly. Hoping to make real progress tomorrow.
+Bo: Sorry, I was on mute. I said the design system is mostly done, just polishing.
+Mei: Coffee break in five minutes? My laptop is about to die.
+Mei: Let me check my notes on the dashboard redesign... yes, we said we'd revisit it after the holidays.
+Tomás: Nothing new on the docs site. Same as last time.
+Robin: I had a look at the partner portal, there's more work than we thought but it's fine, I'll keep going.
+Jonas: I think the analytics migration is fine for now, no need to discuss it today.
+Jonas: Small thing on the onboarding emails: the copy needs another pass, but that's not urgent.
+Ana: Coffee break in five minutes? My laptop is about to die.
+Ana: On the design system I spent most of the week in meetings, honestly. Hoping to make real progress tomorrow.
+Bo: I think the quarterly survey is fine for now, no need to discuss it today.
+Priya: I had a look at the CI flakiness, there's more work than we thought but it's fine, I'll keep going.
+Bo: Coffee break in five minutes? My laptop is about to die.
+Jonas: Quick update on the CI flakiness: still in progress, nothing blocking, should be done next week.
+Bo: Quick update on the onboarding emails: still in progress, nothing blocking, should be done next week.
+Ana: Let me check my notes on the analytics migration... yes, we said we'd revisit it after the holidays.
+Jonas: Can you share your screen? I can't see the board. Oh, there it is.
+Robin: Coffee break in five minutes? My laptop is about to die.
+Ana: Small thing on the analytics migration: the copy needs another pass, but that's not urgent.
+Robin: Let me check my notes on the docs site... yes, we said we'd revisit it after the holidays.
+Tomás: For the docs site, we're waiting on feedback from the other team. I pinged them again this morning.
+Priya: Small thing on the design system: the copy needs another pass, but that's not urgent.
+Priya: Quick update on the CI flakiness: still in progress, nothing blocking, should be done next week.
+Ana: On the support rota I spent most of the week in meetings, honestly. Hoping to make real progress tomorrow.
+Robin: Nothing new on the CI flakiness. Same as last time.
+Robin: Small thing on the onboarding emails: the copy needs another pass, but that's not urgent.
+Ana: Sorry, I was on mute. I said the CI flakiness is mostly done, just polishing.
+Bo: I had a look at the analytics migration, there's more work than we thought but it's fine, I'll keep going.
+Bo: Small thing on the dashboard redesign: the copy needs another pass, but that's not urgent.
+Ana: On the quarterly survey I spent most of the week in meetings, honestly. Hoping to make real progress tomorrow.
+Tomás: For the onboarding emails, we're waiting on feedback from the other team. I pinged them again this morning.
+Jonas: For the design system, we're waiting on feedback from the other team. I pinged them again this morning.
+Mei: Small thing on the CI flakiness: the copy needs another pass, but that's not urgent.
+Jonas: Sorry, I was on mute. I said the CI flakiness is mostly done, just polishing.
+Mei: Quick update on the design system: still in progress, nothing blocking, should be done next week.
+Jonas: Sorry, I was on mute. I said the quarterly survey is mostly done, just polishing.
+Jonas: Coffee break in five minutes? My laptop is about to die.
+Bo: I think the CI flakiness is fine for now, no need to discuss it today.
+Robin: Quick update on the dashboard redesign: still in progress, nothing blocking, should be done next week.
+Robin: Small thing on the support rota: the copy needs another pass, but that's not urgent.
+Bo: Did anyone else get the email about the sales demo? I wasn't sure if it needed a reply.
+Priya: I had a look at the sales demo, there's more work than we thought but it's fine, I'll keep going.
+Ana: Did anyone else get the email about the support rota? I wasn't sure if it needed a reply.
+Bo: Nothing new on the sales demo. Same as last time.
+Priya: I had a look at the analytics migration, there's more work than we thought but it's fine, I'll keep going.
+Priya: Can you share your screen? I can't see the board. Oh, there it is.
+Robin: Did anyone else get the email about the CI flakiness? I wasn't sure if it needed a reply.
+Bo: Let me check my notes on the quarterly survey... yes, we said we'd revisit it after the holidays.
+Mei: Sorry, I was on mute. I said the analytics migration is mostly done, just polishing.
+Jonas: Did anyone else get the email about the support rota? I wasn't sure if it needed a reply.
+Robin: On the sales demo I spent most of the week in meetings, honestly. Hoping to make real progress tomorrow.
+Ana: Small thing on the quarterly survey: the copy needs another pass, but that's not urgent.
+Priya: Quick update on the support rota: still in progress, nothing blocking, should be done next week.
+Jonas: Let me check my notes on the sales demo... yes, we said we'd revisit it after the holidays.
+Robin: Can you share your screen? I can't see the board. Oh, there it is.
+Bo: On the support rota I spent most of the week in meetings, honestly. Hoping to make real progress tomorrow.
+Priya: I had a look at the docs site, there's more work than we thought but it's fine, I'll keep going.
+Tomás: I had a look at the analytics migration, there's more work than we thought but it's fine, I'll keep going.
+Jonas: I had a look at the design system, there's more work than we thought but it's fine, I'll keep going.
+Bo: Sorry, I was on mute. I said the office move is mostly done, just polishing.
+Tomás: Sorry, I was on mute. I said the design system is mostly done, just polishing.
+Bo: Sorry, I was on mute. I said the dashboard redesign is mostly done, just polishing.
+Bo: For the design system, we're waiting on feedback from the other team. I pinged them again this morning.
+Tomás: Small thing on the support rota: the copy needs another pass, but that's not urgent.
+Mei: Quick update on the quarterly survey: still in progress, nothing blocking, should be done next week.
+Bo: Sorry, I was on mute. I said the partner portal is mostly done, just polishing.
+Bo: Let me check my notes on the quarterly survey... yes, we said we'd revisit it after the holidays.
+Jonas: Quick update on the analytics migration: still in progress, nothing blocking, should be done next week.
+Mei: Coffee break in five minutes? My laptop is about to die.
+Jonas: Let me check my notes on the partner portal... yes, we said we'd revisit it after the holidays.
+Priya: Small thing on the Q1 roadmap deck: the copy needs another pass, but that's not urgent.
+Ana: Sorry, I was on mute. I said the Q1 roadmap deck is mostly done, just polishing.
+Priya: Sorry, I was on mute. I said the partner portal is mostly done, just polishing.
+Ana: Sorry, I was on mute. I said the quarterly survey is mostly done, just polishing.
+Priya: Did anyone else get the email about the docs site? I wasn't sure if it needed a reply.
+Mei: Sorry, I was on mute. I said the partner portal is mostly done, just polishing.
+Mei: Did anyone else get the email about the partner portal? I wasn't sure if it needed a reply.
+Jonas: Let me check my notes on the partner portal... yes, we said we'd revisit it after the holidays.
+Mei: I had a look at the CI flakiness, there's more work than we thought but it's fine, I'll keep going.
+Priya: I think the CI flakiness is fine for now, no need to discuss it today.
+Robin: On the dashboard redesign I spent most of the week in meetings, honestly. Hoping to make real progress tomorrow.
+Ana: I think the dashboard redesign is fine for now, no need to discuss it today.
+Tomás: Nothing new on the design system. Same as last time.
+Jonas: Nothing new on the CI flakiness. Same as last time.
+Mei: Coffee break in five minutes? My laptop is about to die.
+Jonas: For the Q1 roadmap deck, we're waiting on feedback from the other team. I pinged them again this morning.
+Tomás: Can you share your screen? I can't see the board. Oh, there it is.
+Jonas: Nothing new on the analytics migration. Same as last time.
+Jonas: Sorry, I was on mute. I said the CI flakiness is mostly done, just polishing.
+Bo: Let me check my notes on the Q1 roadmap deck... yes, we said we'd revisit it after the holidays.
+Robin: Quick update on the partner portal: still in progress, nothing blocking, should be done next week.
+Mei: Let me check my notes on the docs site... yes, we said we'd revisit it after the holidays.
+Bo: On the CI flakiness I spent most of the week in meetings, honestly. Hoping to make real progress tomorrow.
+Jonas: For the CI flakiness, we're waiting on feedback from the other team. I pinged them again this morning.
+Ana: I had a look at the partner portal, there's more work than we thought but it's fine, I'll keep going.
+Priya: Small thing on the partner portal: the copy needs another pass, but that's not urgent.
+Robin: On the sales demo I spent most of the week in meetings, honestly. Hoping to make real progress tomorrow.
+Robin: On the dashboard redesign I spent most of the week in meetings, honestly. Hoping to make real progress tomorrow.
+Ana: On the docs site I spent most of the week in meetings, honestly. Hoping to make real progress tomorrow.
+Tomás: Nothing new on the Q1 roadmap deck. Same as last time.
+Tomás: I think the docs site is fine for now, no need to discuss it today.
+Robin: Coffee break in five minutes? My laptop is about to die.
+Priya: On the partner portal I spent most of the week in meetings, honestly. Hoping to make real progress tomorrow.
+Tomás: Can you share your screen? I can't see the board. Oh, there it is.
+Mei: Quick update on the onboarding emails: still in progress, nothing blocking, should be done next week.
+Robin: I had a look at the partner portal, there's more work than we thought but it's fine, I'll keep going.
+Ana: I had a look at the support rota, there's more work than we thought but it's fine, I'll keep going.
+Priya: Small thing on the partner portal: the copy needs another pass, but that's not urgent.
+Priya: I had a look at the CI flakiness, there's more work than we thought but it's fine, I'll keep going.
+Mei: I had a look at the Q1 roadmap deck, there's more work than we thought but it's fine, I'll keep going.
+Robin: Can you share your screen? I can't see the board. Oh, there it is.
+Ana: Quick update on the docs site: still in progress, nothing blocking, should be done next week.
+Tomás: On the CI flakiness I spent most of the week in meetings, honestly. Hoping to make real progress tomorrow.
+Tomás: Nothing new on the docs site. Same as last time.
+Mei: Nothing new on the support rota. Same as last time.
+Robin: Quick update on the office move: still in progress, nothing blocking, should be done next week.
+Priya: Small thing on the support rota: the copy needs another pass, but that's not urgent.
+Robin: On the sales demo I spent most of the week in meetings, honestly. Hoping to make real progress tomorrow.
+Mei: I had a look at the CI flakiness, there's more work than we thought but it's fine, I'll keep going.
+Tomás: Can you share your screen? I can't see the board. Oh, there it is.
+Jonas: Small thing on the sales demo: the copy needs another pass, but that's not urgent.
+Jonas: Nothing new on the sales demo. Same as last time.
+Priya: On the CI flakiness I spent most of the week in meetings, honestly. Hoping to make real progress tomorrow.
+Robin: Did anyone else get the email about the Q1 roadmap deck? I wasn't sure if it needed a reply.
+Robin: For the analytics migration, we're waiting on feedback from the other team. I pinged them again this morning.
+Tomás: For the analytics migration, we're waiting on feedback from the other team. I pinged them again this morning.
+Ana: On the docs site I spent most of the week in meetings, honestly. Hoping to make real progress tomorrow.
+Bo: Quick update on the onboarding emails: still in progress, nothing blocking, should be done next week.
+Priya: Coffee break in five minutes? My laptop is about to die.
+Mei: For the onboarding emails, we're waiting on feedback from the other team. I pinged them again this morning.
+Mei: I think the partner portal is fine for now, no need to discuss it today.
+Tomás: Nothing new on the office move. Same as last time.
+Ana: Let me check my notes on the sales demo... yes, we said we'd revisit it after the holidays.
+Jonas: Small thing on the design system: the copy needs another pass, but that's not urgent.
+Jonas: I had a look at the dashboard redesign, there's more work than we thought but it's fine, I'll keep going.
+Tomás: Nothing new on the sales demo. Same as last time.
+Ana: Nothing new on the office move. Same as last time.
+Ana: Nothing new on the analytics migration. Same as last time.
+Robin: Sandbox: sandbox data is wiped every Sunday night, and merchants are told that in the docs.
+Jonas: Fine, wiped every Sunday.
+Ana: Did anyone else get the email about the office move? I wasn't sure if it needed a reply.
+Bo: Coffee break in five minutes? My laptop is about to die.
+Tomás: Nothing new on the docs site. Same as last time.
+Robin: For the support rota, we're waiting on feedback from the other team. I pinged them again this morning.
+Mei: Quick update on the partner portal: still in progress, nothing blocking, should be done next week.
+Jonas: Small thing on the onboarding emails: the copy needs another pass, but that's not urgent.
+Robin: I had a look at the Q1 roadmap deck, there's more work than we thought but it's fine, I'll keep going.
+Jonas: Quick update on the analytics migration: still in progress, nothing blocking, should be done next week.
+Bo: Sorry, I was on mute. I said the office move is mostly done, just polishing.
+Ana: Can you share your screen? I can't see the board. Oh, there it is.
+Ana: I had a look at the support rota, there's more work than we thought but it's fine, I'll keep going.
+Bo: Sorry, I was on mute. I said the support rota is mostly done, just polishing.
+Robin: Let me check my notes on the docs site... yes, we said we'd revisit it after the holidays.
+Jonas: Nothing new on the office move. Same as last time.
+Jonas: Did anyone else get the email about the quarterly survey? I wasn't sure if it needed a reply.
+Jonas: Did anyone else get the email about the Q1 roadmap deck? I wasn't sure if it needed a reply.
+Tomás: Coffee break in five minutes? My laptop is about to die.
+Tomás: I think the quarterly survey is fine for now, no need to discuss it today.
+Priya: Coffee break in five minutes? My laptop is about to die.
+Priya: Small thing on the sales demo: the copy needs another pass, but that's not urgent.
+Bo: I think the analytics migration is fine for now, no need to discuss it today.
+Jonas: For the sales demo, we're waiting on feedback from the other team. I pinged them again this morning.
+Tomás: Coffee break in five minutes? My laptop is about to die.
+Jonas: Nothing new on the office move. Same as last time.
+Robin: Can you share your screen? I can't see the board. Oh, there it is.
+Bo: Can you share your screen? I can't see the board. Oh, there it is.
+Priya: Nothing new on the support rota. Same as last time.
+Priya: I think the dashboard redesign is fine for now, no need to discuss it today.
+Priya: Let me check my notes on the dashboard redesign... yes, we said we'd revisit it after the holidays.
+Tomás: I think the design system is fine for now, no need to discuss it today.
+Priya: Sorry, I was on mute. I said the docs site is mostly done, just polishing.
+Jonas: I think the design system is fine for now, no need to discuss it today.
+Jonas: Nothing new on the sales demo. Same as last time.
+Bo: Sorry, I was on mute. I said the dashboard redesign is mostly done, just polishing.
+Ana: Nothing new on the sales demo. Same as last time.
+Tomás: For the docs site, we're waiting on feedback from the other team. I pinged them again this morning.
+Jonas: I had a look at the support rota, there's more work than we thought but it's fine, I'll keep going.
+Priya: I think the office move is fine for now, no need to discuss it today.
+Mei: Small thing on the quarterly survey: the copy needs another pass, but that's not urgent.
+Priya: Coffee break in five minutes? My laptop is about to die.
+Priya: Quick update on the Q1 roadmap deck: still in progress, nothing blocking, should be done next week.
+Jonas: Small thing on the sales demo: the copy needs another pass, but that's not urgent.
+Tomás: Coffee break in five minutes? My laptop is about to die.
+Tomás: Small thing on the partner portal: the copy needs another pass, but that's not urgent.
+Ana: For the docs site, we're waiting on feedback from the other team. I pinged them again this morning.
+Bo: Sorry, I was on mute. I said the quarterly survey is mostly done, just polishing.
+Bo: Can you share your screen? I can't see the board. Oh, there it is.
+Ana: I had a look at the Q1 roadmap deck, there's more work than we thought but it's fine, I'll keep going.
+Jonas: Can you share your screen? I can't see the board. Oh, there it is.
+Ana: Can you share your screen? I can't see the board. Oh, there it is.
+Priya: Let me check my notes on the onboarding emails... yes, we said we'd revisit it after the holidays.
+Jonas: Let me check my notes on the office move... yes, we said we'd revisit it after the holidays.
+Jonas: Did anyone else get the email about the office move? I wasn't sure if it needed a reply.
+Tomás: Coffee break in five minutes? My laptop is about to die.
+Bo: I think the CI flakiness is fine for now, no need to discuss it today.
+Ana: Quick update on the dashboard redesign: still in progress, nothing blocking, should be done next week.
+Mei: Can you share your screen? I can't see the board. Oh, there it is.
+Bo: Let me check my notes on the onboarding emails... yes, we said we'd revisit it after the holidays.
+Tomás: Sorry, I was on mute. I said the support rota is mostly done, just polishing.
+Ana: For the quarterly survey, we're waiting on feedback from the other team. I pinged them again this morning.
+Mei: Did anyone else get the email about the support rota? I wasn't sure if it needed a reply.
+Ana: Let me check my notes on the dashboard redesign... yes, we said we'd revisit it after the holidays.
+Jonas: Nothing new on the dashboard redesign. Same as last time.
+Tomás: On the design system I spent most of the week in meetings, honestly. Hoping to make real progress tomorrow.
+Jonas: I think the CI flakiness is fine for now, no need to discuss it today.
+Ana: Coffee break in five minutes? My laptop is about to die.
+Priya: On the design system I spent most of the week in meetings, honestly. Hoping to make real progress tomorrow.
+Jonas: Sorry, I was on mute. I said the dashboard redesign is mostly done, just polishing.
+Jonas: I had a look at the Q1 roadmap deck, there's more work than we thought but it's fine, I'll keep going.
+Priya: Let me check my notes on the docs site... yes, we said we'd revisit it after the holidays.
+Priya: Did anyone else get the email about the dashboard redesign? I wasn't sure if it needed a reply.
+Bo: On the onboarding emails I spent most of the week in meetings, honestly. Hoping to make real progress tomorrow.
+Bo: Sorry, I was on mute. I said the CI flakiness is mostly done, just polishing.
+Priya: I think the quarterly survey is fine for now, no need to discuss it today.
+Priya: Sorry, I was on mute. I said the sales demo is mostly done, just polishing.
+Mei: For the partner portal, we're waiting on feedback from the other team. I pinged them again this morning.
+Mei: Quick update on the docs site: still in progress, nothing blocking, should be done next week.
+Robin: On the office move I spent most of the week in meetings, honestly. Hoping to make real progress tomorrow.
+Robin: Coffee break in five minutes? My laptop is about to die.
+Priya: On the Q1 roadmap deck I spent most of the week in meetings, honestly. Hoping to make real progress tomorrow.
+Mei: Coffee break in five minutes? My laptop is about to die.
+Jonas: Nothing new on the support rota. Same as last time.
+Priya: Small thing on the Q1 roadmap deck: the copy needs another pass, but that's not urgent.
+Tomás: For the CI flakiness, we're waiting on feedback from the other team. I pinged them again this morning.
+Bo: Quick update on the onboarding emails: still in progress, nothing blocking, should be done next week.
+Robin: Quick update on the sales demo: still in progress, nothing blocking, should be done next week.
+Bo: Small thing on the design system: the copy needs another pass, but that's not urgent.
+Priya: Quick update on the partner portal: still in progress, nothing blocking, should be done next week.
+Bo: Coffee break in five minutes? My laptop is about to die.
+Tomás: Quick update on the Q1 roadmap deck: still in progress, nothing blocking, should be done next week.
+Mei: Let me check my notes on the office move... yes, we said we'd revisit it after the holidays.
+Mei: Small thing on the office move: the copy needs another pass, but that's not urgent.
+Tomás: I think the office move is fine for now, no need to discuss it today.
+Robin: Billing cycles: proration is calculated to the day, not to the second.
+Tomás: Agreed, to the day.
+Mei: Small thing on the dashboard redesign: the copy needs another pass, but that's not urgent.
+Bo: On the sales demo I spent most of the week in meetings, honestly. Hoping to make real progress tomorrow.
+Tomás: Quick update on the office move: still in progress, nothing blocking, should be done next week.
+Robin: Did anyone else get the email about the sales demo? I wasn't sure if it needed a reply.
+Bo: Did anyone else get the email about the sales demo? I wasn't sure if it needed a reply.
+Tomás: Quick update on the docs site: still in progress, nothing blocking, should be done next week.
+Robin: Can you share your screen? I can't see the board. Oh, there it is.
+Priya: Quick update on the analytics migration: still in progress, nothing blocking, should be done next week.
+Ana: Did anyone else get the email about the Q1 roadmap deck? I wasn't sure if it needed a reply.
+Robin: Nothing new on the onboarding emails. Same as last time.
+Jonas: For the CI flakiness, we're waiting on feedback from the other team. I pinged them again this morning.
+Priya: Did anyone else get the email about the office move? I wasn't sure if it needed a reply.
+Tomás: I had a look at the design system, there's more work than we thought but it's fine, I'll keep going.
+Jonas: Nothing new on the dashboard redesign. Same as last time.
+Mei: Sorry, I was on mute. I said the CI flakiness is mostly done, just polishing.
+Priya: Did anyone else get the email about the docs site? I wasn't sure if it needed a reply.
+Bo: Coffee break in five minutes? My laptop is about to die.
+Robin: Coffee break in five minutes? My laptop is about to die.
+Tomás: Coffee break in five minutes? My laptop is about to die.
+Tomás: Did anyone else get the email about the design system? I wasn't sure if it needed a reply.
+Bo: Sorry, I was on mute. I said the design system is mostly done, just polishing.
+Ana: Sorry, I was on mute. I said the support rota is mostly done, just polishing.
+Robin: Let me check my notes on the analytics migration... yes, we said we'd revisit it after the holidays.
+Mei: For the quarterly survey, we're waiting on feedback from the other team. I pinged them again this morning.
+Tomás: I had a look at the docs site, there's more work than we thought but it's fine, I'll keep going.
+Mei: Sorry, I was on mute. I said the onboarding emails is mostly done, just polishing.
+Priya: I had a look at the analytics migration, there's more work than we thought but it's fine, I'll keep going.
+Mei: Quick update on the quarterly survey: still in progress, nothing blocking, should be done next week.
+Bo: Quick update on the analytics migration: still in progress, nothing blocking, should be done next week.
+Tomás: Can you share your screen? I can't see the board. Oh, there it is.
+Ana: Did anyone else get the email about the analytics migration? I wasn't sure if it needed a reply.
+Robin: Tomás, please add the api_version field to the webhook schema docs.
+Robin: I think the dashboard redesign is fine for now, no need to discuss it today.
+Jonas: Nothing new on the design system. Same as last time.
+Tomás: Coffee break in five minutes? My laptop is about to die.
+Jonas: Can you share your screen? I can't see the board. Oh, there it is.
+Mei: Nothing new on the partner portal. Same as last time.
+Ana: Quick update on the office move: still in progress, nothing blocking, should be done next week.
+Tomás: Small thing on the office move: the copy needs another pass, but that's not urgent.
+Jonas: For the design system, we're waiting on feedback from the other team. I pinged them again this morning.
+Robin: Can you share your screen? I can't see the board. Oh, there it is.
+Tomás: I think the CI flakiness is fine for now, no need to discuss it today.
+Ana: On the docs site I spent most of the week in meetings, honestly. Hoping to make real progress tomorrow.
+Jonas: Sorry, I was on mute. I said the docs site is mostly done, just polishing.
+Tomás: For the onboarding emails, we're waiting on feedback from the other team. I pinged them again this morning.
+Ana: Sorry, I was on mute. I said the design system is mostly done, just polishing.
+Robin: Quick update on the support rota: still in progress, nothing blocking, should be done next week.
+Ana: Sorry, I was on mute. I said the analytics migration is mostly done, just polishing.
+Robin: I had a look at the dashboard redesign, there's more work than we thought but it's fine, I'll keep going.
+Jonas: For the CI flakiness, we're waiting on feedback from the other team. I pinged them again this morning.
+Bo: Sorry, I was on mute. I said the sales demo is mostly done, just polishing.
+Jonas: Let me check my notes on the analytics migration... yes, we said we'd revisit it after the holidays.
+Tomás: I had a look at the dashboard redesign, there's more work than we thought but it's fine, I'll keep going.
+Priya: Nothing new on the support rota. Same as last time.
+Mei: Nothing new on the Q1 roadmap deck. Same as last time.
+Bo: Did anyone else get the email about the sales demo? I wasn't sure if it needed a reply.
+Priya: Can you share your screen? I can't see the board. Oh, there it is.
+Ana: Coffee break in five minutes? My laptop is about to die.
+Mei: I had a look at the office move, there's more work than we thought but it's fine, I'll keep going.
+Bo: I think the quarterly survey is fine for now, no need to discuss it today.
+Jonas: For the CI flakiness, we're waiting on feedback from the other team. I pinged them again this morning.
+Jonas: On the quarterly survey I spent most of the week in meetings, honestly. Hoping to make real progress tomorrow.
+Ana: Let me check my notes on the Q1 roadmap deck... yes, we said we'd revisit it after the holidays.
+Robin: Let me check my notes on the support rota... yes, we said we'd revisit it after the holidays.
+Robin: On the CI flakiness I spent most of the week in meetings, honestly. Hoping to make real progress tomorrow.
+Jonas: Quick update on the CI flakiness: still in progress, nothing blocking, should be done next week.
+Jonas: Coffee break in five minutes? My laptop is about to die.
+Bo: Can you share your screen? I can't see the board. Oh, there it is.
+Tomás: Did anyone else get the email about the office move? I wasn't sure if it needed a reply.
+Mei: Small thing on the design system: the copy needs another pass, but that's not urgent.
+Robin: Small thing on the office move: the copy needs another pass, but that's not urgent.
+Priya: Quick update on the docs site: still in progress, nothing blocking, should be done next week.
+Priya: For the dashboard redesign, we're waiting on feedback from the other team. I pinged them again this morning.
+Priya: Nothing new on the partner portal. Same as last time.
+Ana: I had a look at the analytics migration, there's more work than we thought but it's fine, I'll keep going.
+Bo: Did anyone else get the email about the office move? I wasn't sure if it needed a reply.
+Jonas: On the quarterly survey I spent most of the week in meetings, honestly. Hoping to make real progress tomorrow.
+Mei: Quick update on the partner portal: still in progress, nothing blocking, should be done next week.
+Jonas: Nothing new on the Q1 roadmap deck. Same as last time.
+Mei: I think the analytics migration is fine for now, no need to discuss it today.
+Ana: Coffee break in five minutes? My laptop is about to die.
+Jonas: Can you share your screen? I can't see the board. Oh, there it is.
+Jonas: Coffee break in five minutes? My laptop is about to die.
+Jonas: Sorry, I was on mute. I said the dashboard redesign is mostly done, just polishing.
+Priya: Small thing on the dashboard redesign: the copy needs another pass, but that's not urgent.
+Jonas: Quick update on the quarterly survey: still in progress, nothing blocking, should be done next week.
+Tomás: Let me check my notes on the Q1 roadmap deck... yes, we said we'd revisit it after the holidays.
+Bo: Let me check my notes on the Q1 roadmap deck... yes, we said we'd revisit it after the holidays.
+Robin: For the support rota, we're waiting on feedback from the other team. I pinged them again this morning.
+Priya: Quick update on the CI flakiness: still in progress, nothing blocking, should be done next week.
+Tomás: Quick update on the analytics migration: still in progress, nothing blocking, should be done next week.
+Robin: On the Q1 roadmap deck I spent most of the week in meetings, honestly. Hoping to make real progress tomorrow.
+Ana: Small thing on the Q1 roadmap deck: the copy needs another pass, but that's not urgent.
+Mei: Coffee break in five minutes? My laptop is about to die.
+Jonas: Let me check my notes on the quarterly survey... yes, we said we'd revisit it after the holidays.
+Robin: Coffee break in five minutes? My laptop is about to die.
+Bo: I had a look at the CI flakiness, there's more work than we thought but it's fine, I'll keep going.
+Priya: I think the docs site is fine for now, no need to discuss it today.
+Ana: On the office move I spent most of the week in meetings, honestly. Hoping to make real progress tomorrow.
+Tomás: Did anyone else get the email about the onboarding emails? I wasn't sure if it needed a reply.
+Robin: Sorry, I was on mute. I said the dashboard redesign is mostly done, just polishing.
+Robin: Nothing new on the quarterly survey. Same as last time.
+Mei: I think the onboarding emails is fine for now, no need to discuss it today.
+Bo: I had a look at the design system, there's more work than we thought but it's fine, I'll keep going.
+Tomás: Quick update on the CI flakiness: still in progress, nothing blocking, should be done next week.
+Robin: Did anyone else get the email about the sales demo? I wasn't sure if it needed a reply.
+Robin: Quick update on the support rota: still in progress, nothing blocking, should be done next week.
+Jonas: On the Q1 roadmap deck I spent most of the week in meetings, honestly. Hoping to make real progress tomorrow.
+Priya: For the analytics migration, we're waiting on feedback from the other team. I pinged them again this morning.
+Ana: Quick update on the sales demo: still in progress, nothing blocking, should be done next week.
+Ana: Let me check my notes on the support rota... yes, we said we'd revisit it after the holidays.
+Priya: Coffee break in five minutes? My laptop is about to die.
+Mei: Sorry, I was on mute. I said the design system is mostly done, just polishing.
+Jonas: Nothing new on the CI flakiness. Same as last time.
+Mei: Did anyone else get the email about the CI flakiness? I wasn't sure if it needed a reply.
+Mei: Coffee break in five minutes? My laptop is about to die.
+Tomás: I think the office move is fine for now, no need to discuss it today.
+Tomás: Small thing on the design system: the copy needs another pass, but that's not urgent.
+Bo: For the dashboard redesign, we're waiting on feedback from the other team. I pinged them again this morning.
+Ana: Coffee break in five minutes? My laptop is about to die.
+Bo: I had a look at the office move, there's more work than we thought but it's fine, I'll keep going.
+Tomás: Sorry, I was on mute. I said the quarterly survey is mostly done, just polishing.
+Robin: Sorry, I was on mute. I said the office move is mostly done, just polishing.
+Ana: Quick update on the office move: still in progress, nothing blocking, should be done next week.
+Ana: For the quarterly survey, we're waiting on feedback from the other team. I pinged them again this morning.
+Bo: Small thing on the quarterly survey: the copy needs another pass, but that's not urgent.
+Tomás: Coffee break in five minutes? My laptop is about to die.
+Mei: Nothing new on the docs site. Same as last time.
+Ana: For the docs site, we're waiting on feedback from the other team. I pinged them again this morning.
+Robin: Can you share your screen? I can't see the board. Oh, there it is.
+Jonas: Did anyone else get the email about the docs site? I wasn't sure if it needed a reply.
+Jonas: Can you share your screen? I can't see the board. Oh, there it is.
+Robin: For the docs site, we're waiting on feedback from the other team. I pinged them again this morning.
+Tomás: I had a look at the analytics migration, there's more work than we thought but it's fine, I'll keep going.
+Tomás: Quick update on the support rota: still in progress, nothing blocking, should be done next week.
+Jonas: Can you share your screen? I can't see the board. Oh, there it is.
+Bo: Let me check my notes on the onboarding emails... yes, we said we'd revisit it after the holidays.
+Mei: For the CI flakiness, we're waiting on feedback from the other team. I pinged them again this morning.
+Robin: Coffee break in five minutes? My laptop is about to die.
+Mei: Let me check my notes on the partner portal... yes, we said we'd revisit it after the holidays.
+Priya: Nothing new on the onboarding emails. Same as last time.
+Jonas: Let me check my notes on the onboarding emails... yes, we said we'd revisit it after the holidays.
+Robin: Let me check my notes on the onboarding emails... yes, we said we'd revisit it after the holidays.
+Mei: Did anyone else get the email about the support rota? I wasn't sure if it needed a reply.
+Jonas: On the office move I spent most of the week in meetings, honestly. Hoping to make real progress tomorrow.
+Priya: Nothing new on the support rota. Same as last time.
+Tomás: Sorry, I was on mute. I said the CI flakiness is mostly done, just polishing.
+Priya: On the partner portal I spent most of the week in meetings, honestly. Hoping to make real progress tomorrow.
+Robin: Nothing new on the sales demo. Same as last time.
+Bo: On the quarterly survey I spent most of the week in meetings, honestly. Hoping to make real progress tomorrow.
+Robin: Did anyone else get the email about the quarterly survey? I wasn't sure if it needed a reply.
+Bo: Small thing on the office move: the copy needs another pass, but that's not urgent.
+Jonas: Nothing new on the design system. Same as last time.
+Priya: I had a look at the partner portal, there's more work than we thought but it's fine, I'll keep going.
+Tomás: On the onboarding emails I spent most of the week in meetings, honestly. Hoping to make real progress tomorrow.
+Tomás: On the sales demo I spent most of the week in meetings, honestly. Hoping to make real progress tomorrow.
+Priya: On the CI flakiness I spent most of the week in meetings, honestly. Hoping to make real progress tomorrow.
+Tomás: Did anyone else get the email about the docs site? I wasn't sure if it needed a reply.
+Ana: Coffee break in five minutes? My laptop is about to die.
+Mei: Can you share your screen? I can't see the board. Oh, there it is.
+Jonas: For the sales demo, we're waiting on feedback from the other team. I pinged them again this morning.
+Robin: On the office move I spent most of the week in meetings, honestly. Hoping to make real progress tomorrow.
+Tomás: On the support rota I spent most of the week in meetings, honestly. Hoping to make real progress tomorrow.
+Jonas: Small thing on the dashboard redesign: the copy needs another pass, but that's not urgent.
+Bo: Nothing new on the analytics migration. Same as last time.
+Bo: Coffee break in five minutes? My laptop is about to die.
+Priya: Did anyone else get the email about the office move? I wasn't sure if it needed a reply.
+Mei: I think the onboarding emails is fine for now, no need to discuss it today.
+Bo: Small thing on the support rota: the copy needs another pass, but that's not urgent.
+Jonas: Sorry, I was on mute. I said the partner portal is mostly done, just polishing.
+Jonas: For the CI flakiness, we're waiting on feedback from the other team. I pinged them again this morning.
+Robin: Did anyone else get the email about the design system? I wasn't sure if it needed a reply.
+Priya: Did anyone else get the email about the analytics migration? I wasn't sure if it needed a reply.
+Ana: On the support rota I spent most of the week in meetings, honestly. Hoping to make real progress tomorrow.
+Robin: I think the Q1 roadmap deck is fine for now, no need to discuss it today.
+Priya: Can you share your screen? I can't see the board. Oh, there it is.
+Bo: Did anyone else get the email about the analytics migration? I wasn't sure if it needed a reply.
+Priya: I had a look at the sales demo, there's more work than we thought but it's fine, I'll keep going.
+Priya: I had a look at the dashboard redesign, there's more work than we thought but it's fine, I'll keep going.
+Priya: Let me check my notes on the CI flakiness... yes, we said we'd revisit it after the holidays.
+Bo: Coffee break in five minutes? My laptop is about to die.
+Ana: I think the design system is fine for now, no need to discuss it today.
+Robin: Small thing on the partner portal: the copy needs another pass, but that's not urgent.
+Ana: Let me check my notes on the Q1 roadmap deck... yes, we said we'd revisit it after the holidays.
+Bo: Did anyone else get the email about the dashboard redesign? I wasn't sure if it needed a reply.
+Mei: Quick update on the design system: still in progress, nothing blocking, should be done next week.
+Robin: Nothing new on the design system. Same as last time.
+Mei: Small thing on the analytics migration: the copy needs another pass, but that's not urgent.
+Bo: Nothing new on the Q1 roadmap deck. Same as last time.
+Robin: Let me check my notes on the sales demo... yes, we said we'd revisit it after the holidays.
+Priya: Coffee break in five minutes? My laptop is about to die.
+Bo: Sorry, I was on mute. I said the analytics migration is mostly done, just polishing.
+Priya: Quick update on the Q1 roadmap deck: still in progress, nothing blocking, should be done next week.
+Bo: Did anyone else get the email about the analytics migration? I wasn't sure if it needed a reply.
+Mei: Small thing on the support rota: the copy needs another pass, but that's not urgent.
+Priya: Can you share your screen? I can't see the board. Oh, there it is.
+Mei: On the sales demo I spent most of the week in meetings, honestly. Hoping to make real progress tomorrow.
+Jonas: Let me check my notes on the support rota... yes, we said we'd revisit it after the holidays.
+Robin: I had a look at the support rota, there's more work than we thought but it's fine, I'll keep going.
+Priya: Quick update on the design system: still in progress, nothing blocking, should be done next week.
+Bo: Sorry, I was on mute. I said the Q1 roadmap deck is mostly done, just polishing.
+Priya: Coffee break in five minutes? My laptop is about to die.
+Robin: Can you share your screen? I can't see the board. Oh, there it is.
+Robin: On the docs site I spent most of the week in meetings, honestly. Hoping to make real progress tomorrow.
+Mei: Small thing on the analytics migration: the copy needs another pass, but that's not urgent.
+Priya: I had a look at the sales demo, there's more work than we thought but it's fine, I'll keep going.
+Bo: For the docs site, we're waiting on feedback from the other team. I pinged them again this morning.
+Mei: Let me check my notes on the partner portal... yes, we said we'd revisit it after the holidays.
+Robin: For the support rota, we're waiting on feedback from the other team. I pinged them again this morning.
+Jonas: For the support rota, we're waiting on feedback from the other team. I pinged them again this morning.
+Bo: I had a look at the Q1 roadmap deck, there's more work than we thought but it's fine, I'll keep going.
+Ana: I think the partner portal is fine for now, no need to discuss it today.
+Ana: I had a look at the analytics migration, there's more work than we thought but it's fine, I'll keep going.
+Priya: On the quarterly survey I spent most of the week in meetings, honestly. Hoping to make real progress tomorrow.
+Bo: Can you share your screen? I can't see the board. Oh, there it is.
+Bo: I think the office move is fine for now, no need to discuss it today.
+Jonas: Quick update on the analytics migration: still in progress, nothing blocking, should be done next week.
+Mei: Small thing on the office move: the copy needs another pass, but that's not urgent.
+Mei: Quick update on the support rota: still in progress, nothing blocking, should be done next week.
+Ana: Sorry, I was on mute. I said the dashboard redesign is mostly done, just polishing.
+Jonas: Nothing new on the quarterly survey. Same as last time.
+Robin: Small thing on the office move: the copy needs another pass, but that's not urgent.
+Robin: Oncall: the on-call engineer never deploys during their own on-call shift except for a fix to the incident.
+Priya: Yes, no deploys on call.
+Mei: Coffee break in five minutes? My laptop is about to die.
+Mei: I had a look at the sales demo, there's more work than we thought but it's fine, I'll keep going.
+Bo: Can you share your screen? I can't see the board. Oh, there it is.
+Ana: Small thing on the Q1 roadmap deck: the copy needs another pass, but that's not urgent.
+Mei: I had a look at the docs site, there's more work than we thought but it's fine, I'll keep going.
+Bo: Let me check my notes on the design system... yes, we said we'd revisit it after the holidays.
+Bo: Nothing new on the partner portal. Same as last time.
+Mei: Let me check my notes on the quarterly survey... yes, we said we'd revisit it after the holidays.
+Priya: Let me check my notes on the quarterly survey... yes, we said we'd revisit it after the holidays.
+Mei: Nothing new on the support rota. Same as last time.
+Priya: I had a look at the analytics migration, there's more work than we thought but it's fine, I'll keep going.
+Jonas: I had a look at the quarterly survey, there's more work than we thought but it's fine, I'll keep going.
+Jonas: I had a look at the docs site, there's more work than we thought but it's fine, I'll keep going.
+Jonas: For the docs site, we're waiting on feedback from the other team. I pinged them again this morning.
+Tomás: I think the sales demo is fine for now, no need to discuss it today.
+Jonas: I think the docs site is fine for now, no need to discuss it today.
+Ana: Sorry, I was on mute. I said the sales demo is mostly done, just polishing.
+Bo: Did anyone else get the email about the CI flakiness? I wasn't sure if it needed a reply.
+Ana: Did anyone else get the email about the quarterly survey? I wasn't sure if it needed a reply.
+Priya: For the sales demo, we're waiting on feedback from the other team. I pinged them again this morning.
+Tomás: Coffee break in five minutes? My laptop is about to die.
+Tomás: Coffee break in five minutes? My laptop is about to die.
+Jonas: Let me check my notes on the quarterly survey... yes, we said we'd revisit it after the holidays.
+Bo: For the Q1 roadmap deck, we're waiting on feedback from the other team. I pinged them again this morning.
+Robin: Small thing on the Q1 roadmap deck: the copy needs another pass, but that's not urgent.
+Ana: I had a look at the CI flakiness, there's more work than we thought but it's fine, I'll keep going.
+Mei: Coffee break in five minutes? My laptop is about to die.
+Robin: On the dashboard redesign I spent most of the week in meetings, honestly. Hoping to make real progress tomorrow.
+Bo: For the dashboard redesign, we're waiting on feedback from the other team. I pinged them again this morning.
+Priya: For the design system, we're waiting on feedback from the other team. I pinged them again this morning.
+Bo: Can you share your screen? I can't see the board. Oh, there it is.
+Jonas: I had a look at the partner portal, there's more work than we thought but it's fine, I'll keep going.
+Ana: Can you share your screen? I can't see the board. Oh, there it is.
+Ana: Sorry, I was on mute. I said the quarterly survey is mostly done, just polishing.
+Priya: I had a look at the dashboard redesign, there's more work than we thought but it's fine, I'll keep going.
+Jonas: Did anyone else get the email about the Q1 roadmap deck? I wasn't sure if it needed a reply.
+Ana: I had a look at the Q1 roadmap deck, there's more work than we thought but it's fine, I'll keep going.
+Tomás: On the design system I spent most of the week in meetings, honestly. Hoping to make real progress tomorrow.
+Ana: Nothing new on the docs site. Same as last time.
+Tomás: Quick update on the onboarding emails: still in progress, nothing blocking, should be done next week.
+Bo: I had a look at the CI flakiness, there's more work than we thought but it's fine, I'll keep going.
+Jonas: Quick update on the Q1 roadmap deck: still in progress, nothing blocking, should be done next week.
+Robin: On the onboarding emails I spent most of the week in meetings, honestly. Hoping to make real progress tomorrow.
+Mei: Nothing new on the CI flakiness. Same as last time.
+Bo: Sorry, I was on mute. I said the office move is mostly done, just polishing.
+Ana: Nothing new on the CI flakiness. Same as last time.
+Ana: Sorry, I was on mute. I said the analytics migration is mostly done, just polishing.
+Robin: I think the support rota is fine for now, no need to discuss it today.
+Bo: Did anyone else get the email about the docs site? I wasn't sure if it needed a reply.
+Bo: On the analytics migration I spent most of the week in meetings, honestly. Hoping to make real progress tomorrow.
+Mei: Let me check my notes on the design system... yes, we said we'd revisit it after the holidays.
+Bo: Sorry, I was on mute. I said the support rota is mostly done, just polishing.
+Tomás: Sorry, I was on mute. I said the support rota is mostly done, just polishing.
+Ana: Nothing new on the Q1 roadmap deck. Same as last time.
+Jonas: Nothing new on the quarterly survey. Same as last time.
+Bo: Nothing new on the support rota. Same as last time.
+Priya: Nothing new on the sales demo. Same as last time.
+Jonas: Coffee break in five minutes? My laptop is about to die.
+Priya: I had a look at the sales demo, there's more work than we thought but it's fine, I'll keep going.
+Mei: Let me check my notes on the onboarding emails... yes, we said we'd revisit it after the holidays.
+Bo: Did anyone else get the email about the sales demo? I wasn't sure if it needed a reply.
+Bo: Small thing on the onboarding emails: the copy needs another pass, but that's not urgent.
+Tomás: I had a look at the quarterly survey, there's more work than we thought but it's fine, I'll keep going.
+Priya: On the CI flakiness I spent most of the week in meetings, honestly. Hoping to make real progress tomorrow.
+Robin: I had a look at the dashboard redesign, there's more work than we thought but it's fine, I'll keep going.
+Bo: On the docs site I spent most of the week in meetings, honestly. Hoping to make real progress tomorrow.
+Robin: Quick update on the dashboard redesign: still in progress, nothing blocking, should be done next week.
+Bo: Quick update on the CI flakiness: still in progress, nothing blocking, should be done next week.
+Mei: I had a look at the onboarding emails, there's more work than we thought but it's fine, I'll keep going.
+Tomás: Quick update on the CI flakiness: still in progress, nothing blocking, should be done next week.
+Ana: Quick update on the onboarding emails: still in progress, nothing blocking, should be done next week.
+Robin: Nothing new on the sales demo. Same as last time.
+Priya: Quick update on the partner portal: still in progress, nothing blocking, should be done next week.
+Bo: I think the dashboard redesign is fine for now, no need to discuss it today.
+Bo: For the analytics migration, we're waiting on feedback from the other team. I pinged them again this morning.
+Ana: I had a look at the partner portal, there's more work than we thought but it's fine, I'll keep going.
+Priya: Coffee break in five minutes? My laptop is about to die.
+Bo: I think the dashboard redesign is fine for now, no need to discuss it today.
+Mei: On the support rota I spent most of the week in meetings, honestly. Hoping to make real progress tomorrow.
+Bo: Sorry, I was on mute. I said the docs site is mostly done, just polishing.
+Jonas: Nothing new on the office move. Same as last time.
+Robin: Nothing new on the CI flakiness. Same as last time.
+Robin: Let me check my notes on the support rota... yes, we said we'd revisit it after the holidays.
+Ana: Sorry, I was on mute. I said the quarterly survey is mostly done, just polishing.
+Jonas: Did anyone else get the email about the docs site? I wasn't sure if it needed a reply.
+Priya: Can you share your screen? I can't see the board. Oh, there it is.
+Ana: Nothing new on the Q1 roadmap deck. Same as last time.
+Ana: Let me check my notes on the docs site... yes, we said we'd revisit it after the holidays.
+Robin: Exports: export links expire after 24 hours.
+Mei: Okay, 24 hours.
+Mei: Coffee break in five minutes? My laptop is about to die.
+Mei: I had a look at the dashboard redesign, there's more work than we thought but it's fine, I'll keep going.
+Priya: Sorry, I was on mute. I said the analytics migration is mostly done, just polishing.
+Tomás: Let me check my notes on the dashboard redesign... yes, we said we'd revisit it after the holidays.
+Mei: Sorry, I was on mute. I said the sales demo is mostly done, just polishing.
+Jonas: Small thing on the quarterly survey: the copy needs another pass, but that's not urgent.
+Bo: Nothing new on the support rota. Same as last time.
+Priya: For the onboarding emails, we're waiting on feedback from the other team. I pinged them again this morning.
+Jonas: Nothing new on the design system. Same as last time.
+Jonas: Nothing new on the support rota. Same as last time.
+Robin: Can you share your screen? I can't see the board. Oh, there it is.
+Robin: Small thing on the quarterly survey: the copy needs another pass, but that's not urgent.
+Priya: Sorry, I was on mute. I said the design system is mostly done, just polishing.
+Ana: Can you share your screen? I can't see the board. Oh, there it is.
+Priya: On the sales demo I spent most of the week in meetings, honestly. Hoping to make real progress tomorrow.
+Priya: I think the Q1 roadmap deck is fine for now, no need to discuss it today.
+Bo: For the support rota, we're waiting on feedback from the other team. I pinged them again this morning.
+Tomás: Sorry, I was on mute. I said the analytics migration is mostly done, just polishing.
+Jonas: For the support rota, we're waiting on feedback from the other team. I pinged them again this morning.
+Priya: I had a look at the dashboard redesign, there's more work than we thought but it's fine, I'll keep going.
+Robin: I had a look at the Q1 roadmap deck, there's more work than we thought but it's fine, I'll keep going.
+Mei: Did anyone else get the email about the docs site? I wasn't sure if it needed a reply.
+Priya: Can you share your screen? I can't see the board. Oh, there it is.
+Bo: Did anyone else get the email about the quarterly survey? I wasn't sure if it needed a reply.
+Jonas: Let me check my notes on the sales demo... yes, we said we'd revisit it after the holidays.
+Ana: Did anyone else get the email about the partner portal? I wasn't sure if it needed a reply.
+Ana: Did anyone else get the email about the design system? I wasn't sure if it needed a reply.
+Tomás: For the Q1 roadmap deck, we're waiting on feedback from the other team. I pinged them again this morning.
+Ana: I had a look at the office move, there's more work than we thought but it's fine, I'll keep going.
+Ana: For the docs site, we're waiting on feedback from the other team. I pinged them again this morning.
+Ana: Let me check my notes on the partner portal... yes, we said we'd revisit it after the holidays.
+Priya: Quick update on the dashboard redesign: still in progress, nothing blocking, should be done next week.
+Priya: Sorry, I was on mute. I said the onboarding emails is mostly done, just polishing.
+Priya: Nothing new on the sales demo. Same as last time.
+Jonas: Did anyone else get the email about the design system? I wasn't sure if it needed a reply.
+Jonas: Let me check my notes on the Q1 roadmap deck... yes, we said we'd revisit it after the holidays.
+Tomás: Nothing new on the CI flakiness. Same as last time.
+Bo: For the quarterly survey, we're waiting on feedback from the other team. I pinged them again this morning.
+Ana: On the sales demo I spent most of the week in meetings, honestly. Hoping to make real progress tomorrow.
+Jonas: On the docs site I spent most of the week in meetings, honestly. Hoping to make real progress tomorrow.
+Jonas: Sorry, I was on mute. I said the support rota is mostly done, just polishing.
+Jonas: Sorry, I was on mute. I said the office move is mostly done, just polishing.
+Robin: Did anyone else get the email about the quarterly survey? I wasn't sure if it needed a reply.
+Priya: On the design system I spent most of the week in meetings, honestly. Hoping to make real progress tomorrow.
+Priya: Can you share your screen? I can't see the board. Oh, there it is.
+Mei: Nothing new on the dashboard redesign. Same as last time.
+Priya: On the analytics migration I spent most of the week in meetings, honestly. Hoping to make real progress tomorrow.
+Tomás: Sorry, I was on mute. I said the onboarding emails is mostly done, just polishing.
+Tomás: Small thing on the Q1 roadmap deck: the copy needs another pass, but that's not urgent.
+Jonas: On the support rota I spent most of the week in meetings, honestly. Hoping to make real progress tomorrow.
+Bo: Small thing on the onboarding emails: the copy needs another pass, but that's not urgent.
+Tomás: Can you share your screen? I can't see the board. Oh, there it is.
+Mei: Can you share your screen? I can't see the board. Oh, there it is.
+Bo: Quick update on the Q1 roadmap deck: still in progress, nothing blocking, should be done next week.
+Mei: Let me check my notes on the onboarding emails... yes, we said we'd revisit it after the holidays.
+Priya: Let me check my notes on the quarterly survey... yes, we said we'd revisit it after the holidays.
+Robin: Coffee break in five minutes? My laptop is about to die.
+Robin: Did anyone else get the email about the support rota? I wasn't sure if it needed a reply.
+Ana: I think the partner portal is fine for now, no need to discuss it today.
+Priya: I think the CI flakiness is fine for now, no need to discuss it today.
+Ana: Did anyone else get the email about the docs site? I wasn't sure if it needed a reply.
+Priya: On the support rota I spent most of the week in meetings, honestly. Hoping to make real progress tomorrow.
+Robin: I think the analytics migration is fine for now, no need to discuss it today.
+Mei: I think the partner portal is fine for now, no need to discuss it today.
+Tomás: Let me check my notes on the partner portal... yes, we said we'd revisit it after the holidays.
+Tomás: Small thing on the sales demo: the copy needs another pass, but that's not urgent.
+Bo: Sorry, I was on mute. I said the dashboard redesign is mostly done, just polishing.
+Tomás: Quick update on the dashboard redesign: still in progress, nothing blocking, should be done next week.
+Bo: Nothing new on the Q1 roadmap deck. Same as last time.
+Ana: For the docs site, we're waiting on feedback from the other team. I pinged them again this morning.
+Ana: Coffee break in five minutes? My laptop is about to die.
+Ana: For the design system, we're waiting on feedback from the other team. I pinged them again this morning.
+Ana: Coffee break in five minutes? My laptop is about to die.
+Priya: On the docs site I spent most of the week in meetings, honestly. Hoping to make real progress tomorrow.
+Bo: Sorry, I was on mute. I said the design system is mostly done, just polishing.
+Robin: Small thing on the design system: the copy needs another pass, but that's not urgent.
+Tomás: Small thing on the CI flakiness: the copy needs another pass, but that's not urgent.
+Tomás: For the sales demo, we're waiting on feedback from the other team. I pinged them again this morning.
+Jonas: I had a look at the dashboard redesign, there's more work than we thought but it's fine, I'll keep going.
+Ana: For the Q1 roadmap deck, we're waiting on feedback from the other team. I pinged them again this morning.
+Priya: For the support rota, we're waiting on feedback from the other team. I pinged them again this morning.
+Mei: On the Q1 roadmap deck I spent most of the week in meetings, honestly. Hoping to make real progress tomorrow.
+Priya: On the Q1 roadmap deck I spent most of the week in meetings, honestly. Hoping to make real progress tomorrow.
+Jonas: Did anyone else get the email about the docs site? I wasn't sure if it needed a reply.
+Priya: For the quarterly survey, we're waiting on feedback from the other team. I pinged them again this morning.
+Ana: Coffee break in five minutes? My laptop is about to die.
+Mei: Quick update on the CI flakiness: still in progress, nothing blocking, should be done next week.
+Robin: Quick update on the partner portal: still in progress, nothing blocking, should be done next week.
+Jonas: For the office move, we're waiting on feedback from the other team. I pinged them again this morning.
+Priya: I had a look at the design system, there's more work than we thought but it's fine, I'll keep going.
+Ana: Did anyone else get the email about the design system? I wasn't sure if it needed a reply.
+Tomás: I think the quarterly survey is fine for now, no need to discuss it today.
+Ana: On the analytics migration I spent most of the week in meetings, honestly. Hoping to make real progress tomorrow.
+Robin: Coffee break in five minutes? My laptop is about to die.
+Bo: Let me check my notes on the dashboard redesign... yes, we said we'd revisit it after the holidays.
+Robin: For the docs site, we're waiting on feedback from the other team. I pinged them again this morning.
+Ana: Coffee break in five minutes? My laptop is about to die.
+Robin: Small thing on the onboarding emails: the copy needs another pass, but that's not urgent.
+Mei: I think the partner portal is fine for now, no need to discuss it today.
+Bo: Let me check my notes on the design system... yes, we said we'd revisit it after the holidays.
+Ana: For the dashboard redesign, we're waiting on feedback from the other team. I pinged them again this morning.
+Priya: Small thing on the Q1 roadmap deck: the copy needs another pass, but that's not urgent.
+Robin: Let me check my notes on the Q1 roadmap deck... yes, we said we'd revisit it after the holidays.
+Ana: I had a look at the CI flakiness, there's more work than we thought but it's fine, I'll keep going.
+Priya: Did anyone else get the email about the office move? I wasn't sure if it needed a reply.
+Bo: Can you share your screen? I can't see the board. Oh, there it is.
+Bo: I think the partner portal is fine for now, no need to discuss it today.
+Mei: Did anyone else get the email about the quarterly survey? I wasn't sure if it needed a reply.
+Priya: For the dashboard redesign, we're waiting on feedback from the other team. I pinged them again this morning.
+Tomás: Sorry, I was on mute. I said the docs site is mostly done, just polishing.
+Ana: On the partner portal I spent most of the week in meetings, honestly. Hoping to make real progress tomorrow.
+Priya: Small thing on the Q1 roadmap deck: the copy needs another pass, but that's not urgent.
+Robin: On the onboarding emails I spent most of the week in meetings, honestly. Hoping to make real progress tomorrow.
+Tomás: On the docs site I spent most of the week in meetings, honestly. Hoping to make real progress tomorrow.
+Tomás: Can you share your screen? I can't see the board. Oh, there it is.
+Robin: Quick update on the support rota: still in progress, nothing blocking, should be done next week.
+Jonas: Coffee break in five minutes? My laptop is about to die.
+Priya: Did anyone else get the email about the support rota? I wasn't sure if it needed a reply.
+Bo: On the quarterly survey I spent most of the week in meetings, honestly. Hoping to make real progress tomorrow.

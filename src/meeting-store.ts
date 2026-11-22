@@ -24,6 +24,7 @@ import { frontmatter, INDEX_MAX_LINES, lineCount, pageProblems, PROPOSALS_DIR } 
 import type { CheckedItem, ReplyLine } from './meeting-digest.ts';
 import { applyEdit, audienceLine, decisionBullets, indexRow, MEETING_ID, mentionsMeeting, newDecisionPage, newPageDescription, scrubMeeting, type MeetingStamp } from './meeting-page.ts';
 import { hasSecret } from './meeting-transcript.ts';
+import { isRecord, parseJson } from './json-guards.ts';
 
 export const MEETING_PROPOSALS = 'from-meeting';
 export const REGISTRY_FILE = 'meeting-registry.json';
@@ -122,6 +123,20 @@ export interface MeetingView {
   pages: string[];
 }
 
+const isRegistry = (value: unknown): value is Registry => isRecord(value) && isRecord(value.meetings) && (value.revoked === undefined || Array.isArray(value.revoked));
+const isEvidence = (value: unknown): value is EvidenceFile => isRecord(value) && typeof value.id === 'string' && isRecord(value.meeting) && isRecord(value.items);
+
+/** One file in a backup's change.json: both formats (page edits and approvals) use this shape. */
+interface BackupFile { path: string; before: string | null; after: string | null }
+const isBackupFile = (value: unknown): value is BackupFile => isRecord(value) && typeof value.path === 'string'
+  && (value.before === null || typeof value.before === 'string') && (value.after === null || typeof value.after === 'string');
+/** A backup's files, or null when it isn't one Serra can read. */
+const backupChange = (value: unknown): { change: Record<string, unknown>; files: BackupFile[] } | null => {
+  if (!isRecord(value) || !Array.isArray(value.files)) return null;
+  const files: unknown[] = value.files;
+  return files.every(isBackupFile) ? { change: value, files } : null;
+};
+
 export const sha = (text: string): string => createHash('sha256').update(text).digest('hex');
 
 export interface MeetingStoreOptions {
@@ -143,7 +158,8 @@ export const createMeetingStore = ({ knowledgeDir, now = () => new Date(), backu
 
   const readRegistry = (): Registry => {
     if (!existsSync(registryPath)) return { version: 1, meetings: {}, revoked: [] };
-    const value = JSON.parse(readFileSync(registryPath, 'utf8')) as Registry;
+    const value = parseJson(readFileSync(registryPath, 'utf8'));
+    if (!isRegistry(value)) throw new Error(`${REGISTRY_FILE} is damaged. Restore it from a backup or remove it to start over.`);
     return { version: 1, meetings: value.meetings ?? {}, revoked: value.revoked ?? [], ...(value.pending ? { pending: value.pending } : {}) };
   };
   const writeRegistry = (registry: Registry): void => writeFileAtomic(registryPath, `${JSON.stringify(registry, null, 2)}\n`, { mode: 0o600 });
@@ -152,7 +168,9 @@ export const createMeetingStore = ({ knowledgeDir, now = () => new Date(), backu
   const evidencePath = (id: string): string => { checkId(id); return join(evidenceDir, `${id}.json`); };
   const readEvidence = (id: string): EvidenceFile | null => {
     const path = evidencePath(id);
-    return existsSync(path) ? JSON.parse(readFileSync(path, 'utf8')) as EvidenceFile : null;
+    if (!existsSync(path)) return null;
+    const value = parseJson(readFileSync(path, 'utf8'));
+    return isEvidence(value) ? value : null;
   };
   const writeEvidence = (evidence: EvidenceFile): void => {
     mkdirSync(evidenceDir, { recursive: true, mode: 0o700 });
@@ -198,8 +216,9 @@ export const createMeetingStore = ({ knowledgeDir, now = () => new Date(), backu
     if (!pending || (pending.pid !== process.pid && processAlive(pending.pid))) return false;
     const changePath = join(backups, pending.backupId, 'change.json');
     if (existsSync(changePath)) {
-      const change = JSON.parse(readFileSync(changePath, 'utf8')) as { files: { path: string; before: string | null }[] };
-      writeFiles(change.files.map(({ path, before }) => ({ path, text: before })));
+      const backup = backupChange(parseJson(readFileSync(changePath, 'utf8')));
+      if (!backup) throw new Error(`The backup of an interrupted approval is unreadable: ${changePath}. Restore it by hand.`);
+      writeFiles(backup.files.map(({ path, before }) => ({ path, text: before })));
       rmSync(join(backups, pending.backupId), { recursive: true, force: true });
     }
     if (pending.stub !== null) {
@@ -473,11 +492,11 @@ export const createMeetingStore = ({ knowledgeDir, now = () => new Date(), backu
     for (const path of backupFiles()) {
       const raw = readFileSync(path, 'utf8');
       if (!raw.includes(id)) continue;
-      const change = JSON.parse(raw) as { files?: { path: string; before: string | null; after: string | null }[] };
-      if (!Array.isArray(change.files)) continue;
+      const backup = backupChange(parseJson(raw));
+      if (!backup) continue;
       const scrub = (text: string | null): string | null => (text === null ? null : scrubMeeting(text, id, record.derived));
-      change.files = change.files.map((file) => ({ ...file, before: scrub(file.before), after: scrub(file.after) }));
-      writeFileAtomic(path, `${JSON.stringify(change, null, 2)}\n`);
+      const files = backup.files.map((file) => ({ ...file, before: scrub(file.before), after: scrub(file.after) }));
+      writeFileAtomic(path, `${JSON.stringify({ ...backup.change, files }, null, 2)}\n`);
       backupsScrubbed += 1;
     }
     const snapshots = snapshotsWith(id);

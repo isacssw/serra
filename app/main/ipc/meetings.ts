@@ -1,6 +1,7 @@
 // Meetings (SERRA-62), on the services in src/meeting-store.ts, src/meeting-settings.ts and src/meeting-sources.ts.
 // Handlers only check input and call them. Approving, discarding and forgetting are the owner's, here in the app.
 import { join } from 'node:path';
+import { isRecord } from '../../../src/json-guards.ts';
 import { createMeetingStore, type MeetingReviewed } from '../../../src/meeting-store.ts';
 import { MEETING_NOTICE, readMeetingSettings, writeMeetingSettings } from '../../../src/meeting-settings.ts';
 import { createSourceReader } from '../../../src/meeting-sources.ts';
@@ -14,11 +15,10 @@ const id = (value: unknown, what: string): string => {
 };
 
 const reviewedInput = (value: unknown): MeetingReviewed => {
-  const shown = value as Partial<MeetingReviewed> | null;
-  if (!shown || typeof shown.rendered !== 'string' || typeof shown.evidence !== 'string' || (shown.page !== null && typeof shown.page !== 'string')) {
+  if (!isRecord(value) || typeof value.rendered !== 'string' || typeof value.evidence !== 'string' || (value.page !== null && typeof value.page !== 'string')) {
     throw new Error('Review the edit in the app before approving it.');
   }
-  return { rendered: shown.rendered, page: shown.page, evidence: shown.evidence };
+  return { rendered: value.rendered, page: value.page, evidence: value.evidence };
 };
 
 export const meetingsHandlers = (context: HandlerContext): Handlers<'meetings'> => {

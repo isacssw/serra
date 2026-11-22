@@ -15,6 +15,7 @@ import { join } from 'node:path';
 import { spawn } from 'node:child_process';
 import { findExecutable, toolEnv } from './exec.ts';
 import type { SpawnClaude } from './meeting-extractor.ts';
+import { isRecord, parseJson, stringField } from './json-guards.ts';
 
 export type MeetingProvider = 'granola' | 'google-meet';
 
@@ -84,6 +85,9 @@ export const PROVIDERS: Record<MeetingProvider, {
 };
 
 /** Claude Code's name for an MCP tool: `mcp__<server>__<tool>`, the server name with anything but letters, digits, `_` and `-` made `_`. */
+/** Every provider, in display order. */
+export const PROVIDER_IDS: readonly MeetingProvider[] = ['granola', 'google-meet'];
+
 export const mcpToolName = (server: string, tool: string): string => `mcp__${server.replace(/[^A-Za-z0-9_-]/g, '_')}__${tool}`;
 
 export type ProviderState = 'ready' | 'needs-sign-in' | 'missing' | 'unknown';
@@ -95,7 +99,8 @@ const BUILT_INS = ['Bash', 'Read', 'Write', 'Edit', 'MultiEdit', 'Glob', 'Grep',
 const FETCH_FLAGS = ['-p', '--restricted', '--permission-mode', 'dontAsk', '--permission-prompts', 'none', '--no-session-persistence', '--disable-slash-commands',
   '--disallowedTools', BUILT_INS.join(' '), '--output-format', 'stream-json', '--verbose'];
 
-interface StreamEvent { type?: string; subtype?: string; tools?: unknown; mcp_servers?: unknown; message?: { content?: unknown } }
+/** One line of Claude Code's stream-json output, as an untrusted record. */
+type StreamEvent = Record<string, unknown>;
 
 export interface FetchOptions {
   path: string;
@@ -133,7 +138,8 @@ const stream = (spawnClaude: SpawnClaude, binary: string, flags: string[], input
       while (newline !== -1 && !done) {
         const line = buffer.slice(0, newline);
         buffer = buffer.slice(newline + 1);
-        try { if (onEvent(JSON.parse(line) as StreamEvent)) finish(); } catch (error) { if (error instanceof Error && !(error instanceof SyntaxError)) finish(error); }
+        const event = parseJson(line);
+        try { if (isRecord(event) && onEvent(event)) finish(); } catch (error) { finish(error instanceof Error ? error : new Error(String(error))); }
         newline = buffer.indexOf('\n');
       }
     });
@@ -144,38 +150,48 @@ const stream = (spawnClaude: SpawnClaude, binary: string, flags: string[], input
     child.stdin?.end(input);
   });
 
-const serversOf = (event: StreamEvent): { name: string; status: string }[] => (Array.isArray(event.mcp_servers) ? event.mcp_servers : [])
-  .flatMap((server) => (typeof server === 'object' && server && typeof (server as { name?: unknown }).name === 'string'
-    ? [{ name: (server as { name: string }).name, status: String((server as { status?: unknown }).status ?? '') }] : []));
+const serversOf = (event: StreamEvent): { name: string; status: string }[] => {
+  const list: unknown[] = Array.isArray(event.mcp_servers) ? event.mcp_servers : [];
+  return list.flatMap((server) => (isRecord(server) && typeof server.name === 'string' ? [{ name: server.name, status: stringField(server.status) ?? '' }] : []));
+};
+
+/** The content blocks of an assistant or user message in the stream. */
+const blocks = (event: StreamEvent): Record<string, unknown>[] => {
+  const content: unknown = isRecord(event.message) ? event.message.content : undefined;
+  return Array.isArray(content) ? content.filter(isRecord) : [];
+};
 
 /** The text of a tool result, which the stream gives as a string or a list of content blocks. */
 const resultText = (content: unknown): string => {
   if (typeof content === 'string') return content;
   if (!Array.isArray(content)) return '';
-  return content.flatMap((block) => (typeof block === 'object' && block && typeof (block as { text?: unknown }).text === 'string' ? [(block as { text: string }).text] : [])).join('\n');
+  const list: unknown[] = content;
+  return list.flatMap((block) => (isRecord(block) && typeof block.text === 'string' ? [block.text] : [])).join('\n');
 };
 
 /** The transcript in a tool's answer: plain text as is; JSON with a transcript, text, content or entries field unwrapped. */
 export const transcriptFromResult = (text: string): Fetched => {
   const trimmed = text.trim();
   if (!trimmed.startsWith('{') && !trimmed.startsWith('[')) return { text: trimmed, title: null };
-  try {
-    const value = JSON.parse(trimmed) as unknown;
+  {
+    const value = parseJson(trimmed);
+    if (value === undefined) return { text: trimmed, title: null };
     const pick = (item: unknown): Fetched | null => {
       if (typeof item === 'string') return { text: item, title: null };
       if (Array.isArray(item)) {
-        const lines = item.flatMap((entry) => {
-          if (typeof entry !== 'object' || !entry) return [];
-          const record = entry as Record<string, unknown>;
-          const speaker = typeof record.speaker === 'string' ? record.speaker
-            : typeof record.speaker === 'object' && record.speaker ? String((record.speaker as Record<string, unknown>).name ?? (record.speaker as Record<string, unknown>).diarization_label ?? (record.speaker as Record<string, unknown>).source ?? '') : '';
+        const entries: unknown[] = item;
+        const lines = entries.flatMap((record) => {
+          if (!isRecord(record)) return [];
+          const who = record.speaker;
+          const speaker = typeof who === 'string' ? who
+            : isRecord(who) ? stringField(who.name) ?? stringField(who.diarization_label) ?? stringField(who.source) ?? '' : '';
           const said = typeof record.text === 'string' ? record.text : '';
           return said ? [`${speaker ? `${speaker}: ` : ''}${said}`] : [];
         });
         return lines.length ? { text: lines.join('\n'), title: null } : null;
       }
-      if (typeof item !== 'object' || !item) return null;
-      const record = item as Record<string, unknown>;
+      if (!isRecord(item)) return null;
+      const record = item;
       const title = typeof record.title === 'string' ? record.title : typeof record.name === 'string' ? record.name : null;
       for (const key of ['transcript', 'content', 'text', 'entries', 'body']) {
         const found = record[key] === undefined ? null : pick(record[key]);
@@ -184,7 +200,7 @@ export const transcriptFromResult = (text: string): Fetched => {
       return null;
     };
     return pick(value) ?? { text: trimmed, title: null };
-  } catch { return { text: trimmed, title: null }; }
+  }
 };
 
 export const createSourceReader = ({ path, spawn: spawnClaude = defaultSpawn, model = 'haiku', timeoutMs = 120_000 }: FetchOptions) => {
@@ -196,24 +212,25 @@ export const createSourceReader = ({ path, spawn: spawnClaude = defaultSpawn, mo
 
   /** Which servers Claude Code loads, and whether each is signed in, from a probe stopped at its init event. */
   const servers = async (): Promise<{ name: string; status: string; tools: string[] }[]> => {
-    let found: { name: string; status: string; tools: string[] }[] | null = null;
+    const seen: { servers: { name: string; status: string; tools: string[] }[] | null } = { servers: null };
     await stream(spawnClaude, binary(), [...FETCH_FLAGS, '--model', model], 'Reply with the word ok.', path, 60_000, (event) => {
       if (event.type !== 'system' || event.subtype !== 'init') return false;
-      const tools = Array.isArray(event.tools) ? event.tools.filter((tool): tool is string => typeof tool === 'string') : [];
-      found = serversOf(event).map((server) => ({ ...server, tools: tools.filter((tool) => tool.startsWith(mcpToolName(server.name, ''))) }));
+      const listed: unknown[] = Array.isArray(event.tools) ? event.tools : [];
+      const tools = listed.filter((tool): tool is string => typeof tool === 'string');
+      seen.servers = serversOf(event).map((server) => ({ ...server, tools: tools.filter((tool) => tool.startsWith(mcpToolName(server.name, ''))) }));
       return true;
     });
-    if (!found) throw new Error('Claude Code didn\'t start. Check it\'s signed in.');
-    return found;
+    if (!seen.servers) throw new Error('Claude Code didn\'t start. Check it\'s signed in.');
+    return seen.servers;
   };
 
   /** Whether each provider can be read now, and what the owner does if not. */
   const status = async (): Promise<ProviderStatus[]> => {
     let loaded: { name: string; status: string; tools: string[] }[];
     try { loaded = await servers(); } catch (error) {
-      return (Object.keys(PROVIDERS) as MeetingProvider[]).map((provider) => ({ provider, state: 'unknown', server: null, detail: error instanceof Error ? error.message : String(error) }));
+      return PROVIDER_IDS.map((provider) => ({ provider, state: 'unknown', server: null, detail: error instanceof Error ? error.message : String(error) }));
     }
-    return (Object.keys(PROVIDERS) as MeetingProvider[]).map((provider) => {
+    return PROVIDER_IDS.map((provider) => {
       const spec = PROVIDERS[provider];
       const server = loaded.find((entry) => spec.server.test(entry.name));
       if (!server) return { provider, state: 'missing', server: null, detail: spec.setup };
@@ -237,7 +254,7 @@ export const createSourceReader = ({ path, spawn: spawnClaude = defaultSpawn, mo
     let fetched: Fetched | null = null;
     let failure: string | null = null;
     await stream(spawnClaude, binary(), [...FETCH_FLAGS, '--model', model, '--allowedTools', tool], prompt, path, timeoutMs, (event) => {
-      const content = Array.isArray(event.message?.content) ? event.message.content as Record<string, unknown>[] : [];
+      const content = blocks(event);
       if (event.type === 'assistant') {
         for (const block of content) {
           if (block.type !== 'tool_use') continue;

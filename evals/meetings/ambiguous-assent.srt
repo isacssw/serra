@@ -1,0 +1,67 @@
+1
+00:00:01,000 --> 00:00:05,000
+Priya: SDK support policy. Fake meeting for Serra's evals, everyone here is invented.
+
+2
+00:00:05,500 --> 00:00:10,000
+Priya: How long do we support an old SDK major version?
+
+3
+00:00:10,500 --> 00:00:15,000
+Robin: Eighteen months after the next major ships. Then it's unsupported.
+
+4
+00:00:15,500 --> 00:00:17,000
+Priya: Yes, 18 months, agreed.
+
+5
+00:00:17,500 --> 00:00:23,000
+Ana: The Python SDK still supports Python 3.8. It's end of life and it blocks us.
+
+6
+00:00:23,500 --> 00:00:27,000
+Robin: Let's drop Python 3.8 in the next minor release.
+
+7
+00:00:27,500 --> 00:00:31,000
+Jonas: Sounds fine I guess. Whatever.
+
+8
+00:00:31,500 --> 00:00:37,000
+Priya: Breaking API changes. Merchants complained we gave two weeks notice last time.
+
+9
+00:00:37,500 --> 00:00:43,000
+Robin: Breaking changes need six months notice from now on, announced in the changelog.
+
+10
+00:00:43,500 --> 00:00:45,000
+Priya: Agreed, six months.
+
+11
+00:00:45,500 --> 00:00:51,000
+Ana: Someone hand-edited the generated Ruby client last week and the next generation wiped it.
+
+12
+00:00:51,500 --> 00:00:57,000
+Robin: The SDKs are only ever generated from the OpenAPI spec. Nobody hand-edits generated code.
+
+13
+00:00:57,500 --> 00:00:59,000
+Ana: Agreed.
+
+14
+00:00:59,500 --> 00:01:04,000
+Ana: I'll put a "generated, do not edit" header on every file.
+
+15
+00:01:04,500 --> 00:01:08,000
+Priya: I'll write the changelog post about the notice period.
+
+16
+00:01:08,500 --> 00:01:13,000
+Jonas: Do we backport security fixes to unsupported versions? Not sure what we promised Brightmoor.
+
+17
+00:01:13,500 --> 00:01:15,000
+Robin: Let's check the contract. Thanks.

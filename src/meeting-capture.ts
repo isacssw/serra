@@ -11,6 +11,7 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { writeFileAtomic } from './config.ts';
+import { isRecord, parseJson } from './json-guards.ts';
 import { createJournal } from './knowledge-journal.ts';
 import { frontmatter, NOT_PAGES, PROPOSALS_DIR } from './knowledge-rules.ts';
 import { checkDigest, extractionPrompt, meetingStamp, parseDigestOutput, type Digest, type TeamPage } from './meeting-digest.ts';
@@ -118,7 +119,9 @@ export const createMeetingCapture = (deps: MeetingCaptureDeps) => {
   const closedPath = join(deps.profileDir, CLOSED_THREADS_FILE);
 
   const readClosed = (): Record<string, string> => {
-    try { return JSON.parse(readFileSync(closedPath, 'utf8')) as Record<string, string>; } catch { return {}; }
+    let value: unknown;
+    try { value = parseJson(readFileSync(closedPath, 'utf8')); } catch { return {}; }
+    return isRecord(value) ? Object.fromEntries(Object.entries(value).filter((entry): entry is [string, string] => typeof entry[1] === 'string')) : {};
   };
   let closedThreads = readClosed();
 

@@ -19,6 +19,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { findExecutable, toolEnv } from './exec.ts';
 import { EXTRACTOR_SYSTEM_PROMPT, parseDigestOutput } from './meeting-digest.ts';
+import { isRecord, parseJson } from './json-guards.ts';
 
 /** Claude Code builds phase 1 was tested with. Add a build here only after the self-test passes on it. */
 export const SUPPORTED_CLAUDE_VERSIONS: readonly string[] = ['2.1.330'];
@@ -72,10 +73,11 @@ const managedSettings = (dir: string): { fingerprint: string; hooks: string[] } 
   if (!existsSync(dir)) return { fingerprint: 'none', hooks: [] };
   const files = readdirSync(dir, { recursive: true }).map(String).filter((name) => name.endsWith('.json')).sort();
   const hooks = files.filter((name) => {
-    try {
-      const value = JSON.parse(readFileSync(join(dir, name), 'utf8')) as { hooks?: unknown };
-      return value.hooks !== undefined && value.hooks !== null && JSON.stringify(value.hooks) !== '{}' && JSON.stringify(value.hooks) !== '[]';
-    } catch { return true; }
+    let value: unknown;
+    try { value = parseJson(readFileSync(join(dir, name), 'utf8')); } catch { return true; }
+    // Unreadable or not an object counts as hooks: Serra can't tell, so it refuses.
+    if (!isRecord(value)) return true;
+    return value.hooks !== undefined && value.hooks !== null && JSON.stringify(value.hooks) !== '{}' && JSON.stringify(value.hooks) !== '[]';
   });
   return { fingerprint: files.map((name) => identity(join(dir, name))).join('|') || 'empty', hooks };
 };
@@ -135,18 +137,16 @@ export const createExtractor = ({
     const fingerprint = fingerprintOf(binary);
     const folder = emptyFolder();
     try {
-      let init: Record<string, unknown> | null = null;
+      const seen: { init: Record<string, unknown> | null } = { init: null };
       const result = await run(spawnClaude, binary, [...EXTRACTOR_FLAGS, '--output-format', 'stream-json', '--verbose', '--model', model], {
         cwd: folder, env, input: 'Reply with the word ok.', timeoutMs: PROBE_TIMEOUT_MS,
         until: (line) => {
-          try {
-            const event = JSON.parse(line) as Record<string, unknown>;
-            if (event.type === 'system' && event.subtype === 'init') { init = event; return true; }
-          } catch { /* not JSON yet */ }
+          const event = parseJson(line);
+          if (isRecord(event) && event.type === 'system' && event.subtype === 'init') { seen.init = event; return true; }
           return false;
         },
       });
-      const event = init as Record<string, unknown> | null;
+      const event = seen.init;
       if (!event) return refuse(result.timedOut ? 'Claude Code didn\'t start in time.' : 'Claude Code didn\'t start. Check it\'s signed in (run `claude` once).', { binary });
       const version = typeof event.claude_code_version === 'string' ? event.claude_code_version : null;
       if (!version || !versions.includes(version)) {
@@ -154,7 +154,7 @@ export const createExtractor = ({
       }
       const tools = Array.isArray(event.tools) ? event.tools : null;
       const servers = Array.isArray(event.mcp_servers) ? event.mcp_servers : null;
-      const plugins = Array.isArray(event.plugins) ? event.plugins as { path?: unknown }[] : [];
+      const plugins = Array.isArray(event.plugins) ? event.plugins.map((plugin: unknown) => (isRecord(plugin) ? plugin : {})) : [];
       if (!tools || tools.length > 0) return refuse('Claude Code offered the extractor tools, so Serra won\'t send it a transcript.', { binary, version });
       if (!servers || servers.length > 0) return refuse('Claude Code loaded MCP servers for the extractor, so Serra won\'t send it a transcript.', { binary, version });
       if (plugins.some((plugin) => plugin.path !== 'builtin')) return refuse('Claude Code loaded plugins for the extractor, so Serra won\'t send it a transcript.', { binary, version });
@@ -176,8 +176,8 @@ export const createExtractor = ({
         cwd, env, input: prompt, timeoutMs,
       });
       if (result.timedOut) throw new Error('The extractor took too long.');
-      let parsed: { result?: unknown; is_error?: unknown; num_turns?: unknown };
-      try { parsed = JSON.parse(result.stdout) as typeof parsed; } catch { throw new Error('The extractor didn\'t answer.'); }
+      const parsed = parseJson(result.stdout);
+      if (!isRecord(parsed)) throw new Error('The extractor didn\'t answer.');
       if (parsed.is_error || typeof parsed.result !== 'string') throw new Error('The extractor failed. Check Claude Code is signed in and has usage left.');
       return { text: parsed.result, turns: typeof parsed.num_turns === 'number' ? parsed.num_turns : 1 };
     } finally {

@@ -1,0 +1,36 @@
+{
+  "transcript": "known-decisions.txt",
+  "heldOut": false,
+  "tests": "a meeting repeating known decisions: all noop, zero proposals",
+  "seed": {
+    "product/invoices.md": "\n## Decisions\n\n- Invoice numbers are sequential per merchant and never reused.\n- Invoice PDFs are generated on demand, never stored.\n"
+  },
+  "memory": [],
+  "known": [
+    {
+      "id": "numbers",
+      "match": [
+        "sequential|reused"
+      ],
+      "quote": "Invoice numbers are sequential per merchant and never reused.",
+      "target": "product/invoices.md"
+    },
+    {
+      "id": "pdfs",
+      "match": [
+        "pdf"
+      ],
+      "quote": "Invoice PDFs are generated on demand, never stored.",
+      "target": "product/invoices.md"
+    }
+  ],
+  "reply": [
+    {
+      "kind": "action",
+      "match": [
+        "sales"
+      ]
+    }
+  ],
+  "forbidden": []
+}

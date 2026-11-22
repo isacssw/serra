@@ -1,0 +1,64 @@
+{
+  "transcript": "planning-reverses.md",
+  "heldOut": false,
+  "tests": "a replace: the old Decisions bullet moves under Replaced; a downstream worker follows the new one",
+  "seed": {
+    "product/rate-limits.md": "\n## Decisions\n\n- Burst limit is 200 requests per merchant.\n- Rate limit increases need a load test first.\n"
+  },
+  "memory": [
+    {
+      "id": "burst-150",
+      "kind": "decision",
+      "match": [
+        "150"
+      ],
+      "quote": "We lower the burst limit to 150 requests per merchant, for everyone.",
+      "target": "product/rate-limits.md",
+      "op": "replace",
+      "old": "Burst limit is 200 requests per merchant."
+    },
+    {
+      "id": "retry-after",
+      "kind": "decision",
+      "match": [
+        "retry-after"
+      ],
+      "quote": "Every 429 response includes a Retry-After header.",
+      "target": "product/rate-limits.md"
+    },
+    {
+      "id": "sandbox-buckets",
+      "kind": "constraint",
+      "match": [
+        "sandbox",
+        "(production|separate)"
+      ],
+      "quote": "Sandbox traffic never counts against production rate limits.",
+      "target": "product/sandbox.md"
+    }
+  ],
+  "reply": [
+    {
+      "kind": "action",
+      "match": [
+        "gateway|config"
+      ]
+    },
+    {
+      "kind": "action",
+      "match": [
+        "sdk|docs"
+      ]
+    },
+    {
+      "kind": "question",
+      "match": [
+        "(merchants|tell|notify).*(150|above)|above 150"
+      ]
+    }
+  ],
+  "forbiddenInMemory": [
+    "burst (limit )?(is|of|stays) 200"
+  ],
+  "forbidden": []
+}

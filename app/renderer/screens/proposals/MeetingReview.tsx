@@ -80,12 +80,13 @@ export const MeetingReview = ({ stubs, onChanged, onCount }: { stubs: Proposal[]
     void reload();
     const bridge = serra();
     if (!bridge) return;
-    const offProposals = bridge.on.proposals(() => { void reload(); });
-    window.addEventListener('focus', reload);
-    return () => { offProposals(); window.removeEventListener('focus', reload); };
+    const refresh = (): void => { void reload(); };
+    const offProposals = bridge.on.proposals(refresh);
+    window.addEventListener('focus', refresh);
+    return () => { offProposals(); window.removeEventListener('focus', refresh); };
   }, [reload]);
 
-  const run = async (work: () => Promise<unknown>, done: string, undoId?: (result: unknown) => string | null): Promise<void> => {
+  const run = async <T,>(work: () => Promise<T>, done: string, undoId?: (result: T) => string | null): Promise<void> => {
     const bridge = serra();
     if (!bridge || busy) return;
     setBusy(true);
@@ -136,7 +137,7 @@ export const MeetingReview = ({ stubs, onChanged, onCount }: { stubs: Proposal[]
           {meeting.items.filter((item) => item.status === 'pending').map((item) => (
             <Item
               key={item.id} meeting={meeting} item={item} busy={busy}
-              onApprove={() => void run(() => bridge.meetings.approve(meeting.id, item.id, item.reviewed!), `Added to ${item.target}.`, (result) => (result as { undoId: string }).undoId)}
+              onApprove={() => void run(() => bridge.meetings.approve(meeting.id, item.id, item.reviewed!), `Added to ${item.target}.`, (result) => result.undoId)}
               onDiscard={() => void run(() => bridge.meetings.discard(meeting.id, item.id), 'Discarded.')}
             />
           ))}

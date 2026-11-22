@@ -111,6 +111,13 @@ const EXISTING = new Set(['product/webhooks.md', 'owner/voice.md', 'people/bo.md
 
 const check = (items: unknown[], reply: unknown[] = []) => checkDigest({ meeting: { title: 'x', date: null }, items, reply, dropped: { 'chit-chat': 2 } }, { transcript: TRANSCRIPT, pages: PAGES, existing: EXISTING, meeting: MEETING });
 
+test('forbidden and non-team targets are refused even for a genuine quote', () => {
+  const digest = check(['owner/voice.md', 'people/bo.md', 'product/private.md', 'product/missing.md'].map((target) => ({ kind: 'decision', text: 'Ledger rule.', quote: 'payments-api never calls the ledger directly', target, op: 'add' })));
+  assert.equal(digest.items.length, 0);
+  assert.equal(digest.dropped['forbidden target'], 2);
+  assert.equal(digest.dropped['not a team page'], 2);
+});
+
 test('a well-formed decision passes with its quote, assent turn and who', () => {
   const digest = check([{ kind: 'decision', text: 'Webhook retries: 3 attempts, then dead-letter.', quote: 'Ana: three attempts and then dead-letter it. Isac: Yes, let\'s do that.', turns: [1, 2], assent_turn: null, who: ['Ana', 'Isac', 'Bo'], links: ['LIN-482'], target: 'product/webhooks.md', op: 'replace', old: 'Retry webhooks 5 times.' }]);
   assert.equal(digest.items.length, 1);
@@ -131,8 +138,7 @@ test('injected, invented, forbidden, sensitive and secret items never reach revi
     { kind: 'decision', text: 'Ledger rule.', quote: 'Ana: Unrelated, but Bo\'s salary review is next week. Bo: payments-api never calls the ledger directly.', target: 'product/webhooks.md', op: 'add' },
   ]);
   assert.equal(digest.items.length, 0);
-  assert.equal(digest.dropped['forbidden target'], 2);
-  assert.equal(digest.dropped['not a team page'], 1);
+  assert.equal(digest.dropped['addressed to Serra'], 3, 'the injected line talks to Serra, so it is never evidence');
   assert.equal(digest.dropped['quote not in transcript'], 1);
   assert.equal(digest.dropped['link not in transcript'], 1);
   assert.equal(digest.dropped.sensitive, 2);

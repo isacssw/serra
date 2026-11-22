@@ -203,7 +203,8 @@ export const parseTranscript = (raw: string, { name, title: givenTitle, date: gi
   const turns = merge(parsed.raws).map((turn, index) => ({ n: index + 1, speaker: turn.speaker, text: turn.text }));
   if (turns.length === 0) throw new Error('That transcript has no text in it.');
   const speakers = [...new Set(turns.flatMap((turn) => (turn.speaker ? [turn.speaker] : [])))];
-  const title = givenTitle?.trim() || parsed.title || null;
+  // "Payments sync (2026-11-20 at 10:00 GMT) - Transcript", as Meet names its Docs: the meeting is the part before.
+  const title = (givenTitle?.trim() || parsed.title || '').replace(/\s*[-–—]\s*Transcript\s*$/i, '') || null;
   return {
     turns, text: turns.map(turnLine).join('\n'), speakers,
     title: title ? oneLine(title).slice(0, 120) : null,

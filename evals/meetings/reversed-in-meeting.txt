@@ -1,0 +1,20 @@
+Exports sync - 2026-11-17
+Fake meeting for Serra's evals: every person and company is invented.
+
+Priya: Exports. Merchants are confused by the timestamps in the CSV.
+Mei: Simplest thing is everything in UTC. Let's go with UTC for all exports.
+Robin: Fine, UTC.
+Priya: Hmm, wait. Half the support tickets are from merchants who reconcile against their bank, and the bank uses local time. UTC makes that worse.
+Mei: That's true, I hadn't thought about reconciliation.
+Robin: Okay, scrap UTC. Exports use the merchant's own time zone, the one set in their account. Final answer.
+Priya: Yes, merchant time zone.
+Mei: Agreed, merchant time zone it is.
+Tomás: Size limits? Someone exported four million rows and the browser died.
+Robin: Cap each export file at one million rows. Bigger exports get split into several files.
+Mei: Okay.
+Priya: And XLSX. Do we keep it? Barely anyone uses it and it breaks on big files.
+Robin: We drop XLSX. CSV only from now on.
+Tomás: Fine with me, less code.
+Mei: I'll update the exports page in the dashboard.
+Priya: Should we tell merchants who used XLSX last month? I'm not sure.
+Robin: Let's check how many there are. Thanks all.

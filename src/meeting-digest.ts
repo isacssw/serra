@@ -170,6 +170,9 @@ export const parseDigestOutput = (output: string): Record<string, unknown> => {
   return parsed;
 };
 
+/** A turn that talks to the bot or tries to override its rules: never evidence for a decision. */
+const ADDRESSED = /\b(?:serra|the bot|claude|chatgpt|the assistant|the ai)\b\s*[,:]|\bif you(?:'|’)?re listening\b|\bignore (?:all |any )?(?:the )?(?:previous|prior|above) (?:instructions|rules)|^\s*(?:system|assistant)\s*:|\bnew instructions\b/i;
+
 const LINK = /^(?:[A-Z][A-Z0-9]{1,9}-\d{1,6}|#\d{1,6}|https?:\/\/[^\s<>"']{3,200}|[\w.-]+\/[\w.-]+(?:#\d+)?)$/;
 
 /** One line, trimmed, with no markup that could break the page or the reply. */
@@ -237,6 +240,9 @@ export const checkDigest = (raw: Record<string, unknown>, { transcript, pages, e
     if (!quoteTurns) { bump(dropped, 'quote not in transcript'); continue; }
     const turnText = quoteTurns.map((n) => transcript.turns[n - 1]!.text).join(' ');
     if (isSensitive(turnText) || isSensitive(quote)) { bump(dropped, 'sensitive'); continue; }
+    // A decision is something people in the meeting agreed. A line talking to Serra (or any bot) is an instruction,
+    // not a decision, and so is anything that reads like a prompt override.
+    if (ADDRESSED.test(turnText)) { bump(dropped, 'addressed to Serra'); continue; }
 
     const links = strings(item.links).map((link) => link.trim()).filter(Boolean).slice(0, 3);
     const spoken = fold(transcript.text);

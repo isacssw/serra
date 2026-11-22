@@ -6,6 +6,7 @@
 // services are synchronous) and takes over a lock whose holder process is gone. Nested calls in one process share it.
 import { closeSync, openSync, readFileSync, rmSync, writeSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
+import { errorCode, isRecord, parseJson, stringField } from './json-guards.ts';
 
 const WAIT_MS = 25;
 const DEFAULT_TIMEOUT_MS = 15_000;
@@ -19,14 +20,14 @@ const held = new Map<string, number>();
 /** Whether process `pid` is running. */
 export const processAlive = (pid: number): boolean => {
   if (!Number.isInteger(pid) || pid <= 0) return false;
-  try { process.kill(pid, 0); return true; } catch (error) { return (error as NodeJS.ErrnoException).code === 'EPERM'; }
+  try { process.kill(pid, 0); return true; } catch (error) { return errorCode(error) === 'EPERM'; }
 };
 
 const holder = (path: string): { pid: number; at: string } | null => {
-  try {
-    const value = JSON.parse(readFileSync(path, 'utf8')) as { pid?: unknown; at?: unknown };
-    return typeof value.pid === 'number' ? { pid: value.pid, at: String(value.at ?? '') } : null;
-  } catch { return null; }
+  let text: string;
+  try { text = readFileSync(path, 'utf8'); } catch { return null; }
+  const value = parseJson(text);
+  return isRecord(value) && typeof value.pid === 'number' ? { pid: value.pid, at: stringField(value.at) ?? '' } : null;
 };
 
 /**
@@ -47,7 +48,7 @@ export const withKnowledgeLock = <T>(knowledgeDir: string, work: () => T, { time
       try { writeSync(fd, JSON.stringify({ pid: process.pid, at: new Date().toISOString() })); } finally { closeSync(fd); }
       break;
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+      if (errorCode(error) !== 'EEXIST') throw error;
       const owner = holder(path);
       // Gone, or unreadable for long enough that it isn't a write in progress: take it over.
       if (!owner ? Date.now() + timeoutMs - deadline > 1000 : !processAlive(owner.pid)) { rmSync(path, { force: true }); continue; }
