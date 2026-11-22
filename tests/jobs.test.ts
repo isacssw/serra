@@ -46,7 +46,8 @@ test('jobs are grouped needs you, running, done, newest first, and state.json is
     job('C1', '1700000000.000004', { waitingInT3: true, lastActivityAt: minutesAgo(5) }),
     job('C1', '1700000000.000005', { runSeen: { runId: 'run-2', at: minutesAgo(3) } }),
     job('C1', '1700000000.000006', {
-      question: { questions: [{ id: 'q1', question: 'Which timer should I use for retries?', options: [] }], index: 0 },
+      question: { requestId: 'r1', ts: '1700000000.000060', nonce: 'n1', answers: {}, runId: 'run-1',
+        questions: [{ id: 'q1', question: 'Which timer should I use for retries?', options: [] }], index: 0 },
     }),
     job('C1', '1700000000.000007'),
   ], [

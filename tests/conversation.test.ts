@@ -2,9 +2,10 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { audienceOf, createBatcher, followUpMessage, isPing, mentionedUsers, ownerNotice, readable, speakerName, type ThreadLine } from '../src/conversation.ts';
 import { localLinksToText } from '../src/links.ts';
+import { fakeClock } from './fakes/clock.ts';
+import { createFakeSlack } from './fakes/slack.ts';
 
 const bot = { userId: 'UBOT', name: 'Friday' };
-const wait = (ms: number): Promise<void> => new Promise((done) => setTimeout(done, ms));
 
 test('a message that names other people and not the bot is not for the bot', () => {
   assert.equal(audienceOf('can you open the pricing admin page <@USAM>? let me know', bot), 'others');
@@ -48,19 +49,22 @@ test('several thread messages become one turn, with every line of a message quot
 test('quick messages are sent together, after the worker is free, and context alone starts no turn', async () => {
   const sent: string[][] = [];
   let busy = true;
+  const clock = fakeClock();
   const batcher = createBatcher<string>({
-    quietMs: 20, retryMs: 10, busy: async () => busy,
+    quietMs: 20, retryMs: 10, busy: async () => busy, clock,
     flush: async (_key, items) => { sent.push(items); }, onError: () => assert.fail('flush failed'),
   });
   batcher.add('t', 'said to someone else', { wake: false });
-  await wait(50);
+  await clock.advance(50);
   assert.deepEqual(sent, []);
   batcher.add('t', 'first'); batcher.add('t', 'second');
-  await wait(60);
+  await clock.advance(60);
   assert.deepEqual(sent, [], 'held while the worker is busy');
   batcher.add('t', 'third');
   busy = false;
-  await wait(80);
+  await clock.advance(19);
+  assert.deepEqual(sent, [], 'a new message restarts the quiet time');
+  await clock.advance(1);
   assert.deepEqual(sent, [['said to someone else', 'first', 'second', 'third']]);
 });
 
@@ -103,10 +107,11 @@ test('an image embed with a bracketed path is uploaded, and one outside the shar
   const { shareImages } = await import('../src/images.ts');
   const root = mkdtempSync(join(tmpdir(), 'bots image-')); t.after(() => rmSync(root, { recursive: true, force: true }));
   const image = join(root, 'flow.png'); writeFileSync(image, 'png');
-  const uploads: string[] = [];
-  const client = { filesUploadV2: async ({ file }: { file: string }) => { uploads.push(file); return {}; } } as never;
+  const slack = createFakeSlack();
+  const { client } = slack;
+  const uploads = (): string[] => slack.callsTo('filesUploadV2').map((args) => String(args.file));
   const reply = await shareImages(client, `Done.\n\n![](<${image}>)\n![secret](/etc/passwd.png)`, { channel: 'C1', threadTs: '1.0' });
-  assert.equal(uploads.length, 1);
+  assert.equal(uploads().length, 1);
   assert.match(reply, /_\(image attached above: flow\.png\)_/);
   assert.match(reply, /image "secret" not attached/);
   assert.doesNotMatch(reply, /bots image-/);
@@ -123,17 +128,18 @@ test('a ping is only words that check the bot is there', () => {
 
 test('the batcher holds a thread only while a turn waits to be handed over, not for context alone', async () => {
   let release: () => void = () => {};
+  const clock = fakeClock();
   const batcher = createBatcher<string>({
-    quietMs: 5, retryMs: 5, busy: async () => false, onError: () => {},
+    quietMs: 5, retryMs: 5, busy: async () => false, onError: () => {}, clock,
     flush: () => new Promise<void>((done) => { release = done; }),
   });
   batcher.add('t', 'people talking', { wake: false });
   assert.equal(batcher.holds('t'), false, 'context alone starts no turn');
   batcher.add('t', 'a request');
   assert.equal(batcher.holds('t'), true);
-  await new Promise((done) => setTimeout(done, 20));
+  await clock.advance(20);
   assert.equal(batcher.holds('t'), true, 'still held while it is handed over');
   release();
-  await new Promise((done) => setTimeout(done, 5));
+  await batcher.idle();
   assert.equal(batcher.holds('t'), false);
 });

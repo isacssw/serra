@@ -5,7 +5,6 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'no
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test, { type TestContext } from 'node:test';
-import type { webApi } from '@slack/bolt';
 import type { HandlerContext } from '../app/main/ipc/context.ts';
 import { tasksHandlers } from '../app/main/ipc/tasks.ts';
 import { memoryPrefs } from '../app/main/prefs.ts';
@@ -23,6 +22,8 @@ import {
   APP_TASK_CHANNEL, appTaskThread, MAX_TASK_REQUEST, previewTask, readTasks, startTask, t3TaskState, tasksPath,
 } from '../src/tasks.ts';
 import type { StartThreadInput } from '../src/types.ts';
+import { fakeClock } from './fakes/clock.ts';
+import { createFakeSlack } from './fakes/slack.ts';
 
 const OWNER = 'U0123456789';
 const NOW = new Date('2026-11-18T10:00:00Z');
@@ -102,13 +103,8 @@ test('the brief a task sends is the one the daemon sends for the same request, b
   // The daemon, for the owner asking the same thing in a new DM thread.
   let daemon: StartThreadInput | undefined;
   const quiet = (): void => {};
-  const client = {
-    users: { info: async () => ({ user: { real_name: 'Alex' } }) },
-    chat: { getPermalink: async () => ({ permalink: 'https://acme.slack.com/archives/D0123456789/p100' }), postMessage: async () => ({ ts: '1' }) },
-    reactions: { add: async () => ({}), remove: async () => ({}) },
-    assistant: { threads: { setStatus: async () => ({ ok: true }) } },
-    conversations: { replies: async () => ({ messages: [] }) },
-  } as unknown as webApi.WebClient;
+  const { client } = createFakeSlack({ names: { [OWNER]: 'Alex' } });
+  client.chat.getPermalink = async () => ({ ok: true, permalink: 'https://acme.slack.com/archives/D0123456789/p100' });
   const bot = createBot({
     config, client, botUserId: () => 'UBOT', store: createStore(config.statePath),
     loadIndex: createKnowledge(config.knowledgeDir).loadIndex,
@@ -118,7 +114,7 @@ test('the brief a task sends is the one the daemon sends for the same request, b
       startThread: async (input) => { daemon = input; return 'slack-thread'; },
       sendToThread: async () => {}, showThread: async () => assert.fail('not polled'),
     },
-    fetchBase: noFetch, now: () => NOW.getTime(),
+    fetchBase: noFetch, clock: fakeClock(NOW.getTime()),
   });
   await bot.handle({ channel: 'D0123456789', threadTs: '100.000', messageTs: '100.000', user: OWNER, text: REQUEST, direct: true });
   assert.ok(daemon, 'the daemon started a thread');
@@ -253,13 +249,8 @@ test('an index pushed over its cap outside the app still lets the daemon and a t
 
   let daemon: StartThreadInput | undefined;
   const quiet = (): void => {};
-  const client = {
-    users: { info: async () => ({ user: { real_name: 'Alex' } }) },
-    chat: { getPermalink: async () => ({ permalink: 'https://acme.slack.com/archives/D0123456789/p100' }), postMessage: async () => ({ ts: '1' }) },
-    reactions: { add: async () => ({}), remove: async () => ({}) },
-    assistant: { threads: { setStatus: async () => ({ ok: true }) } },
-    conversations: { replies: async () => ({ messages: [] }) },
-  } as unknown as webApi.WebClient;
+  const { client } = createFakeSlack({ names: { [OWNER]: 'Alex' } });
+  client.chat.getPermalink = async () => ({ ok: true, permalink: 'https://acme.slack.com/archives/D0123456789/p100' });
   const bot = createBot({
     config, client, botUserId: () => 'UBOT', store: createStore(config.statePath),
     loadIndex: createKnowledge(config.knowledgeDir).loadIndex,
@@ -269,7 +260,7 @@ test('an index pushed over its cap outside the app still lets the daemon and a t
       startThread: async (input) => { daemon = input; return 'slack-thread'; },
       sendToThread: async () => {}, showThread: async () => assert.fail('not polled'),
     },
-    fetchBase: noFetch, now: () => NOW.getTime(),
+    fetchBase: noFetch, clock: fakeClock(NOW.getTime()),
   });
   await bot.handle({ channel: 'D0123456789', threadTs: '100.000', messageTs: '100.000', user: OWNER, text: REQUEST, direct: true });
   assert.ok(daemon, 'the daemon started a thread');

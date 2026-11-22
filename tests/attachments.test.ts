@@ -3,15 +3,17 @@ import { mkdtempSync, readFileSync, readdirSync, rmSync, statSync } from 'node:f
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test, { type TestContext } from 'node:test';
-import type { webApi } from '@slack/bolt';
 import { MAX_ATTACHMENT_BYTES, receiveAttachments } from '../src/attachments.ts';
+import { createFakeSlack } from './fakes/slack.ts';
 
 const fixture = (t: TestContext) => {
   const root = mkdtempSync(join(tmpdir(), 'bots-attachments-'));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   const lookups: string[] = [];
   const file = { id: 'F1', name: '../../image.png', mimetype: 'image/png', url_private: 'https://files.slack.com/private/image.png' };
-  const client = { files: { info: async ({ file: id }: { file: string }) => { lookups.push(id); return { file }; } } } as unknown as webApi.WebClient;
+  const slack = createFakeSlack({ files: { F1: file } });
+  slack.before('files.info', (args) => { lookups.push(String(args.file)); });
+  const { client } = slack;
   return { root, client, file, lookups };
 };
 

@@ -4,6 +4,7 @@ import { runCommand, type Runner } from './cleanup.ts';
 import type { JobGroup, JobListing, NeedsYouReason } from './contracts.ts';
 import { slackPlainText } from './slack-names.ts';
 import { GITHUB_PR_URL, threadPullRequest } from './t3.ts';
+import { readState } from './state.ts';
 import { APP_TASK_CHANNEL, readTasks, type TaskState, type TaskStateLookup } from './tasks.ts';
 
 /** One row of `listJobs`. */
@@ -160,13 +161,11 @@ const prLink = (job: Record<string, unknown>): string | undefined =>
 export const listJobs = async (profileDir: string, {
   channel, doneTodayOnly = true, now = new Date(), threads, slackUrl, tasks, runs,
 }: ListJobsOptions = {}): Promise<JobListing> => {
-  const rawState = readOptional(join(profileDir, 'state.json'));
-  const state = rawState === null ? {} : JSON.parse(rawState) as unknown;
-  if (typeof state !== 'object' || state === null || Array.isArray(state)) throw new Error('state.json is not an object');
+  const state = readState(join(profileDir, 'state.json')).jobs;
   const events = lastEvents(readOptional(join(profileDir, 'logs', 'events.jsonl')));
   const today = startOfDay(now);
 
-  const all = (await Promise.all(Object.entries(state as Record<string, unknown>).map(async ([key, value]): Promise<(JobRow & { t3ThreadId?: string })[]> => {
+  const all = (await Promise.all(Object.entries(state).map(async ([key, value]): Promise<(JobRow & { t3ThreadId?: string })[]> => {
     const job = record(value);
     const jobChannel = text(job.channel);
     const createdAt = text(job.createdAt);

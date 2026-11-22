@@ -2,13 +2,12 @@ import { homedir } from 'node:os';
 import { randomBytes } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import type { webApi } from '@slack/bolt';
 import { fillBrief, needsOwner, NO_THREAD } from './brief.ts';
 import { stampProposalsFolder, threadProposalsFolder } from './proposals.ts';
 import type { BriefKnowledge } from './knowledge.ts';
 import { mayUse, type Visibility } from './owner-model.ts';
 import type { Config, MessageTrigger } from './config.ts';
-import { audienceOf, createBatcher, followUpMessage, isPing, mentionedUsers, NO_MENTION_HINT, ownerNotice, readable, speakerName, type Audience, type ThreadLine } from './conversation.ts';
+import { audienceOf, createBatcher, followUpMessage, isPing, mentionedUsers, ownerNotice, readable, speakerName, type Audience, type ThreadLine } from './conversation.ts';
 import { shareImages } from './images.ts';
 import { MAX_ATTACHMENTS, receiveAttachments } from './attachments.ts';
 import { incomingFiles } from './incoming.ts';
@@ -21,8 +20,12 @@ import { jobThreadInput, run, sendToThread, showThread, startThread } from './t3
 import { answerQuestion, listQuestions, type T3QuestionRequest } from './t3-questions.ts';
 import { answeredMessage, closedMessage, canShowQuestion, choiceAnswer, questionMessage, typedAnswer, type QuestionAnswer, type QuestionInteraction, type SlackQuestion } from './questions.ts';
 import type { IncomingFile, IncomingMessage, Job, T3Message, T3Thread } from './types.ts';
+import { createTracker, systemClock, type Clock } from './clock.ts';
+import { errorMessage } from './lib/errors.ts';
+import { slackErrorCode, type SlackApi } from './slack-api.ts';
 
-type SlackClient = webApi.WebClient;
+type SlackClient = SlackApi;
+type PostMessage = Parameters<SlackClient['chat']['postMessage']>[0];
 
 /** A job nobody is waiting on is still checked this often, so runs the worker starts itself (a PR watch) get posted. */
 const IDLE_POLL_MS = 2 * 60_000;
@@ -58,8 +61,6 @@ const ACKNOWLEDGEMENT = /^(?:thanks?|thx|ty|cheers|nvm|never ?mind|sorted|all go
 /** What the bot records for each thing it does in Slack, one JSON line each, to measure how it behaves. */
 export type BotEvents = (name: string, fields: Record<string, unknown>) => void;
 
-const errorMessage = (error: unknown): string => (error instanceof Error ? error.message : String(error));
-
 /** Keeps Slack text inside its <slack-thread> tags. */
 const quoteThread = (text: string): string => text.replaceAll('</slack-thread>', '&lt;/slack-thread&gt;');
 
@@ -93,12 +94,21 @@ const startedByWorker = (runId: string, messages: T3Message[]): boolean => {
   return reachesStart && !messages.some((message) => message.role === 'user' && message.runId === runId);
 };
 
-/** Whether someone in Slack is waiting on this run: it answers them, and they @mentioned the bot or asked it in a DM. */
-const someoneWaits = (runId: string, messages: T3Message[]): boolean => {
+/**
+ * Whether someone in Slack is waiting on this run: it answers them, and they @mentioned the bot or asked it in a DM.
+ * Serra records that when it sends the turn (`nextTurnWaits`) and binds it to the run the first time a poll sees the
+ * run (`runSeen.waits`), because `t3 thread send` returns no run ID. A turn sent before Serra recorded this counts as
+ * someone's: at worst they see a progress line they didn't need.
+ */
+const someoneWaits = (job: Job, runId: string, messages: T3Message[]): boolean => {
   if (startedByWorker(runId, messages)) return false;
-  const asked = messages.find((message) => message.role === 'user' && message.runId === runId);
-  return !asked?.text?.includes(NO_MENTION_HINT);
+  if (job.runSeen?.runId === runId && job.runSeen.waits !== undefined) return job.runSeen.waits;
+  return job.nextTurnWaits ?? true;
 };
+
+/** Marks a reply Serra posts with the run it answers, so a restart can find it in the thread instead of posting it again. */
+const REPLY_EVENT = 'serra_reply';
+const replyMetadata = (runId: string) => ({ event_type: REPLY_EVENT, event_payload: { run_id: runId } });
 
 /** The worker's latest note in a run that is still going, such as "Reproducing the bug locally first." */
 const latestNote = (runId: string, messages: T3Message[]): string | undefined =>
@@ -143,6 +153,9 @@ const withoutReactions = (job: Job, cleared: string[]): Partial<Job> => ({
 const seenOver = (job: Job, thread: Pick<T3Thread, 'activeRunId'>): Partial<Job> =>
   job.runSeen && job.runSeen.runId !== thread.activeRunId ? { runSeen: undefined } : {};
 
+/** The job's record of Slack messages it has taken in, with one more. Bounded: retries come within minutes. */
+const heardNow = (job: Job, ts: string): Partial<Job> => ({ heard: [...(job.heard ?? []).filter((seen) => seen !== ts), ts].slice(-50) });
+
 /** A thread message waiting for the worker, with the Slack message it came from. */
 type Heard = ThreadLine & { ts: string };
 
@@ -165,7 +178,8 @@ export interface BotDeps {
   reviewRequest?: typeof handleReviewRequest;
   timing?: { quietMs: number; retryMs: number };
   events?: BotEvents;
-  now?: () => number;
+  /** Time and timers. Tests pass a fake one and move it forward instead of sleeping. */
+  clock?: Clock;
 }
 
 /**
@@ -182,9 +196,12 @@ export const createBot = ({
   reviewRequest = handleReviewRequest,
   timing = { quietMs: FOLLOW_UP_QUIET_MS, retryMs: FOLLOW_UP_RETRY_MS },
   events = () => {},
-  now = Date.now,
+  clock = systemClock,
 }: BotDeps) => {
   const { allJobs, getJob, putJob } = store;
+  const now = (): number => clock.now();
+  /** Everything the bot is doing for a job or a batch right now, so tests and shutdown can wait for it. */
+  const inFlight = createTracker();
 
   /**
    * Changes a job from its latest saved state, in one step. A job read before an `await` may be stale by the time
@@ -323,8 +340,9 @@ export const createBot = ({
     reply(msg.channel, msg.threadTs, `Sorry, I only take requests from people <@${config.owner}> has added.`);
 
   /**
-   * The error itself goes to the log. Teammates get a plain sentence: a stack of paths and exit codes means nothing
-   * to them. The owner, who can act on it, also gets the first line of the error when they asked.
+   * The error itself goes to the log and the app (the `failure` event). It can be raw `t3` or `git` output, so the
+   * thread gets its first line only when Slack confirms that the owner alone can see it: their own DM. Anywhere else
+   * the owner gets a fixed sentence pointing at the app, and teammates a plain one.
    */
   const reportFailure = async (channel: string, threadTs: string, key: string, error: unknown, user?: string): Promise<void> => {
     await setLoading(channel, threadTs, false, getJob(key)?.loadingRequested === true);
@@ -332,9 +350,12 @@ export const createBot = ({
     const message = errorMessage(error);
     logger.error(`Failed handling ${key}: ${message}`);
     events('failure', { key, error: message.slice(0, 500) });
-    const text = user === config.owner
+    const ownerOnly = user === config.owner && (await visibilityNow({ channel, threadTs, requester: user })) === 'owner';
+    const text = ownerOnly
       ? `Something went wrong on my side.\n\`${message.split('\n')[0]!.slice(0, 300)}\``
-      : `Something went wrong on my side, so I couldn't pick this up. <@${config.owner}> will take a look.`;
+      : user === config.owner
+        ? 'Something went wrong on my side, so I couldn\'t pick this up. The details are in Serra\'s Jobs and log.'
+        : `Something went wrong on my side, so I couldn't pick this up. <@${config.owner}> will take a look.`;
     await reply(channel, threadTs, text)
       .catch((failure: unknown) => logger.error(`Could not report the failure in ${key}: ${errorMessage(failure)}`));
   };
@@ -370,12 +391,12 @@ export const createBot = ({
   const PERMANENT_SLACK_ERRORS = new Set(['missing_scope', 'not_allowed_token_type', 'not_authed', 'invalid_auth', 'account_inactive', 'token_revoked', 'no_permission']);
   const setupProblems = new Map<string, string>();
   const noteSetupProblem = (key: string, error: unknown): void => {
-    const code = (error as { data?: { error?: string } })?.data?.error ?? errorMessage(error);
+    const code = slackErrorCode(error);
     if (PERMANENT_SLACK_ERRORS.has(code)) setupProblems.set(key, code); else setupProblems.delete(key);
   };
   const setupProblemFor = (job: Job): string | undefined => setupProblems.get(job.channel.startsWith('D') ? job.requester : job.channel);
 
-  const visibilityNow = async (job: Job): Promise<Visibility | null> => {
+  const visibilityNow = async (job: Pick<Job, 'channel' | 'threadTs' | 'requester'>): Promise<Visibility | null> => {
     const msg = { channel: job.channel, threadTs: job.threadTs, messageTs: job.threadTs, user: job.requester, text: '', direct: false };
     if (msg.channel.startsWith('D')) {
       if (msg.user === config.owner) return 'owner';
@@ -467,6 +488,8 @@ export const createBot = ({
       pendingReactionTs: null,
       pendingReactions: [msg.messageTs],
       loadingRequested: true,
+      nextTurnWaits: true,
+      heard: [msg.messageTs],
       lastPostedRunId: null,
       watching: true,
       ownerFollows: msg.user === config.owner,
@@ -482,7 +505,7 @@ export const createBot = ({
   /** One job's Slack-facing work runs one step at a time, so a poll and a follow-up can't both post the same run. */
   const jobQueues = new Map<string, Promise<unknown>>();
   const exclusive = <T>(key: string, work: () => Promise<T>): Promise<T> => {
-    const next = (jobQueues.get(key) ?? Promise.resolve()).then(work, work);
+    const next = inFlight.track((jobQueues.get(key) ?? Promise.resolve()).then(work, work));
     jobQueues.set(key, next.catch(() => undefined));
     return next;
   };
@@ -513,6 +536,34 @@ export const createBot = ({
   };
 
   /**
+   * Posts a run's reply, at least once and rarely twice. The intent is saved first, the post carries the run ID as
+   * Slack message metadata, and the run is recorded as posted as soon as Slack accepts it. A restart that finds the
+   * intent still saved looks for that metadata in the thread (`postedReply`) before posting again, so only a crash
+   * while Slack is answering the post, followed by a failed thread read, can post it twice. Nothing is ever lost.
+   */
+  const deliver = async (key: string, runId: string, thread: Pick<T3Thread, 'activeRunId'>,
+    message: PostMessage): Promise<string | undefined> => {
+    updateJob(key, () => ({ delivering: { runId, at: new Date(now()).toISOString() } }));
+    const posted = await client.chat.postMessage({ ...message, metadata: replyMetadata(runId) });
+    updateJob(key, (latest) => ({ lastPostedRunId: runId, delivering: undefined, ...seenOver(latest, thread) }));
+    return posted.ts;
+  };
+
+  /** The ts of the reply to `runId` this bot already posted in the job's thread, or null when there is none or Slack can't say. */
+  const postedReply = async (job: Job, runId: string): Promise<string | null> => {
+    // Ten minutes before the intent was saved: room for Slack's clock and this machine's to disagree.
+    const since = job.delivering ? Date.parse(job.delivering.at) / 1000 - 600 : 0;
+    const replies = await client.conversations.replies({ channel: job.channel, ts: job.threadTs, include_all_metadata: true, oldest: since.toFixed(6), limit: 200 })
+      .catch((error: unknown) => {
+        logger.warn(`Couldn't read ${job.channel}:${job.threadTs} to check for a reply posted before a restart: ${errorMessage(error)}`);
+        return null;
+      });
+    const mine = replies?.messages?.find((message) => message.user === botUserId() && message.metadata?.event_type === REPLY_EVENT
+      && (message.metadata.event_payload as { run_id?: unknown } | undefined)?.run_id === runId);
+    return mine?.ts ?? null;
+  };
+
+  /**
    * Posts a finished run's reply. A run the worker started on its own (following CI or a bot's review) edits one
    * status message instead, unless it needs someone: a `Needs` line, a review request, an upload or a first cc.
    */
@@ -536,6 +587,17 @@ export const createBot = ({
     const inPlace = Boolean(problem) || text === WITHHELD;
     const measured = { key, runId, byWorker, runMs, jobAgeMs: now() - Date.parse(job.createdAt), ...(inPlace ? { notice: true } : {}) };
     await clearProgress(key, job);
+    // The bot stopped while posting this run's reply (REPLY-009): if the thread has it, it isn't posted again.
+    const recovered = job.delivering?.runId === runId ? await postedReply(job, runId) : null;
+    if (recovered) {
+      const cleared = await clearEyes(job);
+      updateJob(key, (latest) => ({ lastPostedRunId: runId, delivering: undefined, ...seenOver(latest, thread), ...withoutReactions(latest, cleared),
+        ...(byWorker ? { statusTs: recovered } : { statusTs: undefined }), watching: true, waitingInT3: false, lastActivityAt: new Date(now()).toISOString() }));
+      await finishLoading(key, job);
+      logger.info(`The reply to ${runId} in ${key} was posted before a restart; not posting it again.`);
+      events('reply', { ...measured, kind: 'recovered' });
+      return;
+    }
     if (QUIET.test(text)) {
       // Nothing to say: the 👀 goes away, which tells the thread the message was seen.
       const cleared = await clearEyes(job);
@@ -606,7 +668,7 @@ export const createBot = ({
         : false;
       // A new post in place of a failed edit is checked again first: time has passed.
       const swapped = edited ? {} : await withheldIfRevoked(job, body);
-      const statusTs = edited ? job.statusTs : (await client.chat.postMessage({ ...message, ...swapped, thread_ts: job.threadTs })).ts;
+      const statusTs = edited ? job.statusTs : await deliver(key, runId, thread, { ...message, ...swapped, thread_ts: job.threadTs });
       updateJob(key, (latest) => ({
         lastPostedRunId: runId,
         ...seenOver(latest, thread),
@@ -625,7 +687,7 @@ export const createBot = ({
     const ownerCallout = notice === 'callout'
       ? [{ type: 'section' as const, text: { type: 'mrkdwn' as const, text: `<@${config.owner}> this one needs you.` } }]
       : [];
-    await client.chat.postMessage({
+    await deliver(key, runId, thread, {
       channel: job.channel,
       thread_ts: job.threadTs,
       text: body.slice(0, SLACK_FALLBACK_LIMIT),
@@ -665,10 +727,14 @@ export const createBot = ({
     if (!runId) return;
     if (job.progress && job.progress.runId !== runId) await clearProgress(key, job);
     if (job.runSeen?.runId !== runId) {
-      updateJob(key, () => ({ runSeen: { runId, at: new Date(now()).toISOString() } }));
+      // The first sight of a run binds the turn Serra sent to it. A run the worker started on its own leaves that
+      // turn for the run that answers it.
+      const byWorker = startedByWorker(runId, messages);
+      updateJob(key, () => ({ runSeen: { runId, at: new Date(now()).toISOString(), waits: someoneWaits(job, runId, messages) },
+        ...(byWorker ? {} : { nextTurnWaits: undefined }) }));
       return;
     }
-    if (now() - Date.parse(job.runSeen.at) < PROGRESS_AFTER_MS || !someoneWaits(runId, messages)) return;
+    if (now() - Date.parse(job.runSeen.at) < PROGRESS_AFTER_MS || !someoneWaits(job, runId, messages)) return;
     const note = latestNote(runId, messages);
     if (!note) return;
     const text = `⏳ Still on it: ${oneParagraph(localLinksToText(note, pathRoots))}`;
@@ -863,7 +929,7 @@ export const createBot = ({
 
     if (thread.activeRunId) {
       if (latest.waitingInT3) updateJob(key, () => ({ waitingInT3: false }));
-      await setLoading(latest.channel, latest.threadTs, latest.loadingRequested === true || someoneWaits(thread.activeRunId, messages));
+      await setLoading(latest.channel, latest.threadTs, latest.loadingRequested === true || someoneWaits(latest, thread.activeRunId, messages));
       await showProgress(key, getJob(key) ?? latest, thread, messages);
       return;
     }
@@ -945,7 +1011,7 @@ export const createBot = ({
       now: new Date(now()),
     });
     const t3ThreadId = await t3.startThread({ ...input, ...(job.branch ? { baseRef: job.branch } : {}) }, config.t3Bin);
-    updateJob(key, () => ({ t3ThreadId, visibility, knowledgeRead: knowledge.read, knowledgeDir: knowledge.readDir, branch: input.branch, lastPostedRunId: null, runSeen: undefined, watching: true, question: undefined, waitingInT3: false }));
+    updateJob(key, () => ({ t3ThreadId, visibility, knowledgeRead: knowledge.read, knowledgeDir: knowledge.readDir, branch: input.branch, lastPostedRunId: null, runSeen: undefined, nextTurnWaits: lines.some((line) => line.audience === 'bot'), delivering: undefined, watching: true, question: undefined, waitingInT3: false }));
     await reply(job.channel, job.threadTs, 'Some knowledge this thread used has changed, so I\'m carrying on in a fresh session.');
     logger.info(`${folderGone ? 'The knowledge folder this thread read was cleaned up' : `Knowledge this thread used was taken back (${revoked.length} page(s))`}; continued ${key} in a fresh T3 thread ${t3ThreadId}`);
     events('knowledge_revoked', { key, t3ThreadId });
@@ -953,6 +1019,7 @@ export const createBot = ({
   };
 
   const followUps = createBatcher<Heard>({
+    clock,
     quietMs: timing.quietMs,
     retryMs: timing.retryMs,
     busy: async (key) => {
@@ -972,7 +1039,7 @@ export const createBot = ({
       // The reply just posted took every 👀 with it. These messages are only now with the worker, so they get theirs back.
       const waiting = lines.filter((line) => line.audience !== 'others').map((line) => line.ts);
       for (const ts of waiting) await setEyes(job.channel, ts, true);
-      updateJob(key, (latest) => ({ watching: true, loadingRequested, lastActivityAt: new Date(now()).toISOString(), pendingReactionTs: null, pendingReactions: [...new Set([...pendingReactions(latest), ...waiting])] }));
+      updateJob(key, (latest) => ({ watching: true, loadingRequested, nextTurnWaits: loadingRequested, lastActivityAt: new Date(now()).toISOString(), pendingReactionTs: null, pendingReactions: [...new Set([...pendingReactions(latest), ...waiting])] }));
       logger.info(`Forwarded ${lines.length} thread message(s) to T3 thread ${getJob(key)?.t3ThreadId ?? job.t3ThreadId}`);
     }),
     onError: async (key, error) => {
@@ -1014,11 +1081,11 @@ export const createBot = ({
     const ownerWrote: Partial<Job> = msg.user === config.owner ? { ownerAskOpen: false, ownerFollows: true } : {};
     if (audience === 'others') {
       // People talking to each other. The worker hears it with its next turn and isn't asked to answer.
-      updateJob(key, () => ownerWrote);
+      updateJob(key, (job) => ({ ...ownerWrote, ...heardNow(job, msg.messageTs) }));
       followUps.add(key, line, { wake: false });
       return;
     }
-    updateJob(key, (job) => ({ ...ownerWrote, pendingReactionTs: null, pendingReactions: [...pendingReactions(job), msg.messageTs], lastActivityAt: new Date(now()).toISOString() }));
+    updateJob(key, (job) => ({ ...ownerWrote, ...heardNow(job, msg.messageTs), pendingReactionTs: null, pendingReactions: [...pendingReactions(job), msg.messageTs], lastActivityAt: new Date(now()).toISOString() }));
     followUps.add(key, line);
   };
 
@@ -1044,8 +1111,10 @@ export const createBot = ({
       // Revalidate automatic sources; matching a rule never grants human allowlist membership.
       if (automatic && (!trigger || msg.threadTs !== msg.messageTs || (msg.botId && msg.user !== msg.botId))) return;
       const allowed = config.allowed.has(msg.user);
-      if (getJob(key)) {
-        if (trigger) return;
+      const existing = getJob(key);
+      if (existing) {
+        // Slack delivered it again, or a held request is replayed after a crash: the job has it already.
+        if (trigger || existing.heard?.includes(msg.messageTs)) return;
         await continueJob(key, msg, allowed).catch((error: unknown) => reportFailure(msg.channel, msg.threadTs, key, error, msg.user));
         return;
       }
@@ -1187,5 +1256,14 @@ export const createBot = ({
   /** A job in this thread is running now (its worker is being followed). Its messages still reach it while new work is paused. */
   const runningIn = (channel: string, threadTs: string): boolean => getJob(slackKey(channel, threadTs))?.watching === true;
 
-  return { handle, poll, reconcile, handleQuestionAction, ownsThread, runningIn, reloadProfile, drain: () => followUps.drain() };
+  /** Resolves once nothing the bot started is still running: no job step, no batch being checked or handed over. */
+  const idle = async (): Promise<void> => {
+    do { await inFlight.idle(); await followUps.idle(); } while (inFlight.size > 0);
+  };
+
+  /** Tells a request's thread that handling it failed, as a failed start would. For errors thrown past `handle`. */
+  const reportUnhandled = (msg: IncomingMessage, error: unknown): Promise<void> =>
+    reportFailure(msg.channel, msg.threadTs, slackKey(msg.channel, msg.threadTs), error, msg.user);
+
+  return { handle, poll, reconcile, handleQuestionAction, ownsThread, runningIn, reloadProfile, drain: () => followUps.drain(), idle, reportUnhandled };
 };

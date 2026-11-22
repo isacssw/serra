@@ -1,0 +1,94 @@
+{
+  "id": "intake-001-retried-delivery",
+  "specs": [
+    "INTAKE-001"
+  ],
+  "title": "Slack delivering the same mention twice starts one T3 thread and sends the worker nothing extra",
+  "steps": [
+    {
+      "do": "slack",
+      "envelope": {
+        "type": "event_callback",
+        "team_id": "THOME",
+        "api_app_id": "A1",
+        "event_id": "Ev1",
+        "event_time": 1700000100,
+        "authorizations": [
+          {
+            "team_id": "THOME",
+            "user_id": "UBOT",
+            "is_bot": true
+          }
+        ],
+        "event": {
+          "type": "app_mention",
+          "user": "USAM",
+          "text": "<@UBOT> check the build",
+          "ts": "1700000100.000100",
+          "channel": "C1",
+          "event_ts": "1700000100.000100",
+          "team": "THOME"
+        }
+      }
+    },
+    {
+      "do": "slack",
+      "envelope": {
+        "type": "event_callback",
+        "team_id": "THOME",
+        "api_app_id": "A1",
+        "event_id": "Ev1",
+        "event_time": 1700000100,
+        "authorizations": [
+          {
+            "team_id": "THOME",
+            "user_id": "UBOT",
+            "is_bot": true
+          }
+        ],
+        "event": {
+          "type": "app_mention",
+          "user": "USAM",
+          "text": "<@UBOT> check the build",
+          "ts": "1700000100.000100",
+          "channel": "C1",
+          "event_ts": "1700000100.000100",
+          "team": "THOME"
+        }
+      }
+    },
+    {
+      "do": "advance",
+      "ms": 15000,
+      "expect": {
+        "t3": {
+          "started": 1,
+          "sends": 0
+        }
+      }
+    },
+    {
+      "do": "worker.reply",
+      "text": "The build is green."
+    },
+    {
+      "do": "advance",
+      "ms": 60000,
+      "expect": {
+        "t3": {
+          "started": 1,
+          "sends": 0
+        },
+        "slack": [
+          {
+            "method": "chat.postMessage",
+            "count": 1,
+            "args": {
+              "text": "The build is green."
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

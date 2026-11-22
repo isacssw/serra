@@ -1,0 +1,60 @@
+import assert from 'node:assert/strict';
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
+import test from 'node:test';
+import { App, LogLevel } from '@slack/bolt';
+import { startDaemon } from '../src/daemon.ts';
+import { createKnowledge } from '../src/knowledge.ts';
+import { holdRequest, readHeld } from '../src/intake.ts';
+import { fakeClock } from './fakes/clock.ts';
+import { startTestDaemon, TestReceiver } from './fakes/daemon.ts';
+import { BOT, SAM, testProfile } from './fakes/profile.ts';
+import { createFakeSlack } from './fakes/slack.ts';
+
+const mention = (ts: string, text: string): Record<string, unknown> => ({
+  type: 'event_callback', team_id: 'THOME', api_app_id: 'A1', event_id: `Ev${ts}`, event_time: 1,
+  authorizations: [{ team_id: 'THOME', user_id: BOT, is_bot: true }],
+  event: { type: 'app_mention', user: SAM, text: `<@${BOT}> ${text}`, ts, channel: 'C1', event_ts: ts, team: 'THOME' },
+});
+
+test('[SETUP-002] a repository the service may not read stops the daemon before it touches Slack, with the macOS fix', async (t) => {
+  const { config } = testProfile(t);
+  const slack = createFakeSlack();
+  const receiver = new TestReceiver();
+  const app = new App({ token: 'xoxb-test', botId: 'BBOT', botUserId: BOT, receiver, tokenVerificationEnabled: false, logLevel: LogLevel.ERROR });
+  let started = false;
+  const released: string[] = [];
+  await assert.rejects(startDaemon({
+    config, app: { event: app.event.bind(app), message: app.message.bind(app), action: app.action.bind(app), stop: app.stop.bind(app),
+      start: async () => { started = true; return app.start(); } },
+    client: slack.client, logger: { debug() {}, info() {}, warn() {}, error() {}, setLevel() {}, getLevel: () => LogLevel.INFO, setName() {} },
+    knowledge: createKnowledge(config.knowledgeDir), clock: fakeClock(), statusSocket: false, watchProfile: false,
+    lock: (path) => () => { released.push(path); },
+    checkAccess: async () => { throw new Error(`Can't read the repository ${config.project} (Operation not permitted). Allow "node" in System Settings › Privacy & Security › Files and Folders.`); },
+  }), /Files and Folders/);
+  assert.deepEqual(slack.calls, [], 'no Slack call, not even auth.test');
+  assert.equal(started, false, 'the app never connects');
+  assert.equal(existsSync(join(config.profileDir, 'ready.json')), false, 'and never says it is ready');
+  assert.deepEqual(released, [`${config.statePath}.lock`], 'the profile lock is let go');
+});
+
+test('[INTAKE-010] a held request replayed after its job was saved, but before it left the file, starts nothing twice', async (t) => {
+  const h = await startTestDaemon(t);
+  await h.deliver(mention('1700000100.000100', 'rename the pricing page'));
+  assert.equal(h.t3.started.length, 1);
+  // The crash came after the job was saved and before the request left held-requests.jsonl.
+  holdRequest(h.config.profileDir, { channel: 'C1', threadTs: '1700000100.000100', messageTs: '1700000100.000100', user: SAM, text: `<@${BOT}> rename the pricing page`, direct: true });
+  await h.restart();
+  await h.advance(60_000);
+  assert.equal(readHeld(h.config.profileDir).length, 0, 'the replayed request is let go');
+  assert.equal(h.t3.started.length, 1, 'no second T3 thread');
+  assert.equal(h.t3.sends.length, 0, 'and nothing sent to the worker as a follow-up');
+});
+
+test('[SVC-004] stopping the daemon removes its ready marker and stops polling', async (t) => {
+  const h = await startTestDaemon(t);
+  assert.ok(existsSync(join(h.config.profileDir, 'ready.json')));
+  await h.stop();
+  assert.equal(existsSync(join(h.config.profileDir, 'ready.json')), false);
+  assert.equal(h.clock.pending(), 0, 'no timer left behind');
+});
