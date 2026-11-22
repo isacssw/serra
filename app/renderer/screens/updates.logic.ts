@@ -6,6 +6,7 @@ import type { ActivationOutcome, ReleaseOverview, RollbackOutcome } from '../../
 import type { AppUpdateView } from '../../main/app-updater.ts';
 import type { BotSync } from '../../main/bot-sync.ts';
 import type { SerraApi } from '../../main/bridge.ts';
+import type { ClearedSource } from '../../../src/update-migration.ts';
 
 export type UpdatesStatus = ReturnType<SerraApi['updates']['status']>;
 export type UpdateAction = NonNullable<UpdatesStatus['running']>;
@@ -137,7 +138,8 @@ export const noteLines = (markdown: string): NoteLine[] => {
   const lines: NoteLine[] = [];
   for (const raw of markdown.split('\n')) {
     const line = raw.trim();
-    if (!line) continue;
+    // Blank lines and rules (the release notes end with `---` and how to upgrade) aren't lines of their own.
+    if (!line || /^([-*_])(\s*\1){2,}$/.test(line)) continue;
     const heading = /^#{1,6}\s+(.*)$/.exec(line);
     const item = /^[-*+]\s+(.*)$/.exec(line);
     if (heading) lines.push({ kind: 'heading', text: plain(heading[1]!) });
@@ -214,6 +216,24 @@ export const syncDialog = (to: string, runningJobs: number, { stopped = false, o
     : runningJobs === 0
       ? `No jobs are running. The bot restarts on version ${to}.`
       : `${plural(runningJobs, 'job is', 'jobs are')} running. The bot restarts on version ${to}; ${runningJobs === 1 ? 'the job continues' : 'the jobs continue'} after the restart, and replies wait until then.`,
+});
+
+// ---------------------------------------------------------------------------------------------------------------
+// Leaving developer mode (SERRA-63)
+// ---------------------------------------------------------------------------------------------------------------
+
+/** The one line shown after Serra cleared the update source, so the owner knows why the screen changed. */
+export const clearedLine = (cleared: Pick<ClearedSource, 'source' | 'reason' | 'backup'>, home: string | null = null): string =>
+  `Developer mode is off${cleared.reason ? `: the update source ${tildePath(cleared.source, home)} was cleared because ${cleared.reason}` : ''}. `
+  + `The bot follows the app again. The old profile.json is in ${tildePath(cleared.backup, home)}.`;
+
+/** In a packaged app, developer mode says what it costs, once, above its builds. */
+export const DEVELOPER_LINE = "The bot builds from this checkout and doesn't follow app updates.";
+
+/** The confirm dialog for Follow app updates. */
+export const followDialog = (appVersion: string): { title: string; body: string } => ({
+  title: 'Follow app updates?',
+  body: `Serra clears the checkout in Settings › Worker, after copying profile.json to the profile's backups. When no job is running, the bot moves to ${appVersion} and then follows each app update.`,
 });
 
 // ---------------------------------------------------------------------------------------------------------------

@@ -18,6 +18,7 @@ import type { ProposalTargets, Reviewed } from '../../src/proposals.ts';
 import type { AboutMe, Visibility } from '../../src/owner-model.ts';
 import type { ActivationOutcome, ReleaseOverview, RollbackOutcome, RunningJob } from '../../src/releases.ts';
 import type { Prepared } from '../../src/deploy.ts';
+import type { ClearedSource } from '../../src/update-migration.ts';
 import type { AppUpdateView } from './app-updater.ts';
 import type { BotSync } from './bot-sync.ts';
 import type { InterviewPreview, StartedTask } from '../../src/tasks.ts';
@@ -262,6 +263,10 @@ export interface SerraApi {
       running: 'prepare' | 'activate' | 'rollback' | 'sync' | null;
       /** The lines of the running or last bot action, so the log survives leaving the screen. */
       log: string[];
+      /** The bot can follow this app's version (a packaged app), so developer mode is a choice the owner can leave. */
+      followsApp: boolean;
+      /** An update source Serra cleared for this profile since it opened (stale, or Follow app updates), for a one-line notice. */
+      sourceCleared: ClearedSource | null;
     };
     /** Jobs the bot is following, which a restart pauses, for the confirm dialogs. */
     runningJobs(): RunningJob[];
@@ -270,6 +275,8 @@ export interface SerraApi {
     /** Never throws for a failed cutover: the outcome says whether the old release is back and whether to roll back. */
     activate(): ActivationOutcome;
     rollback(): RollbackOutcome;
+    /** Leaves developer mode: backs up profile.json, then removes `updates` so the bot follows the app again. */
+    followApp(): ClearedSource | null;
     /** Brings the bot to the app's version now, even with jobs running (they continue after the restart). */
     syncBot(): { ok: true; waiting: boolean } | { ok: false; error: string };
     /** Looks for a newer release on GitHub. */
@@ -371,7 +378,7 @@ export const bridgeMethods = {
   secrets: methods<'secrets'>()(['list', 'setSource', 'check']),
   tools: methods<'tools'>()(['overview', 'clis']),
   updates: methods<'updates'>()([
-    'status', 'runningJobs', 'prepare', 'activate', 'rollback', 'syncBot',
+    'status', 'runningJobs', 'prepare', 'activate', 'rollback', 'syncBot', 'followApp',
     'check', 'download', 'cancelDownload', 'install', 'openInstaller', 'setPrereleases',
   ]),
   diagnostics: methods<'diagnostics'>()(['run', 'logTail']),
