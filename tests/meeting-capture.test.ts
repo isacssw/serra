@@ -392,6 +392,17 @@ test('the digest escapes Slack markup from model text, so an injected line is ne
   assert.match(digest, /&lt;`https:\/\/evil\.example\|the` doc&gt;/, 'escaped, and the URL in code so it never links');
 });
 
+test('bare domains in digest lines become code, and ordinary dotted words stay whole', async (t) => {
+  const h = harness(t);
+  h.state.extract = async () => `<meeting-digest>${JSON.stringify({ items: [], reply: [{ kind: 'action', text: 'Check evil.ru/login and bit.ly/x, then set config.common and app.config' }] })}</meeting-digest>`;
+  await run(h, message());
+  const digest = h.posts.at(-1)!.text;
+  assert.match(digest, /`evil\.ru\/login`/);
+  assert.match(digest, /`bit\.ly\/x`/);
+  assert.match(digest, /`config\.common`/);
+  assert.doesNotMatch(digest, /`config\.com`mon|`app\.co`nfig/);
+});
+
 test('a meeting that kept nothing can still be forgotten: its digest is deleted and its record keeps no names', async (t) => {
   const h = harness(t);
   h.state.extract = async () => `<meeting-digest>${JSON.stringify({ items: [], reply: [{ kind: 'action', text: 'Ana sends the notes' }] })}</meeting-digest>`;
@@ -424,6 +435,8 @@ test('a link inside a pasted transcript is part of the meeting, not its source; 
   assert.equal(pasted.link, null);
   assert.match(pasted.pasted, /docs\.google\.com/);
   assert.equal(meetingRequest("remember this meeting's notes please").trigger, false);
+  assert.equal(meetingRequest('remember this meeting — https://notes.granola.ai/d/f3e45e0f-24cc-480b-9a6c-8b1f5e3d7a2c').link?.provider, 'granola');
+  assert.equal(meetingRequest('remember this meeting, here it is: https://notes.granola.ai/d/f3e45e0f-24cc-480b-9a6c-8b1f5e3d7a2c').link?.provider, 'granola');
 });
 
 test('the digest thread is closed: a reply there never starts a job with unreviewed meeting text', async (t) => {

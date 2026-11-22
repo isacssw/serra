@@ -100,17 +100,26 @@ export const hasSecret = (text: string): boolean => redactSecrets(text).count > 
 // build", "health check", "a sick node") are matched only in their HR sense.
 const SENSITIVE = new RegExp([
   'salar(?:y|ies)', 'pay ?(?:rise|raise|band|cut|review)s?', 'payroll', '(?:annual|performance|signing) bonus(?:es)?', 'compensation (?:review|package|band)',
-  'equity grant', '(?:got|been|be|was|were|is|being) promoted(?! to (?:prod|production|staging|main|stable|release|beta|live)\\b)', 'promotion (?:case|cycle|packet|review)', 'demot(?:e|ed|ion)',
+  'equity grant', 'promotion (?:case|cycle|packet|review)', 'demot(?:e|ed|ion)',
   'hiring (?:freeze|plan|manager|pipeline|decision|budget)', '(?:got|been|be|was|were|is|being) (?:fired|let go|laid off)', 'firing (?:him|her|them)', 'layoffs?', 'made redundant', 'redundancies at',
-  'performance improvement plan', "(?:his|her|their|\\w+['’]s) performance (?:review|plan)", 'disciplinary', 'resign(?:ed|ing|ation)',
+  'performance improvement plan', "(?:his|her|their|\\w+['’]s) performance (?:review|plan)", 'disciplinary', 'resignation', '(?:hand(?:ed|ing|s)?|gave|giving) in (?:his|her|their) notice',
+  'on (?:medical|sick|parental|maternity|paternity|compassionate|stress) leave', 'laid off', 'on a (?:pip|performance plan)', 'cancer', 'chemo(?:therapy)?',
   '(?:off|out|called in) sick', 'sick (?:leave|days?|note)', 'illness', 'health (?:issue|problem|condition|reasons|scare)', 'mental health', 'medical (?:leave|condition|appointment)',
-  'diagnosed with', 'diagnosis(?! (?:of|for) (?:the|an?|this|that|our) (?:outage|incident|bug|issue|failure|problem|crash|alert|error|regression|slowdown))', 'therap(?:y|ist)', 'surgery', 'hospital(?:ised|ized)?', 'pregnan(?:t|cy)', 'maternity', 'paternity', 'parental leave',
+  'diagnosed with', "(?:his|her|their|\\w+['’]s) diagnosis", 'therap(?:y|ist)', 'surgery', 'hospital(?:ised|ized)?', 'pregnan(?:t|cy)', 'maternity', 'paternity', 'parental leave',
   'divorce', 'bereavement', 'funeral', 'burn(?:ed|t) out', 'burnout', 'visa status', 'immigration (?:status|case|lawyer|appointment)',
 ].map((word) => `\\b${word}\\b`).join('|'), 'i');
-/** Case matters here: a person's name or a capitalised acronym is what tells these from engineering talk. */
+/**
+ * Case matters here: a person (a capitalised name, not a sentence-opening word, or a pronoun) is what tells these
+ * from engineering talk ("the canary build was promoted", "we are resigning the iOS binary", "PIP mode").
+ */
+const PERSON = "(?:(?!(?:We|It|This|That|These|Those|The|Our|Their|Its|There|Then|So|And|But|Also|Now|Today|Yesterday|Build|Release|Canary|Deploy)\\b)[A-Z][a-z]+|[Hh]e|[Ss]he|[Tt]hey)";
 const SENSITIVE_CASED = new RegExp([
-  'PIP', 'performance (?:review|reviews) (?:for|of|with) [A-Z][a-z]+', '(?:raise|pay rise) for [A-Z][a-z]+', '[A-Z][a-z]+ (?:is|was) leaving the company',
-  '(?:[A-Z][a-z]+|[Hh]e|[Ss]he|[Tt]hey) (?:has|have|had|is having|are having) performance issues', 'letting (?:[A-Z][a-z]+|him|her|them) go',
+  '(?:put|placed) on (?:a )?PIP', `PIP (?:for|with) ${PERSON}`, `fire ${PERSON}`, `cut ${PERSON}['’]s pay`,
+  `performance (?:review|reviews) (?:for|of|with) ${PERSON}`, `[Rr]aise for ${PERSON}`, `${PERSON} (?:got|gets|is getting|asked for|wants) a (?:raise|pay rise)`,
+  `${PERSON} (?:is|was|are|were) leaving the company`, `${PERSON} (?:has |have |just )?(?:quit|quits|is quitting|resigned|is resigning|are resigning)\\b(?! (?:the|this|that|its|their|on|early|unexpectedly) (?:process|job|build|run|worker|app|binary)s?\\b)`,
+  `${PERSON} (?:got|gets|has been|have been|was|were|is|will be) promoted(?! to (?:prod|production|staging|main|stable|release|beta|live)\\b)`,
+  `${PERSON} (?:is|was|has been|are|have been|were) underperforming`, `${PERSON} (?:is|are|was|were) (?:going|off) on leave`,
+  `${PERSON} (?:has|have|had|is having|are having) performance issues`, 'letting (?:[A-Z][a-z]+|him|her|them) go',
 ].map((word) => `\\b${word}\\b`).join('|'));
 
 export const isSensitive = (text: string): boolean => SENSITIVE.test(text) || SENSITIVE_CASED.test(text);

@@ -63,7 +63,8 @@ const sourceReader = claudePath.then((path) => createSourceReader({ path }));
 const meetings = config.profileDir ? createMeetingCapture({
   profileDir: config.profileDir, knowledgeDir: config.knowledgeDir, owner: config.owner,
   chat: {
-    post: async (channel, text, threadTs) => (await app.client.chat.postMessage({ channel, text, ...(threadTs ? { thread_ts: threadTs } : {}) })).ts,
+    // No unfurling: meeting text is never turned into a link preview.
+    post: async (channel, text, threadTs) => (await app.client.chat.postMessage({ channel, text, unfurl_links: false, unfurl_media: false, ...(threadTs ? { thread_ts: threadTs } : {}) })).ts,
     remove: async (channel, ts) => { await app.client.chat.delete({ channel, ts }); },
     earlierInThread: async (channel, threadTs, beforeTs) => {
       const replies = await app.client.conversations.replies({ channel, ts: threadTs, limit: 20 });

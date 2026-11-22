@@ -63,7 +63,9 @@ export const withKnowledgeLock = <T>(knowledgeDir: string, work: () => T, { time
         try { renameSync(path, stale); } catch { continue; }
         const moved = holder(stale);
         // Judged unreadable, anything readable now is a new holder's; judged dead, anything else is.
-        const someoneElse = owner ? moved?.pid !== owner.pid || moved.at !== owner.at : moved !== null;
+        const fresh = (() => { try { return Date.now() - statSync(stale).mtimeMs < 1000; } catch { return false; } })();
+        // Still unreadable but brand new: a holder caught between creating and writing it. Put back too.
+        const someoneElse = owner ? moved?.pid !== owner.pid || moved.at !== owner.at : moved !== null || fresh;
         if (someoneElse) { try { linkSync(stale, path); } catch { /* a newer lock is there */ } }
         rmSync(stale, { force: true });
         continue;

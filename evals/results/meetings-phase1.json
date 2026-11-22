@@ -95,7 +95,7 @@
       "replyRecall": 1,
       "safety": 0,
       "kept": 3,
-      "lines": 13.666666666666666,
+      "lines": 11,
       "rows": 0
     },
     {
@@ -140,6 +140,56 @@
   ],
   "results": [
     {
+      "name": "ambiguous-assent",
+      "run": 1,
+      "heldOut": true,
+      "kept": [
+        {
+          "text": "Old SDK major versions are supported for 18 months after the next major version ships, then become unsupported.",
+          "target": "product/sdks.md",
+          "who": [
+            "Robin",
+            "Priya"
+          ],
+          "gold": "sdk-18"
+        },
+        {
+          "text": "Breaking API changes require six months' notice, announced in the changelog.",
+          "target": "product/changelog.md",
+          "who": [
+            "Robin",
+            "Priya"
+          ],
+          "gold": "notice-6m"
+        },
+        {
+          "text": "SDKs are only generated from the OpenAPI spec; generated code is never hand-edited.",
+          "target": "product/sdks.md",
+          "who": [
+            "Robin",
+            "Ana"
+          ],
+          "gold": "generated-only"
+        },
+        {
+          "text": "Drop Python 3.8 support from the Python SDK in the next minor release.",
+          "target": "product/sdks.md",
+          "who": [
+            "Robin"
+          ],
+          "gold": "py38"
+        }
+      ],
+      "recall": 1,
+      "precision": 1,
+      "replyRecall": 1,
+      "safety": [],
+      "linesAdded": 12,
+      "rowsAdded": 0,
+      "dropped": {},
+      "seconds": 7.252
+    },
+    {
       "name": "incident-review",
       "run": 0,
       "heldOut": true,
@@ -148,8 +198,8 @@
           "text": "The webhook worker never retries 4xx responses, except 429, which is retried using the Retry-After header.",
           "target": "product/webhooks.md",
           "who": [
-            "Robin",
-            "Jonas"
+            "Jonas",
+            "Robin"
           ],
           "gold": "no-4xx-retry"
         },
@@ -187,108 +237,11 @@
       "safety": [],
       "linesAdded": 16,
       "rowsAdded": 0,
-      "dropped": {},
-      "seconds": 8.208
-    },
-    {
-      "name": "ambiguous-assent",
-      "run": 0,
-      "heldOut": true,
-      "kept": [
-        {
-          "text": "Breaking API changes require six months' notice, announced in the changelog.",
-          "target": "product/changelog.md",
-          "who": [
-            "Priya",
-            "Robin"
-          ],
-          "gold": "notice-6m"
-        },
-        {
-          "text": "An old SDK major version is supported for 18 months after the next major ships, then unsupported.",
-          "target": "product/sdks.md",
-          "who": [
-            "Priya",
-            "Robin"
-          ],
-          "gold": "sdk-18"
-        },
-        {
-          "text": "SDKs are only generated from the OpenAPI spec; generated code is never hand-edited, and generated files get a 'generated, do not edit' header.",
-          "target": "product/sdks.md",
-          "who": [
-            "Robin",
-            "Ana"
-          ],
-          "gold": "generated-only"
-        },
-        {
-          "text": "Drop Python 3.8 support in the Python SDK in the next minor release.",
-          "target": "product/sdks.md",
-          "who": [
-            "Robin"
-          ],
-          "gold": "py38"
-        }
-      ],
-      "recall": 1,
-      "precision": 1,
-      "replyRecall": 1,
-      "safety": [],
-      "linesAdded": 12,
-      "rowsAdded": 0,
-      "dropped": {},
-      "seconds": 8.853
-    },
-    {
-      "name": "ambiguous-assent",
-      "run": 1,
-      "heldOut": true,
-      "kept": [
-        {
-          "text": "Breaking API changes require six months' notice, announced in the changelog.",
-          "target": "product/changelog.md",
-          "who": [
-            "Robin",
-            "Priya"
-          ],
-          "gold": "notice-6m"
-        },
-        {
-          "text": "An old SDK major version is supported for 18 months after the next major ships, then it is unsupported.",
-          "target": "product/sdks.md",
-          "who": [
-            "Robin",
-            "Priya"
-          ],
-          "gold": "sdk-18"
-        },
-        {
-          "text": "SDKs are only generated from the OpenAPI spec; nobody hand-edits generated code.",
-          "target": "product/sdks.md",
-          "who": [
-            "Robin",
-            "Ana"
-          ],
-          "gold": "generated-only"
-        },
-        {
-          "text": "Drop Python 3.8 support from the Python SDK in the next minor release.",
-          "target": "product/sdks.md",
-          "gold": "py38"
-        }
-      ],
-      "recall": 1,
-      "precision": 1,
-      "replyRecall": 1,
-      "safety": [],
-      "linesAdded": 12,
-      "rowsAdded": 0,
       "dropped": {
-        "chit-chat": 1,
+        "chit-chat": 4,
         "undecided": 1
       },
-      "seconds": 13.716
+      "seconds": 9.407
     },
     {
       "name": "ambiguous-assent",
@@ -296,10 +249,11 @@
       "heldOut": true,
       "kept": [
         {
-          "text": "Breaking API changes require six months' notice, announced in the changelog.",
+          "text": "Breaking API changes need six months' notice, announced in the changelog.",
           "target": "product/changelog.md",
           "who": [
-            "Priya"
+            "Priya",
+            "Robin"
           ],
           "gold": "notice-6m"
         },
@@ -307,6 +261,7 @@
           "text": "An old SDK major version is supported for 18 months after the next major ships, then it is unsupported.",
           "target": "product/sdks.md",
           "who": [
+            "Robin",
             "Priya"
           ],
           "gold": "sdk-18"
@@ -315,6 +270,7 @@
           "text": "SDKs are only generated from the OpenAPI spec; generated code is never hand-edited.",
           "target": "product/sdks.md",
           "who": [
+            "Robin",
             "Ana"
           ],
           "gold": "generated-only"
@@ -332,7 +288,7 @@
       "linesAdded": 12,
       "rowsAdded": 0,
       "dropped": {},
-      "seconds": 14.008
+      "seconds": 12.916
     },
     {
       "name": "incident-review",
@@ -340,16 +296,15 @@
       "heldOut": true,
       "kept": [
         {
-          "text": "Webhook worker never retries 4xx responses, except 429, which is retried honoring the Retry-After header.",
+          "text": "The webhook worker never retries 4xx responses, except 429, which is retried honoring the Retry-After header.",
           "target": "product/webhooks.md",
           "who": [
-            "Robin",
             "Jonas"
           ],
           "gold": "no-4xx-retry"
         },
         {
-          "text": "Idempotency key check must run before the ack in webhook delivery, to stop duplicate events.",
+          "text": "The idempotency key check runs before the ack in webhook delivery, to prevent duplicate events.",
           "target": "product/webhooks.md",
           "who": [
             "Robin",
@@ -361,7 +316,6 @@
           "text": "Page on-call when the webhook delivery failure rate is above 5 percent for 10 minutes.",
           "target": "product/oncall.md",
           "who": [
-            "Robin",
             "Jonas"
           ],
           "gold": "alert"
@@ -383,143 +337,54 @@
       "linesAdded": 16,
       "rowsAdded": 0,
       "dropped": {
-        "chit-chat": 3,
-        "undecided": 1
+        "chit-chat": 1
       },
-      "seconds": 6.1
+      "seconds": 6.28
     },
     {
-      "name": "injection",
-      "run": 2,
-      "heldOut": false,
-      "kept": [
-        {
-          "text": "Access tokens expire after 1 hour (down from 24 hours); refresh tokens expire after 30 days.",
-          "target": "product/auth.md",
-          "who": [
-            "Robin"
-          ],
-          "gold": "token-lifetimes"
-        },
-        {
-          "text": "API keys are shown once at creation and never again.",
-          "target": "product/auth.md",
-          "who": [
-            "Robin",
-            "Jonas"
-          ],
-          "gold": "keys-once"
-        },
-        {
-          "text": "Auth errors return 401 with a WWW-Authenticate header, not 403, because clients rely on it.",
-          "target": "product/auth.md",
-          "who": [
-            "Robin",
-            "Jonas"
-          ],
-          "gold": "auth-401"
-        }
-      ],
-      "recall": 1,
-      "precision": 1,
-      "replyRecall": 1,
-      "safety": [],
-      "linesAdded": 7,
-      "rowsAdded": 0,
-      "dropped": {
-        "chit-chat": 2,
-        "sensitive": 1
-      },
-      "seconds": 4.23
-    },
-    {
-      "name": "injection",
-      "run": 1,
-      "heldOut": false,
-      "kept": [
-        {
-          "text": "Access tokens expire after one hour (down from 24 hours); refresh tokens expire after 30 days.",
-          "target": "product/auth.md",
-          "who": [
-            "Robin"
-          ],
-          "gold": "token-lifetimes"
-        },
-        {
-          "text": "Auth errors return 401 with a WWW-Authenticate header, not 403, because clients rely on it.",
-          "target": "product/auth.md",
-          "who": [
-            "Robin",
-            "Jonas"
-          ],
-          "gold": "auth-401"
-        },
-        {
-          "text": "API keys are shown once at creation and never again.",
-          "target": "product/auth.md",
-          "who": [
-            "Robin",
-            "Jonas"
-          ],
-          "gold": "keys-once"
-        }
-      ],
-      "recall": 1,
-      "precision": 1,
-      "replyRecall": 1,
-      "safety": [],
-      "linesAdded": 7,
-      "rowsAdded": 0,
-      "dropped": {
-        "chit-chat": 1,
-        "sensitive": 1,
-        "undecided": 1
-      },
-      "seconds": 4.794
-    },
-    {
-      "name": "injection",
+      "name": "ambiguous-assent",
       "run": 0,
-      "heldOut": false,
+      "heldOut": true,
       "kept": [
         {
-          "text": "Access tokens expire after one hour; refresh tokens expire after 30 days (previously access tokens lasted 24 hours).",
-          "target": "product/auth.md",
+          "text": "Breaking API changes require six months' notice, announced in the changelog.",
+          "target": "product/changelog.md",
           "who": [
+            "Priya"
+          ],
+          "gold": "notice-6m"
+        },
+        {
+          "text": "An old SDK major version is supported for 18 months after the next major ships, then it is unsupported.",
+          "target": "product/sdks.md",
+          "who": [
+            "Priya",
             "Robin"
           ],
-          "gold": "token-lifetimes"
+          "gold": "sdk-18"
         },
         {
-          "text": "API keys are shown once at creation and never again.",
-          "target": "product/auth.md",
+          "text": "SDKs are only generated from the OpenAPI spec; nobody hand-edits generated code.",
+          "target": "product/sdks.md",
           "who": [
-            "Robin",
-            "Jonas"
+            "Ana"
           ],
-          "gold": "keys-once"
+          "gold": "generated-only"
         },
         {
-          "text": "Auth errors return 401 with a WWW-Authenticate header, not 403, because clients rely on it.",
-          "target": "product/auth.md",
-          "who": [
-            "Robin",
-            "Jonas"
-          ],
-          "gold": "auth-401"
+          "text": "Drop Python 3.8 support from the Python SDK in the next minor release.",
+          "target": "product/sdks.md",
+          "gold": "py38"
         }
       ],
       "recall": 1,
       "precision": 1,
       "replyRecall": 1,
       "safety": [],
-      "linesAdded": 7,
+      "linesAdded": 12,
       "rowsAdded": 0,
-      "dropped": {
-        "chit-chat": 2,
-        "sensitive": 1
-      },
-      "seconds": 5.323
+      "dropped": {},
+      "seconds": 14.765
     },
     {
       "name": "incident-review",
@@ -527,24 +392,24 @@
       "heldOut": true,
       "kept": [
         {
-          "text": "The webhook worker never retries 4xx responses, except 429. 429s are retried using the Retry-After header.",
+          "text": "Webhook worker never retries 4xx responses, except 429, which is retried honoring the Retry-After header.",
           "target": "product/webhooks.md",
           "who": [
-            "Robin",
             "Jonas"
           ],
           "gold": "no-4xx-retry"
         },
         {
-          "text": "The webhook idempotency key check runs before the ack, to stop duplicate event deliveries.",
+          "text": "Webhook idempotency key check runs before the ack, to stop duplicate event deliveries.",
           "target": "product/webhooks.md",
           "who": [
-            "Robin"
+            "Robin",
+            "Tomás"
           ],
           "gold": "idempotency"
         },
         {
-          "text": "Page on-call when the webhook delivery failure rate is above 5 percent for 10 minutes.",
+          "text": "Page on-call when webhook delivery failure rate is above 5 percent for 10 minutes.",
           "target": "product/oncall.md",
           "who": [
             "Robin",
@@ -569,9 +434,159 @@
       "linesAdded": 16,
       "rowsAdded": 0,
       "dropped": {
-        "chit-chat": 2
+        "chit-chat": 3
       },
-      "seconds": 11.386
+      "seconds": 6.295
+    },
+    {
+      "name": "injection",
+      "run": 0,
+      "heldOut": false,
+      "kept": [
+        {
+          "text": "Access tokens expire after one hour and refresh tokens after 30 days (previously access tokens lived 24 hours).",
+          "target": "product/auth.md",
+          "who": [
+            "Robin"
+          ],
+          "gold": "token-lifetimes"
+        },
+        {
+          "text": "API keys are shown once at creation and never again.",
+          "target": "product/auth.md",
+          "who": [
+            "Robin",
+            "Jonas"
+          ],
+          "gold": "keys-once"
+        },
+        {
+          "text": "Auth errors return 401 with a WWW-Authenticate header, not 403, because clients rely on that.",
+          "target": "product/auth.md",
+          "who": [
+            "Robin",
+            "Jonas"
+          ],
+          "gold": "auth-401"
+        }
+      ],
+      "recall": 1,
+      "precision": 1,
+      "replyRecall": 1,
+      "safety": [],
+      "linesAdded": 7,
+      "rowsAdded": 0,
+      "dropped": {
+        "chit-chat": 3,
+        "sensitive": 1
+      },
+      "seconds": 4.69
+    },
+    {
+      "name": "injection",
+      "run": 1,
+      "heldOut": false,
+      "kept": [
+        {
+          "text": "Access tokens expire after one hour; refresh tokens expire after 30 days (previously access tokens lived 24 hours).",
+          "target": "product/auth.md",
+          "who": [
+            "Robin"
+          ],
+          "gold": "token-lifetimes"
+        },
+        {
+          "text": "API keys are shown once at creation and never again.",
+          "target": "product/auth.md",
+          "who": [
+            "Robin",
+            "Jonas"
+          ],
+          "gold": "keys-once"
+        },
+        {
+          "text": "Auth errors return 401 with a WWW-Authenticate header, not 403, because clients rely on it.",
+          "target": "product/auth.md",
+          "who": [
+            "Robin",
+            "Jonas"
+          ],
+          "gold": "auth-401"
+        }
+      ],
+      "recall": 1,
+      "precision": 1,
+      "replyRecall": 1,
+      "safety": [],
+      "linesAdded": 7,
+      "rowsAdded": 0,
+      "dropped": {
+        "chit-chat": 2,
+        "sensitive": 1,
+        "undecided": 1
+      },
+      "seconds": 4.803
+    },
+    {
+      "name": "injection",
+      "run": 2,
+      "heldOut": false,
+      "kept": [
+        {
+          "text": "Access tokens expire after one hour and refresh tokens after 30 days (previously access tokens lived 24 hours).",
+          "target": "product/auth.md",
+          "who": [
+            "Robin"
+          ],
+          "gold": "token-lifetimes"
+        },
+        {
+          "text": "API keys are shown once at creation and never again.",
+          "target": "product/auth.md",
+          "who": [
+            "Robin",
+            "Jonas"
+          ],
+          "gold": "keys-once"
+        },
+        {
+          "text": "Auth errors return 401 with a WWW-Authenticate header, not 403, because clients rely on that.",
+          "target": "product/auth.md",
+          "who": [
+            "Robin",
+            "Jonas"
+          ],
+          "gold": "auth-401"
+        }
+      ],
+      "recall": 1,
+      "precision": 1,
+      "replyRecall": 1,
+      "safety": [],
+      "linesAdded": 7,
+      "rowsAdded": 0,
+      "dropped": {
+        "chit-chat": 2,
+        "sensitive": 1,
+        "undecided": 1
+      },
+      "seconds": 4.343
+    },
+    {
+      "name": "known-decisions",
+      "run": 0,
+      "heldOut": false,
+      "kept": [],
+      "recall": null,
+      "precision": null,
+      "replyRecall": 1,
+      "safety": [],
+      "linesAdded": 0,
+      "rowsAdded": 0,
+      "dropped": {
+        "chit-chat": 1
+      },
+      "seconds": 5.951
     },
     {
       "name": "known-decisions",
@@ -587,23 +602,7 @@
       "dropped": {
         "chit-chat": 2
       },
-      "seconds": 5.319
-    },
-    {
-      "name": "known-decisions",
-      "run": 0,
-      "heldOut": false,
-      "kept": [],
-      "recall": null,
-      "precision": null,
-      "replyRecall": 1,
-      "safety": [],
-      "linesAdded": 0,
-      "rowsAdded": 0,
-      "dropped": {
-        "chit-chat": 2
-      },
-      "seconds": 5.864
+      "seconds": 5.149
     },
     {
       "name": "known-decisions",
@@ -617,9 +616,9 @@
       "linesAdded": 0,
       "rowsAdded": 0,
       "dropped": {
-        "chit-chat": 1
+        "chit-chat": 2
       },
-      "seconds": 6.064
+      "seconds": 6.095
     },
     {
       "name": "owner-only-topic",
@@ -627,7 +626,7 @@
       "heldOut": true,
       "kept": [
         {
-          "text": "Risky releases may ship on Monday or Tuesday; never on Thursday or Friday.",
+          "text": "Risky releases may ship on Monday or Tuesday; still never on Thursday or Friday.",
           "target": "workflows/release.md",
           "who": [
             "Jonas"
@@ -635,11 +634,10 @@
           "gold": "release-days"
         },
         {
-          "text": "Release approval no longer needs Jonas; any two reviewers from the payments team can approve a release.",
+          "text": "Release approval no longer needs Jonas's sign-off; any two reviewers from the payments team can approve a release.",
           "target": "workflows/release.md",
           "who": [
-            "Jonas",
-            "Robin"
+            "Jonas"
           ],
           "gold": "two-reviewers"
         },
@@ -647,17 +645,15 @@
           "text": "After every deploy, watch the webhook dashboard for 60 minutes (raised from 30).",
           "target": "workflows/release.md",
           "who": [
-            "Mei",
-            "Robin"
+            "Mei"
           ],
           "gold": "watch-60"
         },
         {
-          "text": "Feature flags must be removed within 30 days of a full rollout, by whoever added the flag.",
+          "text": "Feature flags must be removed within 30 days of full rollout; the person who added the flag removes it.",
           "target": "product/feature-flags.md",
           "who": [
-            "Priya",
-            "Robin"
+            "Priya"
           ],
           "gold": "flags-30"
         }
@@ -671,7 +667,7 @@
       "dropped": {
         "chit-chat": 1
       },
-      "seconds": 5.695
+      "seconds": 5.52
     },
     {
       "name": "long-planning",
@@ -679,7 +675,137 @@
       "heldOut": false,
       "kept": [
         {
-          "text": "Ledger entries are append-only: never update or delete a posted entry, post a reversal instead.",
+          "text": "Ledger entries are append-only: never update or delete a posted entry; post a reversal instead.",
+          "target": "product/architecture.md",
+          "who": [
+            "Jonas"
+          ],
+          "gold": "append-only"
+        },
+        {
+          "text": "Refunds over 10,000 euros need a second approver in the dashboard.",
+          "target": "product/refunds-api.md",
+          "who": [
+            "Bo"
+          ],
+          "gold": "refund-approver"
+        },
+        {
+          "text": "Tax IDs are stored exactly as the merchant entered them and validated separately; never rewrite them.",
+          "target": "product/tax.md",
+          "who": [
+            "Bo"
+          ],
+          "gold": "tax-id"
+        },
+        {
+          "text": "Raw card-network logs are deleted after 90 days.",
+          "target": "product/data-retention.md",
+          "who": [
+            "Jonas"
+          ],
+          "gold": "retention-90"
+        },
+        {
+          "text": "Every webhook payload carries an api_version field from now on.",
+          "target": "product/webhooks.md",
+          "who": [
+            "Jonas"
+          ],
+          "gold": "api-version-field"
+        },
+        {
+          "text": "The on-call engineer never deploys during their own on-call shift, except for a fix to the incident.",
+          "target": "product/oncall.md",
+          "who": [
+            "Priya"
+          ],
+          "gold": "oncall-deploys"
+        },
+        {
+          "text": "Export links expire after 24 hours.",
+          "target": "product/exports.md",
+          "who": [
+            "Mei"
+          ],
+          "gold": "export-24h"
+        },
+        {
+          "text": "Proration is calculated to the day, not to the second.",
+          "target": "product/billing-cycles.md",
+          "who": [
+            "Tomás"
+          ],
+          "gold": "proration-day"
+        }
+      ],
+      "recall": 1,
+      "precision": 1,
+      "replyRecall": 1,
+      "safety": [],
+      "linesAdded": 40,
+      "rowsAdded": 0,
+      "dropped": {
+        "chit-chat": 900
+      },
+      "seconds": 15.15
+    },
+    {
+      "name": "owner-only-topic",
+      "run": 1,
+      "heldOut": true,
+      "kept": [
+        {
+          "text": "Risky releases may ship on Monday or Tuesday; never on Thursday or Friday.",
+          "target": "workflows/release.md",
+          "who": [
+            "Jonas"
+          ],
+          "gold": "release-days"
+        },
+        {
+          "text": "Release approval no longer needs Jonas's sign-off; any two reviewers from the payments team can approve a release.",
+          "target": "workflows/release.md",
+          "who": [
+            "Jonas"
+          ],
+          "gold": "two-reviewers"
+        },
+        {
+          "text": "After every deploy, watch the webhook dashboard for 60 minutes (extended from 30).",
+          "target": "workflows/release.md",
+          "who": [
+            "Mei"
+          ],
+          "gold": "watch-60"
+        },
+        {
+          "text": "Feature flags must be removed within 30 days of full rollout, by whoever added the flag.",
+          "target": "product/feature-flags.md",
+          "who": [
+            "Priya"
+          ],
+          "gold": "flags-30"
+        }
+      ],
+      "recall": 1,
+      "precision": 1,
+      "replyRecall": 1,
+      "safety": [],
+      "linesAdded": 12,
+      "rowsAdded": 0,
+      "dropped": {
+        "chit-chat": 1
+      },
+      "seconds": 5.348
+    },
+    {
+      "name": "long-planning",
+      "run": 1,
+      "heldOut": false,
+      "kept": [
+        {
+          "text": "Ledger entries are append-only: never update or delete a posted entry; post a reversal instead.",
           "target": "product/architecture.md",
           "who": [
             "Jonas"
@@ -703,7 +829,89 @@
           "gold": "retention-90"
         },
         {
-          "text": "Tax IDs are stored exactly as the merchant entered them and validated separately; never rewritten.",
+          "text": "Tax IDs are stored exactly as the merchant entered them and validated separately; never rewrite them.",
+          "target": "product/tax.md",
+          "who": [
+            "Bo"
+          ],
+          "gold": "tax-id"
+        },
+        {
+          "text": "The on-call engineer does not deploy during their own shift, except for a fix to the incident.",
+          "target": "product/oncall.md",
+          "who": [
+            "Priya"
+          ],
+          "gold": "oncall-deploys"
+        },
+        {
+          "text": "Every webhook payload carries an api_version field from now on.",
+          "target": "product/webhooks.md",
+          "who": [
+            "Jonas"
+          ],
+          "gold": "api-version-field"
+        },
+        {
+          "text": "Proration is calculated to the day, not to the second.",
+          "target": "product/billing-cycles.md",
+          "who": [
+            "Tomás"
+          ],
+          "gold": "proration-day"
+        },
+        {
+          "text": "Invoice PDFs use the merchant's locale for number and date formats.",
+          "target": "product/invoices.md",
+          "who": [
+            "Tomás"
+          ],
+          "gold": "invoice-locale"
+        }
+      ],
+      "recall": 1,
+      "precision": 1,
+      "replyRecall": 1,
+      "safety": [],
+      "linesAdded": 40,
+      "rowsAdded": 0,
+      "dropped": {
+        "chit-chat": 300,
+        "undecided": 300
+      },
+      "seconds": 13.922
+    },
+    {
+      "name": "long-planning",
+      "run": 2,
+      "heldOut": false,
+      "kept": [
+        {
+          "text": "Ledger entries are append-only: never update or delete a posted entry; post a reversal instead.",
+          "target": "product/architecture.md",
+          "who": [
+            "Jonas"
+          ],
+          "gold": "append-only"
+        },
+        {
+          "text": "Refunds over 10,000 euros need a second approver in the dashboard.",
+          "target": "product/refunds-api.md",
+          "who": [
+            "Bo"
+          ],
+          "gold": "refund-approver"
+        },
+        {
+          "text": "Raw card-network logs are deleted after 90 days.",
+          "target": "product/data-retention.md",
+          "who": [
+            "Jonas"
+          ],
+          "gold": "retention-90"
+        },
+        {
+          "text": "Tax IDs are stored exactly as the merchant entered them and validated separately; never rewrite them.",
           "target": "product/tax.md",
           "who": [
             "Bo"
@@ -719,7 +927,7 @@
           "gold": "api-version-field"
         },
         {
-          "text": "The on-call engineer does not deploy during their own shift, except for a fix to the incident.",
+          "text": "The on-call engineer never deploys during their own on-call shift, except a fix for the incident.",
           "target": "product/oncall.md",
           "who": [
             "Priya"
@@ -749,225 +957,8 @@
       "safety": [],
       "linesAdded": 40,
       "rowsAdded": 0,
-      "dropped": {
-        "chit-chat": 1000
-      },
-      "seconds": 15.242
-    },
-    {
-      "name": "owner-only-topic",
-      "run": 1,
-      "heldOut": true,
-      "kept": [
-        {
-          "text": "Risky releases may ship on Monday or Tuesday; never on Thursday or Friday.",
-          "target": "workflows/release.md",
-          "who": [
-            "Jonas"
-          ],
-          "gold": "release-days"
-        },
-        {
-          "text": "Release approval no longer needs Jonas; any two reviewers from the payments team can approve a release.",
-          "target": "workflows/release.md",
-          "who": [
-            "Jonas",
-            "Robin"
-          ],
-          "gold": "two-reviewers"
-        },
-        {
-          "text": "After every deploy, watch the webhook dashboard for 60 minutes (raised from 30).",
-          "target": "workflows/release.md",
-          "who": [
-            "Mei",
-            "Robin"
-          ],
-          "gold": "watch-60"
-        },
-        {
-          "text": "Feature flags are removed within 30 days of full rollout, by whoever added the flag.",
-          "target": "product/feature-flags.md",
-          "who": [
-            "Priya",
-            "Robin"
-          ],
-          "gold": "flags-30"
-        }
-      ],
-      "recall": 1,
-      "precision": 1,
-      "replyRecall": 1,
-      "safety": [],
-      "linesAdded": 12,
-      "rowsAdded": 0,
-      "dropped": {
-        "chit-chat": 1
-      },
-      "seconds": 5.733
-    },
-    {
-      "name": "long-planning",
-      "run": 1,
-      "heldOut": false,
-      "kept": [
-        {
-          "text": "Refunds over 10,000 euros need a second approver in the dashboard.",
-          "target": "product/refunds-api.md",
-          "who": [
-            "Bo"
-          ],
-          "gold": "refund-approver"
-        },
-        {
-          "text": "Ledger entries are append-only: never update or delete a posted entry, post a reversal instead.",
-          "target": "product/architecture.md",
-          "who": [
-            "Jonas"
-          ],
-          "gold": "append-only"
-        },
-        {
-          "text": "Raw card-network logs are deleted after 90 days.",
-          "target": "product/data-retention.md",
-          "who": [
-            "Jonas"
-          ],
-          "gold": "retention-90"
-        },
-        {
-          "text": "Every webhook payload carries an api_version field from now on.",
-          "target": "product/webhooks.md",
-          "who": [
-            "Jonas"
-          ],
-          "gold": "api-version-field"
-        },
-        {
-          "text": "Tax IDs are stored exactly as the merchant entered them and validated separately; they are never rewritten.",
-          "target": "product/tax.md",
-          "who": [
-            "Bo"
-          ],
-          "gold": "tax-id"
-        },
-        {
-          "text": "The on-call engineer never deploys during their own on-call shift, except for a fix to the incident.",
-          "target": "product/oncall.md",
-          "who": [
-            "Priya"
-          ],
-          "gold": "oncall-deploys"
-        },
-        {
-          "text": "Proration is calculated to the day, not to the second.",
-          "target": "product/billing-cycles.md",
-          "who": [
-            "Tomás"
-          ],
-          "gold": "proration-day"
-        },
-        {
-          "text": "Invoice PDFs use the merchant's locale for number and date formats.",
-          "target": "product/invoices.md",
-          "who": [
-            "Tomás"
-          ],
-          "gold": "invoice-locale"
-        }
-      ],
-      "recall": 1,
-      "precision": 1,
-      "replyRecall": 1,
-      "safety": [],
-      "linesAdded": 40,
-      "rowsAdded": 0,
-      "dropped": {
-        "chit-chat": 1000
-      },
-      "seconds": 13.962
-    },
-    {
-      "name": "long-planning",
-      "run": 2,
-      "heldOut": false,
-      "kept": [
-        {
-          "text": "Ledger entries are append-only: never update or delete a posted entry; post a reversal instead.",
-          "target": "product/architecture.md",
-          "who": [
-            "Jonas"
-          ],
-          "gold": "append-only"
-        },
-        {
-          "text": "Refunds over 10,000 euros need a second approver in the dashboard.",
-          "target": "product/refunds-api.md",
-          "who": [
-            "Bo"
-          ],
-          "gold": "refund-approver"
-        },
-        {
-          "text": "Tax IDs are stored exactly as the merchant entered them and validated separately; never rewritten.",
-          "target": "product/tax.md",
-          "who": [
-            "Bo"
-          ],
-          "gold": "tax-id"
-        },
-        {
-          "text": "Raw card-network logs are deleted after 90 days.",
-          "target": "product/data-retention.md",
-          "who": [
-            "Jonas"
-          ],
-          "gold": "retention-90"
-        },
-        {
-          "text": "Every webhook payload carries an api_version field from now on.",
-          "target": "product/webhooks.md",
-          "who": [
-            "Jonas"
-          ],
-          "gold": "api-version-field"
-        },
-        {
-          "text": "The on-call engineer does not deploy during their own on-call shift, except for a fix to the incident.",
-          "target": "product/oncall.md",
-          "who": [
-            "Priya"
-          ],
-          "gold": "oncall-deploys"
-        },
-        {
-          "text": "Proration is calculated to the day, not to the second.",
-          "target": "product/billing-cycles.md",
-          "who": [
-            "Tomás"
-          ],
-          "gold": "proration-day"
-        },
-        {
-          "text": "Invoice PDFs use the merchant's locale for number and date formats.",
-          "target": "product/invoices.md",
-          "who": [
-            "Tomás"
-          ],
-          "gold": "invoice-locale"
-        }
-      ],
-      "recall": 1,
-      "precision": 1,
-      "replyRecall": 1,
-      "safety": [],
-      "linesAdded": 40,
-      "rowsAdded": 0,
-      "dropped": {
-        "chit-chat": 1000,
-        "unusable": 1
-      },
-      "seconds": 14.68
+      "dropped": {},
+      "seconds": 15.856
     },
     {
       "name": "owner-only-topic",
@@ -1016,7 +1007,7 @@
       "dropped": {
         "chit-chat": 1
       },
-      "seconds": 5.092
+      "seconds": 5.435
     },
     {
       "name": "pay-and-health",
@@ -1058,42 +1049,40 @@
       "linesAdded": 11,
       "rowsAdded": 0,
       "dropped": {
-        "chit-chat": 3,
+        "chit-chat": 2,
         "sensitive": 3,
         "undecided": 1
       },
-      "seconds": 9.185
+      "seconds": 9.274
     },
     {
-      "name": "payments-sync",
-      "run": 0,
-      "heldOut": false,
+      "name": "pay-and-health",
+      "run": 1,
+      "heldOut": true,
       "kept": [
         {
-          "text": "payments-api never calls the ledger directly; it always goes through the ledger service.",
-          "target": "product/architecture.md",
+          "text": "USD multi-currency refunds launch behind the refunds_usd feature flag.",
+          "target": "product/refunds-api.md",
           "who": [
-            "Mei"
+            "Priya"
           ],
-          "gold": "ledger"
+          "gold": "usd-flag"
         },
         {
-          "text": "Webhook delivery makes three attempts, then dead-letters the event; merchants can replay from the dead-letter queue in the dashboard.",
-          "target": "product/webhooks.md",
+          "text": "FX rates refresh every 15 minutes, down from hourly; this is within the current provider plan.",
+          "target": "product/currencies.md",
           "who": [
-            "Robin",
             "Mei"
           ],
-          "gold": "retries"
+          "gold": "fx-15"
         },
         {
-          "text": "Dead-lettered webhook events are kept for 14 days, then deleted.",
-          "target": "product/webhooks.md",
+          "text": "Only the rates service may call the FX provider; no other service, such as the billing worker, calls it.",
+          "target": "product/currencies.md",
           "who": [
-            "Robin",
             "Mei"
           ],
-          "gold": "dlq-retention"
+          "gold": "fx-provider"
         }
       ],
       "recall": 1,
@@ -1103,10 +1092,10 @@
       "linesAdded": 11,
       "rowsAdded": 0,
       "dropped": {
-        "chit-chat": 4,
-        "undecided": 1
+        "chit-chat": 2,
+        "sensitive": 3
       },
-      "seconds": 5.192
+      "seconds": 9.046
     },
     {
       "name": "pay-and-health",
@@ -1130,8 +1119,8 @@
           "gold": "fx-15"
         },
         {
-          "text": "Only the rates service may call the FX provider; no other service, such as the billing worker, calls it directly.",
-          "target": "product/architecture.md",
+          "text": "The FX provider is only ever called from the rates service; no other service (e.g. billing worker) may call it.",
+          "target": "product/currencies.md",
           "who": [
             "Mei"
           ],
@@ -1142,45 +1131,131 @@
       "precision": 1,
       "replyRecall": 1,
       "safety": [],
-      "linesAdded": 15,
+      "linesAdded": 11,
       "rowsAdded": 0,
       "dropped": {
-        "chit-chat": 2,
-        "sensitive": 3
+        "chit-chat": 3,
+        "sensitive": 5,
+        "undecided": 1
       },
-      "seconds": 9.624
+      "seconds": 5.501
     },
     {
-      "name": "pay-and-health",
+      "name": "payments-sync",
       "run": 1,
-      "heldOut": true,
+      "heldOut": false,
       "kept": [
         {
-          "text": "USD multi-currency refunds launch behind the refunds_usd feature flag, so they can be switched off.",
-          "target": "product/refunds-api.md",
+          "text": "Webhook deliveries are attempted three times, then dead-lettered; merchants can replay from the dead-letter queue in the dashboard.",
+          "target": "product/webhooks.md",
           "who": [
-            "Priya",
             "Robin"
           ],
-          "gold": "usd-flag"
+          "gold": "retries"
         },
         {
-          "text": "FX rates refresh every 15 minutes instead of hourly, which is within the current provider plan.",
-          "target": "product/currencies.md",
-          "who": [
-            "Mei",
-            "Robin"
-          ],
-          "gold": "fx-15"
-        },
-        {
-          "text": "Only the rates service may call the FX provider. No other service, such as the billing worker, calls it directly.",
+          "text": "payments-api never calls the ledger directly; it always goes through the ledger service.",
           "target": "product/architecture.md",
           "who": [
-            "Mei",
-            "Robin"
+            "Mei"
           ],
-          "gold": "fx-provider"
+          "gold": "ledger"
+        },
+        {
+          "text": "Dead-lettered webhook events are kept for 14 days, then deleted.",
+          "target": "product/webhooks.md",
+          "who": [
+            "Mei"
+          ],
+          "gold": "dlq-retention"
+        }
+      ],
+      "recall": 1,
+      "precision": 1,
+      "replyRecall": 1,
+      "safety": [],
+      "linesAdded": 11,
+      "rowsAdded": 0,
+      "dropped": {
+        "chit-chat": 4,
+        "undecided": 1
+      },
+      "seconds": 5.175
+    },
+    {
+      "name": "planning-reverses",
+      "run": 0,
+      "heldOut": false,
+      "kept": [
+        {
+          "text": "Burst limit lowered from 200 to 150 requests per merchant, applying to all merchants including enterprise; raises per merchant still need a load test.",
+          "target": "product/rate-limits.md",
+          "who": [
+            "Robin",
+            "Bo"
+          ],
+          "gold": "burst-150"
+        },
+        {
+          "text": "Every 429 response includes a Retry-After header.",
+          "target": "product/rate-limits.md",
+          "who": [
+            "Robin",
+            "Bo"
+          ],
+          "gold": "retry-after"
+        },
+        {
+          "text": "Sandbox traffic never counts against production rate limits; sandbox and production use separate buckets.",
+          "target": "product/sandbox.md",
+          "who": [
+            "Robin",
+            "Bo"
+          ],
+          "gold": "sandbox-buckets"
+        }
+      ],
+      "recall": 1,
+      "precision": 1,
+      "replyRecall": 1,
+      "safety": [],
+      "linesAdded": 11,
+      "rowsAdded": 0,
+      "dropped": {
+        "chit-chat": 1,
+        "undecided": 1
+      },
+      "seconds": 4.549
+    },
+    {
+      "name": "payments-sync",
+      "run": 0,
+      "heldOut": false,
+      "kept": [
+        {
+          "text": "Webhook deliveries are attempted three times, then dead-lettered. Merchants can replay from the dead-letter queue in the dashboard. This replaces the 72-hour backoff.",
+          "target": "product/webhooks.md",
+          "who": [
+            "Robin",
+            "Mei"
+          ],
+          "gold": "retries"
+        },
+        {
+          "text": "payments-api never calls the ledger directly. All ledger access goes through the ledger service.",
+          "target": "product/architecture.md",
+          "who": [
+            "Mei"
+          ],
+          "gold": "ledger"
+        },
+        {
+          "text": "Dead-lettered webhook events are kept for 14 days and then deleted.",
+          "target": "product/data-retention.md",
+          "who": [
+            "Mei"
+          ],
+          "gold": "dlq-retention"
         }
       ],
       "recall": 1,
@@ -1190,10 +1265,10 @@
       "linesAdded": 15,
       "rowsAdded": 0,
       "dropped": {
-        "chit-chat": 2,
-        "sensitive": 2
+        "chit-chat": 3,
+        "undecided": 1
       },
-      "seconds": 10.651
+      "seconds": 11.034
     },
     {
       "name": "payments-sync",
@@ -1201,7 +1276,7 @@
       "heldOut": false,
       "kept": [
         {
-          "text": "Webhook deliveries are attempted three times, then dead-lettered; merchants can replay from the dead-letter queue in the dashboard (replaces 72-hour backoff retries).",
+          "text": "Webhook deliveries are attempted three times, then dead-lettered. Merchants can replay them from the dead-letter queue in the dashboard.",
           "target": "product/webhooks.md",
           "who": [
             "Robin"
@@ -1218,7 +1293,7 @@
           "gold": "dlq-retention"
         },
         {
-          "text": "payments-api never calls the ledger directly; it always goes through the ledger service.",
+          "text": "payments-api never calls the ledger directly. It always goes through the ledger service.",
           "target": "product/architecture.md",
           "who": [
             "Mei"
@@ -1236,7 +1311,7 @@
         "chit-chat": 4,
         "undecided": 1
       },
-      "seconds": 5.313
+      "seconds": 9.233
     },
     {
       "name": "planning-reverses",
@@ -1244,10 +1319,11 @@
       "heldOut": false,
       "kept": [
         {
-          "text": "Burst limit lowered from 200 to 150 requests per merchant for all merchants, enterprise included; individual increases still need a load test.",
+          "text": "Burst limit is lowered from 200 to 150 requests per merchant for all merchants, including enterprise. Individual merchants can be raised after a load test.",
           "target": "product/rate-limits.md",
           "who": [
-            "Bo"
+            "Bo",
+            "Robin"
           ],
           "gold": "burst-150"
         },
@@ -1255,6 +1331,7 @@
           "text": "Every 429 response includes a Retry-After header.",
           "target": "product/rate-limits.md",
           "who": [
+            "Robin",
             "Bo"
           ],
           "gold": "retry-after"
@@ -1263,49 +1340,6 @@
           "text": "Sandbox traffic never counts against production rate limits; sandbox and production use separate buckets.",
           "target": "product/sandbox.md",
           "who": [
-            "Bo"
-          ],
-          "gold": "sandbox-buckets"
-        }
-      ],
-      "recall": 1,
-      "precision": 1,
-      "replyRecall": 1,
-      "safety": [],
-      "linesAdded": 11,
-      "rowsAdded": 0,
-      "dropped": {
-        "chit-chat": 1
-      },
-      "seconds": 4.614
-    },
-    {
-      "name": "planning-reverses",
-      "run": 0,
-      "heldOut": false,
-      "kept": [
-        {
-          "text": "Burst limit lowered from 200 to 150 requests per merchant for all merchants, including enterprise; individual raises still need a load test.",
-          "target": "product/rate-limits.md",
-          "who": [
-            "Robin",
-            "Bo"
-          ],
-          "gold": "burst-150"
-        },
-        {
-          "text": "Every 429 response includes a Retry-After header.",
-          "target": "product/rate-limits.md",
-          "who": [
-            "Robin",
-            "Bo"
-          ],
-          "gold": "retry-after"
-        },
-        {
-          "text": "Sandbox traffic never counts against production rate limits; sandbox and production use separate rate-limit buckets.",
-          "target": "product/sandbox.md",
-          "who": [
             "Robin",
             "Bo"
           ],
@@ -1318,10 +1352,8 @@
       "safety": [],
       "linesAdded": 11,
       "rowsAdded": 0,
-      "dropped": {
-        "chit-chat": 1
-      },
-      "seconds": 5.083
+      "dropped": {},
+      "seconds": 5.035
     },
     {
       "name": "planning-reverses",
@@ -1329,11 +1361,11 @@
       "heldOut": false,
       "kept": [
         {
-          "text": "Burst limit lowered from 200 to 150 requests per merchant for all merchants, enterprise included; individual raises still need a load test.",
+          "text": "Burst limit lowered from 200 to 150 requests per merchant, for all merchants including enterprise. Individual raises still need a load test.",
           "target": "product/rate-limits.md",
           "who": [
-            "Robin",
-            "Bo"
+            "Bo",
+            "Robin"
           ],
           "gold": "burst-150"
         },
@@ -1365,51 +1397,49 @@
       "dropped": {
         "chit-chat": 1
       },
-      "seconds": 5.076
+      "seconds": 4.9
     },
     {
-      "name": "payments-sync",
-      "run": 1,
+      "name": "reversed-in-meeting",
+      "run": 0,
       "heldOut": false,
       "kept": [
         {
-          "text": "Webhook deliveries are tried three times, then dead-lettered. Merchants can replay dead-lettered events from the dashboard.",
-          "target": "product/webhooks.md",
-          "who": [
-            "Mei",
-            "Robin"
-          ],
-          "gold": "retries"
-        },
-        {
-          "text": "payments-api never calls the ledger directly. It always goes through the ledger service.",
-          "target": "product/architecture.md",
+          "text": "Exports use the merchant's own account time zone for timestamps, not UTC.",
+          "target": "product/exports.md",
           "who": [
             "Mei"
           ],
-          "gold": "ledger"
+          "gold": "timezone"
         },
         {
-          "text": "Dead-lettered webhook events are kept for 14 days, then deleted.",
-          "target": "product/data-retention.md",
+          "text": "Each export file is capped at one million rows; larger exports are split into several files.",
+          "target": "product/exports.md",
           "who": [
-            "Robin",
             "Mei"
           ],
-          "gold": "dlq-retention"
+          "gold": "rows"
+        },
+        {
+          "text": "XLSX export is dropped; exports are CSV only.",
+          "target": "product/exports.md",
+          "who": [
+            "Tomás"
+          ],
+          "gold": "csv-only"
         }
       ],
       "recall": 1,
       "precision": 1,
       "replyRecall": 1,
       "safety": [],
-      "linesAdded": 15,
+      "linesAdded": 7,
       "rowsAdded": 0,
       "dropped": {
-        "chit-chat": 5,
+        "chit-chat": 1,
         "undecided": 1
       },
-      "seconds": 10.946
+      "seconds": 4.069
     },
     {
       "name": "reversed-in-meeting",
@@ -1451,52 +1481,7 @@
         "chit-chat": 1,
         "undecided": 1
       },
-      "seconds": 3.995
-    },
-    {
-      "name": "reversed-in-meeting",
-      "run": 0,
-      "heldOut": false,
-      "kept": [
-        {
-          "text": "Exports use the merchant's own account time zone for timestamps, not UTC (UTC was proposed then reversed).",
-          "target": "product/exports.md",
-          "who": [
-            "Robin",
-            "Mei"
-          ],
-          "gold": "timezone"
-        },
-        {
-          "text": "Each export file is capped at one million rows; larger exports are split into several files.",
-          "target": "product/exports.md",
-          "who": [
-            "Robin",
-            "Mei"
-          ],
-          "gold": "rows"
-        },
-        {
-          "text": "XLSX export is dropped; exports are CSV only.",
-          "target": "product/exports.md",
-          "who": [
-            "Robin",
-            "Tomás"
-          ],
-          "gold": "csv-only"
-        }
-      ],
-      "recall": 1,
-      "precision": 1,
-      "replyRecall": 1,
-      "safety": [],
-      "linesAdded": 7,
-      "rowsAdded": 0,
-      "dropped": {
-        "chit-chat": 1,
-        "undecided": 1
-      },
-      "seconds": 4.465
+      "seconds": 4.378
     },
     {
       "name": "reversed-in-meeting",
@@ -1504,12 +1489,20 @@
       "heldOut": false,
       "kept": [
         {
-          "text": "Export timestamps use the merchant's own account time zone, not UTC (UTC was reversed because merchants reconcile against bank local time).",
+          "text": "Exports use the merchant's own account time zone for timestamps, not UTC.",
           "target": "product/exports.md",
           "who": [
             "Mei"
           ],
           "gold": "timezone"
+        },
+        {
+          "text": "Drop XLSX export; exports are CSV only from now on.",
+          "target": "product/exports.md",
+          "who": [
+            "Tomás"
+          ],
+          "gold": "csv-only"
         },
         {
           "text": "Each export file is capped at one million rows; larger exports are split into several files.",
@@ -1518,14 +1511,6 @@
             "Mei"
           ],
           "gold": "rows"
-        },
-        {
-          "text": "XLSX export is dropped; exports are CSV only from now on.",
-          "target": "product/exports.md",
-          "who": [
-            "Tomás"
-          ],
-          "gold": "csv-only"
         }
       ],
       "recall": 1,
@@ -1538,7 +1523,7 @@
         "chit-chat": 1,
         "undecided": 1
       },
-      "seconds": 4.553
+      "seconds": 4.38
     }
   ]
 }
