@@ -1,12 +1,35 @@
 <p align="center"><img src="assets/brand/serra-lockup.png" alt="Serra" width="360"></p>
 
-# Serra: your local coding agents, from the chat you already use
+<h1 align="center">The coding agents on your Mac, in Slack</h1>
+
+<p align="center">A message becomes a T3 task in its own worktree. A draft PR comes back to the thread.</p>
+
+<p align="center">
+  <a href="https://github.com/isacssw/serra/releases"><img alt="Release" src="https://img.shields.io/github/v/release/isacssw/serra?include_prereleases&label=release&color=1a1a1c"></a>
+  <a href="https://github.com/isacssw/serra/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/isacssw/serra/actions/workflows/ci.yml/badge.svg?branch=main"></a>
+  <a href="LICENSE"><img alt="MIT license" src="https://img.shields.io/github/license/isacssw/serra?color=1a1a1c"></a>
+</p>
+
+<p align="center"><img src="assets/readme/demo.gif" alt="A Slack message to the bot becomes a running job in Serra, then a draft PR posted back in the Slack thread" width="800"><br><sub>Demo workspace and data</sub></p>
+
+- **Ask from Slack.** Mention the bot or DM it. Reply in the thread to keep going.
+- **Your Mac, your logins.** The agent you run in T3 Code (Claude, Codex, …) works in a fresh worktree of your repository. No server, no provider keys.
+- **Careful by default.** The default brief tells the agent to open draft PRs and never merge, force-push or touch production. Tune it in **Brief & policy**.
+
+**[Download for Mac](https://github.com/isacssw/serra/releases)** (Apple silicon)<br>
+Needs [T3 Code](https://github.com/pingdotgg/t3code) running, Node 24+ (or 22.18+ on 22.x) with pnpm, the GitHub CLI signed in, and permission to create a Slack app. [Full list](#what-you-need)
+
+> **Alpha.** Not notarized: macOS blocks the first launch until you [allow it once](#2-install-it). Slack only. Expect rough edges and breaking changes; read [Alpha limits](#alpha-limits) before using it on a repository that matters.
+
+<p align="center"><img src="assets/readme/slack-thread.png" alt="A Slack thread: a teammate asks the bot for an empty state, gets a draft PR, asks for a change, and the bot pushes it to the same PR" width="800"><br><sub>Follow up in the thread</sub></p>
+
+<p align="center"><img src="assets/readme/jobs.png" alt="Serra's Jobs screen: finished jobs with links to the Slack thread, the T3 thread and the PR" width="800"><br><sub>Every job, one click from its Slack thread, T3 task and PR</sub></p>
+
+## How it works
 
 Serra is a bridge between your team chat and the coding agents on your Mac. It connects a chat bot to [T3 Code](https://github.com/pingdotgg/t3code), so the agent you already use there (Claude, Codex, …) can take requests from chat. When someone mentions the bot or sends it a DM, Serra starts a T3 thread in a fresh Git worktree of your repository. The agent does the work there (answers a question, fixes a bug, opens a draft PR) and its reply goes back to the chat thread.
 
 Slack is the only chat channel in this alpha; others are planned. Each engineer runs their own bot: their own Slack app, their own Mac, their own GitHub login.
-
-> **Alpha.** Expect rough edges and breaking changes between versions. Read [Alpha limits](#alpha-limits) before you point it at a repository that matters.
 
 - **New here?** [What you need](#what-you-need) → [Get the app](#1-get-the-app) → [Install it](#2-install-it) → [First run](#3-first-run).
 - **On the Serra app, alpha.2 or older?** [Install alpha.3 by hand once](#updating).
