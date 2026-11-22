@@ -80,7 +80,7 @@ test('routes: every sidebar item has a unique route, in a known section', () => 
   // The MVP screens from the spike, in the mockup's order.
   assert.deepEqual(routes.map((route) => route.label), [
     'Needs you', 'Running', 'Done today', 'New task', 'About me', 'Proposals', 'Pages', 'Brief & policy', 'Bot & Slack', 'People', 'Repositories',
-    'Alerts', 'Worker', 'Secrets', 'Tools', 'Updates', 'Diagnostics', 'Appearance',
+    'Alerts', 'Worker', 'Meetings', 'Secrets', 'Tools', 'Updates', 'Diagnostics', 'Appearance',
   ]);
 });
 

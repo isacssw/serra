@@ -16,6 +16,11 @@ import { watchProfile } from './profile-reload.ts';
 import { checkProjectAccess } from './project-access.ts';
 import { acknowledgePause, admit, dropHeld, heldThread, holdRequest, readHeld, readPause } from './intake.ts';
 import type { IncomingMessage } from './types.ts';
+import { createMeetingCapture } from './meeting-capture.ts';
+import { createExtractor } from './meeting-extractor.ts';
+import { createSourceReader } from './meeting-sources.ts';
+import { readAttachmentText } from './attachments.ts';
+import { toolSearchPath } from './shell-path.ts';
 
 const POLL_MS = 15_000;
 
@@ -49,6 +54,29 @@ const bot = createBot({
 
 const errorMessage = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
+// "Remember this meeting" in the owner's DM (SERRA-62): caught before the pause hold and before any job, so a
+// transcript never reaches a T3 worker. Off until the owner turns it on in the app.
+const claudePath = toolSearchPath().catch(() => process.env.PATH ?? '');
+const meetings = config.profileDir ? createMeetingCapture({
+  profileDir: config.profileDir, knowledgeDir: config.knowledgeDir, owner: config.owner,
+  chat: {
+    post: async (channel, text, threadTs) => (await app.client.chat.postMessage({ channel, text, ...(threadTs ? { thread_ts: threadTs } : {}) })).ts,
+    remove: async (channel, ts) => { await app.client.chat.delete({ channel, ts }); },
+    earlierInThread: async (channel, threadTs, beforeTs) => {
+      const replies = await app.client.conversations.replies({ channel, ts: threadTs, limit: 20 });
+      return (replies.messages ?? []).filter((message) => message.ts !== undefined && message.ts < beforeTs).length;
+    },
+  },
+  readFile: (file, maxChars) => readAttachmentText(app.client, file, config.botToken, maxChars),
+  sources: { fetchTranscript: async (link) => createSourceReader({ path: await claudePath }).fetchTranscript(link) },
+  extractor: { extract: async (prompt) => createExtractor({ path: await claudePath }).extract(prompt) },
+  paused: () => readPause(config.profileDir) !== null,
+  busy: (channel, threadTs) => owns(channel, threadTs),
+  log: (message) => app.logger.info(message),
+}) : null;
+// A meeting approval a crash left half done is rolled back before anything reads knowledge.
+try { meetings?.store.recover(); } catch (error) { app.logger.warn(`Meeting recovery: ${errorMessage(error)}`); }
+
 let stopping = false;
 const pending = new Set<Promise<unknown>>();
 const track = async (work: Promise<unknown>): Promise<void> => {
@@ -72,6 +100,14 @@ const start = async (msg: IncomingMessage): Promise<void> => {
   try { await track(bot.handle(msg)); } finally { starting -= 1; acknowledge(); }
 };
 
+/** A meeting message is Serra's own work, counted like a starting job so an update waits for it. Null: not one. */
+const startMeeting = (msg: IncomingMessage): Promise<void> | null => {
+  const meeting = meetings?.intercept(msg);
+  if (!meeting) return null;
+  starting += 1;
+  return track(meeting.work).finally(() => { starting -= 1; acknowledge(); });
+};
+
 /** The thread has a request waiting for the restart: replies there wait behind it. */
 const owns = (channel: string, threadTs: string): boolean =>
   bot.ownsThread(channel, threadTs) || (config.profileDir ? heldThread(config.profileDir, channel, threadTs) : false);
@@ -81,6 +117,8 @@ const owns = (channel: string, threadTs: string): boolean =>
  * would start a job waits, with an hourglass on it, for the restarted bot. Messages for running jobs go through.
  */
 const receive = async (msg: IncomingMessage): Promise<void> => {
+  const meeting = startMeeting(msg);
+  if (meeting) return meeting;
   const paused = config.profileDir ? readPause(config.profileDir) : null;
   const waitingBehind = config.profileDir ? heldThread(config.profileDir, msg.channel, msg.threadTs) : false;
   if (config.profileDir && (waitingBehind || admit(paused !== null, bot.runningIn(msg.channel, msg.threadTs)) === 'hold')) {
@@ -104,6 +142,8 @@ const releaseHeld = async (): Promise<void> => {
       if (stopping || readPause(config.profileDir)) return;
       dropHeld(config.profileDir, msg);
       await app.client.reactions.remove({ channel: msg.channel, timestamp: msg.messageTs, name: HELD_REACTION }).catch(() => {});
+      const meeting = startMeeting(msg);
+      if (meeting) { await meeting.catch((error: unknown) => app.logger.error(`Meeting capture failed: ${errorMessage(error)}`)); continue; }
       await start(msg).catch((error: unknown) => app.logger.error(`Held request failed: ${errorMessage(error)}`));
     }
   } finally { releasing = false; }
@@ -148,6 +188,13 @@ const knowledge = checkKnowledge({
 });
 for (const problem of knowledge.problems) app.logger.warn(`knowledge/${problem}`);
 for (const warning of knowledge.warnings) app.logger.warn(`knowledge/${warning}`);
+
+// Meeting requests an older Serra held during an update are closed and dropped before intake opens, never replayed.
+if (meetings && config.profileDir) {
+  const { drop, replies } = meetings.closeHeld(readHeld(config.profileDir));
+  for (const msg of drop) dropHeld(config.profileDir, msg);
+  void Promise.allSettled(replies);
+}
 
 const auth = await app.client.auth.test();
 botUserId = auth.user_id ?? '';
@@ -196,6 +243,7 @@ const timer = setInterval(() => {
   if (stopping) return;
   acknowledge();
   void releaseHeld();
+  if (meetings) void track(meetings.upkeep()).catch((error: unknown) => app.logger.warn(`Meeting upkeep: ${errorMessage(error)}`));
   void track(bot.poll()).catch((error: unknown) => {
     app.logger.error(`Poll failed: ${errorMessage(error)}`);
   }).finally(() => status?.refresh());

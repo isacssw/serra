@@ -7,6 +7,7 @@ import { briefHandlers } from './brief.ts';
 import type { HandlerContext } from './context.ts';
 import { diagnosticsHandlers } from './diagnostics.ts';
 import { jobsHandlers } from './jobs.ts';
+import { meetingsHandlers } from './meetings.ts';
 import { pagesHandlers } from './pages.ts';
 import { peopleHandlers } from './people.ts';
 import { proposalsHandlers } from './proposals.ts';
@@ -35,6 +36,7 @@ export const createHandlers = (context: HandlerContext): AllHandlers => ({
   diagnostics: diagnosticsHandlers(context),
   people: peopleHandlers(context),
   tasks: tasksHandlers(context),
+  meetings: meetingsHandlers(context),
 });
 
 /** The part of `ipcMain` registration needs. `event.senderFrame.url` is checked before a handler runs. */

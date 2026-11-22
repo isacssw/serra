@@ -274,7 +274,9 @@ export const proposeBriefUpdate = (profileDir: string): boolean => {
   const briefFile = join(profileDir, 'brief.md');
   if (!existsSync(briefFile)) return false;
   const brief = readFileSync(briefFile, 'utf8');
-  const outdated = !brief.includes('{{OWNER_PROFILE}}') || !brief.includes('{{PROPOSALS_DIR}}') || /promote it:/i.test(brief) || brief.includes('{{KNOWLEDGE_DIR}}/../policy.md');
+  const outdated = !brief.includes('{{OWNER_PROFILE}}') || !brief.includes('{{PROPOSALS_DIR}}') || /promote it:/i.test(brief) || brief.includes('{{KNOWLEDGE_DIR}}/../policy.md')
+    // Meeting capture (SERRA-62): briefs from before it don't send transcripts to the owner's DM or say how to use meeting decisions.
+    || !brief.includes('remember this meeting');
   const dir = join(profileDir, 'proposed', KNOWLEDGE_BRIEF_UPDATE);
   if (!outdated || existsSync(dir)) return false;
   mkdirSync(dir, { recursive: true });

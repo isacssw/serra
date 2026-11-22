@@ -99,6 +99,8 @@ export interface IncomingMessage {
   automaticTrigger?: boolean;
   /** An @mention, DM, or configured alert. False for a plain message in a thread the bot already owns. */
   direct: boolean;
+  /** A message in a one-to-one DM with the bot (Slack's `channel_type: im`), not a mention or a group DM. */
+  im?: boolean;
 }
 
 /** File metadata carried by message and app_mention events, sometimes only an ID. */

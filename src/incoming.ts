@@ -71,5 +71,5 @@ export const incomingMessage = (event: unknown, kind: 'message' | 'app_mention',
     if (!event.thread_ts || !ownsThread(event.channel, threadTs)) return null;
   }
   return { channel: event.channel, threadTs, messageTs: event.ts, user: event.user, text,
-    direct: kind === 'app_mention' || isDm, files: incomingFiles(event.files) };
+    direct: kind === 'app_mention' || isDm, files: incomingFiles(event.files), ...(isDm && kind === 'message' ? { im: true } : {}) };
 };

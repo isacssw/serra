@@ -45,6 +45,7 @@ export const routes = [
   { id: 'settings-repositories', path: '/settings/repositories', label: 'Repositories', section: 'settings', needs: 'profile', ticket: 'APP-14' },
   { id: 'settings-alerts', path: '/settings/alerts', label: 'Alerts', section: 'settings', needs: 'profile', ticket: 'APP-14' },
   { id: 'settings-worker', path: '/settings/worker', label: 'Worker', section: 'settings', needs: 'profile', ticket: 'APP-14' },
+  { id: 'settings-meetings', path: '/settings/meetings', label: 'Meetings', section: 'settings', needs: 'profile', ticket: 'SERRA-62' },
   { id: 'secrets', path: '/settings/secrets', label: 'Secrets', section: 'settings', needs: 'profile', ticket: 'APP-15' },
   { id: 'tools', path: '/settings/tools', label: 'Tools', section: 'settings', needs: 'profile', ticket: 'APP-23' },
   { id: 'updates', path: '/settings/updates', label: 'Updates', section: 'settings', ticket: 'APP-19' },

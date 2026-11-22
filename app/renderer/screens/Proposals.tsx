@@ -12,6 +12,7 @@ import { serra } from '../bridge.ts';
 import { REFRESH_COUNTS, announceTaskStart } from '../shell/events.ts';
 import { Button, cx, Dialog, Page, useToast } from '../ui/index.ts';
 import { DiffView } from './proposals/DiffView.tsx';
+import { MeetingReview } from './proposals/MeetingReview.tsx';
 import { AudienceChoice } from './AudienceChoice.tsx';
 import { alignHeader, frontmatter, removeHeaderField, setHeaderField } from '../../../src/knowledge-rules.ts';
 import { localDate } from './pages.logic.ts';
@@ -93,6 +94,9 @@ const Queue = ({ proposals, selected, onSelect }: { proposals: Proposal[]; selec
 export const Proposals = () => {
   const toast = useToast();
   const [proposals, setProposals] = useState<Proposal[] | null>(null);
+  /** Meeting edits have their own review (MeetingReview): stubs under from-meeting/ never use promote or merge. */
+  const [meetingStubs, setMeetingStubs] = useState<Proposal[]>([]);
+  const [meetingCount, setMeetingCount] = useState(0);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [diff, setDiff] = useState<ProposalDiff | null>(null);
@@ -119,7 +123,9 @@ export const Proposals = () => {
     const bridge = serra();
     if (!bridge) { setLoadError('The Serra bridge is missing: open this screen in the Serra app.'); return; }
     try {
-      const [list, places] = await Promise.all([bridge.proposals.list(), bridge.proposals.targets()]);
+      const [all, places] = await Promise.all([bridge.proposals.list(), bridge.proposals.targets()]);
+      const list = all.filter((proposal) => proposal.from?.via !== 'meeting');
+      setMeetingStubs(all.filter((proposal) => proposal.from?.via === 'meeting'));
       setProposals(list);
       setTargets(places);
       setLoadError(null);
@@ -238,11 +244,12 @@ export const Proposals = () => {
   return (
     <Page
       title="Proposals"
-      subtitle={proposals ? pendingLabel(proposals.length) : loadError ? undefined : 'Loading…'}
+      subtitle={proposals ? pendingLabel(proposals.length + meetingCount) : loadError ? undefined : 'Loading…'}
       actions={<InterviewButton autoOpen={search.get('interview') === '1'} onOpened={() => setSearch((params) => { params.delete('interview'); return params; }, { replace: true })} />}
     >
       {loadError && <p role="alert" className="text-sm text-down">{loadError}</p>}
-      {proposals && proposals.length === 0 && (
+      <MeetingReview stubs={meetingStubs} onChanged={() => { void reload(); }} onCount={setMeetingCount} />
+      {proposals && proposals.length === 0 && meetingCount === 0 && (
         <p className="text-sm text-muted">
           No proposals waiting. Pages the workers propose under knowledge/proposals/ show up here. Start the interview to
           teach the bot how you work: what you confirm in it lands here for review.
