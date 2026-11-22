@@ -1,13 +1,13 @@
 // SERRA-63: moving owners from manual installs and alpha.2's update source to in-app updates, without losing data.
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test, { type TestContext } from 'node:test';
 import { botSyncDecision, type BotSyncInput } from '../app/main/bot-sync.ts';
 import type { HandlerContext } from '../app/main/ipc/context.ts';
-import { updatesHandlers } from '../app/main/ipc/updates.ts';
+import { updatesHandlers, updatesService } from '../app/main/ipc/updates.ts';
 import { memoryPrefs } from '../app/main/prefs.ts';
 import { stoppedStatusSource } from '../app/main/status.ts';
 import { botLine, clearedLine, followDialog, noteLines } from '../app/renderer/screens/updates.logic.ts';
@@ -48,23 +48,35 @@ const fixture = (t: TestContext) => {
   return { root, directory, checkout, setSource, unchanged, profile };
 };
 
-test('an update source is a Serra checkout, missing, inside an app, or something else', (t) => {
+test('an update source is Serra’s code, clearly unusable, or unknown, and only clear evidence counts', (t) => {
   const f = fixture(t);
   assert.equal(classifySource(f.checkout), 'checkout');
-  // A worktree has a .git file, not a folder.
-  const worktree = join(f.root, 'worktree');
-  mkdirSync(worktree);
-  writeFileSync(join(worktree, '.git'), 'gitdir: /somewhere\n');
-  writeFileSync(join(worktree, 'package.json'), '{"name":"serra"}');
-  assert.equal(classifySource(worktree), 'checkout');
+  const dir = (name: string, files: Record<string, string> = {}): string => {
+    const path = join(f.root, name);
+    mkdirSync(path, { recursive: true });
+    for (const [file, text] of Object.entries(files)) writeFileSync(join(path, file), text);
+    return path;
+  };
+  // A worktree has a .git file; a plain copy of Serra (no git) still builds in developer mode.
+  assert.equal(classifySource(dir('worktree', { '.git': 'gitdir: /somewhere\n', 'package.json': '{"name":"serra"}' })), 'checkout');
+  assert.equal(classifySource(dir('download', { 'package.json': '{"name":"serra"}' })), 'checkout');
+  assert.equal(classifySource(dir('web.app/serra', { '.git': '', 'package.json': '{"name":"serra"}' })), 'checkout', 'a folder named .app is not a bundle');
+
   assert.equal(classifySource(join(f.root, 'gone')), 'missing');
   assert.equal(classifySource('/Applications/Serra.app/Contents/Resources/app'), 'inside-app');
-  assert.equal(classifySource(f.directory), 'not-a-checkout', 'a folder without git');
-  const other = join(f.root, 'other');
-  mkdirSync(other);
-  execFileSync('git', ['init', '-q', other]);
-  writeFileSync(join(other, 'package.json'), '{"name":"other"}');
-  assert.equal(classifySource(other), 'not-a-checkout', 'another repository');
+  assert.equal(classifySource(dir('acme', { 'package.json': '{"name":"acme"}' })), 'not-a-checkout', 'another package, no git');
+  assert.equal(classifySource(dir('empty')), 'not-a-checkout');
+
+  // Anything it can't be sure of stays.
+  assert.equal(classifySource('/Volumes/Work/serra'), 'unknown', 'a disk that may not be connected is not read');
+  assert.equal(classifySource(dir('fork', { '.git': '', 'package.json': '{"name":"serra-fork"}' })), 'unknown', 'a renamed fork');
+  assert.equal(classifySource(dir('rebasing', { '.git': '', 'package.json': '<<<<<<< HEAD\n' })), 'unknown', 'a package.json mid-conflict');
+  symlinkSync(join(f.root, 'unplugged/serra'), join(f.root, 'link'));
+  assert.equal(classifySource(join(f.root, 'link')), 'unknown', 'a link to something absent');
+  const locked = dir('locked/serra', { '.git': '', 'package.json': '{"name":"serra"}' });
+  chmodSync(join(f.root, 'locked'), 0o000);
+  try { if (process.getuid?.() !== 0) assert.equal(classifySource(locked), 'unknown', 'unreadable (permissions, macOS privacy)'); }
+  finally { chmodSync(join(f.root, 'locked'), 0o755); }
 });
 
 test('a packaged app clears an update source that can never work, after a backup, and keeps everything else', (t) => {
@@ -94,7 +106,7 @@ test('a real checkout, or one on a disk that is not connected, is the owner’s 
   assert.equal(migrateStaleUpdateSource(f.directory, { packaged: true }), null);
   assert.deepEqual(f.profile().updates, { source: '/Volumes/Work/serra' });
   f.setSource(join(f.root, 'deleted-clone'));
-  assert.match(migrateStaleUpdateSource(f.directory, { packaged: true })?.reason ?? '', /doesn't exist/);
+  assert.match(migrateStaleUpdateSource(f.directory, { packaged: true })?.reason ?? '', /the folder is gone/);
 });
 
 test('a profile that does not validate is left exactly as it is', (t) => {
@@ -106,6 +118,7 @@ test('a profile that does not validate is left exactly as it is', (t) => {
   assert.equal(readFileSync(path, 'utf8'), broken);
   assert.throws(() => clearUpdateSource(f.directory), /version/);
   assert.equal(readFileSync(path, 'utf8'), broken);
+  assert.ok(!existsSync(join(f.directory, 'backups')) || readdirSync(join(f.directory, 'backups')).length === 0, 'no backup without a change');
 });
 
 const contextFor = (profileDir: string, packaged: boolean): HandlerContext => ({
@@ -127,7 +140,7 @@ test('the Updates screen: a stale source is cleared at launch and said once; Fol
   assert.equal(status.releases?.mode, 'release');
   assert.equal(status.followsApp, true);
   assert.equal(status.sourceCleared?.source, join(f.root, 'deleted-clone'));
-  assert.match(clearedLine(status.sourceCleared!), /^Developer mode is off: the update source .* was cleared because the folder doesn't exist any more\. The bot follows the app again\. The old profile\.json is in .*backups/);
+  assert.equal(clearedLine(status.sourceCleared!, f.root), 'Cleared the old update source ~/deleted-clone (the folder is gone), so the bot follows app updates again. profile.json was backed up first.');
 
   // A checkout the owner set on purpose stays until they choose otherwise.
   f.setSource(f.checkout);
@@ -141,7 +154,7 @@ test('the Updates screen: a stale source is cleared at launch and said once; Fol
   assert.ok(existsSync(join(done!.backup, 'profile.json')));
   const after = await developer.status();
   assert.equal(after.releases?.mode, 'release');
-  assert.equal(clearedLine(after.sourceCleared!), `Developer mode is off. The bot follows the app again. The old profile.json is in ${done!.backup}.`);
+  assert.equal(clearedLine(after.sourceCleared!), 'The bot follows app updates again. profile.json was backed up first.');
   assert.equal(await developer.followApp(), null, 'nothing left to clear');
   f.unchanged();
 
@@ -153,8 +166,8 @@ test('the Updates screen: a stale source is cleared at launch and said once; Fol
   assert.equal(source.sourceCleared, null);
 });
 
-test('the follow dialog names the version the bot moves to', () => {
-  assert.match(followDialog('0.1.0-alpha.4').body, /moves to 0\.1\.0-alpha\.4 and then follows each app update/);
+test('the follow dialog says the checkout folder itself is not touched', () => {
+  assert.match(followDialog().body, /removes the checkout path .* backing up profile\.json; the folder itself isn't touched/);
 });
 
 const input = (patch: Partial<BotSyncInput> = {}): BotSyncInput => ({
@@ -171,9 +184,30 @@ test('a bot from before alpha.3 ignores the pause, so the screen does not promis
   assert.match(botLine(current.sync)!.detail, /New requests wait until then/);
 });
 
-test('release notes end with how to upgrade, and the app shows them without the rule', () => {
+test('release notes end with how to upgrade by hand, which the app leaves out', () => {
   const notes = releaseNotes('# Changelog\n\n## 0.1.0-alpha.4 (2026-11-23)\n\n- Smoother upgrades.\n\n## 0.1.0-alpha.3 (2026-11-21)\n\n- Older.\n', '0.1.0-alpha.4');
   assert.equal(notes, `- Smoother upgrades.\n\n---\n\n${UPGRADE_NOTE}`);
   assert.match(UPGRADE_NOTE, /github\.com\/isacssw\/serra#updating/);
-  assert.deepEqual(noteLines(notes).map((line) => line.text), ['Smoother upgrades.', UPGRADE_NOTE.replace(/\[([^\]]+)\]\([^)]*\)/, '$1')]);
+  assert.deepEqual(noteLines(notes).map((line) => line.text), ['Smoother upgrades.'], 'the app updates itself: the manual-install line is left out');
+});
+
+test('with a bot from before alpha.3 running a job, Updates and its log make no promise about new requests', async (t) => {
+  const f = fixture(t);
+  // alpha.2's active.json: no appVersion, no fromApp.
+  writeFileSync(join(f.directory, 'active.json'), JSON.stringify({ release: join(f.directory, 'releases/old'), label: 'dev.serra.friday' }));
+  writeFileSync(join(f.directory, 'state.json'), JSON.stringify({
+    'C0123456789:1.000': {
+      t3ThreadId: 't3-1', channel: 'C0123456789', threadTs: '1.000', requester: 'U0123456789', pendingReactionTs: null, lastPostedRunId: null,
+      watching: true, createdAt: '2026-11-21T10:00:00.000Z',
+    },
+  }));
+  const log: string[] = [];
+  const driver = { loaded: async () => true, stop: async () => {}, start: async () => {}, ready: async () => {} };
+  const { handlers, tick } = updatesService({ ...contextFor(f.directory, true), every: () => {} }, { echo: (line) => log.push(line), deploy: { driver } });
+  const before = await handlers.status();
+  assert.deepEqual(before.bot, { state: 'waiting', from: null, to: '0.1.0-alpha.4', jobs: 1, paused: false });
+  assert.doesNotMatch(botLine(before.bot)!.detail, /New requests wait/);
+  await tick();
+  assert.deepEqual(log, ['The bot restarts once the running jobs finish.']);
+  assert.deepEqual((await handlers.status()).bot, { state: 'waiting', from: null, to: '0.1.0-alpha.4', jobs: 1, paused: false }, 'still no promise once paused');
 });

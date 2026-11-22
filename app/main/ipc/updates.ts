@@ -6,7 +6,7 @@
 // Bot actions run one at a time; their log lines go to the window and are kept so the screen shows them again after
 // navigating away. Everything reads and writes the profile's files and launchd directly, so it works while the
 // daemon is stopped.
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { delimiter, dirname, join } from 'node:path';
 import {
   activateRelease, findNode, prepareNextRelease, releaseStatus, rollbackRelease, runningJobs,
@@ -85,7 +85,6 @@ export const updatesService = (context: HandlerContext, deps: UpdatesDeps = {}) 
       echo(`Cleared the update source ${done.source} (${done.reason}); the bot follows the app again. profile.json was copied to ${done.backup}.`);
     }
   };
-  migrate(context.profileDirOrNull());
 
   const line = (text: string): void => {
     for (const part of text.split('\n')) {
@@ -132,17 +131,22 @@ export const updatesService = (context: HandlerContext, deps: UpdatesDeps = {}) 
     try { jobs = runningJobs(profileDir).length; } catch { /* no state yet */ }
     let preparedReady = false;
     try { preparedReady = status.prepared !== null && preparedProblems(profileDir).length === 0; } catch { /* not ready */ }
-    // A bot from before alpha.3 (no version in active.json) doesn't know about pauses, unless it says otherwise.
-    const honorsPause = status.active?.appVersion !== undefined || readAck(profileDir, now()) !== null;
     return botSyncDecision({
-      honorsPause, mode: status.mode, follows: context.botFollowsApp === true, serviceLoaded, appVersion: context.runtime.version,
+      honorsPause: honorsPause(profileDir, status.active), mode: status.mode, follows: context.botFollowsApp === true, serviceLoaded, appVersion: context.runtime.version,
       active: status.active, prepared: status.prepared, preparedReady,
       activation: status.activation, jobs, running, failed: failures.get(profileDir) ?? null, paused, mayPause,
     });
   };
 
+  /** A bot from before alpha.3 (no version in active.json) doesn't hold requests while paused, unless its acknowledgment says so. */
+  const honorsPause = (profileDir: string, active: { appVersion?: string } | null | undefined): boolean =>
+    active?.appVersion !== undefined || readAck(profileDir, now()) !== null;
   const pause = (profileDir: string): void => {
-    if (!readPause(profileDir, now())) line('New requests wait until the bot has restarted; running jobs finish first.');
+    if (!readPause(profileDir, now())) {
+      let holds = true;
+      try { holds = honorsPause(profileDir, JSON.parse(readFileSync(join(profileDir, 'active.json'), 'utf8')) as { appVersion?: string }); } catch { /* no bot yet */ }
+      line(holds ? 'New requests wait until the bot has restarted; running jobs finish first.' : 'The bot restarts once the running jobs finish.');
+    }
     pauseIntake(profileDir, 'bot-update', { now: now() });
     ourPauses.add(profileDir);
   };
@@ -245,8 +249,11 @@ export const updatesService = (context: HandlerContext, deps: UpdatesDeps = {}) 
   const handlers: Handlers<'updates'> = {
     status: async (options) => {
       const profileDir = context.profileDirOrNull();
-      migrate(profileDir);
+      // Not in the middle of a bot action: a build may be reading the source right now.
+      if (!running) migrate(profileDir);
       const releases = profileDir ? await releaseStatus(profileDir, { ...deps.status, fetch: options?.fetch === true }) : null;
+      // Back in developer mode (the owner set a source again): the old notice no longer applies.
+      if (profileDir && releases?.mode === 'developer') cleared.delete(profileDir);
       const bot: BotSync = (await decide(profileDir, releases ?? undefined))?.sync ?? { state: 'not-installed' };
       return {
         appVersion: context.runtime.version,

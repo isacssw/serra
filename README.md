@@ -110,9 +110,7 @@ Open **Knowledge › Proposals › Start interview**. A T3 thread interviews you
 2. **Restart to update**. If Serra can't replace itself (for example it runs from the disk image), it offers **Open installer**: drag the new copy to Applications.
 3. The background bot moves to the new version on its own once no job is running. New requests wait (⌛) until it's back. A bot you stopped stays stopped: **Update now** on the same screen moves it.
 
-**Upgrading from alpha.2 or older:** alpha.2 can't find new versions, so install the latest release by hand, one last time. Quit Serra (menu bar icon › **Quit**; the bot keeps running), then do [Get the app](#1-get-the-app) and [Install it](#2-install-it), choosing **Replace**. macOS asks to allow it once more. Nothing to delete or set up again: within a few minutes the bot moves to the new version on its own, and from then on updates are automatic.
-
-If alpha.2's **Update source** pointed somewhere that isn't a Serra checkout, Serra clears it (after copying `profile.json` to the profile's `backups/`) and says so on Updates. If it points at a real checkout, Updates stays in developer mode and offers **Follow app updates**.
+**Upgrading from alpha.2 or older:** alpha.2 can't find new versions, so install the latest release by hand, one last time. Quit Serra (menu bar icon › **Quit**; the bot keeps running), then do [Get the app](#1-get-the-app) and [Install it](#2-install-it), choosing **Replace**. macOS asks to allow it once more. Nothing to delete or set up again: the bot moves to the new version on its own once no job is running, and from then on updates are automatic. If alpha.2's **Update source** is set, Updates either clears it (when it can't work) or offers **Follow app updates**.
 
 **What a reinstall or update keeps.** Your bot's data lives outside the app, so replacing `Serra.app` keeps it. The bot keeps running while the app is replaced; its switch to the new version then rewrites the service file and removes all but the last two bot builds in `releases/`.
 

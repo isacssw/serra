@@ -6,45 +6,59 @@
  * An owner who set it under alpha.2 would stay there without knowing. This module:
  *
  * - classifies the profile's update source;
- * - clears one that can never work (a missing folder, a folder that isn't a Serra checkout, or a path inside an app
- *   bundle), but only in a packaged app, after copying profile.json to `<profile>/backups/`;
- * - leaves a real Serra checkout alone (the owner may be working on Serra) and lets the owner clear it in one step.
+ * - clears one that can never work (nothing at the path, a folder with neither git nor Serra's code, or a path inside
+ *   an app bundle), but only in a packaged app, after copying profile.json to `<profile>/backups/`;
+ * - leaves Serra's code and anything it can't read alone (the owner may be working on Serra): the Updates screen
+ *   offers Follow app updates, which clears it the same way.
  *
  * Nothing else in the profile changes: knowledge, jobs, tokens and bot builds aren't touched.
  */
-import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, statSync } from 'node:fs';
+import { chmodSync, copyFileSync, lstatSync, mkdirSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { PROFILE_FILE } from './config.ts';
-import { updateProfileSection } from './profile-settings.ts';
+import { PROFILE_FILE, validateProfile, writeProfileFile } from './config.ts';
 
-/** What the profile's `updates.source` points at. */
+/** What the profile's `updates.source` points at. Only the last three are cleared on their own. */
 export type SourceKind =
-  /** A git checkout of the Serra repository: developer mode can build from it. */
+  /** Serra's own code (a clone, a worktree or a plain copy): developer mode can build from it. */
   | 'checkout'
-  /** Nothing there any more. */
+  /** Couldn't tell: unreadable (macOS privacy, permissions), a link to something absent, a disk not connected, or a
+   * git repository whose package.json isn't readable as Serra's. Left to the owner. */
+  | 'unknown'
+  /** Nothing there: no file or folder at that path. */
   | 'missing'
-  /** Inside an app bundle (like alpha.2's own `Serra.app/Contents/Resources/app`): it has no git and is replaced on update. */
+  /** Inside an app bundle (like alpha.2's own `Serra.app/Contents/Resources/app`): no git, and replaced on update. */
   | 'inside-app'
-  /** A folder, but not a git checkout of Serra. */
+  /** A folder with neither git nor Serra's package.json. */
   | 'not-a-checkout';
 
-/** Reads the source folder. Only files: no git, so it is fast enough for every status call. */
+const code = (error: unknown): string | undefined => (error as NodeJS.ErrnoException | null)?.code;
+const ABSENT = new Set(['ENOENT', 'ENOTDIR']);
+
+/**
+ * Reads the source folder, never git, so it is quick. Fails closed: only positive evidence that the source can't work
+ * gives `missing`, `inside-app` or `not-a-checkout`; any error that isn't "no such file" gives `unknown`.
+ */
 export const classifySource = (source: string): SourceKind => {
-  if (/\.app(\/|$)/.test(source)) return 'inside-app';
-  try { if (!statSync(source).isDirectory()) return 'not-a-checkout'; } catch { return 'missing'; }
-  // A clone has a `.git` folder; a worktree a `.git` file. Either way it must be Serra's own package.
-  if (!existsSync(join(source, '.git'))) return 'not-a-checkout';
-  try {
-    const name = (JSON.parse(readFileSync(join(source, 'package.json'), 'utf8')) as { name?: unknown }).name;
-    return name === 'serra' ? 'checkout' : 'not-a-checkout';
-  } catch { return 'not-a-checkout'; }
+  // A disk that isn't connected isn't gone; and a network mount could hang the read.
+  if (source.startsWith('/Volumes/')) return 'unknown';
+  if (/\.app\/Contents(\/|$)/.test(source)) return 'inside-app';
+  let link: boolean;
+  try { link = lstatSync(source).isSymbolicLink(); } catch (error) { return ABSENT.has(code(error) ?? '') ? 'missing' : 'unknown'; }
+  try { if (!statSync(source).isDirectory()) return link ? 'unknown' : 'not-a-checkout'; } catch { return 'unknown'; }
+  let name: unknown;
+  try { name = (JSON.parse(readFileSync(join(source, 'package.json'), 'utf8')) as { name?: unknown }).name; }
+  catch (error) { if (!ABSENT.has(code(error) ?? '')) return 'unknown'; }
+  if (name === 'serra') return 'checkout';
+  // A clone has a `.git` folder, a worktree a `.git` file. A repository we can't recognise (a renamed fork) stays.
+  try { lstatSync(join(source, '.git')); return 'unknown'; } catch (error) { if (!ABSENT.has(code(error) ?? '')) return 'unknown'; }
+  return 'not-a-checkout';
 };
 
 /** Why a source was cleared, in the owner's words. */
-export const sourceProblem = (kind: Exclude<SourceKind, 'checkout'>): string => ({
-  missing: "the folder doesn't exist any more",
-  'inside-app': 'it pointed inside the Serra app, which has no git and is replaced on every update',
-  'not-a-checkout': "it isn't a git checkout of Serra",
+export const sourceProblem = (kind: 'missing' | 'inside-app' | 'not-a-checkout'): string => ({
+  missing: 'the folder is gone',
+  'inside-app': 'it pointed inside the Serra app',
+  'not-a-checkout': "it isn't a copy of Serra",
 } as const)[kind];
 
 export interface ClearedSource {
@@ -80,10 +94,16 @@ const currentSource = (profileDir: string): string | null => {
  * nothing to clear. Throws, with profile.json unchanged, when the backup or the write fails.
  */
 export const clearUpdateSource = (profileDir: string, reason = '', now = new Date()): ClearedSource | null => {
-  const source = currentSource(profileDir);
-  if (source === null) return null;
+  const path = join(resolve(profileDir), PROFILE_FILE);
+  const raw = JSON.parse(readFileSync(path, 'utf8')) as Record<string, unknown> & { updates?: { source?: unknown } };
+  if (typeof raw.updates?.source !== 'string') return null;
+  const source = raw.updates.source;
+  const { updates: _cleared, ...next } = raw;
+  // Checked before anything is written, so a profile that doesn't validate gets no backup and no change.
+  validateProfile(next);
   const backup = backupProfile(profileDir, 'update-source', now);
-  updateProfileSection(profileDir, 'updates', undefined);
+  try { writeProfileFile(profileDir, next); }
+  catch (error) { rmSync(backup, { recursive: true, force: true }); throw error; }
   return { source, reason, backup, at: now.toISOString() };
 };
 
@@ -97,7 +117,6 @@ export const migrateStaleUpdateSource = (profileDir: string, { packaged, now = n
   const source = currentSource(profileDir);
   if (source === null) return null;
   const kind = classifySource(source);
-  // A checkout on a disk that isn't connected right now isn't gone.
-  if (kind === 'checkout' || (kind === 'missing' && source.startsWith('/Volumes/'))) return null;
+  if (kind === 'checkout' || kind === 'unknown') return null;
   try { return clearUpdateSource(profileDir, sourceProblem(kind), now); } catch { return null; }
 };
