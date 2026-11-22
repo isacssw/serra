@@ -48,8 +48,8 @@ export interface FakeSlackOptions {
   rewritesText?: boolean;
 }
 
-/** What Slack stores for posted text: link markup kept, other `&<>` escaped, bare URLs wrapped. */
-export const slackStoredText = (text: string): string => text.split(/(<[^<>]+>)/).map((part, index) => index % 2 === 1
+/** What Slack stores for posted text: link and mention markup (`<http…>`, `<@…>`, `<#…>`, `<!…>`) kept, other `&<>` escaped, bare URLs wrapped. */
+export const slackStoredText = (text: string): string => text.split(/(<(?:https?:|mailto:|@|#|!)[^<>]+>)/).map((part, index) => index % 2 === 1
   ? part
   : part.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replace(/https?:\/\/[^\s&]+/g, (url) => `<${url}>`)).join('');
 
