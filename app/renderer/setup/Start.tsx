@@ -128,7 +128,8 @@ export const Start = () => {
     <div className="flex flex-1 flex-col justify-center gap-8 py-6">
       <div className="flex flex-col items-center gap-3 text-center">
         <img src={serraIcon} alt="" className="size-14 rounded-[14px] shadow-[0_8px_24px_-8px_rgb(0_0_0/0.35)] motion-safe:animate-[serra-pop_420ms_ease-out]" />
-        <h1 className="text-[28px] font-semibold tracking-tight">{returning ? 'Welcome back' : 'Welcome to Serra'}</h1>
+        {/* Until detection answers (several profiles, none chosen), the heading waits rather than change under the reader. */}
+        <h1 className={cx('text-[28px] font-semibold tracking-tight', !view && !returning && 'invisible')}>{returning ? 'Welcome back' : 'Welcome to Serra'}</h1>
         <p className="max-w-sm text-[15px] text-muted">Your coding agents, one message away.</p>
       </div>
 
@@ -147,8 +148,8 @@ export const Start = () => {
             </Card>
           </section>
           <div className="flex flex-col items-center gap-3">
-            <Button variant="primary" className="h-10 px-5 text-[14px]" icon={<ArrowRight size={16} aria-hidden />} onClick={() => void navigate(FLOW[0]!.path)}>
-              Get started
+            <Button variant="primary" className="h-10 px-5 text-[14px]" onClick={() => void navigate(FLOW[0]!.path)}>
+              Get started<ArrowRight size={16} aria-hidden />
             </Button>
             <Button variant="ghost" size="sm" className="text-muted" icon={<FolderOpen size={14} aria-hidden />} onClick={() => void openFolder()} disabled={busy}>
               Open an existing profile…
@@ -162,10 +163,10 @@ export const Start = () => {
           <Found summary={selected} home={detection?.home ?? ''} />
           <div className="flex flex-col items-center gap-3">
             <Button
-              variant="primary" className="h-10 px-5 text-[14px]" icon={<ArrowRight size={16} aria-hidden />}
+              variant="primary" className="h-10 px-5 text-[14px]"
               onClick={() => void navigate(complete ? defaultPath : resumePath(selected))}
             >
-              {complete ? 'Open Serra' : 'Continue'}
+              {complete ? 'Open Serra' : 'Continue'}<ArrowRight size={16} aria-hidden />
             </Button>
             <div className="flex flex-wrap justify-center gap-1">
               {profiles.length > 1 && !detection?.pinned && (
@@ -185,8 +186,8 @@ export const Start = () => {
         <form className="flex flex-col gap-6" onSubmit={(event) => { event.preventDefault(); if (chosen) void use(chosen); }}>
           <Picker profiles={profiles} chosen={chosen} onChoose={setChosen} />
           <div className="flex flex-col items-center gap-3">
-            <Button type="submit" variant="primary" className="h-10 px-5 text-[14px]" icon={<ArrowRight size={16} aria-hidden />} disabled={!chosen || busy}>
-              {busy ? 'Opening…' : `Continue with ${profiles.find((p) => p.profileDir === chosen)?.bot?.name ?? 'this bot'}`}
+            <Button type="submit" variant="primary" className="h-10 px-5 text-[14px]" disabled={!chosen || busy}>
+              {busy ? 'Opening…' : `Continue with ${profiles.find((p) => p.profileDir === chosen)?.bot?.name ?? 'this bot'}`}<ArrowRight size={16} aria-hidden />
             </Button>
             <div className="flex flex-wrap justify-center gap-1">
               {!selected && <Button variant="ghost" size="sm" className="text-muted" onClick={() => void navigate(FLOW[0]!.path)}>Set up a new bot</Button>}

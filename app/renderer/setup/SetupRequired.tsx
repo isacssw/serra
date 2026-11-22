@@ -20,8 +20,8 @@ export const SetupRequired = ({ route }: { route: Route }) => {
           icon={<ListChecks size={18} strokeWidth={1.75} />}
           title={`Finish setup to use ${title}`}
           action={(
-            <Button variant="primary" icon={<ArrowRight size={14} aria-hidden />} onClick={() => void navigate(resumePath(progress))}>
-              {hasProfile(progress) ? 'Continue setup' : 'Set up Serra'}
+            <Button variant="primary" onClick={() => void navigate(resumePath(progress))}>
+              {hasProfile(progress) ? 'Continue setup' : 'Set up Serra'}<ArrowRight size={14} aria-hidden />
             </Button>
           )}
         >

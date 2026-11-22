@@ -13,7 +13,9 @@ export const DoneStep = () => {
   const { progress } = useSetup();
   const status = useBotStatus();
   const name = progress?.bot?.name ?? 'Your bot';
-  const running = status?.state === 'up';
+  // The same "running" setup counts: answering and connected to Slack.
+  const running = status?.state === 'up' && status.slackConnected;
+  const answering = status?.state === 'up';
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const start = async () => {
@@ -29,11 +31,13 @@ export const DoneStep = () => {
         <div className="flex flex-col items-center gap-3">
           <span aria-hidden className="grid size-14 place-items-center rounded-full border border-line-strong text-muted"><Power size={24} /></span>
           <h1 className="text-[28px] font-semibold tracking-tight">{name} is installed</h1>
-          <p className="max-w-sm text-[15px] text-muted">It isn’t running right now.</p>
+          <p className="max-w-sm text-[15px] text-muted">{answering ? 'It’s running, but not connected to Slack. Diagnostics shows why.' : 'It isn’t running right now.'}</p>
           {error && <p role="alert" className="text-[13px] text-down">{error}</p>}
         </div>
         <div className="flex flex-col items-center gap-3">
-          <Button variant="primary" className="h-10 px-5 text-[14px]" onClick={() => void start()} disabled={starting}>{starting ? 'Starting…' : `Start ${name}`}</Button>
+          {answering
+            ? <Button variant="primary" className="h-10 px-5 text-[14px]" onClick={() => void navigate('/settings/diagnostics')}>Open Diagnostics</Button>
+            : <Button variant="primary" className="h-10 px-5 text-[14px]" onClick={() => void start()} disabled={starting}>{starting ? 'Starting…' : `Start ${name}`}</Button>}
           <Button variant="ghost" size="sm" className="text-muted" onClick={() => void navigate(defaultPath)}>Open Serra</Button>
         </div>
       </div>

@@ -85,7 +85,7 @@ export const ServiceStep = () => {
         <div className="flex items-center gap-3">
           <StateIcon tone={tone} />
           <p className="min-w-0 flex-1 text-[14px] break-words" role="status">{line}</p>
-          {!running && !busy && !waiting && installed && <Button size="sm" onClick={() => void start()}>Start</Button>}
+          {!running && !disconnected && !busy && !waiting && installed && <Button size="sm" onClick={() => void start()}>Start</Button>}
           {!running && !busy && (!waiting || late) && (
             <Button size="sm" variant={installed ? 'ghost' : 'primary'} onClick={() => void install()}>
               {installed ? 'Install again' : 'Install and start'}

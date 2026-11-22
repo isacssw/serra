@@ -54,11 +54,9 @@ export const stepOpen = (progress: SetupProgress | null, id: SetupStepId): boole
   return progress.next !== null && indexOf(id) <= indexOf(progress.next);
 };
 
-/** Why a step can't be opened yet, for screen readers and the tooltip. */
-export const lockedReason = (progress: SetupProgress | null, id: SetupStepId): string => {
-  const waitingOn = progress?.next ? FLOW[indexOf(progress.next)] : FLOW[0];
-  return `Available after ${waitingOn?.short ?? 'the step before'}`;
-};
+/** Why a step can't be opened yet, for screen readers and the tooltip: the step just before it. */
+export const lockedReason = (_progress: SetupProgress | null, id: SetupStepId): string =>
+  `Available after ${FLOW[indexOf(id) - 1]?.short ?? 'the step before'}`;
 
 export const stepDone = (progress: SetupProgress | null, id: SetupStepId): boolean =>
   progress?.steps.find((step) => step.id === id)?.done === true;
@@ -127,8 +125,11 @@ export const summaryRows = (summary: ProfileSummary): SummaryRow[] => {
       value: summary.owner ? (summary.owner.slackName ? `${summary.owner.slackName} · ${summary.owner.slackUserId}` : `${summary.owner.slackUserId}, not confirmed`) : 'Not set',
       done: done('owner'),
     },
-    // Done only when it answers: installed but stopped is a step still to take.
-    { id: 'service', label: 'Service', value: summary.service === 'running' ? 'Running' : summary.service === 'installed' ? 'Installed, not running' : 'Not installed', done: summary.service === 'running' },
+    // Done once the installed bot has answered (or, for a profile not in use, is installed): the same rule as `next`.
+    {
+      id: 'service', label: 'Service', done: done('service'),
+      value: summary.service === 'running' ? 'Running' : summary.service === 'none' ? 'Not installed' : done('service') ? 'Installed' : 'Installed, hasn’t answered yet',
+    },
   ];
 };
 
@@ -239,12 +240,18 @@ export const outcomeText = (outcome: ActivationOutcome): { tone: 'up' | 'down'; 
   return { tone: 'down', text: `The bot didn’t start: ${outcome.error}. Open Updates and roll back.` };
 };
 
+/** Slack's answers that mean the token itself is wrong, as opposed to Slack, the network or the source failing. */
+const REFUSED = /\b(invalid_auth|not_authed|token_revoked|token_expired|account_inactive|not_allowed_token_type|invalid_token)\b/;
+
+/** True when Slack refused the token (paste a new one); false when the check couldn't run (try again). */
+export const tokenRefused = (error: string | null): boolean => error !== null && REFUSED.test(error);
+
 /** A token's state as its row says it. */
 export const tokenText = (token: TokenSummary, workspace: string | null): string => {
   switch (token.state) {
     case 'verified': return ['Verified', token.name === 'SLACK_BOT_TOKEN' ? workspace : null, `from ${token.where}`].filter(Boolean).join(' · ');
     case 'found': return `Found in ${token.where}`;
-    case 'rejected': return 'Slack didn’t accept this token. Paste a new one.';
+    case 'rejected': return tokenRefused(token.error) ? 'Slack didn’t accept this token. Paste a new one.' : `Couldn’t check it: ${token.error ?? 'unknown error'}`;
     default: return 'Not added yet';
   }
 };

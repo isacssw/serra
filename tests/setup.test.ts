@@ -17,7 +17,7 @@ import { isSetupIncomplete, SETUP_INCOMPLETE, SETUP_INCOMPLETE_MESSAGE, SetupInc
 import { stoppedStatusSource } from '../app/main/status.ts';
 import {
   announcement, DONE_PATH, draftErrors, lockedReason, draftRequest, draftToSave, emptyDraft, foundLine, nextPath, outcomeText, pickable, previousPath,
-  restoreDraft, resumePath, ringDash, shortPath, setupRowLabel, slackLine, startView, stepOpen, suggestId, summaryRows, tokensToPrecheck, toToken,
+  restoreDraft, resumePath, ringDash, shortPath, tokenRefused, tokenText, setupRowLabel, slackLine, startView, stepOpen, suggestId, summaryRows, tokensToPrecheck, toToken,
 } from '../app/renderer/setup/setup.logic.ts';
 import type { SecretStatus } from '../src/contracts.ts';
 import { loadConfig, readProfileFile } from '../src/config.ts';
@@ -221,11 +221,14 @@ test('the wizard takes an empty profile folder to a valid profile, an installed 
   const stopped = await call(setup.progress()) as SetupProgress;
   assert.equal(stopped.next, 'service');
   assert.equal(stopped.installed, true);
-  assert.equal(stopped.steps.find((step) => step.id === 'service')!.detail, 'Installed, not running');
+  assert.equal(stopped.steps.find((step) => step.id === 'service')!.detail, 'Installed, hasn’t answered yet');
   const up = { state: 'up', pid: 1, startedAt: '2026-11-22T00:00:00Z', slackConnected: true, counts: { needsYou: 0, running: 0 } } as const;
   ctx.status = { current: () => up, subscribe: () => () => {} };
   const done = await call(setup.progress()) as SetupProgress;
   assert.equal(done.next, null);
+  // The first answer is kept: stopped later, the bot no longer reopens setup.
+  ctx.status = stoppedStatusSource();
+  assert.equal((await call(setup.progress())).next, null);
   assert.ok(done.steps.every((step) => step.done), JSON.stringify(done.steps));
 
   // The result: a valid profile whose diagnose() passes every check, Slack mocked.
@@ -408,7 +411,8 @@ test('setup logic: where to resume, and which step comes next', () => {
   assert.equal(stepOpen(made, 'slack'), true);
   assert.equal(stepOpen(made, 'owner'), false);
   assert.equal(stepOpen(made, 'service'), false);
-  assert.equal(lockedReason(made, 'service'), 'Available after Slack');
+  assert.equal(lockedReason(made, 'service'), 'Available after Confirm you');
+  assert.equal(lockedReason(made, 'owner'), 'Available after Slack');
   // A step done out of order (an install from the CLI) stays open.
   assert.equal(stepOpen(progressWith(['profile', 'service']), 'service'), true);
   assert.equal(stepOpen(progressWith(['profile', 'slack', 'owner']), 'service'), true);
@@ -439,15 +443,16 @@ test('setup logic: the first screen welcomes, summarises what was found, or asks
     ],
     service: 'installed',
   });
-  // Installed but not answering isn't done: only the profile is.
-  assert.equal(foundLine(legacy), '1 of 4 steps already done.');
+  // An installed service whose first answer is on record (or, for another profile, that is installed) is done.
+  assert.equal(foundLine(legacy), '2 of 4 steps already done.');
+  assert.equal(summaryRows(summaryWith(['profile'], { service: 'installed' }))[3]!.value, 'Installed, hasn’t answered yet');
   assert.equal(shortPath('/Users/you/.local/share/serra/friday', '/Users/you'), '~/.local/share/serra/friday');
   assert.equal(shortPath('/Volumes/x/friday', '/Users/you'), '/Volumes/x/friday');
   assert.deepEqual(summaryRows(legacy).map((row) => [row.label, row.value, row.done]), [
     ['Profile', 'Friday · acme/project', true],
     ['Slack', '2 tokens found in .env', false],
     ['You', 'Not set', false],
-    ['Service', 'Installed, not running', false],
+    ['Service', 'Installed', true],
   ]);
   assert.equal(slackLine([{ name: 'SLACK_BOT_TOKEN', state: 'verified', where: 'Keychain', error: null }, { name: 'SLACK_APP_TOKEN', state: 'verified', where: 'Keychain', error: null }], 'acme.slack.com'), 'Connected to acme.slack.com');
   assert.equal(slackLine([{ name: 'SLACK_BOT_TOKEN', state: 'found', where: 'Keychain', error: null }, { name: 'SLACK_APP_TOKEN', state: 'missing', where: '.env', error: null }], null), 'No app token yet');
@@ -466,6 +471,11 @@ test('setup logic: found tokens are checked on their own, except 1Password ones,
   assert.deepEqual(tokensToPrecheck([status('SLACK_BOT_TOKEN', { kind: 'env' }, { verifiedAt: '2026-11-22T00:00:00Z' })]), []);
   assert.equal(toToken(status('SLACK_BOT_TOKEN', { kind: 'env' }, { set: false })).state, 'missing');
   assert.equal(toToken(status('SLACK_BOT_TOKEN', { kind: 'env' }, { error: 'invalid_auth' })).state, 'rejected');
+  // Only Slack refusing the token asks for a new one; a check that couldn't run asks for a retry and says why.
+  assert.equal(tokenRefused('Slack rejected SLACK_BOT_TOKEN: invalid_auth'), true);
+  assert.equal(tokenRefused('getaddrinfo ENOTFOUND slack.com'), false);
+  assert.equal(tokenText(toToken(status('SLACK_BOT_TOKEN', { kind: 'env' }, { error: 'token_revoked' })), null), 'Slack didn’t accept this token. Paste a new one.');
+  assert.equal(tokenText(toToken(status('SLACK_BOT_TOKEN', { kind: '1password', reference: 'op://v/i/f' }, { error: '1Password is locked' })), null), 'Couldn’t check it: 1Password is locked');
 });
 
 test('setup logic: the sidebar row and the saved draft', () => {
@@ -665,7 +675,38 @@ test('a passing check counts only while the token is still there, and a stopped 
   const pending = handlers.progress();
   setTimeout(() => { current = up; listener?.(up); }, 20);
   assert.equal((await pending).next, null);
+  current = up;
+  // Once it has answered, that is recorded: a bot stopped later is a status to fix, not setup to redo.
+  assert.match(readFileSync(join(dir, 'setup.json'), 'utf8'), /serviceAnsweredAt/);
+  current = { state: 'stopped' };
+  assert.equal((await setupHandlers(ctx, { launchAgentsDir: agents, answerWaitMs: 10 }).progress()).next, null);
+  writeFileSync(join(dir, 'setup.json'), JSON.stringify({ version: 1, owner: { slackUserId: OWNER, slackName: 'Alex', checkedAt: at } }));
+  // Answering but not connected to Slack isn't running yet.
+  current = { ...up, slackConnected: false } as never;
+  assert.equal((await setupHandlers(ctx, { launchAgentsDir: agents, answerWaitMs: 10 }).progress()).next, 'service');
   // With no answer in time, the bot counts as stopped.
   current = { state: 'stopped' };
   assert.equal((await setupHandlers(ctx, { launchAgentsDir: agents, answerWaitMs: 10 }).progress()).next, 'service');
+});
+
+test('a deleted Keychain item isn\'t connected, even with a passing check on record', async (t) => {
+  const f = fixture(t);
+  const dir = join(f.root, 'friday');
+  cliProfile(f, dir);
+  const at = '2026-11-22T00:00:00.000Z';
+  const keychain = (name: string) => ({ kind: 'keychain', service: 'dev.serra.friday', account: name });
+  writeFileSync(join(dir, 'secrets.json'), JSON.stringify({
+    version: 1, sources: { SLACK_BOT_TOKEN: keychain('SLACK_BOT_TOKEN'), SLACK_APP_TOKEN: keychain('SLACK_APP_TOKEN') },
+    checks: { SLACK_BOT_TOKEN: { verifiedAt: at, error: null }, SLACK_APP_TOKEN: { verifiedAt: at, error: null } },
+  }));
+  writeFileSync(join(f.root, 'keychain.json'), JSON.stringify({ 'dev.serra.friday/SLACK_BOT_TOKEN': BOT, 'dev.serra.friday/SLACK_APP_TOKEN': APP }));
+  const handlers = setupHandlers(context(dir), { launchAgentsDir: join(f.root, 'agents'), answerWaitMs: 0 });
+  assert.equal((await handlers.progress()).steps.find((step) => step.id === 'slack')!.done, true);
+  // The app token's item was deleted from the Keychain.
+  writeFileSync(join(f.root, 'keychain.json'), JSON.stringify({ 'dev.serra.friday/SLACK_BOT_TOKEN': BOT }));
+  const progress = await handlers.progress();
+  assert.equal(progress.next, 'slack');
+  const summary = await summarizeProfile(dir, { launchAgentsDir: join(f.root, 'agents') });
+  assert.equal(summary.steps.find((step) => step.id === 'slack')!.done, false);
+  assert.equal(summary.tokens.find((token) => token.name === 'SLACK_APP_TOKEN')!.state, 'missing');
 });

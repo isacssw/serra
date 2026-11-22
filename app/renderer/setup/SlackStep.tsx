@@ -11,7 +11,7 @@ import { SecretCard } from '../screens/Secrets.tsx';
 import { SECRET_PREFIXES, saveRequest } from '../screens/secrets.logic.ts';
 import { BrandMark, Button, cx, Input, useToast } from '../ui/index.ts';
 import { Alert, Card, errorText, StateIcon, StepFooter, StepHeader, type Tone } from './parts.tsx';
-import { FLOW, nextPath, previousPath, tokensToPrecheck, tokenText, toToken } from './setup.logic.ts';
+import { FLOW, nextPath, previousPath, tokenRefused, tokensToPrecheck, tokenText, toToken } from './setup.logic.ts';
 import { setupChanged, useSetup } from './SetupState.tsx';
 
 const step = FLOW[1]!;
@@ -24,7 +24,9 @@ const TokenRow = ({ status, checking, workspace, onChange }: { status: SecretSta
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const label = LABELS[status.name];
-  const showField = replacing || token.state === 'missing' || token.state === 'rejected';
+  // A token Slack refused needs a new value; one whose check couldn't run (offline, a locked source) only a retry.
+  const refused = token.state === 'rejected' && tokenRefused(token.error);
+  const showField = replacing || token.state === 'missing' || refused;
   const tone: Tone = checking || busy ? 'busy' : token.state === 'verified' ? 'done' : token.state === 'rejected' ? 'problem' : 'todo';
 
   const check = async () => {
@@ -62,18 +64,20 @@ const TokenRow = ({ status, checking, workspace, onChange }: { status: SecretSta
         <StateIcon tone={tone} />
         <div className="flex min-w-0 flex-1 flex-col">
           <p className="text-[14px] font-medium">{label} <span className="font-mono text-[12px] font-normal text-muted">{SECRET_PREFIXES[status.name]}…</span></p>
-          <p className={cx('text-[13px]', token.state === 'rejected' && !busy ? 'text-down' : 'text-muted')} role="status" title={token.error ?? undefined}>
+          <p className={cx('text-[13px] break-words', token.state === 'rejected' && !busy ? 'text-down' : 'text-muted')} role="status">
             {checking || busy ? 'Checking with Slack…' : tokenText(token, workspace)}
           </p>
         </div>
-        {token.state === 'found' && !checking && <Button size="sm" onClick={() => void check()} disabled={busy}>Check</Button>}
+        {(token.state === 'found' || (token.state === 'rejected' && !refused)) && !checking && (
+          <Button size="sm" onClick={() => void check()} disabled={busy}>{token.state === 'found' ? 'Check' : 'Check again'}</Button>
+        )}
         {token.state === 'verified' && !replacing && <Button size="sm" variant="ghost" onClick={() => setReplacing(true)}>Replace</Button>}
       </div>
       {showField && (
         <form className="flex items-start gap-2 pl-8" onSubmit={(event) => { event.preventDefault(); void save(); }}>
           <Input id={fieldId} aria-label={`${label} value`} type="password" autoComplete="off" spellCheck={false} className="min-w-0 flex-1"
             placeholder={`Paste the ${SECRET_PREFIXES[status.name]} token`} value={value} disabled={busy}
-            onChange={(event) => { setValue(event.target.value); setError(null); }} error={error} hint={status.source.kind === 'keychain' ? 'Stored in your Keychain. It never comes back to this window.' : `Saving moves it from ${token.where} to your Keychain.`} />
+            onChange={(event) => { setValue(event.target.value); setError(null); }} error={error} hint={status.source.kind !== 'keychain' && status.set ? `Saving moves it from ${token.where} to your Keychain.` : 'Stored in your Keychain. It never comes back to this window.'} />
           <Button type="submit" disabled={busy || !value.trim()}>Save</Button>
           {replacing && <Button variant="ghost" onClick={() => { setReplacing(false); setValue(''); setError(null); }}>Cancel</Button>}
         </form>

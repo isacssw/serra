@@ -56,7 +56,7 @@ const Rail = ({ pathname }: { pathname: string }) => {
                 </span>
                 {/* Narrow windows show the numbers only; the name stays for screen readers. */}
                 <span className="max-md:sr-only">{step.short}</span>
-                {(done || !open) && <span className="sr-only">{done ? ', done' : `, ${lockedReason(progress, step.id).toLowerCase()}`}</span>}
+                {(done || !open) && <span className="sr-only">{done ? ', done' : `, ${lockedReason(progress, step.id)}`}</span>}
               </button>
             </li>
           );

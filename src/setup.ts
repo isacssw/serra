@@ -192,6 +192,11 @@ interface SetupFile {
   version: 1;
   /** The owner member ID Slack confirmed with this bot's token, and when. */
   owner?: { slackUserId: string; slackName: string; checkedAt: string };
+  /**
+   * When the installed bot first answered, connected to Slack (SERRA-51). Setup's last step is done from then on: a
+   * bot stopped later is a status to fix, not setup to redo.
+   */
+  serviceAnsweredAt?: string;
 }
 
 export const SETUP_FILE = 'setup.json';
@@ -204,6 +209,7 @@ const readSetupFile = (profileDir: string): SetupFile => {
       version: 1,
       ...(owner && typeof owner.slackUserId === 'string' && typeof owner.slackName === 'string' && typeof owner.checkedAt === 'string'
         ? { owner: { slackUserId: owner.slackUserId, slackName: owner.slackName, checkedAt: owner.checkedAt } } : {}),
+      ...(typeof value.serviceAnsweredAt === 'string' ? { serviceAnsweredAt: value.serviceAnsweredAt } : {}),
     };
   } catch { return { version: 1 }; }
 };
@@ -339,10 +345,27 @@ export interface SetupProgress {
 
 /**
  * Where launchd keeps the bot's plist (tests pass a temp folder), and whether the daemon answers on its status
- * socket. Only the app knows that (it follows the socket); given, the service step needs the bot running, not only
+ * socket and is connected to Slack. Only the app knows that (it follows the socket); given, the service step needs the bot running, not only
  * installed. The CLI leaves it out.
  */
-export interface ServiceLookup { launchAgentsDir?: string; running?: boolean }
+export interface ServiceLookup {
+  launchAgentsDir?: string;
+  running?: boolean;
+  /**
+   * Whether each token is still where its source says (the Keychain item exists), from `secretStatus`. The app passes
+   * it; without it only `.env` values are looked at, since checking the Keychain means running `security`.
+   */
+  present?: Partial<Record<SecretName, boolean>>;
+}
+
+/** Records that the installed bot answered, connected to Slack, so setup's last step stays done (see `SetupFile`). */
+export const recordServiceAnswered = (profileDir: string, now = new Date()): void => {
+  const directory = resolve(profileDir);
+  const file = readSetupFile(directory);
+  if (file.serviceAnsweredAt) return;
+  file.serviceAnsweredAt = now.toISOString();
+  writeFileAtomic(join(directory, SETUP_FILE), JSON.stringify(file, null, 2) + '\n', { mode: 0o600 });
+};
 
 /** Whether the bot's service was installed: an activated release (`active.json`) or a plist from an older install. */
 export const serviceInstalled = (profileDir: string, profile: Profile, { launchAgentsDir }: ServiceLookup = {}): boolean => {
@@ -382,7 +405,8 @@ export const setupProgress = (profileDir: string | null, lookup: ServiceLookup =
   let sources: ReturnType<typeof readSecretsFile>['sources'] = {};
   try { sources = readSecretsFile(directory).sources; } catch { /* reported as secretsProblem */ }
   const env = readEnv(join(directory, '.env'));
-  const present = (name: SecretName): boolean => (sources[name] ? true : Boolean(env[name]?.trim()) && !/replace-me|\.\.\./.test(env[name] ?? ''));
+  const present = (name: SecretName): boolean => lookup.present?.[name]
+    ?? (sources[name] ? true : Boolean(env[name]?.trim()) && !/replace-me|\.\.\./.test(env[name] ?? ''));
   const bot = present('SLACK_BOT_TOKEN') ? checks.SLACK_BOT_TOKEN : undefined;
   const app = present('SLACK_APP_TOKEN') ? checks.SLACK_APP_TOKEN : undefined;
   const verified = (check: typeof bot): boolean => Boolean(check?.verifiedAt && !check.error);
@@ -393,8 +417,10 @@ export const setupProgress = (profileDir: string | null, lookup: ServiceLookup =
   const ownerDone = setup.owner?.slackUserId === profile.owner.slackUserId;
   add('owner', ownerDone, ownerDone ? `Slack knows ${profile.owner.slackUserId} as ${setup.owner!.slackName}` : `${profile.owner.slackUserId} not confirmed yet`);
   const installed = serviceInstalled(directory, profile, lookup);
-  const answering = lookup.running ?? true;
-  add('service', installed && answering, !installed ? 'Not installed yet' : answering ? (lookup.running ? 'Running' : 'Installed under launchd') : 'Installed, not running');
+  // Done once the installed bot has answered (recorded in setup.json), or answers now. The CLI, which can't tell,
+  // counts an installed service.
+  const answered = Boolean(setup.serviceAnsweredAt) || (lookup.running ?? true);
+  add('service', installed && answered, !installed ? 'Not installed yet' : lookup.running ? 'Running' : answered ? 'Installed under launchd' : 'Installed, hasn’t answered yet');
   return {
     profileDir: directory,
     bot: { id: profile.bot.id, name: profile.bot.name },
@@ -457,13 +483,15 @@ export const summarizeProfile = async (
   { running, secrets, ...lookup }: ServiceLookup & { secrets?: SecretOptions } = {},
 ): Promise<ProfileSummary> => {
   const directory = resolve(profileDir);
-  const progress = setupProgress(directory, running === undefined ? lookup : { ...lookup, running });
   let profile: Profile | null = null;
   try { profile = readProfileFile(directory); } catch { /* reported in progress */ }
   let tokens: TokenSummary[] = [];
+  let present: Partial<Record<SecretName, boolean>> | undefined;
   if (profile) {
     try {
-      tokens = (await secretStatus(directory, secrets)).map((status) => ({
+      const statuses = await secretStatus(directory, secrets);
+      present = Object.fromEntries(statuses.map((status) => [status.name, status.set]));
+      tokens = statuses.map((status) => ({
         name: status.name, state: tokenState(status), where: sourceLabel(status.source) as TokenSummary['where'], error: status.error,
       }));
     } catch (error) {
@@ -471,6 +499,7 @@ export const summarizeProfile = async (
       tokens = SECRET_NAMES.map((name) => ({ name, state: 'rejected', where: '.env', error: message }));
     }
   }
+  const progress = setupProgress(directory, { ...lookup, ...(present ? { present } : {}), ...(running === undefined ? {} : { running }) });
   const { installed } = progress;
   const workspace = slackWorkspace(directory)?.url.replace(/^https?:\/\//, '').replace(/\/$/, '') ?? null;
   return {

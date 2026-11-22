@@ -9,10 +9,11 @@ import { defaultProfileRoot } from '../../../src/config.ts';
 import { findNode } from '../../../src/releases.ts';
 import { scrub } from '../../../src/secrets.ts';
 import { readProfileFile } from '../../../src/config.ts';
-import type { SecretOptions } from '../../../src/secrets.ts';
+import type { SecretName } from '../../../src/contracts.ts';
+import { secretStatus, type SecretOptions } from '../../../src/secrets.ts';
 import {
-  confirmOwner, createSetupProfile, detectGithubLogin, detectProject, installService, setupProgress, slackManifest, summarizeProfile,
-  type InstallOptions, type MemberLookup, type ProfileDraft,
+  confirmOwner, createSetupProfile, detectGithubLogin, detectProject, installService, recordServiceAnswered, setupProgress, slackManifest,
+  summarizeProfile, type InstallOptions, type MemberLookup, type ProfileDraft, type SetupProgress,
 } from '../../../src/setup.ts';
 import { run } from '../../../src/t3.ts';
 import type { Handlers, SetupDetection } from '../bridge.ts';
@@ -87,14 +88,40 @@ export const setupHandlers = (context: HandlerContext, deps: SetupDeps = {}): Ha
    * yet, so with a socket present it waits a moment for the first answer instead of calling a running bot stopped.
    */
   const running = async (): Promise<boolean> => {
-    if (context.status.current().state === 'up') return true;
+    // Running means what the install step waits for: the daemon answers and is connected to Slack.
+    const live = (status: ReturnType<typeof context.status.current>): boolean => status.state === 'up' && status.slackConnected;
+    const now = context.status.current();
+    if (live(now)) return true;
+    // Up but not connected to Slack is a known answer, not a daemon still starting: no need to wait.
+    if (now.state === 'up') return false;
     const directory = context.profileDirOrNull();
     if (!directory || !existsSync(join(directory, 'status.sock'))) return false;
     return new Promise((done) => {
       let off: () => void = () => {};
-      const timer = setTimeout(() => { off(); done(context.status.current().state === 'up'); }, deps.answerWaitMs ?? 1_500);
-      off = context.status.subscribe({ status: (status) => { if (status.state === 'up') { clearTimeout(timer); off(); done(true); } }, event: () => {} });
+      const timer = setTimeout(() => { off(); done(live(context.status.current())); }, deps.answerWaitMs ?? 1_500);
+      off = context.status.subscribe({ status: (status) => { if (live(status)) { clearTimeout(timer); off(); done(true); } }, event: () => {} });
     });
+  };
+
+  /**
+   * Setup's progress for the profile in use. Keychain items are checked for presence once Slack would count as done
+   * (a deleted item isn't connected), and the bot's first answer after an install is recorded, so a bot stopped later
+   * doesn't reopen setup. The wait for a daemon to answer only happens until that first answer.
+   */
+  const progress = async (): Promise<SetupProgress> => {
+    const directory = context.profileDirOrNull();
+    if (!directory) return setupProgress(null, lookup);
+    let present: Partial<Record<SecretName, boolean>> | undefined;
+    if (setupProgress(directory, { ...lookup, running: false }).steps.find((step) => step.id === 'slack')?.done) {
+      try { present = Object.fromEntries((await secretStatus(directory, deps.secrets)).map((status) => [status.name, status.set])); }
+      catch { /* the files' view stands */ }
+    }
+    const base = { ...lookup, ...(present ? { present } : {}) };
+    const stopped = setupProgress(directory, { ...base, running: false });
+    const serviceDone = stopped.steps.find((step) => step.id === 'service')?.done === true;
+    if (serviceDone || !stopped.installed || !(await running())) return stopped;
+    recordServiceAnswered(directory);
+    return setupProgress(directory, { ...base, running: true });
   };
 
   const detect = async (): Promise<SetupDetection> => {
@@ -102,6 +129,7 @@ export const setupHandlers = (context: HandlerContext, deps: SetupDeps = {}): Ha
     const selectedDir = current ? resolve(current) : null;
     // Only the profile in use has a status socket the app follows, so only it can be called running.
     const up = selectedDir ? await running() : false;
+    if (up && selectedDir && setupProgress(selectedDir, lookup).installed) recordServiceAnswered(selectedDir);
     const options = { ...lookup, ...(deps.secrets ? { secrets: deps.secrets } : {}) };
     const others = profilesUnder(root).map((dir) => resolve(dir)).filter((dir) => dir !== selectedDir);
     return {
@@ -114,8 +142,7 @@ export const setupHandlers = (context: HandlerContext, deps: SetupDeps = {}): Ha
   };
 
   return {
-    // Setup is done only when the bot runs: installed but stopped leaves the last step open.
-    progress: async () => setupProgress(context.profileDirOrNull(), { ...lookup, running: await running() }),
+    progress,
 
     detect,
 
