@@ -78,7 +78,7 @@ export const CLI_CATALOG: readonly CliSpec[] = [
 ];
 
 /** A remote MCP server people can add in their provider, with the provider's own command. */
-export interface McpSuggestion { name: string; url: string; docs: string }
+interface McpSuggestion { name: string; url: string; docs: string }
 
 export interface Recommendation {
   id: 'github' | 'sentry' | 'atlassian' | 'linear' | 'vercel';

@@ -87,7 +87,7 @@ export const createFakeT3 = (options: FakeT3Options = {}) => {
       const current = thread(threadId);
       current.transcript.push({ role: 'user', runId: newRun(current), text: message });
     },
-    showThread: async (threadId, _bin, count = 1): Promise<T3ThreadDetail> => {
+    showThread: async (threadId, _bin, count): Promise<T3ThreadDetail> => {
       log.push('show');
       const failure = options.failShow?.();
       if (failure) throw failure;
@@ -98,7 +98,7 @@ export const createFakeT3 = (options: FakeT3Options = {}) => {
           latestRunId: current.runs ? `run-${current.runs}` : null, activeRunId: current.active,
           pendingRequestCount: current.questions.length + current.otherRequests,
         },
-        messages: current.transcript.slice(-count).map((message) => ({ ...message })),
+        messages: current.transcript.slice(-(count ?? 1)).map((message) => ({ ...message })),
       };
     },
   };

@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { writeFileAtomic, type AtomicWriteIo } from './lib/atomic.ts';
 import { homedir } from 'node:os';
-import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
+import { isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseEnv } from 'node:util';
 import { resolveConfiguredSecretSync } from './secrets.ts';

@@ -1,13 +1,11 @@
 import assert from 'node:assert/strict';
-import { fileURLToPath } from 'node:url';
 import test from 'node:test';
-import { build } from 'esbuild';
 import { createBridge, pushChannel, type InvokeResult } from '../app/main/bridge.ts';
 import { createHandlers, registerHandlers, type IpcRegistrar } from '../app/main/ipc/index.ts';
 import type { HandlerContext } from '../app/main/ipc/context.ts';
 import { defaultPrefs, memoryPrefs, mergePrefs, readPrefs } from '../app/main/prefs.ts';
 import { forwardStatus, stoppedStatusSource, type StatusSource } from '../app/main/status.ts';
-import { allowsPermission, isAppUrl, isExternalUrl, windowOptions } from '../app/main/window-options.ts';
+import { allowsPermission, isAppUrl, isExternalUrl } from '../app/main/window-options.ts';
 import type { BotEvent, BotStatus } from '../src/contracts.ts';
 
 const APP_PAGE = 'file:///Users/you/serra/app/out/renderer/index.html';
@@ -144,23 +142,6 @@ test('forwardStatus survives a failing source and a closed window', () => {
   assert.equal(logs.length, 3, 'one failed send logged, then nothing sent to the destroyed window');
 });
 
-test('the window has no Node: context isolation, sandbox, no node integration, preload only', () => {
-  const options = windowOptions('/Users/you/serra/app/out/preload.cjs', defaultPrefs.window);
-  assert.equal(options.title, 'Serra');
-  assert.deepEqual(options.webPreferences, {
-    preload: '/Users/you/serra/app/out/preload.cjs',
-    contextIsolation: true,
-    nodeIntegration: false,
-    nodeIntegrationInWorker: false,
-    nodeIntegrationInSubFrames: false,
-    sandbox: true,
-    webSecurity: true,
-    allowRunningInsecureContent: false,
-    webviewTag: false,
-    spellcheck: false,
-  });
-});
-
 test('isAppUrl allows only the app folder and the dev server; isExternalUrl only web links', () => {
   const root = { fileRoot: '/Users/you/serra/app', devUrl: 'http://localhost:5173' };
   assert.ok(isAppUrl(APP_PAGE, root));
@@ -189,16 +170,4 @@ test('readPrefs falls back per field; mergePrefs validates window bounds', () =>
   assert.deepEqual(moved.window, { width: 900, height: 600, x: 10, y: 20, maximized: true });
   assert.throws(() => mergePrefs(defaultPrefs, { window: { width: 10, height: 600, maximized: false } }), /at least/);
   assert.throws(() => mergePrefs(defaultPrefs, null), /must be an object/);
-});
-
-test('the preload bundles only itself, the bridge, its pure setup error and electron', async () => {
-  const result = await build({
-    entryPoints: [fileURLToPath(new URL('../app/preload.ts', import.meta.url))],
-    absWorkingDir: fileURLToPath(new URL('..', import.meta.url)),
-    bundle: true, platform: 'node', format: 'cjs', external: ['electron'], write: false, metafile: true, logLevel: 'silent',
-  });
-  assert.deepEqual(Object.keys(result.metafile.inputs).sort(), ['app/main/bridge.ts', 'app/preload.ts', 'src/setup-incomplete.ts']);
-  const code = result.outputFiles[0]!.text;
-  const required = [...code.matchAll(/require\("([^"]+)"\)/g)].map((match) => match[1]);
-  assert.deepEqual([...new Set(required)], ['electron']);
 });

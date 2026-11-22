@@ -19,9 +19,10 @@ export interface Clock {
 export const systemClock: Clock = {
   now: () => Date.now(),
   setTimeout: (callback, ms) => setTimeout(callback, ms),
-  clearTimeout: (timer) => clearTimeout(timer as NodeJS.Timeout | undefined),
+  // A Node timer converts to its numeric ID, which clearTimeout and clearInterval accept: no cast to Node's type.
+  clearTimeout: (timer) => clearTimeout(timer === undefined ? undefined : Number(timer)),
   setInterval: (callback, ms) => setInterval(callback, ms),
-  clearInterval: (timer) => clearInterval(timer as NodeJS.Timeout | undefined),
+  clearInterval: (timer) => clearInterval(timer === undefined ? undefined : Number(timer)),
 };
 
 /**

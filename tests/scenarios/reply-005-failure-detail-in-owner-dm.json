@@ -5,7 +5,7 @@
   ],
   "title": "a failed start in the owner's own DM shows the owner the first line of the error",
   "t3": {
-    "failStart": "t3 thread start exited 1: could not read /Users/alex/secret-project/.t3/config"
+    "failStart": "t3 thread start exited 1: could not read /Users/you/secret-project/.t3/config"
   },
   "steps": [
     {
@@ -41,7 +41,7 @@
             "count": 1,
             "args": {
               "channel": "DOWNER",
-              "text": "Something went wrong on my side.\n`t3 thread start exited 1: could not read /Users/alex/secret-project/.t3/config`"
+              "text": "Something went wrong on my side.\n`t3 thread start exited 1: could not read /Users/you/secret-project/.t3/config`"
             }
           }
         ]

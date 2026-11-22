@@ -36,7 +36,7 @@ export const isArrayOf = <T>(guard: Guard<T>): Guard<T[]> =>
 
 /** One of a fixed set of literals. */
 export const isOneOf = <const T extends readonly (string | number | boolean | null)[]>(...values: T): Guard<T[number]> =>
-  (value: unknown): value is T[number] => values.includes(value as T[number]);
+  (value: unknown): value is T[number] => (values as readonly unknown[]).includes(value);
 
 /** A record whose every value passes `guard` (the keys are any strings). */
 export const isRecordOf = <T>(guard: Guard<T>): Guard<Record<string, T>> =>

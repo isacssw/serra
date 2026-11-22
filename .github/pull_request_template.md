@@ -29,6 +29,6 @@ If the maintainer asked for this PR, link the request. -->
 For app changes, upload before and after screenshots here; don't commit them or show a real workspace. -->
 
 - [ ] No real tokens, Slack IDs, names or local paths in code, tests or screenshots
-- [ ] README, `docs/` and `CHANGELOG.md` updated if a user would notice the change
+- [ ] README or `docs/` updated if a user would notice the change (`title` checks that a feat or fix adds a `CHANGELOG.md` line)
 
 <!-- If a coding agent did the work, end with the agent and model. -->

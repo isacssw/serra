@@ -9,7 +9,7 @@ import { resumePath, hasProfile } from './setup.logic.ts';
 import { useSetup } from './SetupState.tsx';
 
 /** The screen's own title, so the sidebar item still names what opened, and one calm step back to setup. */
-export const SetupRequired = ({ route }: { route: Route }) => {
+const SetupRequired = ({ route }: { route: Route }) => {
   const navigate = useNavigate();
   const { progress } = useSetup();
   const title = route.navLabel ?? route.label;

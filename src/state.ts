@@ -47,7 +47,7 @@ const OPTIONAL: { [K in OptionalKeys<Job>]: (value: unknown) => boolean } = {
  * default, and an optional field of the wrong shape is dropped. Only a value with no T3 thread to follow is no job.
  * `repaired` says whether anything was filled in or dropped.
  */
-export const migrateJob = (key: string, value: unknown): { job: Job; repaired: boolean } | null => {
+const migrateJob = (key: string, value: unknown): { job: Job; repaired: boolean } | null => {
   if (!isRecord(value) || !isString(value.t3ThreadId)) return null;
   const split = key.indexOf(':');
   const [keyChannel, keyThread] = split === -1 ? [key, key] : [key.slice(0, split), key.slice(split + 1)];

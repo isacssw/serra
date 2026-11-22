@@ -29,7 +29,7 @@ export interface Route {
 }
 
 /** `profile`: the screen reads or writes the bot's profile folder. */
-export type SetupNeed = 'profile';
+type SetupNeed = 'profile';
 
 export const routes = [
   { id: 'jobs-needs-you', path: '/jobs/needs-you', label: 'Needs you', navLabel: 'Jobs', section: 'jobs', badge: 'needsYou', needs: 'profile', ticket: 'APP-12' },

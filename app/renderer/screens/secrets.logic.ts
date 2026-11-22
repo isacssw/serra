@@ -20,8 +20,6 @@ export const SOURCE_OPTIONS: { kind: SourceKind; label: string }[] = [
   { kind: 'env', label: 'Profile .env (fallback)' },
 ];
 
-export const sourceLabel = (kind: SourceKind): string => SOURCE_OPTIONS.find((option) => option.kind === kind)?.label ?? kind;
-
 /** "just now", "2 min ago", "3 h ago", "4 d ago". */
 export const ago = (iso: string, now: Date): string => {
   const ms = now.getTime() - Date.parse(iso);

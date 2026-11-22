@@ -26,11 +26,11 @@ import { createStore } from './state.ts';
 import { jobCounts, startStatusServer, type StatusServer } from './status-socket.ts';
 import type { IncomingMessage } from './types.ts';
 
-export const POLL_MS = 15_000;
+const POLL_MS = 15_000;
 const HELD_REACTION = 'hourglass_flowing_sand';
 
 /** Bolt's socket client connection events, so the status socket can say whether Slack is connected. */
-export interface ConnectionEvents { on(event: 'connected' | 'disconnected' | 'reconnecting', listener: () => void): unknown }
+interface ConnectionEvents { on(event: 'connected' | 'disconnected' | 'reconnecting', listener: () => void): unknown }
 
 export interface DaemonDeps {
   config: Config;

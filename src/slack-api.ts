@@ -4,6 +4,7 @@
  * the calls the code really makes.
  */
 import type { webApi } from '@slack/bolt';
+import { isRecord } from './lib/guards.ts';
 
 type WebClient = webApi.WebClient;
 
@@ -31,7 +32,7 @@ export const comparableSlackText = (text: string): string => text
 
 /** Slack's error code from a failed Web API call (`missing_scope`, `message_not_found`), else the error's message. */
 export const slackErrorCode = (error: unknown): string => {
-  const code = (error as { data?: { error?: unknown } } | null)?.data?.error;
+  const code = isRecord(error) && isRecord(error.data) ? error.data.error : undefined;
   if (typeof code === 'string') return code;
   return error instanceof Error ? error.message : String(error);
 };

@@ -32,8 +32,6 @@ export const FLOW: readonly FlowStep[] = [
 
 export const isSetupPath = (path: string): boolean => path === SETUP_PATH || path.startsWith(`${SETUP_PATH}/`);
 
-export const stepForPath = (path: string): FlowStep | null => FLOW.find((step) => step.path === path) ?? null;
-
 export const pathForStep = (id: SetupStepId): string => FLOW.find((step) => step.id === id)?.path ?? SETUP_PATH;
 
 /** Where to pick up: the first step not done, or the end. */
@@ -280,7 +278,7 @@ export const tokenText = (token: TokenSummary, workspace: string | null): string
     case 'verified': return ['Verified', token.name === 'SLACK_BOT_TOKEN' ? workspace : null, `from ${token.where}`].filter(Boolean).join(' · ');
     case 'found': return `Found in ${token.where}`;
     case 'rejected': return tokenRefused(token.error) ? refusedText(token) : `Couldn’t check it: ${plainError(token.error)}`;
-    default: return 'Not added yet';
+    case 'missing': return 'Not added yet';
   }
 };
 

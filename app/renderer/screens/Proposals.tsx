@@ -446,7 +446,8 @@ const InterviewButton = ({ autoOpen = false, onOpened }: { autoOpen?: boolean; o
     if (!autoOpen) return;
     onOpened?.();
     open();
-  }, [autoOpen]); // eslint-disable-line react-hooks/exhaustive-deps
+  // oxlint-disable-next-line react-hooks/exhaustive-deps -- opens once when the flag arrives, not on every render.
+  }, [autoOpen]);
 
 
   const start = (): void => {

@@ -11,7 +11,7 @@ export type SlackMethod =
   | 'auth.test' | 'chat.postMessage' | 'chat.update' | 'chat.delete' | 'chat.getPermalink' | 'reactions.add' | 'reactions.remove'
   | 'assistant.threads.setStatus' | 'users.info' | 'conversations.info' | 'conversations.replies' | 'files.info' | 'filesUploadV2';
 
-export interface SlackCall { method: SlackMethod; args: Record<string, unknown> }
+interface SlackCall { method: SlackMethod; args: Record<string, unknown> }
 
 /** A message as `conversations.replies` returns it. */
 export interface SlackMessage {

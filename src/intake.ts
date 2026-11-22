@@ -11,7 +11,7 @@
  * The pause carries a deadline and lapses on its own, so an app that crashed or quit mid-update can't leave the bot
  * ignoring requests. No Slack or Bolt imports: the Electron main process uses this file too.
  */
-import { appendFileSync, existsSync, readFileSync, rmSync } from 'node:fs';
+import { appendFileSync, readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { writeFileAtomic } from './lib/atomic.ts';
 import { isRecord, isTime } from './lib/guards.ts';

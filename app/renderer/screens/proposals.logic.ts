@@ -78,7 +78,7 @@ export const nextSelection = (proposals: readonly Proposal[], removed: string): 
 // Diff line model
 // ---------------------------------------------------------------------------------------------------------------
 
-export type DiffKind = 'same' | 'removed' | 'added';
+type DiffKind = 'same' | 'removed' | 'added';
 
 /** One side of a diff row: a line number (1-based in its own text), the line and whether it changed. */
 export interface DiffCell { number: number; text: string; kind: DiffKind }
@@ -175,7 +175,7 @@ export const interviewStartedText = (task: { branch: string }): string =>
 
 /** `?proposal=<path>` on the Proposals route selects that proposal. */
 export const PROPOSAL_PARAM = 'proposal';
-export const PROPOSALS_PATH = '/knowledge/proposals';
+const PROPOSALS_PATH = '/knowledge/proposals';
 
 /**
  * Picks a waiting proposal and opens it on the Proposals screen, where its diff shows next to Promote. The palette

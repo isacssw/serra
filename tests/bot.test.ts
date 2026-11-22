@@ -375,7 +375,7 @@ test('"are you there?" is answered at once without a worker, and the next messag
   await h.say(SAM, 'are you there?');
   assert.equal(h.started.length, 0);
   assert.equal(h.posts.length, 1, 'answered once');
-  h.advance(31 * 60_000);
+  await h.advance(31 * 60_000);
   await h.say(SAM, 'can you check the build?');
   assert.equal(h.started.length, 0, 'after 30 minutes the thread needs an @mention again');
   assert.equal(h.bot.ownsThread('C1', '100.001'), false);

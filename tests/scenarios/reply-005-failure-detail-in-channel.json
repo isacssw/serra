@@ -5,7 +5,7 @@
   ],
   "title": "a failed start in a channel shows nobody the raw error, not even the owner; the detail goes to the log",
   "t3": {
-    "failStart": "t3 thread start exited 1: could not read /Users/alex/secret-project/.t3/config"
+    "failStart": "t3 thread start exited 1: could not read /Users/you/secret-project/.t3/config"
   },
   "steps": [
     {

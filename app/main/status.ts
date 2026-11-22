@@ -4,7 +4,7 @@
 import type { BotEvent, BotStatus, StatusMessage } from '../../src/contracts.ts';
 import { subscribeStatus } from '../../src/status-socket.ts';
 
-export interface StatusListener {
+interface StatusListener {
   status(status: BotStatus): void;
   event(event: BotEvent): void;
 }

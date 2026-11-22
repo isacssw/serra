@@ -3,7 +3,7 @@ import { CircleAlert, CircleCheck, Info, X } from 'lucide-react';
 import { Button } from './Button.tsx';
 import { cx } from './cx.ts';
 
-export type ToastTone = 'info' | 'success' | 'error';
+type ToastTone = 'info' | 'success' | 'error';
 
 export interface ToastOptions {
   message: string;

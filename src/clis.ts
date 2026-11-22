@@ -11,7 +11,7 @@ import { requiredTools } from './mcp.ts';
 import { toolSearchPath } from './shell-path.ts';
 import { CLI_CATALOG, type CliSpec, type Recommendation } from './tool-catalog.ts';
 
-export type CliCheckState = 'yes' | 'no' | 'unknown';
+type CliCheckState = 'yes' | 'no' | 'unknown';
 
 export interface CliStatus {
   id: string;

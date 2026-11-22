@@ -19,7 +19,7 @@ import { PROFILE_SECTIONS, PROFILE_SETTINGS } from './profile-settings.ts';
 type Settings = typeof PROFILE_SETTINGS;
 
 /** The sections the daemon applies without a restart: exactly those whose `appliesWhen` is `now`. */
-export type LiveSection = { [S in keyof Settings]: Settings[S]['appliesWhen'] extends 'now' ? S : never }[keyof Settings];
+type LiveSection = { [S in keyof Settings]: Settings[S]['appliesWhen'] extends 'now' ? S : never }[keyof Settings];
 
 /**
  * How each live section reaches the running config. Keyed by `LiveSection`, so marking another section `now` in
@@ -33,7 +33,7 @@ const APPLY: { [S in LiveSection]: (config: Config, profile: Profile) => void } 
   updates: () => {},
 };
 
-export const LIVE_SECTIONS = Object.keys(APPLY) as LiveSection[];
+const LIVE_SECTIONS = Object.keys(APPLY) as LiveSection[];
 
 const isLive = (section: ProfileSection): section is LiveSection => Object.hasOwn(APPLY, section);
 

@@ -90,7 +90,7 @@ export const SecretCard = ({ status, now, onSaved, onChecked }: CardProps) => {
         >
           {SOURCE_OPTIONS.map((option) => <option key={option.kind} value={option.kind}>{option.label}</option>)}
         </select>
-        <Button onClick={check} disabled={busy !== null || dirty} title={dirty ? 'Save the new source first' : undefined}>
+        <Button onClick={() => void check()} disabled={busy !== null || dirty} title={dirty ? 'Save the new source first' : undefined}>
           {busy === 'check' ? 'Checking…' : 'Check'}
         </Button>
         <span className={cx('flex min-w-0 items-center gap-2 text-sm', line.tone === 'error' && 'text-down')} data-secret-status={line.tone}>
@@ -133,7 +133,7 @@ export const SecretCard = ({ status, now, onSaved, onChecked }: CardProps) => {
       {formError && <p role="alert" className="text-sm text-down">{formError}</p>}
       {dirty && (
         <div className="flex gap-2">
-          <Button variant="primary" onClick={save} disabled={busy !== null}>{busy === 'save' ? 'Saving…' : 'Save'}</Button>
+          <Button variant="primary" onClick={() => void save()} disabled={busy !== null}>{busy === 'save' ? 'Saving…' : 'Save'}</Button>
           <Button variant="ghost" onClick={() => { setDraft(draftFor(status)); setFormError(null); }} disabled={busy !== null}>Cancel</Button>
         </div>
       )}
@@ -176,7 +176,7 @@ export const Secrets = () => {
       actions={(
         <>
           <Badge tone={changed ? 'warn' : 'neutral'} title="The bot reads its tokens when it starts">Applies after restart</Badge>
-          <Button variant={changed ? 'primary' : 'secondary'} icon={<RotateCw size={14} aria-hidden />} onClick={restart} disabled={restarting}>
+          <Button variant={changed ? 'primary' : 'secondary'} icon={<RotateCw size={14} aria-hidden />} onClick={() => void restart()} disabled={restarting}>
             Restart
           </Button>
         </>

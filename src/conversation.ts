@@ -49,7 +49,7 @@ export interface ThreadLine {
 const quoted = (text: string): string => text.split('\n').map((line) => `> ${line}`).join('\n');
 
 /** Ends a turn nobody @mentioned the bot in. The worker may well stay quiet, so no one is waiting on it. */
-export const NO_MENTION_HINT = 'Nobody @mentioned you. If none of this needs you, reply with only `(quiet)`.';
+const NO_MENTION_HINT = 'Nobody @mentioned you. If none of this needs you, reply with only `(quiet)`.';
 
 /**
  * One worker turn for everything said in the thread since the last one, oldest first.
