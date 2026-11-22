@@ -4,6 +4,8 @@ Serra follows [Semantic Versioning](https://semver.org) once it reaches 1.0. Unt
 
 ## Unreleased
 
+- Setup is now its own full-window flow: a short welcome, then You & repo, Connect Slack, Confirm you and Install and start, with a step rail, focus on each step's heading and announcements for screen readers. It finds what already exists first: a profile made by `pnpm run setup` or an older app, tokens in `.env` or the Keychain (checked, not asked for again), the owner, and a service installed under launchd. It resumes at the first missing step, and with several profiles it asks which one. The profile form is kept if you quit halfway, and the install step waits until the bot actually answers.
+- Until setup is done, the sidebar has a **Finish setup** row with the steps left, and every screen that needs a profile shows the same calm **Finish setup** state instead of an error. Setup is also under **Serra › Set Up Serra…** in the menu bar and in ⌘K.
 - Docs: the README now starts from the released app (download, checksum, install, first run), says how updates work and what a reinstall keeps, and how to migrate from a checkout-run Serra or another self-hosted bot. Running from source moved to CONTRIBUTING.
 
 ## 0.1.0-alpha.3 (2026-11-21)

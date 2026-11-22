@@ -5,13 +5,15 @@ import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type Reac
 import { useNavigate } from 'react-router';
 import {
   CircleCheck, CircleX, CirclePause, ChevronDown, GitBranch, GitPullRequest, Hash, Layers, LoaderCircle, Radio,
-  Play, Plus, RefreshCw, TriangleAlert,
+  ListChecks, Play, Plus, RefreshCw, TriangleAlert,
 } from 'lucide-react';
 import { useSearchParams } from 'react-router';
 import type { CleanupVerdict, JobGroup } from '../../../src/contracts.ts';
 import { serra } from '../bridge.ts';
 import { routeForPath } from '../routes.ts';
 import { useBotStatus } from '../shell/live.ts';
+import { resumePath } from '../setup/setup.logic.ts';
+import { useSetup } from '../setup/SetupState.tsx';
 import { Button, Dialog, EmptyState, Page, cx, useToast } from '../ui/index.ts';
 import { registerActions } from '../commands/registry.ts';
 import {
@@ -281,6 +283,9 @@ const JobTabs = ({ sections, group, onPick }: { sections: JobSection[]; group: J
 export const Jobs = ({ group }: { group: JobGroup }) => {
   const status = useBotStatus();
   const navigate = useNavigate();
+  const setup = useSetup();
+  // Before setup is done, an empty Needs you isn't good news: say what's missing instead.
+  const setupLeft = setup.progress?.next != null;
   const { load, reload } = useJobs(status?.state);
   const now = useNow(30_000);
   const toast = useToast();
@@ -391,6 +396,16 @@ export const Jobs = ({ group }: { group: JobGroup }) => {
                   ? (
                     <EmptyState icon={<Radio size={16} strokeWidth={1.75} />} title={`Nothing here in ${channelChoices(rows, channel).find((c) => c.value === channel)?.label ?? 'this channel'}`} action={<Button size="sm" onClick={() => setChannel(null)}>Show all channels</Button>}>
                       Other channels may have jobs in this state.
+                    </EmptyState>
+                  )
+                  : setupLeft && current.group === 'needs you'
+                  ? (
+                    <EmptyState
+                      icon={<ListChecks size={18} strokeWidth={1.75} />}
+                      title="Finish setup to get requests"
+                      action={<Button size="sm" onClick={() => navigate(resumePath(setup.progress))}>Continue setup</Button>}
+                    >
+                      Requests from Slack show here once the bot is connected and running.
                     </EmptyState>
                   )
                   : (

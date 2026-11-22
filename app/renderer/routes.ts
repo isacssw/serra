@@ -21,26 +21,34 @@ export interface Route {
   nav?: false;
   /** The ticket that builds the screen, shown on its placeholder. */
   ticket: string;
+  /**
+   * What the screen needs from setup before it can show anything (SERRA-51). Until then the shell shows the shared
+   * "finish setup" state (setup/SetupRequired.tsx) in its place. Screens without it work with no profile.
+   */
+  needs?: SetupNeed;
 }
 
+/** `profile`: the screen reads or writes the bot's profile folder. */
+export type SetupNeed = 'profile';
+
 export const routes = [
-  { id: 'jobs-needs-you', path: '/jobs/needs-you', label: 'Needs you', navLabel: 'Jobs', section: 'jobs', badge: 'needsYou', ticket: 'APP-12' },
-  { id: 'jobs-running', path: '/jobs/running', label: 'Running', section: 'jobs', badge: 'running', nav: false, ticket: 'APP-12' },
-  { id: 'jobs-done', path: '/jobs/done', label: 'Done today', section: 'jobs', nav: false, ticket: 'APP-12' },
-  { id: 'new-task', path: '/jobs/new', label: 'New task', section: 'jobs', nav: false, ticket: 'APP-25' },
-  { id: 'about-me', path: '/knowledge/about', label: 'About me', section: 'knowledge', badge: 'untagged', ticket: 'SERRA-41' },
-  { id: 'proposals', path: '/knowledge/proposals', label: 'Proposals', section: 'knowledge', badge: 'proposals', ticket: 'APP-13' },
-  { id: 'pages', path: '/knowledge/pages', label: 'Pages', section: 'knowledge', badge: 'drift', ticket: 'APP-20' },
-  { id: 'brief', path: '/brief', label: 'Brief & policy', section: 'brief', ticket: 'APP-21' },
-  { id: 'settings-bot', path: '/settings/bot', label: 'Bot & Slack', section: 'settings', ticket: 'APP-14' },
-  { id: 'settings-people', path: '/settings/people', label: 'People', section: 'settings', ticket: 'APP-14' },
-  { id: 'settings-repositories', path: '/settings/repositories', label: 'Repositories', section: 'settings', ticket: 'APP-14' },
-  { id: 'settings-alerts', path: '/settings/alerts', label: 'Alerts', section: 'settings', ticket: 'APP-14' },
-  { id: 'settings-worker', path: '/settings/worker', label: 'Worker', section: 'settings', ticket: 'APP-14' },
-  { id: 'secrets', path: '/settings/secrets', label: 'Secrets', section: 'settings', ticket: 'APP-15' },
-  { id: 'tools', path: '/settings/tools', label: 'Tools', section: 'settings', ticket: 'APP-23' },
+  { id: 'jobs-needs-you', path: '/jobs/needs-you', label: 'Needs you', navLabel: 'Jobs', section: 'jobs', badge: 'needsYou', needs: 'profile', ticket: 'APP-12' },
+  { id: 'jobs-running', path: '/jobs/running', label: 'Running', section: 'jobs', badge: 'running', nav: false, needs: 'profile', ticket: 'APP-12' },
+  { id: 'jobs-done', path: '/jobs/done', label: 'Done today', section: 'jobs', nav: false, needs: 'profile', ticket: 'APP-12' },
+  { id: 'new-task', path: '/jobs/new', label: 'New task', section: 'jobs', nav: false, needs: 'profile', ticket: 'APP-25' },
+  { id: 'about-me', path: '/knowledge/about', label: 'About me', section: 'knowledge', badge: 'untagged', needs: 'profile', ticket: 'SERRA-41' },
+  { id: 'proposals', path: '/knowledge/proposals', label: 'Proposals', section: 'knowledge', badge: 'proposals', needs: 'profile', ticket: 'APP-13' },
+  { id: 'pages', path: '/knowledge/pages', label: 'Pages', section: 'knowledge', badge: 'drift', needs: 'profile', ticket: 'APP-20' },
+  { id: 'brief', path: '/brief', label: 'Brief & policy', section: 'brief', needs: 'profile', ticket: 'APP-21' },
+  { id: 'settings-bot', path: '/settings/bot', label: 'Bot & Slack', section: 'settings', needs: 'profile', ticket: 'APP-14' },
+  { id: 'settings-people', path: '/settings/people', label: 'People', section: 'settings', needs: 'profile', ticket: 'APP-14' },
+  { id: 'settings-repositories', path: '/settings/repositories', label: 'Repositories', section: 'settings', needs: 'profile', ticket: 'APP-14' },
+  { id: 'settings-alerts', path: '/settings/alerts', label: 'Alerts', section: 'settings', needs: 'profile', ticket: 'APP-14' },
+  { id: 'settings-worker', path: '/settings/worker', label: 'Worker', section: 'settings', needs: 'profile', ticket: 'APP-14' },
+  { id: 'secrets', path: '/settings/secrets', label: 'Secrets', section: 'settings', needs: 'profile', ticket: 'APP-15' },
+  { id: 'tools', path: '/settings/tools', label: 'Tools', section: 'settings', needs: 'profile', ticket: 'APP-23' },
   { id: 'updates', path: '/settings/updates', label: 'Updates', section: 'settings', ticket: 'APP-19' },
-  { id: 'diagnostics', path: '/settings/diagnostics', label: 'Diagnostics', section: 'settings', ticket: 'APP-22' },
+  { id: 'diagnostics', path: '/settings/diagnostics', label: 'Diagnostics', section: 'settings', needs: 'profile', ticket: 'APP-22' },
   { id: 'settings-appearance', path: '/settings/appearance', label: 'Appearance', section: 'settings', ticket: 'APP-28' },
 ] as const satisfies readonly Route[];
 

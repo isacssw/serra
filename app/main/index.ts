@@ -4,7 +4,7 @@ import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { app, BrowserWindow, ipcMain, nativeTheme, net, Notification, shell } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, net, Notification, shell } from 'electron';
 import { defaultProfileRoot, profileArgument } from '../../src/config.ts';
 import { pushChannel } from './bridge.ts';
 import { createHandlers, registerHandlers } from './ipc/index.ts';
@@ -24,6 +24,8 @@ import { toolPath } from './tool-path.ts';
 import { stopAll as stopToolChecks } from '../../src/exec.ts';
 import { releasesUrl } from '../../src/app-updates.ts';
 import { createAppUpdater, type AppUpdater } from './app-updater.ts';
+import { menuTemplate } from './menu.ts';
+import { SetupIncomplete } from '../../src/setup-incomplete.ts';
 
 // The build rewrites `import.meta.url` to this source file, so this is `app/` in the checkout (see app/build.ts).
 const appDir = fileURLToPath(new URL('..', import.meta.url));
@@ -129,8 +131,16 @@ const start = async (): Promise<void> => {
     profileDirOrNull,
     profileDir: () => {
       const directory = profileDirOrNull();
-      if (!directory) throw new Error('No bot profile selected. Start the app with --profile /absolute/profile/folder or BOT_PROFILE, or choose one in Settings.');
+      // The window shows its setup state for this, never the message.
+      if (!directory) throw new SetupIncomplete();
       return directory;
+    },
+    profilePinned: argument !== undefined,
+    chooseFolder: async ({ title, buttonLabel, defaultPath }) => {
+      const options = { title, buttonLabel, properties: ['openDirectory' as const, 'createDirectory' as const], ...(defaultPath && existsSync(defaultPath) ? { defaultPath } : {}) };
+      const owner = BrowserWindow.getFocusedWindow();
+      const result = owner ? await dialog.showOpenDialog(owner, options) : await dialog.showOpenDialog(options);
+      return result.canceled ? null : result.filePaths[0] ?? null;
     },
     prefs,
     status,
@@ -182,6 +192,9 @@ const start = async (): Promise<void> => {
     context.push?.('navigate', target);
   };
   app.on('second-instance', show);
+  Menu.setApplicationMenu(Menu.buildFromTemplate(menuTemplate(() => {
+    void showAt('/setup').catch((error: unknown) => console.error('[serra] could not open setup:', error));
+  })));
   // A bot switch stops the old bot before starting the new one: quitting halfway would leave none running.
   let waitingToQuit = false;
   app.on('before-quit', (event) => {

@@ -1,21 +1,17 @@
 import { launch, shot, text } from './lib.mjs';
 const { app, page, logs } = await launch({ userData: '/tmp/serra-qa/ud-wizard' });
 await page.waitForTimeout(1200);
-await page.evaluate(() => { location.hash = '/welcome'; }); await page.waitForTimeout(800);
-await page.locator('[data-setup-step="owner"]').click(); await page.waitForTimeout(500);
-const id = page.getByLabel('Owner’s Slack member ID');
-await id.fill('not-an-id'); await page.getByRole('button', { name: 'Check in Slack' }).click(); await page.waitForTimeout(800);
-console.log('BADID:', (await text(page)).split('Confirm the owner').at(-1).slice(0, 400));
-await id.fill('U0123456789'); await page.getByRole('button', { name: 'Check in Slack' }).click(); await page.waitForTimeout(5000);
-console.log('OWNER:', (await text(page)).split('Confirm the owner').at(-1).slice(0, 400));
-await shot(page, 'A9-wizard-owner-error');
+// Confirm you: with tokens that Slack rejects, the step stays open and says why. It needs the Slack step done first.
+await page.evaluate(() => { location.hash = '/setup/owner'; }); await page.waitForTimeout(1500);
+console.log('OWNER:', (await text(page)).split('Confirm it’s you').at(-1).slice(0, 400));
+await shot(page, 'A9-setup-owner');
 await page.locator('[data-setup-step="service"]').click(); await page.waitForTimeout(500);
-console.log('SERVICE PANEL:', (await text(page)).split('Install the service').at(-1).slice(0, 600));
+console.log('SERVICE STEP:', (await text(page)).split('Install and start').at(-1).slice(0, 600));
 const t0 = Date.now();
-await page.locator('[data-setup-panel] button').filter({ hasText: /Install/ }).first().click();
-for (let i = 0; i < 240; i++) { await page.waitForTimeout(1000); const t = await text(page); if (/Not installed:|Install failed|Installed and started/.test(t)) break; }
+await page.getByRole('button', { name: /Install and start|Install again/ }).click();
+for (let i = 0; i < 240; i++) { await page.waitForTimeout(1000); const t = await text(page); if (/Nothing was installed|didn’t start|Waiting for|is running/.test(t)) break; }
 console.log('took', Math.round((Date.now() - t0) / 1000), 's');
 console.log('LOG:', await page.evaluate(() => document.querySelector('[data-setup-log]')?.textContent?.slice(-2500)));
-console.log('RESULT:', (await text(page)).split('Install the service').at(-1).slice(0, 800));
-await shot(page, 'A10-wizard-install-refused-preflight');
+console.log('RESULT:', (await text(page)).split('Install and start').at(-1).slice(0, 800));
+await shot(page, 'A10-setup-install-refused-preflight');
 await app.close();

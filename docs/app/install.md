@@ -2,7 +2,7 @@
 
 Serra is in alpha. Download the `.dmg` from [GitHub Releases](https://github.com/isacssw/serra/releases) (see the [README](../../README.md#1-get-the-app)), or build it yourself as below. It has no Developer ID signature and isn't notarized, so macOS asks once before the first launch.
 
-The app can set up a new bot or manage one that already runs. Setup connects the bot to Slack, the chat channel Serra supports today. With no profile, it opens on the first-run wizard (below). A bot can still be set up from a checkout with `pnpm run setup` and `pnpm bot activate`, as in [CONTRIBUTING](../../CONTRIBUTING.md#run-a-bot-from-the-checkout-without-the-app). The app doesn't need the checkout to stay in place.
+The app can set up a new bot or manage one that already runs. Setup connects the bot to Slack, the chat channel Serra supports today. Until setup is done, it opens on setup (below). A bot can still be set up from a checkout with `pnpm run setup` and `pnpm bot activate`, as in [CONTRIBUTING](../../CONTRIBUTING.md#run-a-bot-from-the-checkout-without-the-app). The app doesn't need the checkout to stay in place.
 
 ## Build the `.dmg`
 
@@ -95,7 +95,7 @@ The app reads and writes the bot's profile folder (the one with `profile.json`, 
 
 Whatever the app starts with is saved in its preferences, so later launches from Finder or the Dock use the same profile. With one profile in the default place, there is nothing to do.
 
-With several profiles, or one somewhere else, start the app once with the folder you want:
+With several profiles, setup asks which one to use, and **Open another profile…** picks one somewhere else. Both are saved the same way. To pin a profile from the command line instead (setup then can't switch it):
 
 ```sh
 open -a Serra --args --profile "$HOME/.local/share/serra/<bot-id>"
@@ -103,17 +103,18 @@ open -a Serra --args --profile "$HOME/.local/share/serra/<bot-id>"
 
 Preferences live in `~/Library/Application Support/serra/prefs.json` (`profileDir`). To make the app forget the profile, quit it and remove that file.
 
-Without a profile the window still opens and the header reads **Serra · stopped**; the screens that need a profile say so.
+Without a profile the app opens on setup. Skipped, every screen that needs a profile shows the same **Finish setup** state with a way back.
 
-## First-run wizard
+## Setup
 
-Without a profile, the window opens on **Welcome to Serra**, which replaces `pnpm run setup` and the Slack manifest steps. Later it is under **Diagnostics › Setup guide** and in ⌘K. Its five steps can be left and resumed; the list shows which are done, read from the profile's files:
+Until every step is done, the window opens on setup, a full-window flow without the sidebar, which replaces `pnpm run setup` and the Slack manifest steps. It is also the sidebar's **Finish setup** row (with a ring of the steps done), **Serra › Set Up Serra…** in the menu bar, **Diagnostics › Setup** and ⌘K. Each step reads its state from the profile's files, so setup can be left at any point and resumed; the profile form is saved in the app's preferences as it's typed.
 
-1. **Create the profile**: bot name and ID, your name, Slack member ID and GitHub login, and the repository (its base branch and GitHub name are read from Git). The folder defaults to `~/.local/share/serra/<bot-id>`, and the app remembers it.
-2. **Create the Slack app**: **Open Slack** opens Slack's "create an app from a manifest" page with the bot's `manifest.json` filled in. Install the app, copy the `xoxb-` bot token, and generate an app-level `xapp-` token with `connections:write`.
-3. **Connect the tokens**: the same cards as the Secrets screen. Keychain stores a pasted value; 1Password keeps it in the vault and the bot reads the reference. **Check** must pass for both.
-4. **Confirm the owner**: the member ID is looked up in Slack with the bot token, so a typo shows now rather than when the bot first needs you. The result is kept in `setup.json` (no token).
-5. **Install the service**: prepares a release from the app's code, runs every Diagnostics check and only then installs and starts the launchd service. A failing check leaves nothing installed. This needs `pnpm` next to the Node it finds, as Updates › Prepare does.
+The first screen looks for what already exists: the profile in use and every profile under `~/.local/share/serra/`. For each it shows the profile, where the Slack tokens are (`.env`, Keychain or 1Password; presence only, and 1Password isn't opened), whether the owner was confirmed and whether the service is installed (an activated release or a launchd plist) and running (it answers on `status.sock`). It then resumes at the first missing step. With several profiles it asks which one.
+
+1. **You & repo**: your name, GitHub login and Slack member ID, the repository folder (its base branch and GitHub name are read from Git), and the bot's name. The ID, remote, profile folder and T3 CLI are under **More options**. The folder defaults to `~/.local/share/serra/<bot-id>`, and the app remembers it.
+2. **Connect Slack**: **Create in Slack** opens Slack's "create an app from a manifest" page with the bot's `manifest.json` filled in. Paste the `xoxb-` bot token and the `xapp-` app-level token (`connections:write`); each is stored in the Keychain and checked with Slack. Tokens already in `.env` or the Keychain are checked as the step opens and shown for you to confirm; 1Password ones wait for **Check**, so nothing asks to unlock. **Use 1Password or .env instead** shows the same editors as the Secrets screen.
+3. **Confirm you**: the owner's member ID is looked up in Slack with the bot token as the step opens, so a typo shows now rather than when the bot first needs you. The result is kept in `setup.json` (no token).
+4. **Install and start**: prepares a release from the app's code, runs every Diagnostics check and only then installs and starts the launchd service, then waits until the bot answers. A failing check leaves nothing installed. This needs `pnpm` next to the Node it finds, as Updates › Prepare does.
 
 ## Live status
 

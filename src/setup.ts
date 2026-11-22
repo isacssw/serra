@@ -12,7 +12,8 @@
  * No token value is returned or written to `setup.json`. Errors from Slack are scrubbed before they are thrown.
  */
 import { chmodSync, cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { isAbsolute, join, resolve } from 'node:path';
+import { homedir } from 'node:os';
+import { basename, isAbsolute, join, resolve } from 'node:path';
 import { createInterface } from 'node:readline/promises';
 import { stdin, stdout } from 'node:process';
 import { pathToFileURL } from 'node:url';
@@ -21,7 +22,8 @@ import type { DeployLog, DeployOptions, Prepared, PrepareOptions } from './deplo
 import { diagnose, type DiagnoseOptions } from './doctor.ts';
 import { updateProfileSection } from './profile-settings.ts';
 import { activateRelease, prepareNextRelease, type ActivationOutcome } from './releases.ts';
-import { readSecretsFile, scrub } from './secrets.ts';
+import type { SecretName, SecretStatus } from './contracts.ts';
+import { readSecretsFile, scrub, SECRET_NAMES, secretStatus, slackWorkspace, sourceLabel, type SecretOptions } from './secrets.ts';
 import { run } from './t3.ts';
 
 /** How to start the knowledge interview (docs/knowledge-interview.md) for a profile. */
@@ -310,12 +312,15 @@ export const installService = async (profileDir: string, options: InstallOptions
 // Progress
 // ---------------------------------------------------------------------------------------------------------------
 
-export type SetupStepId = 'profile' | 'slackApp' | 'tokens' | 'owner' | 'service';
+/** The setup steps, in order. The Slack step covers the app and both of its tokens. */
+export type SetupStepId = 'profile' | 'slack' | 'owner' | 'service';
+
+export const SETUP_STEP_IDS: readonly SetupStepId[] = ['profile', 'slack', 'owner', 'service'];
 
 export interface SetupStep {
   id: SetupStepId;
   done: boolean;
-  /** One line about the step's state, for the wizard's step list. */
+  /** One line about the step's state. */
   detail: string;
 }
 
@@ -330,26 +335,38 @@ export interface SetupProgress {
   next: SetupStepId | null;
 }
 
+/** Where launchd keeps the bot's plist. Tests pass a temp folder. */
+export interface ServiceLookup { launchAgentsDir?: string }
+
+/** Whether the bot's service was installed: an activated release (`active.json`) or a plist from an older install. */
+export const serviceInstalled = (profileDir: string, profile: Profile, { launchAgentsDir }: ServiceLookup = {}): boolean => {
+  if (existsSync(join(profileDir, 'active.json'))) return true;
+  const label = profile.serviceLabel ?? `dev.serra.${profile.bot.id}`;
+  return existsSync(join(launchAgentsDir ?? join(homedir(), 'Library/LaunchAgents'), `${label}.plist`));
+};
+
 /**
  * Which steps are done, from the profile's files only: `profile.json`, the last token checks in `secrets.json`,
- * `setup.json` and `active.json`. Runs no `security`, `op`, Slack or launchd call, so it is cheap to call often.
+ * `setup.json`, `active.json` and the launchd plist. Runs no `security`, `op`, Slack or launchd call, so it is cheap
+ * to call often. Tokens that are present but never checked don't finish the Slack step: `summarizeProfile` reports
+ * them as found, so the window can check them instead of asking for them again.
  */
-export const setupProgress = (profileDir: string | null): SetupProgress => {
+export const setupProgress = (profileDir: string | null, lookup: ServiceLookup = {}): SetupProgress => {
   const directory = profileDir ? resolve(profileDir) : null;
   let profile: Profile | null = null;
   let profileProblem = 'No profile yet';
   if (directory && existsSync(join(directory, 'profile.json'))) {
     try { profile = readProfileFile(directory); }
-    catch (error) { profileProblem = `profile.json is invalid: ${error instanceof Error ? error.message : String(error)}`; }
+    catch (error) { profileProblem = `profile.json can't be read: ${error instanceof Error ? error.message : String(error)}`; }
   }
   const steps: SetupStep[] = [];
   const add = (id: SetupStepId, done: boolean, detail: string): void => { steps.push({ id, done, detail }); };
   if (!directory || !profile) {
     add('profile', false, profileProblem);
-    for (const id of ['slackApp', 'tokens', 'owner', 'service'] as const) add(id, false, 'Create the profile first');
+    for (const id of ['slack', 'owner', 'service'] as const) add(id, false, 'Needs a profile first');
     return { profileDir: directory, bot: null, owner: null, steps, next: 'profile' };
   }
-  add('profile', true, directory);
+  add('profile', true, profile.bot.name);
   let checks: ReturnType<typeof readSecretsFile>['checks'] = {};
   let secretsProblem: string | null = null;
   try { checks = readSecretsFile(directory).checks; }
@@ -357,21 +374,97 @@ export const setupProgress = (profileDir: string | null): SetupProgress => {
   const bot = checks.SLACK_BOT_TOKEN;
   const app = checks.SLACK_APP_TOKEN;
   const verified = (check: typeof bot): boolean => Boolean(check?.verifiedAt && !check.error);
-  add('slackApp', verified(bot), verified(bot) ? 'Slack accepted the bot token' : 'Create the Slack app, install it and copy its tokens');
-  const tokensDone = verified(bot) && verified(app);
-  add('tokens', tokensDone, secretsProblem ?? (tokensDone ? 'Both tokens checked with Slack'
-    : bot?.error || app?.error || `${[!verified(bot) && 'bot token', !verified(app) && 'app token'].filter(Boolean).join(' and ')} not checked yet`));
+  const slackDone = verified(bot) && verified(app);
+  add('slack', slackDone, secretsProblem ?? (slackDone ? 'Both tokens checked with Slack'
+    : bot?.error || app?.error || `${[!verified(bot) && 'Bot token', !verified(app) && 'app token'].filter(Boolean).join(' and ')} not checked yet`));
   const setup = readSetupFile(directory);
   const ownerDone = setup.owner?.slackUserId === profile.owner.slackUserId;
-  add('owner', ownerDone, ownerDone ? `Slack knows ${profile.owner.slackUserId} as ${setup.owner!.slackName}` : `Confirm ${profile.owner.slackUserId} in Slack`);
-  const active = existsSync(join(directory, 'active.json'));
-  add('service', active, active ? 'Installed under launchd' : 'Not installed yet');
+  add('owner', ownerDone, ownerDone ? `Slack knows ${profile.owner.slackUserId} as ${setup.owner!.slackName}` : `${profile.owner.slackUserId} not confirmed yet`);
+  const installed = serviceInstalled(directory, profile, lookup);
+  add('service', installed, installed ? 'Installed under launchd' : 'Not installed yet');
   return {
     profileDir: directory,
     bot: { id: profile.bot.id, name: profile.bot.name },
     owner: { name: profile.owner.name, slackUserId: profile.owner.slackUserId, slackName: ownerDone ? setup.owner!.slackName : null },
     steps,
     next: steps.find((step) => !step.done)?.id ?? null,
+  };
+};
+
+// ---------------------------------------------------------------------------------------------------------------
+// Detection: what an existing profile already has
+// ---------------------------------------------------------------------------------------------------------------
+
+/**
+ * A token as setup sees it. `found`: a value is there (`.env` or Keychain) or a 1Password reference is set, but Slack
+ * hasn't checked it yet. `rejected`: the last check or read failed.
+ */
+export type TokenState = 'verified' | 'found' | 'missing' | 'rejected';
+
+export interface TokenSummary {
+  name: SecretName;
+  state: TokenState;
+  /** Where the token is read from. */
+  where: 'Keychain' | '1Password' | '.env';
+  error: string | null;
+}
+
+/** `running`: the daemon answers on its status socket. `installed`: launchd has it, but it isn't answering. */
+export type ServiceState = 'running' | 'installed' | 'none';
+
+/** One profile as the setup's first screen summarises it: what is there, and the first step still missing. */
+export interface ProfileSummary extends SetupProgress {
+  profileDir: string;
+  /** Why profile.json can't be used, or null. */
+  problem: string | null;
+  /** `owner/repo`, or the repository folder's name. */
+  repo: string | null;
+  /** The Slack workspace the bot token last checked against, like `acme.slack.com`. */
+  workspace: string | null;
+  tokens: TokenSummary[];
+  service: ServiceState;
+}
+
+export const tokenState = (status: SecretStatus): TokenState => {
+  if (status.verifiedAt && !status.error) return 'verified';
+  if (status.error) return 'rejected';
+  return status.set ? 'found' : 'missing';
+};
+
+/**
+ * Summarises a profile folder for the setup's first screen: `setupProgress`, plus where each token is and whether
+ * the service runs. Reads Keychain item presence (never a value) and never opens 1Password, so it doesn't prompt.
+ * `running` comes from the caller, which follows the selected profile's status socket.
+ */
+export const summarizeProfile = async (
+  profileDir: string,
+  { running = false, secrets, ...lookup }: ServiceLookup & { running?: boolean; secrets?: SecretOptions } = {},
+): Promise<ProfileSummary> => {
+  const directory = resolve(profileDir);
+  const progress = setupProgress(directory, lookup);
+  let profile: Profile | null = null;
+  try { profile = readProfileFile(directory); } catch { /* reported in progress */ }
+  let tokens: TokenSummary[] = [];
+  if (profile) {
+    try {
+      tokens = (await secretStatus(directory, secrets)).map((status) => ({
+        name: status.name, state: tokenState(status), where: sourceLabel(status.source) as TokenSummary['where'], error: status.error,
+      }));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      tokens = SECRET_NAMES.map((name) => ({ name, state: 'rejected', where: '.env', error: message }));
+    }
+  }
+  const installed = progress.steps.find((step) => step.id === 'service')?.done === true;
+  const workspace = slackWorkspace(directory)?.url.replace(/^https?:\/\//, '').replace(/\/$/, '') ?? null;
+  return {
+    ...progress,
+    profileDir: directory,
+    problem: profile ? null : progress.steps[0]?.detail ?? null,
+    repo: profile ? profile.project.githubRepo || basename(profile.project.path) : null,
+    workspace,
+    tokens,
+    service: installed ? (running ? 'running' : 'installed') : 'none',
   };
 };
 

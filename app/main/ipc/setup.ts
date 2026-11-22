@@ -1,15 +1,22 @@
-// First-run wizard (APP-27), on the setup service in `src/setup.ts`. Handlers check input, call the service and
-// return plain data. Tokens are set through the `secrets` namespace (APP-15), so no value passes through here; the
+// Setup (APP-27, SERRA-51), on the setup service in `src/setup.ts`. Handlers check input, call the service and
+// return plain data. `detect` summarises the profile in use and any others found, so the window can resume a setup
+// made by the CLI or an older app instead of starting over. Tokens are set through the `secrets` namespace (APP-15), so no value passes through here; the
 // owner check resolves the bot token in this process and only Slack's answer, scrubbed, goes back to the window.
-import { delimiter, dirname, resolve } from 'node:path';
+import { existsSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { delimiter, dirname, isAbsolute, join, resolve } from 'node:path';
 import { defaultProfileRoot } from '../../../src/config.ts';
 import { findNode } from '../../../src/releases.ts';
 import { scrub } from '../../../src/secrets.ts';
+import { readProfileFile } from '../../../src/config.ts';
+import type { SecretOptions } from '../../../src/secrets.ts';
 import {
-  confirmOwner, createSetupProfile, detectGithubLogin, detectProject, installService, setupProgress, slackManifest,
+  confirmOwner, createSetupProfile, detectGithubLogin, detectProject, installService, setupProgress, slackManifest, summarizeProfile,
   type InstallOptions, type MemberLookup, type ProfileDraft,
 } from '../../../src/setup.ts';
-import type { Handlers } from '../bridge.ts';
+import { run } from '../../../src/t3.ts';
+import type { Handlers, SetupDetection } from '../bridge.ts';
+import { profilesUnder } from '../profile-location.ts';
 import { mergePrefs } from '../prefs.ts';
 import type { HandlerContext } from './context.ts';
 
@@ -24,6 +31,12 @@ export interface SetupDeps {
   lookup?: MemberLookup;
   /** GitHub login detection (tests: a fake, so they don't run `gh`). */
   githubLogin?: () => Promise<string>;
+  /** The name in the owner's Git config (tests: a fake). */
+  gitName?: () => Promise<string>;
+  /** Keychain tools for token presence (tests: a fake `security`). */
+  secrets?: SecretOptions;
+  /** Where launchd plists live (tests: a temp folder). */
+  launchAgentsDir?: string;
   /** Where log lines go besides the window (default: the main process's console). */
   echo?: (line: string) => void;
 }
@@ -65,10 +78,56 @@ export const setupHandlers = (context: HandlerContext, deps: SetupDeps = {}): Ha
     }
   };
 
-  return {
-    progress: () => setupProgress(context.profileDirOrNull()),
+  const lookup = deps.launchAgentsDir ? { launchAgentsDir: deps.launchAgentsDir } : {};
 
-    defaults: async () => ({ githubLogin: await (deps.githubLogin ?? detectGithubLogin)(), profileRoot: root }),
+  const detect = async (): Promise<SetupDetection> => {
+    const current = context.profileDirOrNull();
+    const selectedDir = current ? resolve(current) : null;
+    // Only the profile in use has a status socket the app follows, so only it can be called running.
+    const running = context.status.current().state === 'up';
+    const options = { ...lookup, ...(deps.secrets ? { secrets: deps.secrets } : {}) };
+    const others = profilesUnder(root).map((dir) => resolve(dir)).filter((dir) => dir !== selectedDir);
+    return {
+      selected: selectedDir ? await summarizeProfile(selectedDir, { ...options, running }) : null,
+      others: await Promise.all(others.map((dir) => summarizeProfile(dir, options))),
+      pinned: context.profilePinned === true,
+      profileRoot: root,
+    };
+  };
+
+  return {
+    progress: () => setupProgress(context.profileDirOrNull(), lookup),
+
+    detect,
+
+    useProfile: async (directory) => {
+      if (typeof directory !== 'string' || !isAbsolute(directory)) throw new Error('Choose a profile folder.');
+      const target = resolve(directory);
+      if (!existsSync(join(target, 'profile.json'))) throw new Error(`${target} has no profile.json. Choose the folder that holds it.`);
+      readProfileFile(target); // Throws a clear message for an invalid profile.
+      const current = context.profileDirOrNull();
+      if (context.profilePinned && current && resolve(current) !== target) {
+        throw new Error('Serra was started with a profile given on the command line, so it can’t switch here. Quit and open it without --profile.');
+      }
+      context.prefs.set(mergePrefs(context.prefs.get(), { profileDir: target }));
+      return detect();
+    },
+
+    chooseFolder: async (purpose) => {
+      if (purpose !== 'repository' && purpose !== 'profile') throw new Error('Unknown folder purpose.');
+      if (!context.chooseFolder) return null;
+      return context.chooseFolder(purpose === 'repository'
+        ? { title: 'Choose the repository', buttonLabel: 'Use this repository', defaultPath: homedir() }
+        : { title: 'Choose a Serra profile folder', buttonLabel: 'Use this profile', defaultPath: root });
+    },
+
+    defaults: async () => {
+      const [githubLogin, ownerName] = await Promise.all([
+        (deps.githubLogin ?? detectGithubLogin)(),
+        (deps.gitName ?? (() => run('git', ['config', '--global', 'user.name'], { timeoutMs: 5_000 }).then((v) => v.trim())))().catch(() => ''),
+      ]);
+      return { githubLogin, ownerName, profileRoot: root };
+    },
 
     detectProject: (path, remote) => {
       if (typeof path !== 'string') throw new Error('The repository path must be text.');
@@ -79,12 +138,12 @@ export const setupHandlers = (context: HandlerContext, deps: SetupDeps = {}): Ha
     create: async (value) => {
       const directory = await createSetupProfile(parseDraft(value), { root });
       // Remember the new profile so the app (and its next launch from Finder) manages it.
-      context.prefs.set(mergePrefs(context.prefs.get(), { profileDir: directory }));
+      context.prefs.set(mergePrefs(context.prefs.get(), { profileDir: directory, setupDraft: null }));
       const current = context.profileDirOrNull();
       if (!current || resolve(current) !== directory) {
         throw new Error(`Profile created at ${directory}, but the app was started with --profile ${current}. Quit and open Serra without --profile to finish setting it up.`);
       }
-      return setupProgress(directory);
+      return setupProgress(directory, lookup);
     },
 
     manifest: () => slackManifest(context.profileDir()),

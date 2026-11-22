@@ -29,7 +29,7 @@ export const Button = ({ variant = 'secondary', size = 'md', icon, className, ch
     className={cx(
       'inline-flex shrink-0 items-center justify-center rounded-md border font-medium whitespace-nowrap transition-colors duration-150',
       'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus',
-      'disabled:pointer-events-none disabled:opacity-40',
+      'disabled:pointer-events-none disabled:opacity-40 aria-disabled:cursor-not-allowed aria-disabled:opacity-40',
       variants[variant], sizes[size], className,
     )}
     {...rest}

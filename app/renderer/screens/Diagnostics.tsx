@@ -2,14 +2,14 @@
 // or its Slack connection changes, plus the tail of the daemon's log. Token values never reach this window: main
 // scrubs every detail and log line first.
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { CircleAlert, CircleCheck, Copy, RefreshCw, Sparkles, Stethoscope } from 'lucide-react';
+import { CircleAlert, CircleCheck, Copy, ListChecks, RefreshCw, Stethoscope } from 'lucide-react';
 import { useNavigate } from 'react-router';
 import type { Diagnostic } from '../../../src/contracts.ts';
 import type { AppInfo } from '../../main/bridge.ts';
 import { serra } from '../bridge.ts';
 import { useBotStatus } from '../shell/live.ts';
 import { Button, cx, Page, useToast } from '../ui/index.ts';
-import { WELCOME_PATH } from './Welcome/welcome.logic.ts';
+import { SETUP_PATH } from '../setup/setup.logic.ts';
 import {
   DEFAULT_LOG_LINES, LOG_LINE_CHOICES, reportText, runtimeLine, statusKey, summarize,
 } from './diagnostics.logic.ts';
@@ -131,7 +131,7 @@ export const Diagnostics = () => {
               Checked {checks.checkedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
             </span>
           )}
-          <Button icon={<Sparkles size={14} aria-hidden />} onClick={() => void navigate(WELCOME_PATH)} title="The first-run wizard: profile, Slack app, tokens, owner and service">Setup guide</Button>
+          <Button icon={<ListChecks size={14} aria-hidden />} onClick={() => void navigate(SETUP_PATH)} title="Profile, Slack, owner and service, step by step">Setup</Button>
           <Button icon={<Copy size={14} aria-hidden />} onClick={() => void copy()} disabled={!checks.results}>Copy report</Button>
           <Button variant="primary" icon={<RefreshCw size={14} aria-hidden className={cx(checks.running && 'animate-spin')} />} onClick={refresh} disabled={checks.running}>
             {checks.running ? 'Checking…' : 'Run checks'}

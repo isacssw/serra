@@ -228,13 +228,13 @@ test('readPrefs falls back per field; mergePrefs validates window bounds', () =>
   assert.throws(() => mergePrefs(defaultPrefs, null), /must be an object/);
 });
 
-test('the preload bundles only itself, the bridge and electron', async () => {
+test('the preload bundles only itself, the bridge, its pure setup error and electron', async () => {
   const result = await build({
     entryPoints: [fileURLToPath(new URL('../app/preload.ts', import.meta.url))],
     absWorkingDir: fileURLToPath(new URL('..', import.meta.url)),
     bundle: true, platform: 'node', format: 'cjs', external: ['electron'], write: false, metafile: true, logLevel: 'silent',
   });
-  assert.deepEqual(Object.keys(result.metafile.inputs).sort(), ['app/main/bridge.ts', 'app/preload.ts']);
+  assert.deepEqual(Object.keys(result.metafile.inputs).sort(), ['app/main/bridge.ts', 'app/preload.ts', 'src/setup-incomplete.ts']);
   const code = result.outputFiles[0]!.text;
   const required = [...code.matchAll(/require\("([^"]+)"\)/g)].map((match) => match[1]);
   assert.deepEqual([...new Set(required)], ['electron']);

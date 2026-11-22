@@ -58,21 +58,22 @@ Serra lives in the menubar. Details, and what to do if macOS says the app "is da
 
 ## 3. First run
 
-With no bot set up yet, Serra opens on **Welcome to Serra**. Five steps; you can leave and come back, and finished steps stay done.
+Until setup is done, Serra opens on its own full-window setup: a short welcome, then four steps. You can leave at any point (**Skip for now** appears once the profile exists) and come back from the sidebar's **Finish setup** row, ⌘K, or **Serra › Set Up Serra…** in the menu bar. Finished steps stay done, and a half-typed form is kept.
+
+If you already have a profile (from `pnpm run setup`, an older app, or a setup left halfway), Serra finds it, shows what it already has (for example "2 tokens found in .env") and picks up at the first missing step. With several profiles, it asks which one; **Open another profile…** picks a folder elsewhere.
 
 | Step | What it asks for | Where to find it |
 |---|---|---|
-| 1. Create the profile | Bot name and ID (e.g. `Friday` / `friday`), your name, your **Slack member ID**, your GitHub login, your repository folder. Base branch and GitHub repo are read from Git. | Member ID: in Slack, click your picture › **Profile** › **⋮** › **Copy member ID** (looks like `U0123456789`). GitHub login: `gh api user -q .login`. |
-| 2. Create the Slack app | Nothing to type: **Open Slack** opens Slack's "create from manifest" page with your bot's manifest filled in. Create it and **Install to Workspace**. | [api.slack.com/apps](https://api.slack.com/apps) |
-| 3. Connect the tokens | The **bot token** (`xoxb-…`) and the **app-level token** (`xapp-…`). Stored in the macOS Keychain, or as a 1Password reference. **Check** must pass for both. | Bot token: your app › **OAuth & Permissions** › Bot User OAuth Token. App token: **Basic Information › App-Level Tokens** › Generate, with the `connections:write` scope. |
-| 4. Confirm the owner | Looks up your member ID in Slack, so a typo shows now. | — |
-| 5. Install the service | Runs every check, then installs and starts the bot as a background service (launchd). If a check fails, nothing is installed and it tells you what to fix. | — |
+| 1. You & repo | Your name, GitHub login and **Slack member ID**, the repository folder (**Choose…**), and the bot's name (e.g. `Friday`). Your name, GitHub login, base branch and GitHub repo are filled in when Serra can find them. | Member ID: in Slack, click your picture › **Profile** › **⋮** › **Copy member ID** (looks like `U0123456789`). |
+| 2. Connect Slack | **Create in Slack** opens Slack's "create from manifest" page with your bot's manifest filled in. Create it and **Install to Workspace**, then paste the **bot token** (`xoxb-…`) and the **app-level token** (`xapp-…`); each is stored in the Keychain and checked with Slack. Tokens already in `.env` or the Keychain are checked for you. **Use 1Password or .env instead** offers the other sources. | Bot token: your app › **Install App** (or **OAuth & Permissions**). App token: **Basic Information › App-Level Tokens** › Generate, with the `connections:write` scope. |
+| 3. Confirm you | Nothing to type: Slack looks up your member ID with the bot token, so a typo shows now. | — |
+| 4. Install and start | Runs every check, then installs and starts the bot as a background service (launchd), and waits until it answers. If a check fails, nothing is installed and it tells you what to fix. | — |
 
-The wizard doesn't ask for Claude or Codex keys: the bot uses whatever provider is signed in inside T3 Code. Settings › **Tools** shows which providers and MCP servers the jobs will have.
+Setup doesn't ask for Claude or Codex keys: the bot uses whatever provider is signed in inside T3 Code. Settings › **Tools** shows which providers and MCP servers the jobs will have.
 
 Then try it: invite the bot to a test channel (`/invite @friday`) and ask `@friday what does this repository do?`. You get 👀, then an answer in the thread. Reply in the thread to continue.
 
-If something fails, open **Settings › Diagnostics**: each check says PASS or FAIL with the fix. The wizard stays under **Diagnostics › Setup guide**.
+If something fails, open **Settings › Diagnostics**: each check says PASS or FAIL with the fix. Setup stays under **Serra › Set Up Serra…** and **Diagnostics › Setup**.
 
 ## 4. Teach it how you work (optional)
 
@@ -104,14 +105,10 @@ Open **Knowledge › Proposals › Start interview**. A T3 thread interviews you
 Your profile already works with the app; there's nothing to copy.
 
 1. [Get](#1-get-the-app) and [install](#2-install-it) the app.
-2. Open it. If you have exactly one profile under `~/.local/share/serra/`, the app opens it. If you have several, or yours lives elsewhere, quit Serra (⌘Q) and start it once with your profile's absolute path:
-
-   ```sh
-   open -a Serra --args --profile "$HOME/.local/share/serra/friday"   # use your own bot ID or folder
-   ```
+2. Open it. Setup finds your profiles under `~/.local/share/serra/` and shows what each already has; pick yours (or **Open another profile…** if it lives elsewhere). Tokens in `.env` are checked, not asked for again, and setup continues at the first step still missing.
 
 3. **Service already installed** (`pnpm bot activate`): it's kept. When no job is running, the app moves the bot onto the app's own code and version, and from then on it follows the app's updates. You no longer need `git pull` and `pnpm bot prepare`/`activate`. If the profile has an update source (`updates` in `profile.json`), clear **Settings › Worker › Developer: update from a checkout** first.
-4. **Only ran it in a terminal** (`pnpm start`): stop that copy (Ctrl-C), then finish the remaining steps in **Settings › Diagnostics › Setup guide**; the last one installs the service.
+4. **Only ran it in a terminal** (`pnpm start`): stop that copy (Ctrl-C), then finish the remaining steps in setup (the sidebar's **Finish setup**); the last one installs the service.
 
 To keep running the bot from your checkout instead (to work on Serra), set **Settings › Worker › Developer: update from a checkout**. See [CONTRIBUTING.md](CONTRIBUTING.md#update-a-bot-from-your-checkout).
 
@@ -121,8 +118,8 @@ There is no importer: Serra can't read another bot's config, state or memory. Se
 
 | What you had | How to bring it over |
 |---|---|
-| **Slack app** | Easiest: let the wizard create a **new** Slack app, then retire the old bot. To reuse your old app: stop the old bot first (two programs on one Socket Mode app split the messages between them). In wizard step 2, click **Copy manifest** instead of Open Slack, paste it over your app's manifest (your app › **App Manifest**), reinstall the app, then click **I have both tokens** and paste its tokens in step 3. |
-| **Owner, allowed users, repositories** | Enter them in the wizard, then **Settings › People** and **Settings › Repositories**. They are the `owner`, `allowedUsers` and `repositories` fields of `profile.json` ([all fields](docs/configuration.md#profile-format)). |
+| **Slack app** | Easiest: let setup create a **new** Slack app, then retire the old bot. To reuse your old app: stop the old bot first (two programs on one Socket Mode app split the messages between them). In **Connect Slack**, click **Copy manifest** instead of Create in Slack, paste it over your app's manifest (your app › **App Manifest**), reinstall the app, then paste its two tokens below. |
+| **Owner, allowed users, repositories** | Enter them in setup, then **Settings › People** and **Settings › Repositories**. They are the `owner`, `allowedUsers` and `repositories` fields of `profile.json` ([all fields](docs/configuration.md#profile-format)). |
 | **Model and provider** | **Settings › Worker** (`worker.provider`, `worker.model`). |
 | **Instructions / system prompt** | Put your own rules in **Brief & policy** (`policy.md` in the profile). Keep the generated `brief.md`; it holds Serra's safety rules. |
 | **About-me / memory / knowledge notes** | Two ways. Run the [interview](#4-teach-it-how-you-work-optional) with your old notes at hand. Or save each note as a Markdown file in `<profile>/knowledge/proposals/`, with the page header described in [knowledge/README.md](templates/knowledge/README.md) (start with `audience: owner`, so only you hear it), and click **Add page** on each one in **Knowledge › Proposals**. |
@@ -165,7 +162,7 @@ Start with **Settings › Diagnostics**: most problems show up as a FAIL with th
 - **"Serra is damaged":** download the `.dmg` again, [check it](#1-get-the-app), and copy Serra from it again. If it still says so, `xattr -dr com.apple.quarantine /Applications/Serra.app` clears the download flag.
 - **Tokens FAIL / `invalid_auth`:** both tokens must come from the same Slack app; the bot token starts `xoxb-`, the app token `xapp-` with `connections:write`. Reinstall the Slack app after changing scopes.
 - **No reply in Slack:** is the bot invited to the channel? Are you the owner or in **Settings › People**? Check `logs/bot.log` in the profile.
-- **T3 checks FAIL:** start T3 Code and add the exact repository folder from step 1 as a T3 project. If `t3` lives elsewhere, set its path in the wizard or `t3Bin` in `profile.json`.
+- **T3 checks FAIL:** start T3 Code and add the exact repository folder from step 1 as a T3 project. If `t3` lives elsewhere, set its path in setup (**More options**) or `t3Bin` in `profile.json`.
 - **"No supported Node" or "neither pnpm nor corepack":** install Node 24+ (or 22.18+) and run `corepack enable pnpm`, or `npm install -g pnpm@10`.
 - **GitHub account FAIL:** `gh auth login` as the login in your profile.
 - **Service stops at start, naming `~/Documents`, `~/Desktop` or `~/Downloads`:** allow `node` under System Settings › Privacy & Security › Files and Folders, or keep the repository elsewhere (e.g. `~/code`).

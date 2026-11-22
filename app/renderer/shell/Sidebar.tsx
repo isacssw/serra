@@ -14,6 +14,7 @@ import { cx } from '../ui/index.ts';
 import { OPEN_COMMAND_PALETTE } from './events.ts';
 import { ariaMod, isMac, mod } from './keys.ts';
 import { focusScreen } from './Shortcuts.tsx';
+import { SetupRow } from '../setup/SetupRow.tsx';
 import downIcon from '../../../assets/brand/serra-status-down.png';
 import needsYouIcon from '../../../assets/brand/serra-status-needs-you.png';
 import upIcon from '../../../assets/brand/serra-status-up.png';
@@ -94,7 +95,7 @@ const onNavKey = (event: KeyboardEvent<HTMLElement>): void => {
     return;
   }
   if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;
-  const links = [...event.currentTarget.querySelectorAll<HTMLElement>('a[data-route], button[data-nav]')];
+  const links = [...event.currentTarget.querySelectorAll<HTMLElement>('a[data-route], [data-nav]')];
   const at = links.indexOf(document.activeElement as HTMLElement);
   if (at < 0) return;
   event.preventDefault();
@@ -113,6 +114,7 @@ export const Sidebar = ({ status, counts }: { status: BotStatus | null; counts: 
       <nav aria-label="Screens" onKeyDown={onNavKey} className="flex min-h-0 flex-1 flex-col">
         {/* New task and Search stay in view; only the screens below scroll in a short window. */}
         <div className="flex shrink-0 flex-col gap-0.5 px-2 pt-1.5 pb-2">
+          <SetupRow />
           <NavLink
             to="/jobs/new"
             data-route="new-task"
