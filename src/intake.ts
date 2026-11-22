@@ -14,7 +14,7 @@
 import { appendFileSync, existsSync, readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { writeFileAtomic } from './lib/atomic.ts';
-import { isRecord } from './lib/guards.ts';
+import { isRecord, isTime } from './lib/guards.ts';
 import type { IncomingMessage } from './types.ts';
 
 export const INTAKE_PAUSED = 'intake-paused.json';
@@ -42,7 +42,6 @@ const heldPath = (profileDir: string): string => join(profileDir, HELD_REQUESTS)
 
 const writeAtomic = (path: string, text: string): void => writeFileAtomic(path, text, { mode: 0o600 });
 
-const isTime = (value: unknown): value is string => typeof value === 'string' && !Number.isNaN(Date.parse(value));
 const readJson = (path: string): unknown => {
   try { return JSON.parse(readFileSync(path, 'utf8')); } catch { return null; }
 };
@@ -148,7 +147,3 @@ export const markAttempt = (profileDir: string, msg: IncomingMessage, at: string
   writeAtomic(heldPath(profileDir), held.map((line) => JSON.stringify(line)).join('\n') + '\n');
   return marked;
 };
-
-/** A thread with a held request: the bot treats it as its own, so a reply there is held after the request. */
-export const heldThread = (profileDir: string, channel: string, threadTs: string): boolean =>
-  existsSync(heldPath(profileDir)) && readHeld(profileDir).some((held) => held.channel === channel && held.threadTs === threadTs);

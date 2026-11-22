@@ -82,3 +82,22 @@ test('[INTAKE-008] held requests and the pause are read through guards: a broken
   assert.ok(readPause(dir));
   assert.ok(existsSync(join(dir, HELD_REQUESTS)));
 });
+
+test('[JOBS-002] a field this build doesn\'t know (from a newer build) survives a read and a write, so a rollback loses nothing', (t) => {
+  const dir = folder(t);
+  const file = join(dir, 'state.json');
+  writeFileSync(file, JSON.stringify({ 'C1:1700000000.000100': { ...alpha3Job, futureField: { kept: 1 } } }));
+  const store = createStore(file);
+  assert.deepEqual(readState(file).repaired, [], 'not counted as a repair');
+  store.putJob('C1:1700000000.000100', { ...store.getJob('C1:1700000000.000100')!, watching: false });
+  assert.deepEqual(JSON.parse(readFileSync(file, 'utf8'))['C1:1700000000.000100'].futureField, { kept: 1 });
+});
+
+test('[JOBS-002] a "__proto__" key in a saved job cannot change the job object', (t) => {
+  const dir = folder(t);
+  const file = join(dir, 'state.json');
+  writeFileSync(file, `{"C1:1700000000.000100": ${JSON.stringify(alpha3Job).slice(0, -1)}, "__proto__": {"watching": true, "polluted": true}}}`);
+  const job = readState(file).jobs['C1:1700000000.000100']!;
+  assert.equal(Object.getPrototypeOf(job), Object.prototype);
+  assert.equal((job as unknown as { polluted?: boolean }).polluted, undefined);
+});

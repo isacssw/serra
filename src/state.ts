@@ -7,17 +7,20 @@
 import { copyFileSync, existsSync, readFileSync } from 'node:fs';
 import { writeFileAtomic } from './lib/atomic.ts';
 import type { Job } from './types.ts';
-import { isArrayOf, isBoolean, isOneOf, isRecord, isString, isStringOrNull } from './lib/guards.ts';
+import { isArrayOf, isBoolean, isOneOf, isRecord, isString, isStringOrNull, isTime } from './lib/guards.ts';
 
 const isStrings = isArrayOf(isString);
 const isAudience = isOneOf('owner', 'team', 'external');
-
-const isTime = (value: unknown): value is string => isString(value) && !Number.isNaN(Date.parse(value));
 
 /** The fields a job may leave out. */
 type OptionalKeys<T> = { [K in keyof T]-?: undefined extends T[K] ? K : never }[keyof T];
 /** The fields every job has. Listed here so a new required field must be given a default in `migrateJob`. */
 const REQUIRED = ['t3ThreadId', 'channel', 'threadTs', 'requester', 'pendingReactionTs', 'lastPostedRunId', 'watching', 'createdAt'] as const satisfies readonly Exclude<keyof Job, OptionalKeys<Job>>[];
+/** Compiles only while `REQUIRED` lists every required field of `Job`. */
+const requiredComplete: [Exclude<Exclude<keyof Job, OptionalKeys<Job>>, (typeof REQUIRED)[number]>] extends [never] ? true : never = true;
+void requiredComplete;
+/** Keys that would change an object's prototype if copied onto it. */
+const UNSAFE_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
 
 /**
  * Each optional field and the shape it must have. A field of the wrong shape is dropped, not the job. The type makes
@@ -66,7 +69,7 @@ export const migrateJob = (key: string, value: unknown): { job: Job; repaired: b
     createdAt: pick('createdAt', isString, isString(value.lastActivityAt) ? value.lastActivityAt : ''),
   };
   for (const [field, found] of Object.entries(value)) {
-    if (found === undefined || (REQUIRED as readonly string[]).includes(field)) continue;
+    if (found === undefined || UNSAFE_KEYS.has(field) || (REQUIRED as readonly string[]).includes(field)) continue;
     const guard = (OPTIONAL as Record<string, ((value: unknown) => boolean) | undefined>)[field];
     // A field this build doesn't know (written by a newer one) is kept as it is, so a rollback loses nothing.
     if (!guard || guard(found)) Object.assign(job, { [field]: found });

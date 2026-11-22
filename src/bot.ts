@@ -16,7 +16,7 @@ import { localLinksToText } from './links.ts';
 import { createProfileReloader } from './profile-reload.ts';
 import { handleReviewRequest } from './review.ts';
 import { slackKey, type createStore } from './state.ts';
-import { findThread, jobThreadInput, run, sendToThread, showThread, startThread } from './t3.ts';
+import { findThreads, jobThreadInput, run, sendToThread, showThread, startThread } from './t3.ts';
 import { answerQuestion, listQuestions, type T3QuestionRequest } from './t3-questions.ts';
 import { answeredMessage, closedMessage, canShowQuestion, choiceAnswer, questionMessage, typedAnswer, type QuestionAnswer, type QuestionInteraction, type SlackQuestion } from './questions.ts';
 import type { IncomingFile, IncomingMessage, Job, T3Message, T3Thread } from './types.ts';
@@ -108,6 +108,17 @@ const someoneWaits = (job: Job, runId: string, messages: T3Message[]): boolean =
 
 /** Marks a reply Serra posts with the run it answers, so a restart can find it in the thread instead of posting it again. */
 const REPLY_EVENT = 'serra_reply';
+/**
+ * Text as Slack may store it, made comparable: links unwrapped (`<url|label>`, `<url>`), entities unescaped, white
+ * space collapsed, and cut to a prefix. Slack rewrites a posted message's text this way, so a match is by meaning.
+ */
+const plainText = (text: string): string => text
+  .replace(/<([^<>|]+)(?:\|[^<>]*)?>/g, '$1').replaceAll('&lt;', '<').replaceAll('&gt;', '>').replaceAll('&amp;', '&')
+  .replace(/\s+/g, ' ').trim().slice(0, 500);
+/** How far before the saved intent a reply found by its text may be: Slack's clock and this machine's can differ. */
+const TEXT_MATCH_SKEW_S = 30;
+/** Serra's fixed notices, posted the same way many times: never recognised by text. */
+const isNotice = (text: string): boolean => text === WITHHELD || text === UNCONFIRMED || text.startsWith('I can\'t check who can see this thread');
 /** How much of a reply's text its saved intent keeps. A reply's fallback text is at most 3,000 characters. */
 const INTENT_TEXT = 3_000;
 const replyMetadata = (runId: string) => ({ event_type: REPLY_EVENT, event_payload: { run_id: runId } });
@@ -171,7 +182,7 @@ export interface BotDeps {
   /** The knowledge for a reply the given audience will see. Without it, every brief gets `loadIndex()` and no About me. */
   loadKnowledge?: (visibility: Visibility) => BriefKnowledge;
   logger: { info(message: string): void; warn(message: string): void; error(message: string): void; debug(message: string): void };
-  t3?: { startThread: typeof startThread; sendToThread: typeof sendToThread; showThread: typeof showThread; findThread?: typeof findThread };
+  t3?: { startThread: typeof startThread; sendToThread: typeof sendToThread; showThread: typeof showThread; findThreads?: typeof findThreads };
   questions?: { listQuestions: typeof listQuestions; answerQuestion: typeof answerQuestion };
   /** Brings the base branch up to date before a worktree is made from it. */
   fetchBase?: () => Promise<unknown>;
@@ -190,7 +201,7 @@ export interface BotDeps {
  */
 export const createBot = ({
   config, client, botUserId, store, loadIndex, loadKnowledge, logger,
-  t3 = { startThread, sendToThread, showThread, findThread },
+  t3 = { startThread, sendToThread, showThread, findThreads },
   questions = { listQuestions, answerQuestion },
   fetchBase = () => run('git', ['-C', config.project, 'fetch', config.remote, '--quiet']),
   share = shareImages,
@@ -454,6 +465,24 @@ export const createBot = ({
     }
   };
 
+  /**
+   * The T3 thread an interrupted start already made for this request, or null. Only a thread no job follows, with this
+   * title, made since the attempt: and, when the request's permalink is known, one whose brief names it. Without a
+   * permalink a single candidate is taken; two are too ambiguous, so a new thread starts.
+   */
+  const earlierThread = async (title: string, attemptedAt: string, permalink: string | undefined): Promise<string | null> => {
+    if (!t3.findThreads) return null;
+    const followed = new Set(allJobs().map(([, job]) => job.t3ThreadId));
+    const since = new Date(Date.parse(attemptedAt) - 60_000).toISOString();
+    const candidates = (await t3.findThreads(config.project, title, since, config.t3Bin)).filter((id) => !followed.has(id));
+    if (!permalink) return candidates.length === 1 ? candidates[0]! : null;
+    for (const id of candidates) {
+      const { messages } = await t3.showThread(id, config.t3Bin, RECENT_MESSAGES);
+      if (messages.some((message) => message.role === 'user' && message.text?.includes(permalink))) return id;
+    }
+    return null;
+  };
+
   const startJob = async (msg: IncomingMessage, request: string, summary: string, trigger?: MessageTrigger): Promise<void> => {
     const [requester, permalink, thread, visibility] = await Promise.all([
       trigger ? Promise.resolve(msg.botId ? `Automated alert from bot ${msg.botId}` : `Automatically triggered message from user ${msg.user}`) : speaker(msg.user),
@@ -481,8 +510,8 @@ export const createBot = ({
       now: new Date(now()),
     });
     // A replay of a held request whose start was cut off: its thread may exist already (INTAKE-010).
-    const earlier = msg.attemptedAt && t3.findThread
-      ? await t3.findThread(config.project, input.title, new Date(Date.parse(msg.attemptedAt) - 60_000).toISOString(), config.t3Bin).catch((error: unknown) => {
+    const earlier = msg.attemptedAt
+      ? await earlierThread(input.title, msg.attemptedAt, permalink?.permalink).catch((error: unknown) => {
         logger.warn(`Couldn't look for a thread started before the restart for ${msg.channel}:${msg.threadTs}: ${errorMessage(error)}`);
         return null;
       })
@@ -576,10 +605,13 @@ export const createBot = ({
         return null;
       });
     const text = job.delivering?.text;
-    // By the run ID Serra put in the message's metadata; when Slack leaves metadata out, by the reply's own text.
+    // By the run ID Serra put in the message's metadata. When Slack leaves metadata out, by the reply's text: only a
+    // message posted around the intent (not an identical earlier reply), and never Serra's fixed notices, which repeat.
+    const byText = text && !isNotice(text) ? plainText(text) : null;
+    const intentAt = job.delivering ? Date.parse(job.delivering.at) / 1000 : 0;
     const mine = replies?.messages?.find((message) => message.user === botUserId() && (message.metadata
       ? message.metadata.event_type === REPLY_EVENT && (message.metadata.event_payload as { run_id?: unknown } | undefined)?.run_id === runId
-      : Boolean(text) && message.text === text));
+      : byText !== null && Number(message.ts) >= intentAt - TEXT_MATCH_SKEW_S && plainText(message.text ?? '') === byText));
     return mine?.ts ?? null;
   };
 

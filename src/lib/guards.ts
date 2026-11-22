@@ -22,6 +22,9 @@ export const isBoolean = (value: unknown): value is boolean => typeof value === 
 /** A finite number: JSON can't hold NaN or Infinity, but a caller's arithmetic shouldn't have to wonder. */
 export const isNumber = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value);
 
+/** A string `Date.parse` reads as a time. */
+export const isTime = (value: unknown): value is string => typeof value === 'string' && !Number.isNaN(Date.parse(value));
+
 export const isStringOrNull = (value: unknown): value is string | null => value === null || typeof value === 'string';
 
 /** `undefined` (the key is absent) or a value the guard accepts. */

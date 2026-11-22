@@ -9,7 +9,7 @@
  *   advance {ms}                    move the clock, firing due timers (the 15 s poll) in order
  *   worker.reply {text} | worker.note {text} | worker.endSilently | worker.startRun | worker.userRun {text} | worker.ask {request}
  *   slack.hang {method} | slack.hangAfter {method} | slack.fail {method, error}
- *   t3.hangAfterStart               the next `thread start` makes its thread in T3, then never returns
+ *   t3.hangStart {later?, made?}    the `later`-th `thread start` from now never returns, after making its thread or (made: false) before
  *   pause | resume                  the app pauses new work for an update, or lifts the pause
  *   restart | crash                 stop cleanly and start again, or abandon the daemon where it is and start again
  *   mark {name}                     remember the position in the Slack call log
@@ -145,7 +145,7 @@ const run = async (h: DaemonHarness, scenario: Scenario): Promise<void> => {
       case 'worker.userRun': h.t3.userRun(text); break;
       case 'worker.ask': h.t3.ask(step.request as unknown as T3QuestionRequest); break;
       case 'slack.hang': h.slack.hang(method); break;
-      case 't3.hangAfterStart': h.t3.hangAfterStart(); break;
+      case 't3.hangStart': h.t3.hangStart(typeof step.later === 'number' ? step.later : 1, step.made !== false); break;
       case 'slack.hangAfter': h.slack.hangAfter(method); break;
       case 'slack.fail': h.slack.fail(method, String(step.error)); break;
       case 'pause': pauseIntake(h.config.profileDir, 'app-update', { now: h.clock.now() }); break;

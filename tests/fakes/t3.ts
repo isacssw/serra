@@ -39,8 +39,8 @@ export const createFakeT3 = (options: FakeT3Options = {}) => {
   /** Every call, in order: `start`, `send`, `show`, `list`, `questions`, `answer`. */
   const log: string[] = [];
   const now = options.now ?? Date.now;
-  /** `start` calls to hold: the thread is made in T3, and the CLI never returns (the daemon died waiting). */
-  let holdStarts = 0;
+  /** A `start` call to hold, counted from the first: the CLI never returns (the daemon died waiting), after T3 made the thread or before. */
+  let holdStart: { nth: number; made: boolean } | null = null;
   let markHung = (): void => {};
   let hungSignal = new Promise<void>((resolve) => { markHung = resolve; });
 
@@ -59,23 +59,27 @@ export const createFakeT3 = (options: FakeT3Options = {}) => {
     startThread: async (input) => {
       log.push('start');
       started.push(input);
+      if (holdStart && started.length === holdStart.nth && !holdStart.made) {
+        markHung();
+        return new Promise<never>(() => {});
+      }
       const failure = options.failStart?.();
       if (failure) throw failure;
       const id = options.threadId?.(order.length + 1) ?? `t3-${order.length + 1}`;
       const created: FakeThread = { id, createdAt: new Date(now()).toISOString(), input, runs: 0, active: null, transcript: [], questions: [], otherRequests: 0 };
       threads.set(id, created); order.push(id);
       created.transcript.push({ role: 'user', runId: newRun(created), text: input.brief });
-      if (holdStarts > 0) {
-        holdStarts -= 1;
+      if (holdStart && started.length === holdStart.nth) {
         markHung();
         return new Promise<never>(() => {});
       }
       return id;
     },
-    findThread: async (project, title, since) => {
+    findThreads: async (project, title, since) => {
       log.push('list');
       const from = Date.parse(since);
-      return [...threads.values()].filter((found) => found.input.project === project && found.input.title === title && Date.parse(found.createdAt) >= from).at(-1)?.id ?? null;
+      return [...threads.values()].filter((found) => found.input.project === project && found.input.title === title && Date.parse(found.createdAt) >= from)
+        .map((found) => found.id).reverse();
     },
     sendToThread: async (threadId, message) => {
       log.push('send');
@@ -115,8 +119,8 @@ export const createFakeT3 = (options: FakeT3Options = {}) => {
 
   return {
     t3, questions, started, sends, answered, log,
-    /** The next `thread start` makes its thread in T3, then never returns. */
-    hangAfterStart: (): void => { holdStarts += 1; },
+    /** The `later`-th `thread start` from now (1 is the next) never returns: after T3 made its thread (`made`), or before. */
+    hangStart: (later = 1, made = true): void => { holdStart = { nth: started.length + later, made }; },
     whenHung: (): Promise<void> => hungSignal,
     resetHung: (): void => { hungSignal = new Promise<void>((resolve) => { markHung = resolve; }); },
     threadIds: (): string[] => [...order],

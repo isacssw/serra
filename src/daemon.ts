@@ -136,7 +136,12 @@ export const startDaemon = async (deps: DaemonDeps): Promise<Daemon> => {
       const paused = readPause(config.profileDir, clock.now());
       const waitingBehind = heldIn(msg.channel, msg.threadTs);
       if (waitingBehind || admit(paused !== null, bot.runningIn(msg.channel, msg.threadTs)) === 'hold') {
-        holdRequest(config.profileDir, msg);
+        try { holdRequest(config.profileDir, msg); } catch (error) {
+          // Not holding it would lose it: it is handled now instead, and the update waits for it like any start.
+          logger.error(`Couldn't hold a request in ${msg.channel} for after the update, so handling it now: ${errorMessage(error)}`);
+          await start(msg);
+          return;
+        }
         await client.reactions.add({ channel: msg.channel, timestamp: msg.messageTs, name: HELD_REACTION }).catch(() => {});
         logger.info(`Holding a new request in ${msg.channel} until Serra finishes updating.`);
         acknowledge();

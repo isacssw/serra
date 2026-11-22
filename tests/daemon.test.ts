@@ -75,3 +75,25 @@ test('[INTAKE-010] a held-requests file the daemon cannot write is logged and tr
   assert.equal(h.t3.started.length, 1, 'the next poll starts it');
   assert.equal(readHeld(h.config.profileDir).length, 0);
 });
+
+test('[REPLY-008] a review request posted just before a crash is recorded at once, so the restarted bot doesn\'t post it again', async (t) => {
+  const pr = 'https://github.com/acme/project/pull/12';
+  let h: Awaited<ReturnType<typeof startTestDaemon>> | null = null;
+  h = await startTestDaemon(t, { bot: {
+    reviewRequest: async (client, text, options) => {
+      if (options.alreadyPosted.includes(pr)) return { reply: text, postedFor: null };
+      await client.chat.postMessage({ channel: 'CREVIEW', text: `Review ${pr}` });
+      // The reply to the thread, posted next, reaches Slack and then the daemon dies.
+      h!.slack.hangAfter('chat.postMessage');
+      return { reply: `${text}\n\nReview request posted.`, postedFor: pr };
+    },
+  } });
+  await h.deliver(mention('1700000100.000100', 'open a PR for the fix'));
+  h.t3.reply(`PR is up: ${pr}`);
+  await h.advance(15_000);
+  assert.deepEqual(h.state()['C1:1700000100.000100']?.reviewRequestedPrs, [pr]);
+  await h.crash();
+  await h.advance(15_000);
+  assert.equal(h.slack.callsTo('chat.postMessage').filter((args) => args.channel === 'CREVIEW').length, 1, 'one review request');
+  assert.equal(h.slack.callsTo('chat.postMessage').filter((args) => args.channel === 'C1').length, 1, 'one reply');
+});

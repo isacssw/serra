@@ -42,7 +42,7 @@
     },
     {
       "_": "T3 makes the thread, and the daemon dies before `t3 thread start` returns.",
-      "do": "t3.hangAfterStart"
+      "do": "t3.hangStart"
     },
     {
       "do": "advance",
