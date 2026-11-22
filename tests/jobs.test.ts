@@ -288,3 +288,46 @@ test('the app asks T3 again for a thread with no PR yet, and stops asking once i
   await lookup('x');
   assert.equal(calls, 2, 'a thread with a PR is not asked again');
 });
+
+test('SERRA-54: a Slack job the file lists as running is done when T3 runs nothing and its newest run is posted', async (t) => {
+  const yesterday = new Date(2026, 10, 17, 12, 0).toISOString();
+  const ghost = { runSeen: { runId: 'run-1', at: minutesAgo(90) }, lastPostedRunId: 'run-2' };
+  const dir = profile(t, [
+    // A run started and ended between polls: the seen run never matches the posted one.
+    job('C1', '1700000000.000001', ghost),
+    // The same, but T3 is running it again.
+    job('C1', '1700000000.000002', { ...ghost, lastActivityAt: minutesAgo(50) }),
+    // T3 finished a run the bot hasn't posted yet: its reply is still owed.
+    job('C1', '1700000000.000003', { ...ghost, lastActivityAt: minutesAgo(40) }),
+    // T3 can't read the thread: the file decides.
+    job('C1', '1700000000.000004', { ...ghost, lastActivityAt: minutesAgo(30) }),
+    // Carried over from an older install, quiet since yesterday: done, and so out of today's list.
+    job('C1', '1700000000.000005', { pendingReactionTs: '1700000000.000005', loadingRequested: true, createdAt: yesterday, lastActivityAt: yesterday }),
+    // A follow-up that came in a moment ago and hasn't reached T3 yet: T3 is idle, but a run is about to start.
+    job('C1', '1700000000.000006', { lastPostedRunId: 'run-2', pendingReactions: ['1700000000.000106'], loadingRequested: true, lastActivityAt: minutesAgo(1) }),
+  ]);
+  const asked: string[] = [];
+  const runs = async (threadId: string) => {
+    asked.push(threadId);
+    const n = threadId.slice(-1);
+    if (n === '4') return null;
+    return { running: n === '2', waiting: false, latestRunId: n === '3' ? 'run-3' : n === '5' ? 'run-1' : 'run-2' };
+  };
+
+  const fileOnly = await listJobs(dir, { now: NOW });
+  assert.deepEqual(fileOnly.jobs.map((row) => [row.key.slice(-1), row.group]), [['6', 'running'], ['4', 'running'], ['3', 'running'], ['2', 'running'], ['1', 'running'], ['5', 'running']]);
+
+  const { jobs } = await listJobs(dir, { now: NOW, runs });
+  assert.deepEqual(jobs.map((row) => [row.key.slice(-1), row.group]), [['6', 'running'], ['4', 'running'], ['3', 'running'], ['2', 'running'], ['1', 'done']]);
+  // Once it had time to reach T3 and still no run started, its 👀 is stale too.
+  const later = await listJobs(dir, { now: new Date(NOW.getTime() + 3 * 60_000), runs });
+  assert.equal(later.jobs.find((row) => row.key.endsWith('6'))?.group, 'done');
+  const all = await listJobs(dir, { now: NOW, runs, doneTodayOnly: false });
+  assert.deepEqual(all.jobs.filter((row) => row.group === 'done').map((row) => row.key.slice(-1)), ['1', '5']);
+  assert.ok(asked.every((id) => id.startsWith('thread-')), 'only jobs saved as running are looked up');
+});
+
+test('t3TaskState reports the thread\'s newest run', async () => {
+  const lookup = t3TaskState('t3', async () => JSON.stringify({ thread: { activeRunId: null, latestRunId: 'run-7', pendingRequestCount: 0 } }));
+  assert.deepEqual(await lookup('thread-1'), { running: false, waiting: false, latestRunId: 'run-7' });
+});

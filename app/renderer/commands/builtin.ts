@@ -1,8 +1,9 @@
-// The palette's own actions: go to any screen, Restart bot, Open profile folder and Add allowed user.
+// The palette's own actions: go to any screen, Restart bot, Open profile folder, Add allowed user and Star on GitHub.
 // Screen tickets register their own actions in their own files (see registry.ts).
 import type { AppliesWhen } from '../../../src/contracts.ts';
 import type { SerraBridge } from '../../main/bridge.ts';
 import { routes, sections } from '../routes.ts';
+import { openedMessage, openRepo } from '../star.logic.ts';
 import type { Action, ActionContext } from './registry.ts';
 
 const PEOPLE_PATH = '/settings/people';
@@ -81,5 +82,17 @@ export const addAllowedUser: Action = {
   },
 };
 
+export const starOnGitHub: Action = {
+  id: 'app:star-on-github',
+  title: 'Star Serra on GitHub',
+  group: 'Actions',
+  keywords: ['github', 'star', 'repository', 'open source', 'support'],
+  button: 'Settings › Updates › Star on GitHub',
+  run: async (context) => {
+    // Opening from here is quiet; only an answer that couldn't be kept is worth a word.
+    if (!(await openRepo(bridgeOf(context).app))) context.toast(openedMessage(false));
+  },
+};
+
 /** Everything the palette ships with: the actions first, then navigation. */
-export const builtinActions: Action[] = [restartBot, openProfileFolder, addAllowedUser, ...navigationActions];
+export const builtinActions: Action[] = [restartBot, openProfileFolder, addAllowedUser, starOnGitHub, ...navigationActions];

@@ -11,7 +11,7 @@ import type { MenuItemConstructorOptions } from 'electron';
 import { createBridge, type InvokeResult } from '../app/main/bridge.ts';
 import { createHandlers, registerHandlers } from '../app/main/ipc/index.ts';
 import { menuTemplate } from '../app/main/menu.ts';
-import { memoryPrefs, mergePrefs, readPrefs } from '../app/main/prefs.ts';
+import { defaultPrefs, memoryPrefs, mergePrefs, readPrefs } from '../app/main/prefs.ts';
 import { routes } from '../app/renderer/routes.ts';
 import { isSetupIncomplete, SETUP_INCOMPLETE, SETUP_INCOMPLETE_MESSAGE, SetupIncomplete } from '../src/setup-incomplete.ts';
 import { isTokenVerdict } from '../src/token-errors.ts';
@@ -98,7 +98,7 @@ process.exit(0);
 };
 
 const context = (prefsDir: string | null = null): HandlerContext & { pushed: string[] } => {
-  const prefs = memoryPrefs({ theme: 'system', lastScreen: null, window: { width: 1100, height: 720, maximized: false }, profileDir: prefsDir, includePrereleases: null, setupDraft: null });
+  const prefs = memoryPrefs({ ...defaultPrefs, profileDir: prefsDir });
   const pushed: string[] = [];
   return {
     pushed,

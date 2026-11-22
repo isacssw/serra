@@ -120,3 +120,20 @@ test('a ping is only words that check the bot is there', () => {
     assert.equal(isPing(text, 'Friday'), false, text);
   }
 });
+
+test('the batcher holds a thread only while a turn waits to be handed over, not for context alone', async () => {
+  let release: () => void = () => {};
+  const batcher = createBatcher<string>({
+    quietMs: 5, retryMs: 5, busy: async () => false, onError: () => {},
+    flush: () => new Promise<void>((done) => { release = done; }),
+  });
+  batcher.add('t', 'people talking', { wake: false });
+  assert.equal(batcher.holds('t'), false, 'context alone starts no turn');
+  batcher.add('t', 'a request');
+  assert.equal(batcher.holds('t'), true);
+  await new Promise((done) => setTimeout(done, 20));
+  assert.equal(batcher.holds('t'), true, 'still held while it is handed over');
+  release();
+  await new Promise((done) => setTimeout(done, 5));
+  assert.equal(batcher.holds('t'), false);
+});

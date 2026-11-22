@@ -8,6 +8,7 @@ import type { StartedTask } from '../../../src/tasks.ts';
 import { serra } from '../bridge.ts';
 import { Button, cx, useToast } from '../ui/index.ts';
 import { ariaMod, mod } from '../shell/keys.ts';
+import { announceTaskStart } from '../shell/events.ts';
 import { canStart, requestProblem, startedText, taskLink } from './newTask.logic.ts';
 
 const message = (error: unknown): string => (error instanceof Error ? error.message : String(error));
@@ -34,7 +35,7 @@ export const NewTask = () => {
     if (!canStart(request, busy)) return;
     setBusy(true);
     setError(null);
-    bridge.tasks.start(request).then(
+    announceTaskStart(() => bridge.tasks.start(request)).then(
       (task) => {
         setStarted(task);
         setRequest('');

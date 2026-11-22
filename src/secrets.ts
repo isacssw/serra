@@ -216,13 +216,6 @@ const resolveSecret = async (profileDir: string, name: SecretName, source: Secre
   return fromOutput(name, source, await runTool(readCall(source, tools)));
 };
 
-/**
- * The token from its configured source (or `.env`), for a main-process caller that talks to Slack itself, like the
- * app's name lookups (`slack-names.ts`). Throws, without the value, when it can't be read. Never log or return it.
- */
-export const readSecret = async (profileDir: string, name: SecretName, options: SecretOptions = {}): Promise<string> =>
-  resolveSecret(profileDir, name, secretSource(profileDir, name), toolsFrom(options));
-
 const keychainHas = async (source: SecretSource & { kind: 'keychain' }, tools: SecretTools): Promise<boolean> => {
   // Without -w, `security` prints the item's attributes only, so this never reads the value.
   try { await runTool({ label: 'Keychain (security)', bin: tools.security, args: ['find-generic-password', '-s', source.service, '-a', source.account], timeoutMs: tools.timeoutMs }); return true; }

@@ -47,6 +47,8 @@ export interface AppPrefs {
   includePrereleases: boolean | null;
   /** The setup's profile form as typed, so quitting halfway loses nothing. Cleared when the profile is created. */
   setupDraft: Record<string, string> | null;
+  /** When to ask for a GitHub star (SERRA-53). Local only: nothing about it leaves the Mac. */
+  starPrompt: StarPromptState;
 }
 
 /** What setup found on this Mac: the profile in use and any others, each summarised (SERRA-51). */
@@ -61,6 +63,22 @@ export interface SetupDetection {
   profileRoot: string;
   /** The home folder, so paths can show as `~/…`. */
   home: string;
+}
+
+/** The star request's memory (SERRA-53). The rules that read it are in app/renderer/star.logic.ts. */
+export interface StarPromptState {
+  /** When the app first saw a working bot: the start of "a few days of use". Null until then. */
+  since: string | null;
+  /** Jobs the window saw finish (running, then done), counted up to the threshold. */
+  finished: number;
+  /** How many times the card has shown, so it can stop asking for good. */
+  asks: number;
+  /** The app version the card last showed in. It shows at most once per version. */
+  shownIn: string | null;
+  /** Not before this time: set when the card shows, so Not now (or closing the window) snoozes it. */
+  snoozedUntil: string | null;
+  /** Starred, opened the repo, or Don't ask again: never ask again. */
+  done: boolean;
 }
 
 export interface AppInfo {

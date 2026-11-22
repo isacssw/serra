@@ -9,7 +9,8 @@ import {
 } from 'lucide-react';
 import { serra } from '../bridge.ts';
 import { SETUP_PATH } from '../setup/setup.logic.ts';
-import { Button, cx, Dialog, Page, useToast } from '../ui/index.ts';
+import { openedMessage, openRepo } from '../star.logic.ts';
+import { Button, cx, Dialog, GitHubMark, Page, useToast } from '../ui/index.ts';
 import {
   actionStates, activateDialog, keepVersions, activationNotice, appCard, botLine, branch, busyLabel, canCheck, commitsHeading, homeOf, noteLines,
   preparedLabel, progressPercent, releaseLabel, rollbackDialog, rollbackNotice, sourceLabel, syncDialog,
@@ -28,6 +29,22 @@ const ToneIcon = ({ tone, size = 18 }: { tone: CardTone; size?: number }) => {
     default: return <Info {...props} className="shrink-0 text-muted" />;
   }
 };
+
+/** The permanent, quiet way to star Serra (SERRA-53). Opening it also stops the in-app request. */
+export const StarLink = ({ onError, onSaveFailed }: { onError: (error: unknown) => void; onSaveFailed?: () => void }) => (
+  <p className="flex flex-wrap items-center gap-x-1.5 border-t border-line pt-4 text-[13px] text-muted">
+    Serra is open source.
+    <button
+      type="button"
+      data-star-link
+      onClick={() => { const bridge = serra(); if (bridge) openRepo(bridge.app).then((saved) => { if (!saved) onSaveFailed?.(); }, onError); }}
+      className="inline-flex items-center gap-1.5 rounded text-ink underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
+    >
+      <GitHubMark size={13} />
+      Star on GitHub
+    </button>
+  </p>
+);
 
 const Notes = ({ markdown }: { markdown: string }) => {
   const lines = noteLines(markdown);
@@ -433,6 +450,10 @@ export const Updates = () => {
         onAsk={(action) => void ask(action)}
       />}
 
+      <StarLink
+        onError={(error) => toast({ message: `Couldn’t open GitHub: ${message(error)}`, tone: 'error' })}
+        onSaveFailed={() => toast(openedMessage(false))}
+      />
 
       <Dialog
         open={dialog !== null}

@@ -178,7 +178,7 @@ test('Jobs lists a task with its state from T3: running, waiting on the owner, o
 
   // Through the fake binary: an active run is running.
   const live = await t3TaskState(bin)('a');
-  assert.deepEqual(live, { running: true, waiting: false, link: 'https://t3.test/a', updatedAt: '2026-11-18T10:05:00Z' });
+  assert.deepEqual(live, { running: true, waiting: false, link: 'https://t3.test/a', updatedAt: '2026-11-18T10:05:00Z', latestRunId: 'run-1' });
   assert.equal(await t3TaskState(join(profileDir, 'missing-t3'))('a'), null);
 });
 

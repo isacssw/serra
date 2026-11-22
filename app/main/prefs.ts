@@ -1,7 +1,8 @@
-// App preferences: window size and place, theme, last screen, and the profile folder the app manages.
+// App preferences: window size and place, theme, last screen, the profile folder the app manages, and when to ask
+// for a GitHub star.
 // Pure logic here; `prefs-store.ts` keeps them in electron-store. Nothing about the bot lives in prefs.
 import { isAbsolute } from 'node:path';
-import type { AppPrefs, Theme } from './bridge.ts';
+import type { AppPrefs, StarPromptState, Theme } from './bridge.ts';
 
 export const defaultPrefs: AppPrefs = {
   theme: 'system',
@@ -10,6 +11,7 @@ export const defaultPrefs: AppPrefs = {
   profileDir: null,
   includePrereleases: null,
   setupDraft: null,
+  starPrompt: { since: null, finished: 0, asks: 0, shownIn: null, snoozedUntil: null, done: false },
 };
 
 /** Where prefs are read from and saved to. */
@@ -24,6 +26,37 @@ const isRecord = (value: unknown): value is Record<string, unknown> => typeof va
 const DRAFT_FIELDS = ['botName', 'botId', 'ownerName', 'ownerSlackUserId', 'githubLogin', 'projectPath', 'remote', 'baseRef', 'githubRepo', 't3Bin', 'directory'];
 const MIN_WIDTH = 640;
 const MIN_HEIGHT = 420;
+
+const isTime = (value: unknown): value is string => typeof value === 'string' && value.length <= 40 && !Number.isNaN(Date.parse(value));
+
+/** The star request's memory, checked whole: a broken one throws, so `readPrefs` falls back to a fresh start. */
+const parseStarPrompt = (value: unknown): StarPromptState => {
+  if (!isRecord(value)) throw new Error('starPrompt must be an object.');
+  const { since, finished, asks, shownIn, snoozedUntil, done } = value;
+  const count = (n: unknown): n is number => typeof n === 'number' && Number.isInteger(n) && n >= 0 && n <= 1_000_000;
+  if (since !== null && !isTime(since)) throw new Error('starPrompt.since must be a time or null.');
+  if (snoozedUntil !== null && !isTime(snoozedUntil)) throw new Error('starPrompt.snoozedUntil must be a time or null.');
+  if (!count(finished) || !count(asks)) throw new Error('starPrompt counts must be whole numbers.');
+  if (shownIn !== null && (typeof shownIn !== 'string' || shownIn.length > 64)) throw new Error('starPrompt.shownIn must be a version or null.');
+  if (typeof done !== 'boolean') throw new Error('starPrompt.done must be true or false.');
+  return { since, finished, asks, shownIn, snoozedUntil, done };
+};
+
+const pick = (a: string | null, b: string | null, first: boolean): string | null =>
+  a && b ? ((Date.parse(a) <= Date.parse(b)) === first ? a : b) : a ?? b;
+
+/**
+ * A save of the star request's memory only moves it forward: an answer stays given, counts never drop, the clock
+ * keeps its earliest start and the snooze its latest end. So a write from a stale copy can't undo "Don't ask again".
+ */
+export const combineStarPrompt = (saved: StarPromptState, incoming: StarPromptState): StarPromptState => ({
+  since: pick(saved.since, incoming.since, true),
+  finished: Math.max(saved.finished, incoming.finished),
+  asks: Math.max(saved.asks, incoming.asks),
+  shownIn: incoming.shownIn ?? saved.shownIn,
+  snoozedUntil: pick(saved.snoozedUntil, incoming.snoozedUntil, false),
+  done: saved.done || incoming.done,
+});
 
 const parseField = (key: string, value: unknown): Partial<AppPrefs> => {
   switch (key) {
@@ -49,6 +82,8 @@ const parseField = (key: string, value: unknown): Partial<AppPrefs> => {
       }
       return { setupDraft: draft };
     }
+    case 'starPrompt':
+      return { starPrompt: parseStarPrompt(value) };
     case 'window': {
       if (!isRecord(value)) throw new Error('window must be an object.');
       const { width, height, x, y, maximized } = value;
@@ -67,7 +102,10 @@ const parseField = (key: string, value: unknown): Partial<AppPrefs> => {
 export const mergePrefs = (current: AppPrefs, patch: unknown): AppPrefs => {
   if (!isRecord(patch)) throw new Error('Preferences must be an object.');
   let next = { ...current };
-  for (const [key, value] of Object.entries(patch)) next = { ...next, ...parseField(key, value) };
+  for (const [key, value] of Object.entries(patch)) {
+    const field = parseField(key, value);
+    next = { ...next, ...field, ...(field.starPrompt ? { starPrompt: combineStarPrompt(next.starPrompt, field.starPrompt) } : {}) };
+  }
   return next;
 };
 

@@ -25,9 +25,14 @@ const loadOrNull = async <T,>(load: () => Promise<T>): Promise<T | null> => {
   catch { return null; }
 };
 
-/** Badge counts from live status plus the jobs and proposals lists, reloaded on daemon events and window focus. */
-export const useBadgeCounts = (status: BotStatus | null): BadgeCounts => {
+/**
+ * Badge counts from live status plus the jobs and proposals lists, reloaded on daemon events and window focus.
+ * The jobs list comes back too, so the star request (StarPrompt) can see app tasks without loading it again:
+ * `currentJobs` is null while a reload is in flight, so it never acts on a list a newer change may have outdated.
+ */
+export const useBadgeCounts = (status: BotStatus | null): { counts: BadgeCounts; jobs: JobSummary[] | null; currentJobs: JobSummary[] | null } => {
   const [jobs, setJobs] = useState<JobSummary[] | null>(null);
+  const [jobsLoading, setJobsLoading] = useState(true);
   const [proposals, setProposals] = useState<Proposal[] | null>(null);
   const [untagged, setUntagged] = useState<unknown[] | null>(null);
   const [drift, setDrift] = useState<unknown[] | null>(null);
@@ -35,8 +40,16 @@ export const useBadgeCounts = (status: BotStatus | null): BadgeCounts => {
     const bridge = serra();
     if (!bridge) return;
     let live = true;
+    // Only the newest jobs load lands: a slow older one must not overwrite it.
+    let latest = 0;
     const reload = (): void => {
-      void loadOrNull(() => bridge.jobs.list()).then((list) => { if (live) setJobs(list); });
+      const load = ++latest;
+      setJobsLoading(true);
+      void loadOrNull(() => bridge.jobs.list()).then((list) => {
+        if (!live || load !== latest) return;
+        setJobs(list);
+        setJobsLoading(false);
+      });
       void loadOrNull(() => bridge.proposals.list()).then((list) => { if (live) setProposals(list); });
       void loadOrNull(() => bridge.pages.untagged()).then((list) => { if (live) setUntagged(list); });
       void loadOrNull(() => bridge.pages.drift()).then((list) => { if (live) setDrift(list); });
@@ -47,5 +60,5 @@ export const useBadgeCounts = (status: BotStatus | null): BadgeCounts => {
     window.addEventListener(REFRESH_COUNTS, reload);
     return () => { live = false; off(); window.removeEventListener('focus', reload); window.removeEventListener(REFRESH_COUNTS, reload); };
   }, [status?.state]);
-  return badgeCounts({ status, jobs, proposals, untagged, drift });
+  return { counts: badgeCounts({ status, jobs, proposals, untagged, drift }), jobs, currentJobs: jobsLoading ? null : jobs };
 };
