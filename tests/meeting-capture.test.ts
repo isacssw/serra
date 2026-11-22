@@ -408,7 +408,7 @@ test('a meeting that kept nothing can still be forgotten: its digest is deleted 
 test('with capture off, a teammate or a channel message that starts with the phrase is an ordinary request', (t) => {
   const h = harness(t, { enabled: false });
   assert.equal(h.capture.intercept(message({ user: 'UPRIYA0001' })), null);
-  assert.equal(h.capture.intercept(message({ channel: 'C0TEAM001', im: false, text: '<@UBOT> remember this meeting is at 3, fix the build' })), null);
+  assert.equal(h.capture.intercept(message({ user: 'UPRIYA0001', channel: 'C0TEAM001', im: false, text: '<@UBOT> remember this meeting is at 3, fix the build' })), null);
   assert.equal(h.capture.closed('C0TEAM001', '1.0'), false);
 });
 
@@ -417,4 +417,46 @@ test('a damaged meeting registry never stops a brief', (t) => {
   writeFileSync(join(h.profileDir, 'meeting-registry.json'), '{ not json');
   const knowledge = createKnowledge(join(h.profileDir, 'knowledge'));
   assert.ok(knowledge.briefKnowledge('team').index.length > 0);
+});
+
+test('a link inside a pasted transcript is part of the meeting, not its source; "this meeting\'s notes" is no trigger', () => {
+  const pasted = meetingRequest('remember this meeting\nAna: the spec is at https://docs.google.com/document/d/1AbCdEfGhIjKlMnOpQrStUvWxYz0123456789/edit\nBo: agreed');
+  assert.equal(pasted.link, null);
+  assert.match(pasted.pasted, /docs\.google\.com/);
+  assert.equal(meetingRequest("remember this meeting's notes please").trigger, false);
+});
+
+test('the digest thread is closed: a reply there never starts a job with unreviewed meeting text', async (t) => {
+  const h = harness(t);
+  await run(h, message());
+  const posted = h.posts.at(-1)!;
+  assert.equal(posted.thread, undefined);
+  const [record] = Object.values(h.capture.store.readRegistry().meetings);
+  assert.equal(h.capture.closed(DM, record!.digest!.ts), true);
+  assert.notEqual(h.capture.intercept(message({ threadTs: record!.digest!.ts, messageTs: '200.0', text: 'file tickets for these', files: [] })), null);
+});
+
+test('with capture off, the owner\'s channel message about a meeting is still turned away, not sent to a job', (t) => {
+  const h = harness(t, { enabled: false });
+  const result = h.capture.intercept(message({ channel: 'C0TEAM001', im: false, text: 'remember this meeting: Ana: TRANSCRIPT' }));
+  assert.notEqual(result, null);
+});
+
+test('a provider fetch refuses a cut-off result and a binary replaced between the probe and the run', async (t) => {
+  const path = binDir(t);
+  const server = { name: 'claude.ai Granola', status: 'connected' };
+  const tool = 'mcp__claude_ai_Granola__get_meeting_transcript';
+  const lines = (content: string) => [
+    init({ mcp_servers: [server], tools: [tool] }),
+    JSON.stringify({ type: 'assistant', message: { content: [{ type: 'tool_use', id: 't1', name: tool, input: { meeting_id: 'abc' } }] } }),
+    JSON.stringify({ type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: 't1', content }] } }),
+  ];
+  const cut = fakeClaude((args) => (args.includes('--allowedTools') ? lines('Output too large (180KB). Full output saved to: /x/tool-results/y.txt') : [init({ mcp_servers: [server], tools: [tool] })]));
+  await assert.rejects(createSourceReader({ path, spawn: cut.spawn, managedSettingsDir: join(path, 'none') }).fetchTranscript({ provider: 'granola', id: 'abc', url: 'x' }), /too long to read through Claude Code/);
+  // The binary is rewritten while the probe runs.
+  const swapped = fakeClaude((args) => {
+    if (!args.includes('--allowedTools')) writeFileSync(join(path, 'claude'), '#!/bin/sh\necho replaced\n');
+    return args.includes('--allowedTools') ? lines('Ana: hi') : [init({ mcp_servers: [server], tools: [tool] })];
+  });
+  await assert.rejects(createSourceReader({ path, spawn: swapped.spawn, managedSettingsDir: join(path, 'none') }).fetchTranscript({ provider: 'granola', id: 'abc', url: 'x' }), /changed while Serra was checking/);
 });

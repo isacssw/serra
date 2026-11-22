@@ -568,6 +568,7 @@ export const createMeetingStore = ({ knowledgeDir, now = () => new Date(), backu
     const pages = [...removedPages, ...scrubbedPages];
     // What the record said about the meeting goes too: only its ID stays, so it's never reused.
     record.title = 'Forgotten meeting';
+    for (const entry of Object.values(record.items)) entry.target = '';
     record.speakers = [];
     record.dropped = {};
     record.pages = [];

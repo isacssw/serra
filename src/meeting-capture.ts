@@ -98,7 +98,7 @@ export const meetingPages = (knowledgeDir: string): { team: TeamPage[]; existing
 /** Model text as plain Slack text: `&`, `<` and `>` escaped, so an injected line can't become a link or a mention. */
 const plain = (text: string): string => text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
   // A bare URL would still turn into a link: code formatting keeps it plain text.
-  .replace(/\bhttps?:\/\/[^\s`]+/gi, (url) => `\`${url}\``);
+  .replace(/\b(?:https?:\/\/|www\.)[^\s`]+|\b[\w-]+(?:\.[\w-]+)*\.(?:com|io|net|org|ai|dev|app|co|me|xyz|example)(?:\/[^\s`]*)?/gi, (url) => `\`${url}\``);
 
 /** The digest message: what's waiting for review, what's already known, action items and questions, what was left out. */
 export const digestText = (digest: Digest, from: string): string => {
@@ -183,7 +183,9 @@ export const createMeetingCapture = (deps: MeetingCaptureDeps) => {
       store.addMeeting({ meeting, items: digest.items, source: source.source, speakers: transcript.speakers, dropped: digest.dropped, pages: new Map(team.map((page) => [page.path, page.text])) });
       await say(msg.channel, COPY.done, thread);
       const ts = await say(msg.channel, digestText(digest, source.from));
-      if (ts) store.setDigest(id, { channel: msg.channel, ts });
+      // The digest holds unreviewed text from the meeting (action items aren't quote-checked): its thread is closed
+      // too, so a reply there never hands it to a worker as Serra's own words.
+      if (ts) { close(msg.channel, ts); store.setDigest(id, { channel: msg.channel, ts }); }
       log(`Meeting ${id}: ${digest.items.length} item(s) to review, ${digest.reply.length} for the reply.`);
     } catch (error) {
       const reason = error instanceof Error ? error.message : String(error);
@@ -205,8 +207,8 @@ export const createMeetingCapture = (deps: MeetingCaptureDeps) => {
     const topLevel = msg.threadTs === msg.messageTs;
     const dm = msg.im === true && msg.channel.startsWith('D');
     const fromOwner = msg.user === deps.owner && dm && !msg.automaticTrigger;
-    // With capture off, only the owner's own DM is about meetings: anyone else's message is an ordinary request.
-    if (!enabled && !fromOwner) return null;
+    // With capture off, only the owner's messages are about meetings: anyone else's is an ordinary request.
+    if (!enabled && (msg.user !== deps.owner || msg.automaticTrigger)) return null;
     if (!topLevel) {
       // A trigger in a thread Serra is working in is never passed to that job, and doesn't close it.
       if (!dm || deps.busy(msg.channel, msg.threadTs)) return { work: say(msg.channel, COPY.inThread, msg.threadTs).then(() => {}) };

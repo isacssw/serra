@@ -33,7 +33,7 @@ export interface MeetingRequest {
 }
 
 /** Only "remember this meeting" at the very start (after an optional mention): "remember our meeting at 3" is a job. */
-const TRIGGER = /^\s*(?:<@[UW][A-Z0-9]+(?:\|[^>]*)?>[\s,:]*)?remember\s+this\s+meeting\b[\s:.,-]*/i;
+const TRIGGER = /^\s*(?:<@[UW][A-Z0-9]+(?:\|[^>]*)?>[\s,:]*)?remember\s+this\s+meeting\b(?!['’])[\s:.,-]*/i;
 const UUID = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}';
 /** `https://notes.granola.ai/d/<uuid>`, `https://app.granola.ai/…/<uuid or not_…>`. */
 const GRANOLA = new RegExp(`<?(https://(?:notes|app)\\.granola\\.ai/[^\\s>|]*?(${UUID}|not_[A-Za-z0-9]{14}))(?:[/?#][^\\s>|]*)?(?:\\|[^>]*)?>?`, 'i');
@@ -49,9 +49,10 @@ export const meetingRequest = (text: string): MeetingRequest => {
   if (!trigger) return { trigger: false, link: null, pasted: '' };
   let rest = text.slice(trigger[0].length);
   let link: MeetingLink | null = null;
+  // A link counts only as the first thing after the phrase: a link inside a pasted transcript is part of the meeting.
   const granola = GRANOLA.exec(rest);
   const doc = GOOGLE_DOC.exec(rest);
-  const first = [granola, doc].filter((match): match is RegExpExecArray => match !== null).sort((a, b) => a.index - b.index)[0];
+  const first = [granola, doc].filter((match): match is RegExpExecArray => match !== null && rest.slice(0, match.index).trim() === '').sort((a, b) => a.index - b.index)[0];
   if (first) {
     link = first === granola ? { provider: 'granola', id: first[2]!, url: first[1]! } : { provider: 'google-meet', id: first[2]!, url: first[1]! };
     rest = `${rest.slice(0, first.index)}${rest.slice(first.index + first[0].length)}`;

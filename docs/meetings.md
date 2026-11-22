@@ -11,7 +11,7 @@ In your DM with Serra, send a **new message** starting with "remember this meeti
 - a transcript file: `.txt`, `.md`, `.vtt` or `.srt`, up to 200 KB
 - the transcript or summary pasted after the phrase
 
-Serra replies in that thread, then posts a digest: the decisions waiting for you in **Knowledge › Proposals**, plus action items and open questions. Action items stay in the digest; Serra doesn't file tickets from meetings yet.
+Serra replies in that thread, then posts a digest: the decisions waiting for you in **Knowledge › Proposals**, plus action items and open questions. Action items stay in the digest; Serra doesn't file tickets from meetings yet. The digest's thread is closed, since its action items aren't checked against the transcript: to act on one, send a new message.
 
 ## What Serra keeps
 
@@ -59,6 +59,7 @@ They can't prove a decision is right or final. **Your review is the real check.*
 Settings › Meetings › **Forget** removes everything a meeting added:
 - its page lines, from pages, the approved copy and every backup (a rule it replaced is current again);
 - the folders workers read (threads that read it start fresh on their next message);
+- a `decisions/` page it created, once nothing else is on it (also one an earlier forgotten meeting created);
 - its pending quotes;
 - its digest message.
 

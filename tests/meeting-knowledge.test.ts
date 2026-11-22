@@ -1,7 +1,7 @@
 // Meeting knowledge (SERRA-62): transcripts, the item checks, page edits, and the approval store. Deterministic:
 // no model runs here. The extractor's output is scripted, the way an injected or careless model could answer.
 import assert from 'node:assert/strict';
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test, { type TestContext } from 'node:test';
@@ -376,8 +376,8 @@ test('Forget after a replace puts the replaced rule back under Decisions', () =>
 });
 
 test('the sensitive screen drops HR and health talk, not payments and engineering talk', () => {
-  for (const text of ["Bo's salary review is overdue", 'Ana is off sick this week', 'he got fired', 'the hiring freeze', 'her surgery on Monday', "Bo's performance review"]) assert.ok(isSensitive(text), text);
-  for (const text of ['fire the webhook again', 'pay the invoice in EUR', 'the health check endpoint', 'promote the build to production', 'the node is unhealthy', 'Bonus: also fixes retries', 'hire a contractor for the SDK', 'pip install the SDK', 'a performance review of the query planner', 'diagnosis of the outage', 'redundancy in the queue']) assert.ok(!isSensitive(text), text);
+  for (const text of ["Bo's salary review is overdue", 'Ana is off sick this week', 'he got fired', 'the hiring freeze', 'her surgery on Monday', "Bo's performance review", 'Bo is on a PIP', 'Ana resigned last week', 'she is resigning', 'Bo was promoted', 'Bo got promoted', 'the diagnosis came back', 'performance review for Bo', 'Bo has performance issues', 'we are letting Sam go']) assert.ok(isSensitive(text), text);
+  for (const text of ['fire the webhook again', 'pay the invoice in EUR', 'the health check endpoint', 'promote the build to production', 'the node is unhealthy', 'Bonus: also fixes retries', 'hire a contractor for the SDK', 'pip install the SDK', 'a performance review of the query planner', 'diagnosis of the outage', 'redundancy in the queue', 'the build was promoted to production', 'the API has performance issues']) assert.ok(!isSensitive(text), text);
 });
 
 test('a new page gets a team audience, today as verified and one index row; Forget removes both', (t) => {
@@ -442,4 +442,52 @@ test('the knowledge lock waits for a live holder and takes over a dead one', (t)
   assert.equal(withKnowledgeLock(knowledgeDir, () => 42), 42);
   writeFileSync(join(knowledgeDir, '..', 'knowledge.lock'), JSON.stringify({ pid: process.ppid, at: 'x' }));
   assert.throws(() => withKnowledgeLock(knowledgeDir, () => 1, { timeoutMs: 100 }), /busy/);
+});
+
+test('chained replaces: forgetting the middle meeting keeps the oldest rule in history, pointing at the newest', () => {
+  const m1 = { id: 'aaaaa1', title: 'One', date: '2026-11-01' };
+  const m2 = { id: 'bbbbb2', title: 'Two', date: '2026-11-10' };
+  const base = page('## Decisions\n\n- Retry 5 times.\n');
+  const one = applyEdit(base, { op: 'replace', old: 'Retry 5 times.', text: 'Retry 4 times.' }, m1) as { text: string };
+  const two = applyEdit(one.text, { op: 'replace', old: 'Retry 4 times.', text: 'Retry 3 times.' }, m2) as { text: string };
+  const forgotOne = scrubMeeting(two.text, m1.id);
+  assert.deepEqual(decisionBullets(forgotOne).map((bullet) => bullet.text), ['Retry 3 times.']);
+  assert.match(forgotOne, /Retry 5 times\. \(stopped applying 2026-11-01, replaced by m:bbbbb2\)/);
+  const forgotBoth = scrubMeeting(forgotOne, m2.id);
+  assert.deepEqual(decisionBullets(forgotBoth).map((bullet) => bullet.text), ['Retry 5 times.']);
+});
+
+test('Replaced keeps a bullet a current decision replaced, however many newer ones are trimmed', () => {
+  let text = page('## Decisions\n\n- Keep me.\n');
+  const keeper = { id: 'c0ffee', title: 'Keeper', date: '2026-10-01' };
+  text = (applyEdit(text, { op: 'replace', old: 'Keep me.', text: 'Current rule.' }, keeper) as { text: string }).text;
+  for (let n = 0; n < 7; n++) {
+    const meeting = { id: `a${String(n).padStart(5, '0')}`, title: `M${n}`, date: '2026-11-01' };
+    const added = applyEdit(text, { op: 'add', text: `Rule ${n}.` }, meeting) as { text: string };
+    const replaced = applyEdit(added.text, { op: 'replace', old: `Rule ${n}.`, text: `Rule ${n} v2.` }, { ...meeting, id: `b${String(n).padStart(5, '0')}` }) as { text: string };
+    text = replaced.text;
+  }
+  assert.match(text, /Keep me\. \(stopped applying 2026-10-01, replaced by m:c0ffee\)/);
+  assert.deepEqual(decisionBullets(scrubMeeting(text, 'c0ffee')).map((bullet) => bullet.text).filter((line) => line === 'Keep me.'), ['Keep me.']);
+});
+
+test('quotes of an item committed before a crash are swept by upkeep', (t) => {
+  const knowledgeDir = fixture(t);
+  const { store, meeting } = record(knowledgeDir, [RETRIES]);
+  const evidencePath = join(knowledgeDir, '..', 'meeting-evidence', `${meeting.id}.json`);
+  const evidence = readFileSync(evidencePath, 'utf8');
+  store.approve(meeting.id, 'i1', store.listMeetings()[0]!.items[0]!.reviewed!);
+  writeFileSync(evidencePath, evidence); // the crash: committed, quotes not yet dropped
+  store.expire();
+  assert.ok(!existsSync(evidencePath));
+});
+
+test('an unreadable lock is taken over only once its file is old, never one a holder just opened', (t) => {
+  const knowledgeDir = fixture(t);
+  const lock = join(knowledgeDir, '..', 'knowledge.lock');
+  writeFileSync(lock, '');
+  assert.throws(() => withKnowledgeLock(knowledgeDir, () => 1, { timeoutMs: 300 }), /busy/, 'a fresh empty lock is a write in progress');
+  const old = new Date(Date.now() - 5_000);
+  utimesSync(lock, old, old);
+  assert.equal(withKnowledgeLock(knowledgeDir, () => 2), 2);
 });

@@ -62,7 +62,9 @@ export const withKnowledgeLock = <T>(knowledgeDir: string, work: () => T, { time
         const stale = `${path}.stale-${randomBytes(4).toString('hex')}`;
         try { renameSync(path, stale); } catch { continue; }
         const moved = holder(stale);
-        if (owner && (moved?.pid !== owner.pid || moved.at !== owner.at)) { try { linkSync(stale, path); } catch { /* a newer lock is there */ } }
+        // Judged unreadable, anything readable now is a new holder's; judged dead, anything else is.
+        const someoneElse = owner ? moved?.pid !== owner.pid || moved.at !== owner.at : moved !== null;
+        if (someoneElse) { try { linkSync(stale, path); } catch { /* a newer lock is there */ } }
         rmSync(stale, { force: true });
         continue;
       }
