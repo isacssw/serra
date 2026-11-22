@@ -47,7 +47,7 @@ jobs:
           fi
           # Dependabot's security fixes, titled fix(deps) and fix(deps-dev), need no changelog line; anyone else's do.
           dependabot=false
-          [[ "$author" == *dependabot* && ( "$scope" == deps || "$scope" == deps-dev ) ]] && dependabot=true
+          [[ "$author" == app/dependabot && ( "$scope" == deps || "$scope" == deps-dev ) ]] && dependabot=true
           if [[ ( "$type" == feat || "$type" == fix ) && $dependabot == false ]]; then
             # The files API pages through any size of PR (gh pr diff refuses large ones), and a failure stops here.
             files=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$number/files" --paginate --jq '.[].filename')
