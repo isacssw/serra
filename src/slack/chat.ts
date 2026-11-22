@@ -81,7 +81,8 @@ export interface SlackChatOptions {
   receive?: typeof receiveAttachments;
 }
 
-export const createSlackChat = ({ client, owner, botUserId, botToken, profileDir, logger, clock, receive = receiveAttachments }: SlackChatOptions): { chat: ChatPort; writer: WorkerWriter } => {
+export const createSlackChat = ({ client, owner, botUserId, botToken, profileDir, logger, clock, receive = receiveAttachments }: SlackChatOptions):
+  { chat: ChatPort; writer: WorkerWriter; sawDm: (conversation: string, person: PersonId) => void } => {
   const now = (): number => clock.now();
   const mention = (person: PersonId): string => `<@${person}>`;
 
@@ -141,21 +142,18 @@ export const createSlackChat = ({ client, owner, botUserId, botToken, profileDir
     }
   };
 
-  /** The owner's DM, asked of Slack: theirs alone, or, when Slack says it is someone else's, as that person's DM. */
-  const confirmOwnDm = async (conversation: string): Promise<Result<Audience>> => {
-    const ask = async (): Promise<Result<Audience>> => {
-      try {
-        const { channel } = await client.conversations.info({ channel: conversation });
-        // An IM's `user` is the person in it; Slack's types leave it out.
-        const other: unknown = isRecord(channel) ? channel.user : undefined;
-        return typeof other === 'string' && other !== owner ? lookUpDm(other) : { ok: true, value: 'owner' };
-      } catch (error) {
-        logger.debug(`Looking up ${conversation} failed: ${errorMessage(error)}`);
-        return { ok: false, error: chatError(error) };
-      }
-    };
-    const looked = await ask();
-    return looked.ok ? looked : ask();
+  /**
+   * Whose each DM is, learned from the messages people send in it (`sawDm`). Asking Slack would need `im:read`, which
+   * the app doesn't request.
+   */
+  const dmOwners = new Map<string, PersonId>();
+  /**
+   * The owner's DM is theirs alone, unless a message in it came from someone else: then it is that person's DM. A DM
+   * not seen since the start counts as the owner's, as their requests say.
+   */
+  const ownDm = (conversation: string): Promise<Result<Audience>> | Result<Audience> => {
+    const other = dmOwners.get(conversation);
+    return other !== undefined && other !== owner ? audience({ conversation, thread: null }, other, { fresh: true }) : { ok: true, value: 'owner' };
   };
 
   /**
@@ -166,17 +164,16 @@ export const createSlackChat = ({ client, owner, botUserId, botToken, profileDir
   const audience = async (target: Target, requester: PersonId, { fresh = false }: { fresh?: boolean } = {}): Promise<Result<Audience>> => {
     const conversation = target.conversation;
     if (isDm(conversation)) {
-      // Before a post, the owner's DM is confirmed to be theirs: a DM is only as private as the person in it.
-      if (requester === owner) return fresh ? confirmOwnDm(conversation) : { ok: true, value: 'owner' };
+      if (requester === owner) return ownDm(conversation);
       const known = dmPeople.get(requester);
       if (!fresh && known && known.until > now()) return { ok: true, value: known.visibility };
       const looked = await lookUpDm(requester);
-      return looked.ok || !fresh ? looked : lookUpDm(requester);
+      return looked.ok || !fresh || looked.error.kind === 'setup' ? looked : lookUpDm(requester);
     }
     const known = sharedChannels.get(conversation);
     if (!fresh && known && known.until > now()) return { ok: true, value: known.external ? 'external' : 'team' };
     const looked = await lookUpChannel(conversation, requester);
-    return looked.ok || !fresh ? looked : lookUpChannel(conversation, requester);
+    return looked.ok || !fresh || looked.error.kind === 'setup' ? looked : lookUpChannel(conversation, requester);
   };
 
   // Rendering. ------------------------------------------------------------------------------------------------------
@@ -403,5 +400,10 @@ export const createSlackChat = ({ client, owner, botUserId, botToken, profileDir
     },
   };
 
-  return { chat, writer };
+  /** A person wrote in a DM: it is theirs. The daemon calls this for every inbound DM message. */
+  const sawDm = (conversation: string, person: PersonId): void => {
+    if (isDm(conversation) && person !== botUserId()) dmOwners.set(conversation, person);
+  };
+
+  return { chat, writer, sawDm };
 };

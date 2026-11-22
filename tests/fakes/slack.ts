@@ -42,8 +42,6 @@ export interface FakeSlackOptions {
   /** The time, for message ts as Slack makes them (seconds, then a sequence). Defaults to the real clock. */
   now?: () => number;
   files?: Record<string, Record<string, unknown>>;
-  /** Whose each DM is, as `conversations.info` says (`user`). A DM not listed leaves `user` out. */
-  dms?: Record<string, string>;
   /** Whether `conversations.replies` returns message metadata when asked. Default true; false for a workspace that leaves it out. */
   returnsMetadata?: boolean;
   /** Store posted text as Slack does: `&`, `<`, `>` escaped outside link markup, and bare links wrapped as `<url>`. */
@@ -176,10 +174,11 @@ export const createFakeSlack = (options: FakeSlackOptions = {}) => {
       info: (args) => call('users.info', args, () => ({ ok: true, user: { id: args.user, real_name: names[args.user] ?? args.user, team_id: teams[args.user] ?? team } })),
     },
     conversations: {
-      info: (args) => call('conversations.info', args, () => ({
-        ok: true, channel: { id: args.channel, is_im: args.channel.startsWith('D'), is_ext_shared: external.has(args.channel), is_pending_ext_shared: false,
-          ...(options.dms?.[args.channel] ? { user: options.dms[args.channel] } : {}) },
-      })),
+      info: (args) => call('conversations.info', args, () => {
+        // Describing a DM needs `im:read`, which Serra's Slack app doesn't request (manifest.yaml).
+        if (args.channel.startsWith('D')) throw slackError('missing_scope');
+        return { ok: true, channel: { id: args.channel, is_im: false, is_ext_shared: external.has(args.channel), is_pending_ext_shared: false } };
+      }),
       replies: (args) => call('conversations.replies', args, () => {
         const oldest = typeof args.oldest === 'string' ? Number(args.oldest) : -Infinity;
         const list = inThread(args.channel, args.ts).filter((message) => message.ts === args.ts || Number(message.ts) >= oldest);

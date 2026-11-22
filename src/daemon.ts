@@ -101,7 +101,7 @@ export const startDaemon = async (deps: DaemonDeps): Promise<Daemon> => {
     const logEvent = eventLog(join(logsDir, 'events.jsonl'), () => new Date(clock.now()));
     let status: StatusServer | null = null;
     // The Slack adapter. Its writer goes straight to `deliver`, the only code that ever holds it.
-    const { chat, writer } = createSlackChat({
+    const { chat, writer, sawDm } = createSlackChat({
       client, owner: config.owner, botUserId: () => botUserId, botToken: config.botToken, profileDir: config.profileDir, logger, clock,
       ...(deps.receive ? { receive: deps.receive } : {}),
     });
@@ -143,6 +143,8 @@ export const startDaemon = async (deps: DaemonDeps): Promise<Daemon> => {
      * would start a job waits, with an hourglass on it, for the restarted bot. Messages for running jobs go through.
      */
     const receive = async (msg: IncomingMessage): Promise<void> => {
+      // Whose a DM is, for the adapter's check that the owner's DM is theirs alone.
+      if (!msg.botId) sawDm(msg.channel, msg.user);
       const paused = readPause(config.profileDir, clock.now());
       const waitingBehind = heldIn(msg.channel, msg.threadTs);
       if (waitingBehind || admit(paused !== null, bot.runningIn(msg.channel, msg.threadTs)) === 'hold') {
