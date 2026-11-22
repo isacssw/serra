@@ -4,12 +4,15 @@
 //
 // The lock is a file holding the holder's PID and start time, made with O_EXCL. It waits (synchronously: knowledge
 // services are synchronous) and takes over a lock whose holder process is gone. Nested calls in one process share it.
-import { closeSync, openSync, readFileSync, rmSync, writeSync } from 'node:fs';
+import { randomBytes } from 'node:crypto';
+import { closeSync, linkSync, openSync, readFileSync, renameSync, rmSync, statSync, writeSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { errorCode, isRecord, parseJson, stringField } from './json-guards.ts';
 
 const WAIT_MS = 25;
 const DEFAULT_TIMEOUT_MS = 15_000;
+/** No knowledge change takes this long: a lock older than this is abandoned, whoever has its PID now. */
+const STALE_MS = 10 * 60_000;
 const sleeper = new Int32Array(new SharedArrayBuffer(4));
 
 /** The lock file for the knowledge folder `knowledgeDir`: next to it, in the profile. */
@@ -50,8 +53,18 @@ export const withKnowledgeLock = <T>(knowledgeDir: string, work: () => T, { time
     } catch (error) {
       if (errorCode(error) !== 'EEXIST') throw error;
       const owner = holder(path);
-      // Gone, or unreadable for long enough that it isn't a write in progress: take it over.
-      if (!owner ? Date.now() + timeoutMs - deadline > 1000 : !processAlive(owner.pid)) { rmSync(path, { force: true }); continue; }
+      const age = (() => { try { return Date.now() - statSync(path).mtimeMs; } catch { return 0; } })();
+      // Gone, too old to be live (a reused PID), or unreadable for long enough that it isn't a write in progress.
+      if (!owner ? Date.now() + timeoutMs - deadline > 1000 : !processAlive(owner.pid) || age > STALE_MS) {
+        // Taken over by renaming it away. If what was renamed isn't the lock judged abandoned (another waiter took it
+        // over and a new holder made its own in between), it's put back: link fails rather than overwrite a lock.
+        const stale = `${path}.stale-${randomBytes(4).toString('hex')}`;
+        try { renameSync(path, stale); } catch { continue; }
+        const moved = holder(stale);
+        if (owner && (moved?.pid !== owner.pid || moved.at !== owner.at)) { try { linkSync(stale, path); } catch { /* a newer lock is there */ } }
+        rmSync(stale, { force: true });
+        continue;
+      }
       if (Date.now() > deadline) throw new Error('Knowledge is busy with another change. Try again in a moment.');
       Atomics.wait(sleeper, 0, 0, WAIT_MS);
     }

@@ -22,7 +22,7 @@ import { createJournal } from './knowledge-journal.ts';
 import { processAlive, withKnowledgeLock } from './knowledge-lock.ts';
 import { frontmatter, INDEX_MAX_LINES, lineCount, pageProblems, PROPOSALS_DIR } from './knowledge-rules.ts';
 import type { CheckedItem, ReplyLine } from './meeting-digest.ts';
-import { applyEdit, audienceLine, decisionBullets, indexRow, MEETING_ID, mentionsMeeting, newDecisionPage, newPageDescription, scrubMeeting, type MeetingStamp } from './meeting-page.ts';
+import { applyEdit, audienceLine, decisionBullets, indexRow, MEETING_ID, mentionsMeeting, newDecisionPage, scrubMeeting, type MeetingStamp } from './meeting-page.ts';
 import { hasSecret } from './meeting-transcript.ts';
 import { isRecord, parseJson } from './json-guards.ts';
 
@@ -59,8 +59,10 @@ export interface MeetingRecord {
   items: Record<string, MeetingItemRecord>;
   /** Pages an approval changed. */
   pages: string[];
-  /** Text the meeting's approvals derived (a new page's index row and description), for Forget to scrub. */
+  /** Index rows the meeting's approvals added for new pages, for Forget to scrub when it removes the page. */
   derived: string[];
+  /** Pages the meeting created. Forget removes one when nothing else is left on it. */
+  created?: string[];
   /** Serra's digest message in the owner's DM, for Forget to delete. */
   digest?: { channel: string; ts: string };
   /** Speakers as named in the transcript, for the review screen. */
@@ -137,6 +139,17 @@ const backupChange = (value: unknown): { change: Record<string, unknown>; files:
   return files.every(isBackupFile) ? { change: value, files } : null;
 };
 
+/** Every page under `dir` (a knowledge folder or its approved copy), relative to it: not proposals, the index, the log or READMEs. */
+const pagePaths = (dir: string, relativeDir = ''): string[] => {
+  if (!existsSync(join(dir, relativeDir))) return [];
+  return readdirSync(join(dir, relativeDir), { withFileTypes: true }).flatMap((entry) => {
+    if (entry.name.startsWith('.')) return [];
+    const path = relativeDir ? `${relativeDir}/${entry.name}` : entry.name;
+    if (entry.isDirectory()) return path === PROPOSALS_DIR ? [] : pagePaths(dir, path);
+    return entry.name.endsWith('.md') && path !== 'index.md' && path !== 'log.md' && entry.name !== 'README.md' ? [path] : [];
+  });
+};
+
 export const sha = (text: string): string => createHash('sha256').update(text).digest('hex');
 
 export interface MeetingStoreOptions {
@@ -206,6 +219,13 @@ export const createMeetingStore = ({ knowledgeDir, now = () => new Date(), backu
     journal.record(files);
   };
 
+  /** Write one file on disk only, leaving the approved copy alone (Forget on a page with unreviewed changes). */
+  const writeOne = (path: string, text: string | null): void => {
+    const absolute = join(root, path);
+    if (text === null) rmSync(absolute, { force: true });
+    else { mkdirSync(dirname(absolute), { recursive: true }); writeFileAtomic(absolute, text, { mode: 0o644 }); }
+  };
+
   /**
    * Roll back an approval a crash left half done, from its backup. Runs before anything reads knowledge: at daemon
    * start, and whenever the app opens Pages or Proposals. A live holder's approval is never touched.
@@ -213,7 +233,15 @@ export const createMeetingStore = ({ knowledgeDir, now = () => new Date(), backu
   const recover = (): boolean => locked(() => {
     const registry = readRegistry();
     const pending = registry.pending;
-    if (!pending || (pending.pid !== process.pid && processAlive(pending.pid))) return false;
+    // A live process's approval is left alone; this process's own is rolled back where it failed (approve's catch).
+    // A PID can be reused: an approval takes milliseconds, so one pending for ten minutes is abandoned whoever has the PID now.
+    if (!pending || (processAlive(pending.pid) && Date.now() - Date.parse(pending.at) < 10 * 60_000)) return false;
+    rollBack(registry, pending);
+    return true;
+  });
+
+  /** Put back what an unfinished approval wrote, from its backup, and its stub. The evidence was never removed. */
+  const rollBack = (registry: Registry, pending: PendingApproval): void => {
     const changePath = join(backups, pending.backupId, 'change.json');
     if (existsSync(changePath)) {
       const backup = backupChange(parseJson(readFileSync(changePath, 'utf8')));
@@ -226,10 +254,11 @@ export const createMeetingStore = ({ knowledgeDir, now = () => new Date(), backu
       mkdirSync(dirname(stub), { recursive: true });
       writeFileAtomic(stub, pending.stub, { mode: 0o644 });
     }
+    const entry = registry.meetings[pending.meeting]?.items[pending.item];
+    if (entry) entry.status = 'pending';
     delete registry.pending;
     writeRegistry(registry);
-    return true;
-  });
+  };
 
   /**
    * Record a checked meeting: evidence, one stub per item, and the registry entry. Returns the meeting's record.
@@ -292,7 +321,14 @@ export const createMeetingStore = ({ knowledgeDir, now = () => new Date(), backu
     state: record.state, dropped: record.dropped, pages: record.pages,
     items: Object.entries(record.items).flatMap(([itemId, entry]) => {
       const item = evidence?.items[itemId];
-      if (!item) return [];
+      if (!item) {
+        // Pending with its quotes gone (an older version's crash): it can't be reviewed, only discarded.
+        if (entry.status !== 'pending') return [];
+        return [{
+          id: itemId, status: entry.status, kind: 'decision' as const, text: 'An edit whose quotes are gone', target: entry.target, newPage: false, op: 'add' as const,
+          quote: '', context: [], before: null, after: null, problem: 'Serra no longer has the quotes for this edit, so it can only be discarded.', wholePage: false, reviewed: null,
+        }];
+      }
       const rendered = entry.status === 'pending' && record.state === 'open' ? render(record, item, evidence.meeting) : { before: null, after: null, problem: null, wholePage: false };
       const evidenceOk = itemHash(item) === entry.evidence && existsSync(stubPath(record.id, itemId));
       return [{
@@ -319,7 +355,9 @@ export const createMeetingStore = ({ knowledgeDir, now = () => new Date(), backu
   /** Every meeting Serra kept anything from, for Forget meeting. */
   const history = (): Pick<MeetingView, 'id' | 'title' | 'date' | 'source' | 'createdAt' | 'pages' | 'state'>[] => {
     const registry = readRegistry();
-    return Object.values(registry.meetings).filter((record) => record.state !== 'forgotten')
+    // Meetings that left something: an approved line, an edit still waiting, or a Forget still finishing.
+    return Object.values(registry.meetings).filter((record) => record.state === 'forgetting'
+      || (record.state === 'open' && (record.pages.length > 0 || Object.values(record.items).some((item) => item.status === 'pending'))))
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
       .map(({ id, title, date, source, createdAt, pages, state }) => ({ id, title, date, source, createdAt, pages, state }));
   };
@@ -338,9 +376,12 @@ export const createMeetingStore = ({ knowledgeDir, now = () => new Date(), backu
   const closeItem = (record: MeetingRecord, itemId: string, status: ItemStatus): void => {
     rmSync(stubPath(record.id, itemId), { force: true });
     record.items[itemId]!.status = status;
-    const evidence = readEvidence(record.id);
-    if (evidence) { delete evidence.items[itemId]; writeEvidence(evidence); }
     if (!Object.values(record.items).some((item) => item.status === 'pending')) rmSync(join(stubsRoot, record.id), { recursive: true, force: true });
+  };
+  /** Drop one item's quotes. Always after its approval or discard is committed in the registry. */
+  const dropEvidence = (id: string, itemId: string): void => {
+    const evidence = readEvidence(id);
+    if (evidence) { delete evidence.items[itemId]; writeEvidence(evidence); }
   };
 
   /**
@@ -381,7 +422,7 @@ export const createMeetingStore = ({ knowledgeDir, now = () => new Date(), backu
       const indexAfter = index.includes(`\`${item.target}\``) ? index : `${index.trimEnd()}\n${row}\n`;
       if (lineCount(indexAfter) > INDEX_MAX_LINES) throw new Error(`index.md would be over its ${INDEX_MAX_LINES}-line cap. Make room in Pages, then approve.`);
       if (indexAfter !== index) files.push({ path: 'index.md', before: index, after: indexAfter });
-      derived.push(row, `description: ${newPageDescription(item.newPage!.topic)}`);
+      derived.push(row);
     }
     const log = read('log.md');
     files.push({ path: 'log.md', before: log, after: `${(log ?? '# Knowledge changes\n').trimEnd()}\n- ${today()}: approved meeting ${id} item ${itemId}, confirmed by the owner in the app.\n` });
@@ -390,16 +431,26 @@ export const createMeetingStore = ({ knowledgeDir, now = () => new Date(), backu
     const backupId = `${at.toISOString().replace(/[-:]/g, '').replace(/\.\d+Z$/, 'Z')}-meeting-${id}-${itemId}-${randomBytes(3).toString('hex')}`;
     mkdirSync(join(backups, backupId), { recursive: true, mode: 0o700 });
     writeFileAtomic(join(backups, backupId, 'change.json'), `${JSON.stringify({ id: backupId, action: 'merge', at: at.toISOString(), proposal: `${MEETING_PROPOSALS}/${id}/${itemId}.md`, page: item.target, files }, null, 2)}\n`);
-    registry.pending = { meeting: id, item: itemId, backupId, pid: process.pid, at: at.toISOString(), stub: readFileSync(stubPath(id, itemId), 'utf8') };
+    const pending: PendingApproval = { meeting: id, item: itemId, backupId, pid: process.pid, at: at.toISOString(), stub: readFileSync(stubPath(id, itemId), 'utf8') };
+    registry.pending = pending;
     writeRegistry(registry);
-    writeFiles(files.map(({ path, after: text }) => ({ path, text })));
-    closeItem(record, itemId, 'approved');
-    entry.backupId = backupId;
-    entry.at = at.toISOString();
-    if (!record.pages.includes(item.target)) record.pages.push(item.target);
-    record.derived.push(...derived.filter((line) => !record.derived.includes(line)));
-    delete registry.pending;
-    writeRegistry(registry);
+    try {
+      writeFiles(files.map(({ path, after: text }) => ({ path, text })));
+      closeItem(record, itemId, 'approved');
+      entry.backupId = backupId;
+      entry.at = at.toISOString();
+      if (!record.pages.includes(item.target)) record.pages.push(item.target);
+      if (creating && !(record.created ?? []).includes(item.target)) record.created = [...(record.created ?? []), item.target];
+      record.derived.push(...derived.filter((line) => !record.derived.includes(line)));
+      delete registry.pending;
+      writeRegistry(registry);
+    } catch (error) {
+      // Failed part way in this process: put everything back now, not at the next start.
+      rollBack(readRegistry(), pending);
+      throw error;
+    }
+    // Committed: only now do the item's quotes go.
+    dropEvidence(id, itemId);
     return { undoId: backupId };
   });
 
@@ -412,6 +463,7 @@ export const createMeetingStore = ({ knowledgeDir, now = () => new Date(), backu
     if (record.items[itemId]!.status !== 'pending') return;
     closeItem(record, itemId, 'discarded');
     writeRegistry(registry);
+    dropEvidence(id, itemId);
   });
 
   /** Discard every pending edit of a meeting and its evidence. Can't be undone. */
@@ -463,38 +515,44 @@ export const createMeetingStore = ({ knowledgeDir, now = () => new Date(), backu
     if (!registry.revoked.includes(id)) registry.revoked.push(id);
     writeRegistry(registry);
 
-    // Pages: scrubbed, or removed with their index row when the meeting created them and nothing else is on them.
-    const touched = [...new Set([...record.pages, ...Object.values(record.items).map((item) => item.target)])];
-    const changes: { path: string; text: string | null }[] = [];
-    let index = read('index.md');
-    for (const path of touched) {
-      const text = read(path);
-      if (text === null || !mentionsMeeting(text, id)) continue;
-      const scrubbed = scrubMeeting(text, id, record.derived);
-      const created = record.derived.some((line) => line.includes(`\`${path}\``));
-      const empty = decisionBullets(scrubbed).length === 0 && !/^##\s+Replaced/m.test(scrubbed) && scrubbed.replace(/^---\n[\s\S]*?\n---\n/, '').replace(/^#.*$/gm, '').trim() === '';
-      if (created && empty) {
-        changes.push({ path, text: null });
-        if (index !== null) index = scrubMeeting(index, id, record.derived);
-      } else changes.push({ path, text: scrubbed });
-    }
-    if (index !== null && index !== read('index.md')) changes.push({ path: 'index.md', text: index });
-    // Written straight to disk and the approved copy: no backup of what Forget removes.
-    if (changes.length) writeFiles(changes);
-    // The approved copy of pages it touched that drifted on disk is scrubbed too.
-    for (const path of touched) {
+    // Every page and its approved copy, not only the pages the registry recorded: a tagged bullet may have moved.
+    // The page on disk and the approved copy are scrubbed separately, so Forget never approves a change the owner
+    // hasn't reviewed (a page edited outside Serra stays a change to review, minus the meeting's lines).
+    const created = new Set(record.created ?? []);
+    const removedPages: string[] = [];
+    const scrubbedPages: string[] = [];
+    const paths = [...new Set([...pagePaths(root), ...(journal.seeded() ? pagePaths(journal.approvedRoot) : [])])];
+    const emptyAfter = (text: string): boolean => decisionBullets(text).length === 0 && !/^##\s+Replaced/m.test(text)
+      && text.replace(/^---\n[\s\S]*?\n---\n/, '').replace(/^#.*$/gm, '').trim() === '';
+    for (const path of paths) {
+      const disk = read(path);
       const approved = journal.approvedText(path);
-      if (approved !== null && mentionsMeeting(approved, id)) journal.record([{ path, text: scrubMeeting(approved, id, record.derived) }]);
+      if (!(disk !== null && mentionsMeeting(disk, id)) && !(approved !== null && mentionsMeeting(approved, id))) continue;
+      const diskAfter = disk === null ? null : scrubMeeting(disk, id);
+      const approvedAfter = approved === null ? null : scrubMeeting(approved, id);
+      // A page the meeting created goes, with its index row, when nothing else is left on it.
+      const remove = created.has(path) && (diskAfter === null || emptyAfter(diskAfter)) && (approvedAfter === null || emptyAfter(approvedAfter));
+      if (remove) removedPages.push(path); else scrubbedPages.push(path);
+      if (disk !== null && disk !== diskAfter) writeOne(path, remove ? null : diskAfter);
+      if (approved !== null && approved !== approvedAfter) journal.record([{ path, text: remove ? null : approvedAfter }]);
+    }
+    // Index rows of removed pages, on disk and in the approved copy.
+    const rows = record.derived.filter((row) => removedPages.some((path) => row.includes(`\`${path}\``)));
+    if (rows.length) {
+      const index = read('index.md');
+      if (index !== null) writeOne('index.md', scrubMeeting(index, id, rows));
+      const approvedIndex = journal.approvedText('index.md');
+      if (approvedIndex !== null) journal.record([{ path: 'index.md', text: scrubMeeting(approvedIndex, id, rows) }]);
     }
 
     // Every backup, both formats (page edits and approvals): the before and after text of each file.
     let backupsScrubbed = 0;
     for (const path of backupFiles()) {
       const raw = readFileSync(path, 'utf8');
-      if (!raw.includes(id)) continue;
+      if (!raw.includes(id) && !removedPages.some((page) => raw.includes(page))) continue;
       const backup = backupChange(parseJson(raw));
       if (!backup) continue;
-      const scrub = (text: string | null): string | null => (text === null ? null : scrubMeeting(text, id, record.derived));
+      const scrub = (text: string | null): string | null => (text === null ? null : scrubMeeting(text, id, rows));
       const files = backup.files.map((file) => ({ ...file, before: scrub(file.before), after: scrub(file.after) }));
       writeFileAtomic(path, `${JSON.stringify({ ...backup.change, files }, null, 2)}\n`);
       backupsScrubbed += 1;
@@ -505,9 +563,10 @@ export const createMeetingStore = ({ knowledgeDir, now = () => new Date(), backu
     rmSync(evidencePath(id), { force: true });
     for (const entry of Object.values(record.items)) if (entry.status === 'pending') entry.status = 'discarded';
     if (!record.digest) record.state = 'forgotten';
-    const pages = changes.map((change) => change.path).filter((path) => path !== 'index.md');
+    const pages = [...removedPages, ...scrubbedPages];
     record.pages = [];
     record.derived = [];
+    record.created = [];
     writeRegistry(registry);
     return { pages, backups: backupsScrubbed, snapshots: snapshots.length };
   });
@@ -545,6 +604,15 @@ export const createMeetingStore = ({ knowledgeDir, now = () => new Date(), backu
       if (any) expired.push(record.id);
     }
     if (expired.length) writeRegistry(registry);
+    for (const id of expired) rmSync(evidencePath(id), { force: true });
+    // Evidence the registry doesn't know (a crash between writing it and the registry) goes after the same 30 days.
+    if (existsSync(evidenceDir)) {
+      for (const name of readdirSync(evidenceDir)) {
+        const id = name.replace(/\.json$/, '');
+        const path = join(evidenceDir, name);
+        if (!registry.meetings[id] && statSync(path).mtimeMs < cutoff) rmSync(path, { force: true });
+      }
+    }
     return expired;
   });
 

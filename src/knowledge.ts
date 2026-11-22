@@ -4,6 +4,7 @@ import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'nod
 import { writeFileAtomic } from './config.ts';
 import { createJournal, type KnowledgeDrift } from './knowledge-journal.ts';
 import { withKnowledgeLock } from './knowledge-lock.ts';
+import { createMeetingStore } from './meeting-store.ts';
 import { AUDIENCES, compileAboutMe, filterIndex, mayUse, pageAudience, type AboutMe, type Audience, type Visibility } from './owner-model.ts';
 import type { KnowledgePage, Profile } from './contracts.ts';
 import {
@@ -202,6 +203,8 @@ export const createKnowledge = (knowledgeDir: string, { backupDir }: KnowledgeOp
    * says which, and where their approved text is.
    */
   const briefKnowledge = (visibility: Visibility, now: Date = new Date()): BriefKnowledge => {
+    // A meeting approval a crash left half done is rolled back before any brief reads knowledge.
+    createMeetingStore({ knowledgeDir: root }).recover();
     const { changed, removed } = journal.drift();
     const drifted = changed.length > 0 || removed.length > 0;
     // Once the approved copy exists, briefs read only from it: whatever is on disk, even a save landing a moment after

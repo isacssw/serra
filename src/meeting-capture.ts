@@ -23,7 +23,6 @@ import { MAX_TRANSCRIPT_CHARS, parseTranscript } from './meeting-transcript.ts';
 import type { IncomingFile, IncomingMessage } from './types.ts';
 
 export const CLOSED_THREADS_FILE = 'meeting-threads.json';
-const KEEP_CLOSED = 1000;
 
 /** How Serra talks in Slack while capturing. Posting failures are logged, never thrown. */
 export interface MeetingChat {
@@ -59,10 +58,11 @@ export const COPY = {
   notOwner: (owner: string) => `Only <@${owner}> can add meetings, as a new message in their DM with me.`,
   off: 'Meeting capture is off. Turn it on in Serra › Settings › Meetings, then send the meeting again.',
   paused: 'Serra is updating. Send the meeting again in a minute.',
-  earlier: 'This conversation already has other messages, and now holds a transcript. Start a new one to add a meeting.',
+  earlier: 'To add a meeting, start a new conversation with me and send it there first.',
+  linkAndText: 'Reading the link. The text you pasted with it is ignored.',
   nothing: 'Send the transcript as a file (.txt, .md, .vtt or .srt), paste it after “remember this meeting”, or add a Granola or Google Meet transcript link.',
   oneFile: 'Send one transcript file at a time (.txt, .md, .vtt or .srt).',
-  reading: (what: string) => `Reading ${what}… Only what your team may hear is kept, and you review every item first.`,
+  reading: (what: string) => `Reading ${what}… You review every item before Serra keeps it.`,
   done: 'Done. The digest is below in our DM.',
   failed: (why: string) => `Couldn’t read that meeting: ${why}`,
 } as const;
@@ -94,19 +94,22 @@ export const meetingPages = (knowledgeDir: string): { team: TeamPage[]; existing
   return { team, existing: new Set(paths) };
 };
 
+/** Model text as plain Slack text: `&`, `<` and `>` escaped, so an injected line can't become a link or a mention. */
+const plain = (text: string): string => text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
 /** The digest message: what's waiting for review, what's already known, action items and questions, what was left out. */
 export const digestText = (digest: Digest, from: string): string => {
-  const lines = [`*${digest.meeting.title}* · ${digest.meeting.date} · from ${from}`];
+  const lines = [`*${plain(digest.meeting.title)}* · ${digest.meeting.date} · from ${from}`];
   const count = digest.items.length;
   lines.push(count ? `${count} ${count === 1 ? 'decision' : 'decisions'} to review in Serra › Knowledge › Proposals:` : 'Nothing new to remember from this meeting.');
-  for (const item of digest.items) lines.push(`• ${item.edit.text} → \`${item.target}\``);
+  for (const item of digest.items) lines.push(`• ${plain(item.edit.text)} → \`${item.target}\``);
   if (digest.known.length) lines.push('', `Already in your notes: ${digest.known.length}.`);
   const actions = digest.reply.filter((line) => line.kind === 'action');
   const questions = digest.reply.filter((line) => line.kind === 'question');
   const dated = digest.reply.filter((line) => line.kind === 'dated');
-  if (actions.length) lines.push('', '*Action items*', ...replyLines(actions));
-  if (questions.length) lines.push('', '*Open questions*', ...replyLines(questions));
-  if (dated.length) lines.push('', '*Until a date*', ...replyLines(dated));
+  if (actions.length) lines.push('', '*Action items*', ...replyLines(actions).map(plain));
+  if (questions.length) lines.push('', '*Open questions*', ...replyLines(questions).map(plain));
+  if (dated.length) lines.push('', '*Until a date*', ...replyLines(dated).map(plain));
   const left = Object.entries(digest.dropped).filter(([, n]) => n > 0).map(([reason, n]) => `${n} ${reason}`);
   if (left.length) lines.push('', `Left out: ${left.join(', ')}.`);
   return lines.join('\n');
@@ -123,13 +126,12 @@ export const createMeetingCapture = (deps: MeetingCaptureDeps) => {
     try { value = parseJson(readFileSync(closedPath, 'utf8')); } catch { return {}; }
     return isRecord(value) ? Object.fromEntries(Object.entries(value).filter((entry): entry is [string, string] => typeof entry[1] === 'string')) : {};
   };
-  let closedThreads = readClosed();
+  const closedThreads = readClosed();
 
   /** Close a thread, on disk, synchronously: from now on nothing in it reaches a worker. */
   const close = (channel: string, threadTs: string): void => {
+    // Never evicted: a thread that holds a transcript stays closed for good. One short line per meeting sent.
     closedThreads[key(channel, threadTs)] = now().toISOString();
-    const entries = Object.entries(closedThreads).sort(([, a], [, b]) => a.localeCompare(b)).slice(-KEEP_CLOSED);
-    closedThreads = Object.fromEntries(entries);
     writeFileAtomic(closedPath, `${JSON.stringify(closedThreads, null, 2)}\n`, { mode: 0o600 });
   };
   const closed = (channel: string, threadTs: string): boolean => key(channel, threadTs) in closedThreads;
@@ -162,6 +164,7 @@ export const createMeetingCapture = (deps: MeetingCaptureDeps) => {
     try {
       if (!msg.files?.length && !link && !pasted.trim()) throw new Error(COPY.nothing);
       await say(msg.channel, COPY.reading(link ? `the ${PROVIDERS[link.provider].label} transcript` : 'the transcript'), thread);
+      if (link && (pasted.trim() || msg.files?.length)) await say(msg.channel, COPY.linkAndText, thread);
       let source = await transcriptOf(msg, link, pasted);
       const transcript = parseTranscript(source.raw, { ...(source.name ? { name: source.name } : {}), ...(source.title ? { title: source.title } : {}) });
       // The raw text is no longer needed: only the redacted, normalised transcript goes further.
@@ -223,7 +226,8 @@ export const createMeetingCapture = (deps: MeetingCaptureDeps) => {
    * are closed and dropped (with a "send it again" reply), so a restart never replays a transcript to a job.
    */
   const closeHeld = (held: IncomingMessage[]): { drop: IncomingMessage[]; replies: Promise<void>[] } => {
-    const drop = held.filter((msg) => meetingRequest(msg.text).trigger || closed(msg.channel, msg.threadTs));
+    // A top-level trigger is a transcript on disk: dropped. A trigger inside a thread is answered when it's released.
+    const drop = held.filter((msg) => (meetingRequest(msg.text).trigger && msg.threadTs === msg.messageTs) || closed(msg.channel, msg.threadTs));
     for (const msg of drop) close(msg.channel, msg.threadTs);
     return { drop, replies: drop.map((msg) => say(msg.channel, 'Serra restarted before reading this meeting. Send it again as a new message.', msg.threadTs).then(() => {})) };
   };
@@ -251,3 +255,17 @@ export const createMeetingCapture = (deps: MeetingCaptureDeps) => {
 };
 
 export type MeetingCapture = ReturnType<typeof createMeetingCapture>;
+
+/**
+ * Meetings first: the routing `receive()` and the held-request release path both use. A message `intercept` claims
+ * is tracked as Serra's own work and never reaches `next` (the pause hold, then a job); anything else goes to `next`
+ * unchanged.
+ */
+export const meetingsFirst = (
+  intercept: (msg: IncomingMessage) => { work: Promise<void> } | null,
+  track: (work: Promise<void>) => Promise<void>,
+  next: (msg: IncomingMessage) => Promise<void>,
+) => (msg: IncomingMessage): Promise<void> => {
+  const meeting = intercept(msg);
+  return meeting ? track(meeting.work) : next(msg);
+};

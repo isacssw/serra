@@ -34,7 +34,7 @@ Serra never holds a Granola or Google key. It reads through **your own Claude Co
 
 Settings › Meetings › Sources › **Check** shows whether each works now and what to do if not.
 
-To read a meeting, Serra starts Claude Code with exactly one read tool allowed (Granola's `get_meeting_transcript`, or Drive's `read_file_content`), every built-in tool off, and the meeting's ID as the only input. It takes the transcript from the tool's result and stops Claude Code before it can act on it.
+To read a meeting, Serra starts Claude Code (the same tested build, no managed hooks) for one turn with exactly one read tool allowed (Granola's `get_meeting_transcript`, or Drive's `read_file_content`), with exactly Serra's arguments, every built-in tool off, and the meeting's ID as the only input. Claude Code runs the tool and stops before any model sees the result; Serra takes the transcript from it.
 
 ## How it's read
 
@@ -57,8 +57,8 @@ They can't prove a decision is right or final. **Your review is the real check.*
 ## Forget meeting
 
 Settings › Meetings › **Forget** removes everything a meeting added:
-- its page lines, from pages, the approved copy and every backup;
-- the folders workers read (threads that read it start fresh);
+- its page lines, from pages, the approved copy and every backup (a rule it replaced is current again);
+- the folders workers read (threads that read it start fresh on their next message);
 - its pending quotes;
 - its digest message.
 

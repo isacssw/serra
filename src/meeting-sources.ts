@@ -5,16 +5,18 @@
 // `claude mcp add`); Serra lists them, and reads one transcript through them like this:
 // 1. A probe of `claude -p` (in don't-ask mode, nothing allowed) is stopped at its init event, which lists the MCP
 //    servers it loaded and whether each is signed in. That finds the server and the exact tool name.
-// 2. One run with exactly that read tool allowed, every built-in tool off, from an empty folder. Its prompt holds only
-//    the meeting's ID, never transcript text. Serra stops it the moment the tool's result arrives in the stream and
-//    takes the transcript from that result, so the model never acts on what the transcript says.
+// 2. One run with exactly that read tool allowed (with exactly the arguments Serra asked for), every built-in tool
+//    off, from an empty folder, and `--max-turns 1`: Claude Code runs the tool and stops without sending its result
+//    back to a model. Its prompt holds only the meeting's ID. Serra takes the transcript from the tool result in the
+//    stream, so no model sees it here and nothing can act on what it says.
+// Both runs get the extractor's checks first: a tested Claude Code build, only built-in plugins, no managed hooks.
 // The transcript then goes through the same normaliser, secret screen and no-tool extractor as an upload.
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawn } from 'node:child_process';
 import { findExecutable, toolEnv } from './exec.ts';
-import type { SpawnClaude } from './meeting-extractor.ts';
+import { MANAGED_SETTINGS_DIR, managedSettings, SUPPORTED_CLAUDE_VERSIONS, type SpawnClaude } from './meeting-extractor.ts';
 import { isRecord, parseJson, stringField } from './json-guards.ts';
 
 export type MeetingProvider = 'granola' | 'google-meet';
@@ -23,14 +25,15 @@ export type MeetingProvider = 'granola' | 'google-meet';
 export interface MeetingLink { provider: MeetingProvider; id: string; url: string }
 
 export interface MeetingRequest {
-  /** The owner said "remember this meeting" (or "remember the meeting", "remember my meeting"). */
+  /** The message starts with "remember this meeting". */
   trigger: boolean;
   link: MeetingLink | null;
   /** Text after the trigger phrase and link: a pasted transcript or summary, if any. */
   pasted: string;
 }
 
-const TRIGGER = /^\s*(?:<@[UW][A-Z0-9]+(?:\|[^>]*)?>[\s,:]*)?(?:please\s+)?remember\s+(?:this|the|my|our)\s+meeting\b[\s:.,-]*/i;
+/** Only "remember this meeting" at the very start (after an optional mention): "remember our meeting at 3" is a job. */
+const TRIGGER = /^\s*(?:<@[UW][A-Z0-9]+(?:\|[^>]*)?>[\s,:]*)?remember\s+this\s+meeting\b[\s:.,-]*/i;
 const UUID = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}';
 /** `https://notes.granola.ai/d/<uuid>`, `https://app.granola.ai/…/<uuid or not_…>`. */
 const GRANOLA = new RegExp(`<?(https://(?:notes|app)\\.granola\\.ai/[^\\s>|]*?(${UUID}|not_[A-Za-z0-9]{14}))(?:[/?#][^\\s>|]*)?(?:\\|[^>]*)?>?`, 'i');
@@ -96,7 +99,7 @@ export interface ProviderStatus { provider: MeetingProvider; state: ProviderStat
 
 /** Built-in tools no fetch may use. Restricted mode already removes the ones that run code. */
 const BUILT_INS = ['Bash', 'Read', 'Write', 'Edit', 'MultiEdit', 'Glob', 'Grep', 'NotebookEdit', 'WebFetch', 'WebSearch', 'Agent', 'Task', 'TodoWrite', 'Skill'];
-const FETCH_FLAGS = ['-p', '--restricted', '--permission-mode', 'dontAsk', '--permission-prompts', 'none', '--no-session-persistence', '--disable-slash-commands',
+const FETCH_FLAGS = ['-p', '--restricted', '--permission-mode', 'dontAsk', '--permission-prompts', 'none', '--no-session-persistence', '--disable-slash-commands', '--max-turns', '1',
   '--disallowedTools', BUILT_INS.join(' '), '--output-format', 'stream-json', '--verbose'];
 
 /** One line of Claude Code's stream-json output, as an untrusted record. */
@@ -104,6 +107,8 @@ type StreamEvent = Record<string, unknown>;
 
 export interface FetchOptions {
   path: string;
+  managedSettingsDir?: string;
+  versions?: readonly string[];
   spawn?: SpawnClaude;
   model?: string;
   timeoutMs?: number;
@@ -119,7 +124,8 @@ const stream = (spawnClaude: SpawnClaude, binary: string, flags: string[], input
     const cwd = mkdtempSync(join(tmpdir(), 'serra-fetch-'));
     // Long transcripts must arrive whole: Claude Code otherwise cuts MCP results at 25,000 tokens. And the init event
     // waits for connectors, so it lists them every time instead of only when they happen to connect first.
-    const env = { ...toolEnv(path), DISABLE_AUTOUPDATER: '1', MAX_MCP_OUTPUT_TOKENS: '120000', MCP_CONNECTION_NONBLOCKING: 'false' };
+    // No tool search: the MCP tool is loaded up front, so the one allowed call is the run's only turn.
+    const env = { ...toolEnv(path), DISABLE_AUTOUPDATER: '1', MAX_MCP_OUTPUT_TOKENS: '120000', MCP_CONNECTION_NONBLOCKING: 'false', ENABLE_TOOL_SEARCH: 'false' };
     const child = spawnClaude(binary, flags, { cwd, env });
     let buffer = '';
     let done = false;
@@ -203,23 +209,38 @@ export const transcriptFromResult = (text: string): Fetched => {
   }
 };
 
-export const createSourceReader = ({ path, spawn: spawnClaude = defaultSpawn, model = 'haiku', timeoutMs = 120_000 }: FetchOptions) => {
+export const createSourceReader = ({
+  path, spawn: spawnClaude = defaultSpawn, model = 'haiku', timeoutMs = 120_000, managedSettingsDir = MANAGED_SETTINGS_DIR, versions = SUPPORTED_CLAUDE_VERSIONS,
+}: FetchOptions) => {
+  /** The `claude` binary, after the same checks as the extractor's: no managed hooks, which would see the tool result. */
   const binary = (): string => {
     const found = findExecutable('claude', path);
     if (!found) throw new Error('Claude Code isn\'t installed where Serra can find it.');
+    const { hooks } = managedSettings(managedSettingsDir);
+    if (hooks.length) throw new Error('Claude Code has managed hooks, which would see the transcript, so Serra won\'t read meetings through it.');
     return found;
+  };
+  /** Why this init event's Claude Code can't be used, or null: a tested build, built-in plugins only. */
+  const initProblem = (event: StreamEvent): string | null => {
+    const version = stringField(event.claude_code_version);
+    if (!version || !versions.includes(version)) return `Meeting capture is tested with Claude Code ${versions.join(', ')}, and this Mac has ${version ?? 'an unknown version'}. Update Serra, or that version of Claude Code.`;
+    const plugins: unknown[] = Array.isArray(event.plugins) ? event.plugins : [];
+    if (plugins.some((plugin) => !isRecord(plugin) || plugin.path !== 'builtin')) return 'Claude Code loads plugins, so Serra won\'t read meetings through it.';
+    return null;
   };
 
   /** Which servers Claude Code loads, and whether each is signed in, from a probe stopped at its init event. */
   const servers = async (): Promise<{ name: string; status: string; tools: string[] }[]> => {
-    const seen: { servers: { name: string; status: string; tools: string[] }[] | null } = { servers: null };
+    const seen: { servers: { name: string; status: string; tools: string[] }[] | null; problem: string | null } = { servers: null, problem: null };
     await stream(spawnClaude, binary(), [...FETCH_FLAGS, '--model', model], 'Reply with the word ok.', path, 60_000, (event) => {
       if (event.type !== 'system' || event.subtype !== 'init') return false;
+      seen.problem = initProblem(event);
       const listed: unknown[] = Array.isArray(event.tools) ? event.tools : [];
       const tools = listed.filter((tool): tool is string => typeof tool === 'string');
       seen.servers = serversOf(event).map((server) => ({ ...server, tools: tools.filter((tool) => tool.startsWith(mcpToolName(server.name, ''))) }));
       return true;
     });
+    if (seen.problem) throw new Error(seen.problem);
     if (!seen.servers) throw new Error('Claude Code didn\'t start. Check it\'s signed in.');
     return seen.servers;
   };
@@ -241,26 +262,32 @@ export const createSourceReader = ({ path, spawn: spawnClaude = defaultSpawn, mo
   };
 
   /**
-   * Read one meeting's transcript through the owner's provider connection. Exactly one tool is allowed; the run is
-   * stopped the moment its result arrives. Any other tool call stops it too, and nothing is used.
+   * Read one meeting's transcript through the owner's provider connection. Exactly one tool, with exactly Serra's
+   * arguments, in a one-turn run stopped the moment its result arrives. Any other call stops it, and nothing is used.
+   * Errors never quote the tool's result: it may be transcript text.
    */
   const fetchTranscript = async (link: MeetingLink): Promise<Fetched> => {
     const spec = PROVIDERS[link.provider];
     const state = (await status()).find((entry) => entry.provider === link.provider)!;
     if (state.state !== 'ready' || !state.server) throw new Error(state.detail);
     const tool = mcpToolName(state.server, spec.tool);
-    const prompt = `Call the tool ${tool} exactly once, with exactly these arguments, and do nothing else:\n${JSON.stringify(spec.args(link.id))}`;
+    const args = spec.args(link.id);
+    const prompt = `Call the tool ${tool} exactly once, with exactly these arguments, and do nothing else:\n${JSON.stringify(args)}`;
+    const sameArgs = (input: unknown): boolean => isRecord(input) && Object.keys(input).length === Object.keys(args).length
+      && Object.entries(args).every(([key, value]) => input[key] === value);
     let callId: string | null = null;
     let fetched: Fetched | null = null;
     let failure: string | null = null;
     await stream(spawnClaude, binary(), [...FETCH_FLAGS, '--model', model, '--allowedTools', tool], prompt, path, timeoutMs, (event) => {
       const content = blocks(event);
+      if (event.type === 'system' && event.subtype === 'init') {
+        const problem = initProblem(event);
+        if (problem) { failure = problem; return true; }
+      }
       if (event.type === 'assistant') {
         for (const block of content) {
           if (block.type !== 'tool_use') continue;
-          // ToolSearch only loads the tool's schema. Anything else is not what Serra asked for: stop.
-          if (block.name === 'ToolSearch') continue;
-          if (block.name !== tool) { failure = 'Claude tried to use another tool, so Serra stopped.'; return true; }
+          if (block.name !== tool || !sameArgs(block.input)) { failure = 'Claude didn\'t make the one call Serra asked for, so Serra stopped.'; return true; }
           callId = typeof block.id === 'string' ? block.id : null;
         }
       }
@@ -268,8 +295,11 @@ export const createSourceReader = ({ path, spawn: spawnClaude = defaultSpawn, mo
         const result = content.find((block) => block.type === 'tool_result' && block.tool_use_id === callId);
         if (!result) return false;
         const text = resultText(result.content);
-        if (result.is_error || /needs you to sign in|re-?authenticate|not authorized|permission denied/i.test(text.slice(0, 300))) {
-          failure = /sign in|authenticate/i.test(text) ? `${spec.label} needs you to sign in again: run /mcp in Claude Code.` : `${spec.label} couldn't give Serra that meeting: ${text.slice(0, 200)}`;
+        if (result.is_error === true) {
+          // Only an error result is read for its kind; its text is never repeated (it could be transcript text).
+          failure = /sign in|re-?authenticate|unauthori[sz]ed|401/i.test(text.slice(0, 300))
+            ? `${spec.label} needs you to sign in again: run /mcp in Claude Code.`
+            : `${spec.label} couldn't give Serra that meeting. Check the link, and that your plan includes transcripts.`;
         } else fetched = transcriptFromResult(text);
         return true;
       }

@@ -1,7 +1,7 @@
 // Meeting knowledge (SERRA-62): transcripts, the item checks, page edits, and the approval store. Deterministic:
 // no model runs here. The extractor's output is scripted, the way an injected or careless model could answer.
 import assert from 'node:assert/strict';
-import { cpSync, existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test, { type TestContext } from 'node:test';
@@ -11,7 +11,8 @@ import { withKnowledgeLock } from '../src/knowledge-lock.ts';
 import { checkDigest, extractionPrompt, MAX_MEMORY_ITEMS, parseDigestOutput, type TeamPage } from '../src/meeting-digest.ts';
 import { applyEdit, decisionBullets, replacedBullets, scrubMeeting, type MeetingStamp } from '../src/meeting-page.ts';
 import { createMeetingStore, sha } from '../src/meeting-store.ts';
-import { locateQuote, parseTranscript, redactSecrets } from '../src/meeting-transcript.ts';
+import { isSensitive, locateQuote, parseTranscript, redactSecrets } from '../src/meeting-transcript.ts';
+import { frontmatter, pageProblems } from '../src/knowledge-rules.ts';
 import { createProposals } from '../src/proposals.ts';
 
 const MEETING: MeetingStamp = { id: '7f3a01', title: 'Payments sync', date: '2026-11-20' };
@@ -42,6 +43,12 @@ test('SRT, Meet-style and Granola-style text parse to the same turns', () => {
   }
   assert.equal(parseTranscript(meet).date, '2026-11-20');
   assert.match(parseTranscript(meet).title ?? '', /Payments sync/);
+});
+
+test('Markdown speaker labels, bold inside or outside the colon, keep their speaker', () => {
+  const transcript = parseTranscript('# Sync\n\n**Ana:** Three attempts.\n**Bo**: Agreed.\n');
+  assert.deepEqual(transcript.turns.map((turn) => [turn.speaker, turn.text]), [['Ana', 'Three attempts.'], ['Bo', 'Agreed.']]);
+  assert.deepEqual(locateQuote(transcript, 'Ana: Three attempts. Bo: Agreed.'), [1, 2]);
 });
 
 test('secrets are redacted before anything else reads the transcript', () => {
@@ -289,6 +296,88 @@ test('a crash between writing the page and committing rolls back before anything
   assert.equal(readFileSync(join(knowledgeDir, 'product/webhooks.md'), 'utf8'), before);
   assert.equal(createKnowledge(knowledgeDir).drift().changed.length, 0);
   assert.equal(readFileSync(join(knowledgeDir, 'proposals/from-meeting', meeting.id, 'i1.md'), 'utf8'), 'restored stub');
+});
+
+test('a crash before the commit keeps the quotes: after recovery the owner can approve again', (t) => {
+  const knowledgeDir = fixture(t);
+  const { store, meeting } = record(knowledgeDir, [RETRIES]);
+  const evidencePath = join(knowledgeDir, '..', 'meeting-evidence', `${meeting.id}.json`);
+  const registryPath = join(knowledgeDir, '..', 'meeting-registry.json');
+  const evidence = readFileSync(evidencePath, 'utf8');
+  const stub = readFileSync(join(knowledgeDir, 'proposals/from-meeting', meeting.id, 'i1.md'), 'utf8');
+  const item = store.listMeetings()[0]!.items[0]!;
+  store.approve(meeting.id, 'i1', item.reviewed!);
+  // The state a crash between writing the page and the commit leaves: page written, pending recorded, quotes kept.
+  writeFileSync(evidencePath, evidence);
+  const registry = JSON.parse(readFileSync(registryPath, 'utf8'));
+  registry.meetings[meeting.id].items.i1.status = 'pending';
+  registry.pending = { meeting: meeting.id, item: 'i1', backupId: registry.meetings[meeting.id].items.i1.backupId, pid: 999_999_999, at: new Date().toISOString(), stub };
+  writeFileSync(registryPath, JSON.stringify(registry));
+  const fresh = createMeetingStore({ knowledgeDir, now: () => new Date('2026-11-22T10:00:00Z') });
+  assert.equal(fresh.recover(), true);
+  const again = fresh.listMeetings()[0]!.items[0]!;
+  assert.ok(again.reviewed, again.problem ?? 'reviewable again');
+  fresh.approve(meeting.id, 'i1', again.reviewed!);
+  assert.match(readFileSync(join(knowledgeDir, 'product/webhooks.md'), 'utf8'), new RegExp(`m:${meeting.id}`));
+});
+
+test('an approval that fails part way in this process rolls back at once, and can be approved again', (t) => {
+  const knowledgeDir = fixture(t);
+  const { store, meeting } = record(knowledgeDir, [RETRIES]);
+  const before = readFileSync(join(knowledgeDir, 'product/webhooks.md'), 'utf8');
+  const log = join(knowledgeDir, 'log.md');
+  const logText = readFileSync(log, 'utf8');
+  rmSync(log);
+  mkdirSync(log); // writing log.md now fails, after the page was written
+  assert.throws(() => store.approve(meeting.id, 'i1', store.listMeetings()[0]!.items[0]!.reviewed!));
+  assert.equal(readFileSync(join(knowledgeDir, 'product/webhooks.md'), 'utf8'), before);
+  rmSync(log, { recursive: true });
+  writeFileSync(log, logText);
+  store.approve(meeting.id, 'i1', store.listMeetings()[0]!.items[0]!.reviewed!);
+  assert.match(readFileSync(join(knowledgeDir, 'product/webhooks.md'), 'utf8'), new RegExp(`m:${meeting.id}`));
+});
+
+test('Forget never approves an unreviewed edit: a page changed outside Serra is scrubbed on disk and in the approved copy separately', (t) => {
+  const knowledgeDir = fixture(t);
+  const { store, meeting } = record(knowledgeDir, [RETRIES]);
+  store.approve(meeting.id, 'i1', store.listMeetings()[0]!.items[0]!.reviewed!);
+  const path = join(knowledgeDir, 'product/webhooks.md');
+  writeFileSync(path, `${readFileSync(path, 'utf8')}- A worker's unreviewed line.\n`);
+  store.forget(meeting.id);
+  assert.doesNotMatch(readFileSync(path, 'utf8'), new RegExp(meeting.id));
+  assert.match(readFileSync(path, 'utf8'), /unreviewed line/);
+  const knowledge = createKnowledge(knowledgeDir);
+  assert.deepEqual(knowledge.drift().changed, ['product/webhooks.md'], 'still a change for the owner to review');
+  const approved = readFileSync(join(knowledgeDir, '..', '.knowledge-approved', 'product/webhooks.md'), 'utf8');
+  assert.doesNotMatch(approved, new RegExp(`${meeting.id}|unreviewed`));
+});
+
+test('Forget on a page two meetings share keeps the page valid, with its description and index row', (t) => {
+  const knowledgeDir = fixture(t);
+  const first = record(knowledgeDir, [LEDGER]);
+  first.store.approve(first.meeting.id, 'i1', first.store.listMeetings()[0]!.items[0]!.reviewed!);
+  const second = record(knowledgeDir, [{ ...RETRIES, target: 'decisions/ledger-access.md' }]);
+  second.store.approve(second.meeting.id, 'i1', second.store.listMeetings()[0]!.items[0]!.reviewed!);
+  first.store.forget(first.meeting.id);
+  const page = readFileSync(join(knowledgeDir, 'decisions/ledger-access.md'), 'utf8');
+  assert.deepEqual(pageProblems('decisions/ledger-access.md', page, frontmatter(page)), []);
+  assert.match(page, /3 attempts/);
+  assert.doesNotMatch(page, /ledger directly/);
+  assert.match(readFileSync(join(knowledgeDir, 'index.md'), 'utf8'), /decisions\/ledger-access\.md/);
+});
+
+test('Forget after a replace puts the replaced rule back under Decisions', () => {
+  const owner = page('## Decisions\n\n- Retry webhooks 5 times.\n');
+  const replaced = applyEdit(owner, { op: 'replace', old: 'Retry webhooks 5 times.', text: 'Retry 3 times, then dead-letter.' }, MEETING);
+  assert.ok('text' in replaced);
+  const forgotten = scrubMeeting(replaced.text, MEETING.id);
+  assert.deepEqual(decisionBullets(forgotten).map((bullet) => bullet.text), ['Retry webhooks 5 times.']);
+  assert.equal(replacedBullets(forgotten).length, 0);
+});
+
+test('the sensitive screen drops HR and health talk, not payments and engineering talk', () => {
+  for (const text of ["Bo's salary review is overdue", 'Ana is off sick this week', 'he got fired', 'the hiring freeze', 'her surgery on Monday', 'a performance review']) assert.ok(isSensitive(text), text);
+  for (const text of ['fire the webhook again', 'pay the invoice in EUR', 'the health check endpoint', 'promote the build to production', 'the node is unhealthy', 'Bonus: also fixes retries', 'hire a contractor for the SDK']) assert.ok(!isSensitive(text), text);
 });
 
 test('a new page gets a team audience, today as verified and one index row; Forget removes both', (t) => {

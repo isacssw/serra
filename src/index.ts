@@ -16,7 +16,7 @@ import { watchProfile } from './profile-reload.ts';
 import { checkProjectAccess } from './project-access.ts';
 import { acknowledgePause, admit, dropHeld, heldThread, holdRequest, readHeld, readPause } from './intake.ts';
 import type { IncomingMessage } from './types.ts';
-import { createMeetingCapture } from './meeting-capture.ts';
+import { createMeetingCapture, meetingsFirst } from './meeting-capture.ts';
 import { createExtractor } from './meeting-extractor.ts';
 import { createSourceReader } from './meeting-sources.ts';
 import { readAttachmentText } from './attachments.ts';
@@ -57,6 +57,9 @@ const errorMessage = (error: unknown): string => (error instanceof Error ? error
 // "Remember this meeting" in the owner's DM (SERRA-62): caught before the pause hold and before any job, so a
 // transcript never reaches a T3 worker. Off until the owner turns it on in the app.
 const claudePath = toolSearchPath().catch(() => process.env.PATH ?? '');
+// One of each per daemon: the extractor's canary self-test then runs once per Claude Code binary, not per meeting.
+const extractor = claudePath.then((path) => createExtractor({ path }));
+const sourceReader = claudePath.then((path) => createSourceReader({ path }));
 const meetings = config.profileDir ? createMeetingCapture({
   profileDir: config.profileDir, knowledgeDir: config.knowledgeDir, owner: config.owner,
   chat: {
@@ -64,12 +67,13 @@ const meetings = config.profileDir ? createMeetingCapture({
     remove: async (channel, ts) => { await app.client.chat.delete({ channel, ts }); },
     earlierInThread: async (channel, threadTs, beforeTs) => {
       const replies = await app.client.conversations.replies({ channel, ts: threadTs, limit: 20 });
-      return (replies.messages ?? []).filter((message) => message.ts !== undefined && message.ts < beforeTs).length;
+      // People's messages only: an agent-view conversation can open with the app's own greeting.
+      return (replies.messages ?? []).filter((message) => message.ts !== undefined && message.ts < beforeTs && !message.bot_id && message.user !== botUserId).length;
     },
   },
   readFile: (file, maxChars) => readAttachmentText(app.client, file, config.botToken, maxChars),
-  sources: { fetchTranscript: async (link) => createSourceReader({ path: await claudePath }).fetchTranscript(link) },
-  extractor: { extract: async (prompt) => createExtractor({ path: await claudePath }).extract(prompt) },
+  sources: { fetchTranscript: async (link) => (await sourceReader).fetchTranscript(link) },
+  extractor: { extract: async (prompt) => (await extractor).extract(prompt) },
   paused: () => readPause(config.profileDir) !== null,
   busy: (channel, threadTs) => owns(channel, threadTs),
   log: (message) => app.logger.info(message),
@@ -100,13 +104,13 @@ const start = async (msg: IncomingMessage): Promise<void> => {
   try { await track(bot.handle(msg)); } finally { starting -= 1; acknowledge(); }
 };
 
-/** A meeting message is Serra's own work, counted like a starting job so an update waits for it. Null: not one. */
-const startMeeting = (msg: IncomingMessage): Promise<void> | null => {
-  const meeting = meetings?.intercept(msg);
-  if (!meeting) return null;
+/** A meeting message is Serra's own work, counted like a starting job so an update waits for it. */
+const trackMeeting = (work: Promise<void>): Promise<void> => {
   starting += 1;
-  return track(meeting.work).finally(() => { starting -= 1; acknowledge(); });
+  return track(work).catch((error: unknown) => app.logger.error(`Meeting capture failed: ${errorMessage(error)}`))
+    .finally(() => { starting -= 1; acknowledge(); });
 };
+const interceptMeeting = (msg: IncomingMessage) => meetings?.intercept(msg) ?? null;
 
 /** The thread has a request waiting for the restart: replies there wait behind it. */
 const owns = (channel: string, threadTs: string): boolean =>
@@ -116,9 +120,7 @@ const owns = (channel: string, threadTs: string): boolean =>
  * Handles a message now, or holds it while the app has paused new work for an update (intake.ts): a request that
  * would start a job waits, with an hourglass on it, for the restarted bot. Messages for running jobs go through.
  */
-const receive = async (msg: IncomingMessage): Promise<void> => {
-  const meeting = startMeeting(msg);
-  if (meeting) return meeting;
+const receiveRequest = async (msg: IncomingMessage): Promise<void> => {
   const paused = config.profileDir ? readPause(config.profileDir) : null;
   const waitingBehind = config.profileDir ? heldThread(config.profileDir, msg.channel, msg.threadTs) : false;
   if (config.profileDir && (waitingBehind || admit(paused !== null, bot.runningIn(msg.channel, msg.threadTs)) === 'hold')) {
@@ -130,6 +132,9 @@ const receive = async (msg: IncomingMessage): Promise<void> => {
   }
   await start(msg);
 };
+// Meetings first (SERRA-62): before the pause hold and before any job starts or continues.
+const receive = meetingsFirst(interceptMeeting, trackMeeting, receiveRequest);
+const startHeld = meetingsFirst(interceptMeeting, trackMeeting, start);
 
 let releasing = false;
 /** Starts the requests held during a pause, once it is over (at start, or when the update was called off), in order. */
@@ -142,9 +147,7 @@ const releaseHeld = async (): Promise<void> => {
       if (stopping || readPause(config.profileDir)) return;
       dropHeld(config.profileDir, msg);
       await app.client.reactions.remove({ channel: msg.channel, timestamp: msg.messageTs, name: HELD_REACTION }).catch(() => {});
-      const meeting = startMeeting(msg);
-      if (meeting) { await meeting.catch((error: unknown) => app.logger.error(`Meeting capture failed: ${errorMessage(error)}`)); continue; }
-      await start(msg).catch((error: unknown) => app.logger.error(`Held request failed: ${errorMessage(error)}`));
+      await startHeld(msg).catch((error: unknown) => app.logger.error(`Held request failed: ${errorMessage(error)}`));
     }
   } finally { releasing = false; }
 };

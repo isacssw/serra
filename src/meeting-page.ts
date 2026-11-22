@@ -214,22 +214,32 @@ export const indexRow = (path: string, topic: string): string => {
 };
 
 /**
- * Everything meeting `id` added to `text`, removed: lines tagged with it, the `replaced by m:ID` note on another
- * bullet (the note goes, the bullet stays), and its `sources:` entry. `derived` is text the registry recorded for the
- * meeting (a new page's index row), removed line by line. Used on pages, the approved copy and every backup.
+ * Everything meeting `id` added to `text`, removed:
+ * - lines tagged with it, under Decisions or Replaced;
+ * - its `sources:` entry;
+ * - a bullet it replaced goes back under `## Decisions`, without its "replaced by" note: with the meeting forgotten,
+ *   that rule is current again;
+ * - `rows`: index rows the meeting added for a page that Forget removes, line by line.
+ * Used on pages, the approved copy, the index and every backup.
  */
-export const scrubMeeting = (text: string, id: string, derived: string[] = []): string => {
+export const scrubMeeting = (text: string, id: string, rows: string[] = []): string => {
   if (!MEETING_ID.test(id)) throw new Error(`Not a meeting ID: ${id}`);
   const tag = new RegExp(`<!--\\s*m:${id}\\s*-->`);
-  const note = new RegExp(` \\(stopped applying \\d{4}-\\d{2}-\\d{2}, replaced by m:${id}\\)`, 'g');
+  const note = new RegExp(` \\(stopped applying \\d{4}-\\d{2}-\\d{2}, replaced by m:${id}\\)`);
   const source = new RegExp(`^\\s+-\\s+meeting ${id} `);
-  const rows = new Set(derived.map((line) => line.trim()).filter(Boolean));
-  const lines = text.split('\n').filter((line) => !tag.test(line) && !source.test(line) && !rows.has(line.trim())).map((line) => line.replace(note, ''));
-  // A `sources:` key left with no entries stays: the header check needs the key.
+  const drop = new Set(rows.map((line) => line.trim()).filter(Boolean));
+  const restored: string[] = [];
+  const lines = text.split('\n').filter((line) => {
+    if (tag.test(line) || source.test(line) || drop.has(line.trim())) return false;
+    if (note.test(line) && /^[-*]\s/.test(line)) { restored.push(line.replace(note, '')); return false; }
+    return true;
+  });
   let out = lines.join('\n');
   // A Decisions or Replaced heading left with nothing under it goes too.
-  out = out.replace(/\n## (?:Decisions|Replaced)\s*\n+(?=## |$)/g, '\n');
-  return out.replace(/\n{3,}/g, '\n\n');
+  out = out.replace(/\n## (?:Decisions|Replaced)\s*\n+(?=## |$)/g, '\n').replace(/\n{3,}/g, '\n\n');
+  for (const line of restored) out = appendTo(out, 'Decisions', line);
+  // A `sources:` key left with no entries stays: the header check needs the key.
+  return out;
 };
 
 /** Whether a page's text still mentions meeting `id` anywhere. */

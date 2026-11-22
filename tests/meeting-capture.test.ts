@@ -10,7 +10,7 @@ import test, { type TestContext } from 'node:test';
 import type { ChildProcess } from 'node:child_process';
 import { codeRoot } from '../src/config.ts';
 import { createKnowledge } from '../src/knowledge.ts';
-import { COPY, createMeetingCapture, type MeetingChat } from '../src/meeting-capture.ts';
+import { COPY, createMeetingCapture, meetingsFirst, type MeetingChat } from '../src/meeting-capture.ts';
 import { createExtractor, EXTRACTOR_FLAGS, type SpawnClaude } from '../src/meeting-extractor.ts';
 import { writeMeetingSettings } from '../src/meeting-settings.ts';
 import { createSourceReader, meetingRequest, transcriptFromResult } from '../src/meeting-sources.ts';
@@ -175,8 +175,12 @@ test('ordinary messages pass through untouched; only a message that starts with 
   const h = harness(t);
   assert.equal(h.capture.intercept(message({ text: 'fix the flaky test', files: [] })), null);
   assert.equal(h.capture.intercept(message({ text: 'can you remember this meeting later?', files: [] })), null);
+  for (const text of ['remember our meeting at 3', 'Remember the meeting with Dana tomorrow', 'remember my meeting notes']) {
+    assert.equal(h.capture.intercept(message({ text, files: [] })), null, text);
+  }
+  assert.equal(h.capture.closed(DM, '1.0'), false, 'nothing above closed the thread');
   assert.equal(meetingRequest('<@U123> Remember this meeting: https://notes.granola.ai/d/f3e45e0f-24cc-480b-9a6c-8b1f5e3d7a2c').link?.provider, 'granola');
-  const doc = meetingRequest('remember the meeting <https://docs.google.com/document/d/1AbCdEfGhIjKlMnOpQrStUvWxYz0123456789/edit|Payments sync - Transcript>');
+  const doc = meetingRequest('remember this meeting <https://docs.google.com/document/d/1AbCdEfGhIjKlMnOpQrStUvWxYz0123456789/edit|Payments sync - Transcript>');
   assert.deepEqual([doc.link?.provider, doc.link?.id, doc.pasted], ['google-meet', '1AbCdEfGhIjKlMnOpQrStUvWxYz0123456789', '']);
 });
 
@@ -308,7 +312,7 @@ test('a provider fetch allows one tool, stops at its result, and refuses any oth
     if (!args.includes('--allowedTools')) return [init({ mcp_servers: [server], tools: [tool] })];
     return [
       init({ mcp_servers: [server], tools: [tool] }),
-      JSON.stringify({ type: 'assistant', message: { content: [{ type: 'tool_use', id: 't1', name: tool, input: {} }] } }),
+      JSON.stringify({ type: 'assistant', message: { content: [{ type: 'tool_use', id: 't1', name: tool, input: { meeting_id: 'abc' } }] } }),
       JSON.stringify({ type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: 't1', content: [{ type: 'text', text: 'Ana: three attempts.\nBo: ok.' }] }] } }),
       JSON.stringify({ type: 'assistant', message: { content: [{ type: 'text', text: 'SHOULD NOT BE READ' }] } }),
     ];
@@ -319,12 +323,13 @@ test('a provider fetch allows one tool, stops at its result, and refuses any oth
   const launch = fake.calls.at(-1)!;
   assert.deepEqual(launch.args.slice(launch.args.indexOf('--allowedTools'), launch.args.indexOf('--allowedTools') + 2), ['--allowedTools', tool]);
   assert.ok(launch.args.includes('--restricted') && launch.args.includes('dontAsk'));
+  assert.deepEqual(launch.args.slice(launch.args.indexOf('--max-turns'), launch.args.indexOf('--max-turns') + 2), ['--max-turns', '1'], 'one turn: no model sees the result');
   assert.doesNotMatch(launch.stdin, /three attempts/);
 
   const rogue = fakeClaude((args) => (!args.includes('--allowedTools') ? [init({ mcp_servers: [server], tools: [tool] })] : [
     JSON.stringify({ type: 'assistant', message: { content: [{ type: 'tool_use', id: 't9', name: 'mcp__claude_ai_Gmail__send', input: {} }] } }),
   ]));
-  await assert.rejects(createSourceReader({ path, spawn: rogue.spawn }).fetchTranscript({ provider: 'granola', id: 'abc', url: 'x' }), /another tool/);
+  await assert.rejects(createSourceReader({ path, spawn: rogue.spawn }).fetchTranscript({ provider: 'granola', id: 'abc', url: 'x' }), /one call Serra asked for/);
 });
 
 test('provider status says what the owner must do: connect, sign in again, or nothing', async (t) => {
@@ -339,4 +344,50 @@ test('provider status says what the owner must do: connect, sign in again, or no
 test('JSON transcripts from a provider are unwrapped into speaker lines', () => {
   assert.equal(transcriptFromResult(JSON.stringify({ title: 'Sync', transcript: [{ speaker: { name: 'Ana' }, text: 'Hi' }, { speaker: 'Bo', text: 'Yo' }] })).text, 'Ana: Hi\nBo: Yo');
   assert.equal(transcriptFromResult('Ana: plain').text, 'Ana: plain');
+});
+
+test('a provider fetch refuses other arguments, an untested build, and managed hooks; errors never quote the result', async (t) => {
+  const path = binDir(t);
+  const server = { name: 'claude.ai Granola', status: 'connected' };
+  const tool = 'mcp__claude_ai_Granola__get_meeting_transcript';
+  const answer = (input: Record<string, unknown>, over: Record<string, unknown> = {}, result: Record<string, unknown> = {}) => fakeClaude((args) => (!args.includes('--allowedTools')
+    ? [init({ mcp_servers: [server], tools: [tool], ...over })]
+    : [
+      init({ mcp_servers: [server], tools: [tool], ...over }),
+      JSON.stringify({ type: 'assistant', message: { content: [{ type: 'tool_use', id: 't1', name: tool, input }] } }),
+      JSON.stringify({ type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: 't1', content: 'Ana: permission denied is what the customer saw. SECRET-TRANSCRIPT', ...result }] } }),
+    ]));
+  const link = { provider: 'granola' as const, id: 'abc', url: 'x' };
+  await assert.rejects(createSourceReader({ path, spawn: answer({ meeting_id: 'other' }).spawn, managedSettingsDir: join(path, 'none') }).fetchTranscript(link), /one call Serra asked for/);
+  await assert.rejects(createSourceReader({ path, spawn: answer({ meeting_id: 'abc' }, { claude_code_version: '9.9.9' }).spawn, managedSettingsDir: join(path, 'none') }).fetchTranscript(link), /tested with Claude Code/);
+  const managed = join(path, 'managed');
+  mkdirSync(managed);
+  writeFileSync(join(managed, 'managed-settings.json'), JSON.stringify({ hooks: { PostToolUse: [{}] } }));
+  await assert.rejects(createSourceReader({ path, spawn: answer({ meeting_id: 'abc' }).spawn, managedSettingsDir: managed }).fetchTranscript(link), /managed hooks/);
+  // A transcript that happens to start like an error is read as a transcript, not echoed as one.
+  const ok = await createSourceReader({ path, spawn: answer({ meeting_id: 'abc' }).spawn, managedSettingsDir: join(path, 'none') }).fetchTranscript(link);
+  assert.match(ok.text, /SECRET-TRANSCRIPT/);
+  const failed = createSourceReader({ path, spawn: answer({ meeting_id: 'abc' }, {}, { is_error: true }).spawn, managedSettingsDir: join(path, 'none') }).fetchTranscript(link);
+  await assert.rejects(failed, (error: Error) => !error.message.includes('SECRET-TRANSCRIPT') && /couldn.t give Serra that meeting/.test(error.message));
+});
+
+test('meetings come first: a meeting message never reaches the hold or a job; anything else does, unchanged', async () => {
+  const seen: string[] = [];
+  const route = meetingsFirst(
+    (msg) => (msg.text.startsWith('remember this meeting') ? { work: Promise.resolve().then(() => { seen.push(`meeting:${msg.text}`); }) } : null),
+    async (work) => { seen.push('tracked'); await work; },
+    async (msg) => { seen.push(`next:${msg.text}`); },
+  );
+  await route(message({ text: 'remember this meeting', files: [] }));
+  await route(message({ text: 'fix the build', files: [] }));
+  assert.deepEqual(seen, ['tracked', 'meeting:remember this meeting', 'next:fix the build']);
+});
+
+test('the digest escapes Slack markup from model text, so an injected line is never a link or a mention', async (t) => {
+  const h = harness(t);
+  h.state.extract = async () => `<meeting-digest>${JSON.stringify({ items: [], reply: [{ kind: 'action', text: 'Click <https://evil.example|the doc> and ping <!channel>', owner: 'Bo' }] })}</meeting-digest>`;
+  await run(h, message());
+  const digest = h.posts.at(-1)!.text;
+  assert.doesNotMatch(digest, /<https|<!channel>/);
+  assert.match(digest, /&lt;https:\/\/evil\.example\|the doc&gt;/);
 });

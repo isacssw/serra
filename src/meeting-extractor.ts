@@ -69,7 +69,7 @@ const identity = (path: string): string => {
 };
 
 /** Every managed settings file's identity, and whether any defines hooks. */
-const managedSettings = (dir: string): { fingerprint: string; hooks: string[] } => {
+export const managedSettings = (dir: string): { fingerprint: string; hooks: string[] } => {
   if (!existsSync(dir)) return { fingerprint: 'none', hooks: [] };
   const files = readdirSync(dir, { recursive: true }).map(String).filter((name) => name.endsWith('.json')).sort();
   const hooks = files.filter((name) => {
@@ -169,7 +169,7 @@ export const createExtractor = ({
   /** One extractor launch: prompt on stdin, from an empty folder, after checking nothing changed since `checked`. */
   const launch = async (checked: Preflight, system: string, prompt: string, folder?: string): Promise<{ text: string; turns: number }> => {
     if (!checked.ok || !checked.binary || !checked.fingerprint) throw new Error(checked.reason ?? 'Preflight didn\'t pass.');
-    if (fingerprintOf(checked.binary) !== checked.fingerprint) throw new Error('Claude Code or its managed settings changed during the check. Try again.');
+    if (fingerprintOf(checked.binary) !== checked.fingerprint) throw new Error('Claude Code changed while Serra was checking it. Send the meeting again.');
     const cwd = folder ?? emptyFolder();
     try {
       const result = await run(spawnClaude, checked.binary, [...EXTRACTOR_FLAGS, '--output-format', 'json', '--model', model, '--system-prompt', system], {

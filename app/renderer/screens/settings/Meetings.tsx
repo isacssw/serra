@@ -142,7 +142,7 @@ export const Meetings = () => {
         </Card>
       )}
       {history.length > 0 && (
-        <Card title="Meetings Serra kept" description="Forget a meeting to remove everything it added: page lines, backups, review quotes and the digest message.">
+        <Card title="Meetings" description="Forget a meeting to remove everything it added.">
           <ul className="flex flex-col divide-y divide-line">
             {history.map((meeting) => (
               <li key={meeting.id} className="flex items-center gap-3 py-3">
@@ -176,7 +176,7 @@ export const Meetings = () => {
         open={forgetting !== null}
         onClose={() => setForgetting(null)}
         title={`Forget ${forgetting?.title ?? 'this meeting'}?`}
-        description="Removes every line it added from your pages, backups and the folders workers read, its pending edits and quotes, and its digest message. Threads that read it start fresh. This can't be undone. It can't reach your upload in Slack, the copy Claude processed, or T3 threads that already read it."
+        description="Removes what it added: page lines, backups, pending quotes and its digest message. Threads that read it start fresh on their next message. This can't be undone. Your Slack upload and T3 threads that already read it aren't touched."
         actions={(
           <>
             <Button onClick={() => setForgetting(null)}>Cancel</Button>

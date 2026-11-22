@@ -96,7 +96,17 @@ export const hasSecret = (text: string): boolean => redactSecrets(text).count > 
  * and errs toward dropping: a dropped item is a line the owner can add by hand, a kept one is a colleague's private
  * matter on a page the team reads.
  */
-const SENSITIVE = /\b(?:salar(?:y|ies)|pay(?:\s?rise|\s?raise|\s?band|\s?cut|roll)?|compensation|bonus(?:es)?|equity grant|promot(?:e|ed|ion|ions)|demot(?:e|ed|ion)|hir(?:e|ed|ing)|fir(?:e|ed|ing)|layoffs?|laid off|redundan(?:t|cy|cies)|performance (?:review|plan|improvement)|PIP|disciplinary|resign(?:ed|ing|ation)?|sick(?:ness| leave| day)?|ill(?:ness)?|health|medical|diagnos(?:is|ed)|therapy|therapist|surgery|hospital|pregnan(?:t|cy)|maternity|paternity|parental leave|divorce|bereavement|funeral|mental health|burn(?:ed|t)?\s?out|visa status|immigration)\b/i;
+// Word forms that are also ordinary payments and engineering talk ("fire the webhook", "pay the invoice", "promote the
+// build", "health check", "a sick node") are matched only in their HR sense.
+const SENSITIVE = new RegExp([
+  'salar(?:y|ies)', 'pay ?(?:rise|raise|band|cut|review)s?', 'payroll', '(?:annual|performance|signing) bonus(?:es)?', 'compensation (?:review|package|band)',
+  'equity grant', '(?:got|been|be|was|were|is) promoted', 'promotion (?:case|cycle|packet|review)', 'demot(?:e|ed|ion)',
+  'hiring (?:freeze|plan|manager|pipeline|decision|budget)', 'new hires?', '(?:got|been|be|was|were|is|being) (?:fired|let go|laid off)', 'firing (?:him|her|them)', 'layoffs?', 'redundanc(?:y|ies)',
+  'performance (?:review|plan|improvement|issues?)', 'PIP', 'disciplinary', 'resign(?:ed|ing|ation)',
+  '(?:off|out|called in) sick', 'sick (?:leave|days?|note)', 'illness', 'health (?:issue|problem|condition|reasons|scare)', 'mental health', 'medical (?:leave|condition|appointment)',
+  'diagnos(?:is|ed)', 'therap(?:y|ist)', 'surgery', 'hospital(?:ised|ized)?', 'pregnan(?:t|cy)', 'maternity', 'paternity', 'parental leave',
+  'divorce', 'bereavement', 'funeral', 'burn(?:ed|t)? ?out', 'visa status', 'immigration',
+].map((word) => `\\b${word}\\b`).join('|'), 'i');
 
 export const isSensitive = (text: string): boolean => SENSITIVE.test(text);
 
@@ -148,7 +158,7 @@ const plain = (lines: string[]): { raws: Raw[]; title: string | null } => {
   let seenSpeaker = false;
   for (const original of lines) {
     if (!original.trim() || BARE_TIME.test(original)) continue;
-    const line = original.replace(/^\s*[-*>]\s+/, '').replace(LEADING_TIME, '').replace(SPEAKER_TIME, '').replace(/^\*\*([^*]+)\*\*:?/, '$1:');
+    const line = original.replace(/^\s*[-*>]\s+/, '').replace(LEADING_TIME, '').replace(SPEAKER_TIME, '').replace(/^\*\*([^*]+?):?\*\*:?/, '$1:');
     if (!line.trim()) continue;
     const match = SPEAKER_LINE.exec(line.trim());
     if (match && !NOT_SPEAKERS.has(match[1]!.toLowerCase()) && !/^\d/.test(match[1]!)) {

@@ -131,6 +131,9 @@ export const MeetingReview = ({ stubs, onChanged, onCount }: { stubs: Proposal[]
             </div>
             <Button size="sm" disabled={busy} onClick={() => setConfirm(meeting)}>Discard meeting</Button>
           </header>
+          {Object.keys(meeting.dropped).length > 0 && (
+            <p className="text-xs text-muted">Left out: {Object.entries(meeting.dropped).map(([reason, count]) => `${count} ${reason}`).join(', ')}.</p>
+          )}
           <p className="text-xs text-muted">
             Serra checked each quote is in the transcript, not that the decision is right or final, and didn&rsquo;t compare it with your private pages. Approve only what you agree with.
           </p>
