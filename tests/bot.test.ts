@@ -1242,6 +1242,24 @@ test('at start, a stale migrated job that T3 is not running is cleared: 👀, lo
   assert.equal(await listedGroup(f), 'done');
 });
 
+test('[JOBS-002] at start, a leftover line from a long-quiet job is taken down even when its thread runs again in T3', async (t) => {
+  const f = fixture(t);
+  await f.say(SAM, `<@${BOT}> how does scoring work?`, true);
+  await f.workerReplies('Scoring works like this.');
+  const [key, job] = savedJob(f);
+  const longAgo = new Date(Date.parse('2026-11-18T10:00:00Z') - 60 * 24 * 60 * 60_000).toISOString();
+  const { phase: _phase, ...rest } = job;
+  writeFileSync(f.config.statePath, JSON.stringify({ [key]: {
+    ...rest, watching: false, progress: { ts: '200.900', runId: 'run-0', text: '⏳ Still on it' }, createdAt: longAgo, lastActivityAt: longAgo,
+  } }));
+  // The worker starts a run of its own (following CI) before the bot comes back.
+  f.worker.startRun();
+  const bot = f.restart();
+  await bot.reconcile();
+  assert.ok(f.deleted.includes('200.900'), 'the old line is gone');
+  assert.equal(savedJob(f)[1].phase.state, 'following', 'and the run going is followed');
+});
+
 test('at start, a job T3 is still running, or whose finished run is unposted, is followed instead of cleared', async (t) => {
   const f = fixture(t);
   await f.say(SAM, `<@${BOT}> how does scoring work?`, true);

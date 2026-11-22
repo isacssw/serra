@@ -90,15 +90,16 @@ const phaseFromFlags = (value: Record<string, unknown>, now: number): Phase => {
   const lastActive = Date.parse(isString(value.lastActivityAt) ? value.lastActivityAt : isString(value.createdAt) ? value.createdAt : '');
   const line = isRecord(value.progress) && isString(value.progress.ts) && isString(value.progress.runId) && isString(value.progress.text)
     ? { ts: value.progress.ts, runId: value.progress.runId, text: value.progress.text } : undefined;
-  // Its line, if any, is still taken down: `leftover`.
-  if (value.watching !== true && !(now - lastActive <= FOLLOW_UP_MS)) return line ? { state: 'idle', leftover: line } : IDLE;
+  // An open card still works whatever its age (answering it never waited for a poll), so it keeps its wait. Otherwise
+  // the line, if any, is still taken down: `leftover`.
+  if (value.watching !== true && !isCard(value.question) && !(now - lastActive <= FOLLOW_UP_MS)) return line ? { state: 'idle', leftover: line } : IDLE;
   const seen = isRecord(value.runSeen) && isString(value.runSeen.runId) && isString(value.runSeen.at) ? value.runSeen : undefined;
   const runId = seen ? seen.runId : line?.runId;
   const run: SeenRun | undefined = isString(runId) ? {
     id: runId,
     at: seen && isString(seen.at) ? seen.at : isString(value.createdAt) ? value.createdAt : new Date(0).toISOString(),
     ...(seen && isBoolean(seen.waits) ? { waits: seen.waits } : {}),
-    // A line left from another run than the one seen can't be told apart from it any more: it goes with that run.
+    // A line left from another run than the one seen is dropped: it can't be told apart from the seen run's any more.
     ...(line && isString(line.ts) && isString(line.text) && line.runId === runId ? { progress: { ts: line.ts, text: line.text } } : {}),
   } : undefined;
   const withRun = run ? { run } : {};

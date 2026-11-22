@@ -71,6 +71,9 @@ test('[JOBS-003] the phase holds only what it means: a card only while waiting, 
   assert.deepEqual(withProgress(seeRun(run), 'run-2', { ts: '1', text: 'x' }), seeRun(run), 'a line for another run is ignored');
   assert.deepEqual(withProgress(settle(), 'run-1', { ts: '1', text: 'x' }), settle(), 'an idle job has no line');
   assert.deepEqual(settle(), { state: 'idle' });
+  // Followed again, an idle job's leftover line goes with its run, so the poll still takes it down.
+  assert.deepEqual(follow({ state: 'idle', leftover: { ts: '9.9', runId: 'run-7', text: '⏳' } }),
+    { state: 'following', run: { id: 'run-7', at: new Date(0).toISOString(), progress: { ts: '9.9', text: '⏳' } } });
 });
 
 test('[JOBS-003] any sequence of polls ends idle once T3 is quiet and every run is posted, and none is posted twice', () => {

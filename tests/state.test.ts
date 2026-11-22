@@ -69,6 +69,10 @@ test('[JOBS-002] a job older builds stopped looking at stays idle: a run owed we
   assert.deepEqual(jobs['C1:5.5']!.phase, { state: 'idle' });
   assert.deepEqual(jobs['C1:6.6']!.phase, { state: 'idle' });
   assert.deepEqual(jobs['C1:7.7']!.phase, { state: 'idle', leftover: line }, 'its line is still taken down at start');
+  // An open card still works, however old: it keeps its wait.
+  const card = { requestId: 'r1', questions: [], ts: '2.5', nonce: 'n', index: 0, answers: {}, runId: 'run-7' };
+  writeFileSync(file, JSON.stringify({ 'C1:8.8': { ...quiet, threadTs: '8.8', waitingInT3: true, question: card } }));
+  assert.deepEqual(readState(file, { now: Date.parse('2026-11-22T00:00:00Z') }).jobs['C1:8.8']!.phase, { state: 'waiting', run: { id: 'run-7', at: 'x' }, card });
   // A job still being followed is followed, however long ago it last spoke.
   writeFileSync(file, JSON.stringify({ 'C1:5.5': { ...quiet, watching: true } }));
   assert.equal(readState(file, { now: Date.parse('2026-11-22T00:00:00Z') }).jobs['C1:5.5']!.phase.state, 'following');

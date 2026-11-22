@@ -26,7 +26,6 @@ import { errorMessage } from './lib/errors.ts';
 
 /** A job nobody is waiting on is still checked this often, so runs the worker starts itself (a PR watch) get posted. */
 const IDLE_POLL_MS = 2 * 60_000;
-/** How long after its last activity an idle job is still checked. */
 /** A worker's reply that starts with this line has nothing for the chat: a background check-in, or a message that wasn't for the bot. */
 const QUIET = /^\s*\(quiet\)\s*(\n|$)/i;
 /** How long a thread must be silent before what was said goes to the worker, so quick messages become one turn. */
@@ -894,6 +893,8 @@ export const createBot = ({
         .catch((error: unknown) => logger.warn(`Could not close the question in the earlier T3 thread ${job.t3ThreadId}: ${errorMessage(error)}`));
       await clearQuestion(key, job, undefined, open, true);
     }
+    // The old run's progress line is the old worker's words too: it goes now, with the card.
+    await clearProgress(key, getJob(key) ?? job);
     const first = lines[0]!;
     const thread = await threadContext({ channel: job.channel, threadTs: job.threadTs, messageTs: first.ts, user: job.requester, text: '', direct: false }, { withoutBot: true });
     await fetchBase();
@@ -907,8 +908,6 @@ export const createBot = ({
       now: new Date(now()),
     });
     const t3ThreadId = await t3.startThread({ ...input, ...(job.branch ? { baseRef: job.branch } : {}) }, config.t3Bin);
-    // The old run's progress line is the old worker's words, and goes with its run.
-    await clearProgress(key, getJob(key) ?? job);
     updateJob(key, () => ({ t3ThreadId, visibility, knowledgeRead: knowledge.read, knowledgeDir: knowledge.readDir, branch: input.branch, lastPostedRunId: null, nextTurnWaits: lines.some((line) => line.audience === 'bot'), delivering: undefined, phase: { state: 'following' } }));
     await notify(job.channel, job.threadTs, { kind: 'fresh-session' });
     logger.info(`${folderGone ? 'The knowledge folder this thread read was cleaned up' : `Knowledge this thread used was taken back (${revoked.length} page(s))`}; continued ${key} in a fresh T3 thread ${t3ThreadId}`);
@@ -1087,8 +1086,12 @@ export const createBot = ({
     // A seen run that was posted tells nothing more.
     const seen = seenRun(job.phase);
     if (seen && seen.id === job.lastPostedRunId && !seen.progress) updateJob(key, (latest) => ({ phase: forgetRun(latest.phase) }));
+    // A line an older build left for a run nobody follows needs no answer from T3: it goes first. The job is still
+    // checked against T3, as one that looked running.
+    const leftover = job.phase.state === 'idle' && job.phase.leftover !== undefined;
+    if (leftover) await clearProgress(key, job);
     const saved = getJob(key) ?? job;
-    if (!looksRunning({ ...saved, pendingReactions: pendingReactions(saved) })) return;
+    if (!leftover && !looksRunning({ ...saved, pendingReactions: pendingReactions(saved) })) return;
     const { thread } = await t3.showThread(saved.t3ThreadId, config.t3Bin);
     // Going or waiting in T3: the poll follows it from here.
     if (thread.activeRunId || (thread.pendingRequestCount ?? 0) > 0) {

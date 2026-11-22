@@ -49,12 +49,20 @@ export const followed = (phase: Phase): boolean => phase.state !== 'idle';
 
 // Transitions. Each takes the phase as saved last and returns the next one. ------------------------------------------
 
-/** Follow the job every poll from now on. A job already followed or waiting stays as it is. */
-export const follow = (phase: Phase): Phase => (phase.state === 'idle' ? { state: 'following' } : phase);
+/**
+ * Follow the job every poll from now on. A job already followed or waiting stays as it is. A leftover line goes with
+ * the run it was for, seen long ago, so the poll still takes it down.
+ */
+export const follow = (phase: Phase): Phase => {
+  if (phase.state !== 'idle') return phase;
+  if (!phase.leftover) return { state: 'following' };
+  const { ts, runId, text } = phase.leftover;
+  return { state: 'following', run: { id: runId, at: new Date(0).toISOString(), progress: { ts, text } } };
+};
 
 /** The run waits on someone in T3: with a card shown in the chat, or with the owner told to answer in T3. */
 export const waitFor = (phase: Phase, card?: QuestionCard): Phase => {
-  const run = seenRun(phase);
+  const run = seenRun(follow(phase));
   return { state: 'waiting', ...(run ? { run } : {}), ...(card ? { card } : {}) };
 };
 
