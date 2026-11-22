@@ -27,6 +27,7 @@ import { useBadgeCounts, useBotStatus } from './shell/live.ts';
 import { FollowNavigation } from './shell/navigate.ts';
 import { focusScreen, Shortcuts } from './shell/Shortcuts.tsx';
 import { Sidebar } from './shell/Sidebar.tsx';
+import { StarPrompt } from './shell/StarPrompt.tsx';
 import { ToastProvider } from './ui/index.ts';
 
 /** The screen for each route. The type makes a route without a screen fail the type check. */
@@ -109,6 +110,7 @@ const Shell = () => {
       <Shortcuts />
       <ScrollToTop />
       <Rendered />
+      <StarPrompt status={status} />
     </div>
   );
 };

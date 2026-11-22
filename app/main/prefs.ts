@@ -1,7 +1,8 @@
-// App preferences: window size and place, theme, last screen, and the profile folder the app manages.
+// App preferences: window size and place, theme, last screen, the profile folder the app manages, and when to ask
+// for a GitHub star.
 // Pure logic here; `prefs-store.ts` keeps them in electron-store. Nothing about the bot lives in prefs.
 import { isAbsolute } from 'node:path';
-import type { AppPrefs, Theme } from './bridge.ts';
+import type { AppPrefs, StarPromptState, Theme } from './bridge.ts';
 
 export const defaultPrefs: AppPrefs = {
   theme: 'system',
@@ -9,6 +10,7 @@ export const defaultPrefs: AppPrefs = {
   window: { width: 1100, height: 720, maximized: false },
   profileDir: null,
   includePrereleases: null,
+  starPrompt: { since: null, finished: 0, asks: 0, shownIn: null, snoozedUntil: null, done: false },
 };
 
 /** Where prefs are read from and saved to. */
@@ -21,6 +23,21 @@ const themes: readonly Theme[] = ['system', 'light', 'dark'];
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 const MIN_WIDTH = 640;
 const MIN_HEIGHT = 420;
+
+const isTime = (value: unknown): value is string => typeof value === 'string' && value.length <= 40 && !Number.isNaN(Date.parse(value));
+
+/** The star request's memory, checked whole: a broken one throws, so `readPrefs` falls back to a fresh start. */
+const parseStarPrompt = (value: unknown): StarPromptState => {
+  if (!isRecord(value)) throw new Error('starPrompt must be an object.');
+  const { since, finished, asks, shownIn, snoozedUntil, done } = value;
+  const count = (n: unknown): n is number => typeof n === 'number' && Number.isInteger(n) && n >= 0 && n <= 1_000_000;
+  if (since !== null && !isTime(since)) throw new Error('starPrompt.since must be a time or null.');
+  if (snoozedUntil !== null && !isTime(snoozedUntil)) throw new Error('starPrompt.snoozedUntil must be a time or null.');
+  if (!count(finished) || !count(asks)) throw new Error('starPrompt counts must be whole numbers.');
+  if (shownIn !== null && (typeof shownIn !== 'string' || shownIn.length > 64)) throw new Error('starPrompt.shownIn must be a version or null.');
+  if (typeof done !== 'boolean') throw new Error('starPrompt.done must be true or false.');
+  return { since, finished, asks, shownIn, snoozedUntil, done };
+};
 
 const parseField = (key: string, value: unknown): Partial<AppPrefs> => {
   switch (key) {
@@ -36,6 +53,8 @@ const parseField = (key: string, value: unknown): Partial<AppPrefs> => {
     case 'includePrereleases':
       if (value !== null && typeof value !== 'boolean') throw new Error('includePrereleases must be true, false or null.');
       return { includePrereleases: value };
+    case 'starPrompt':
+      return { starPrompt: parseStarPrompt(value) };
     case 'window': {
       if (!isRecord(value)) throw new Error('window must be an object.');
       const { width, height, x, y, maximized } = value;

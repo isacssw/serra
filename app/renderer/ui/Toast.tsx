@@ -17,6 +17,13 @@ export interface ToastOptions {
 interface ToastEntry extends ToastOptions { id: number }
 
 const ToastContext = createContext<((toast: ToastOptions) => void) | null>(null);
+const StackContext = createContext<HTMLElement | null>(null);
+
+/**
+ * The toast corner, for a card that lives there longer than a toast (the star request): portal into it so the two
+ * stack instead of overlapping. Null until the stack is mounted.
+ */
+export const useToastStack = (): HTMLElement | null => useContext(StackContext);
 
 /** Shows a toast: `const toast = useToast(); toast({ message: 'Promoted', action: { label: 'Undo', onClick } })`. */
 export const useToast = (): ((toast: ToastOptions) => void) => {
@@ -54,6 +61,7 @@ const ToastItem = ({ toast, onDismiss }: { toast: ToastEntry; onDismiss: (id: nu
 export const ToastProvider = ({ children }: { children: ReactNode }) => {
   const [toasts, setToasts] = useState<ToastEntry[]>([]);
   const nextId = useRef(1);
+  const [stack, setStack] = useState<HTMLElement | null>(null);
   const dismiss = useCallback((id: number) => setToasts((list) => list.filter((toast) => toast.id !== id)), []);
   const show = useCallback((toast: ToastOptions) => {
     const id = nextId.current++;
@@ -62,8 +70,8 @@ export const ToastProvider = ({ children }: { children: ReactNode }) => {
   }, []);
   return (
     <ToastContext.Provider value={show}>
-      {children}
-      <div aria-live="polite" className="pointer-events-none fixed right-4 bottom-4 z-50 flex w-[min(24rem,calc(100vw-2rem))] flex-col gap-2 [&>*]:pointer-events-auto">
+      <StackContext.Provider value={stack}>{children}</StackContext.Provider>
+      <div ref={setStack} aria-live="polite" className="pointer-events-none fixed right-4 bottom-4 z-50 flex w-[min(24rem,calc(100vw-2rem))] flex-col gap-2 [&>*]:pointer-events-auto">
         {toasts.map((toast) => <ToastItem key={toast.id} toast={toast} onDismiss={dismiss} />)}
       </div>
     </ToastContext.Provider>

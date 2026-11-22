@@ -7,7 +7,7 @@ import test, { type TestContext } from 'node:test';
 import type { HandlerContext } from '../app/main/ipc/context.ts';
 import { secretsHandlers } from '../app/main/ipc/secrets.ts';
 import { setupHandlers } from '../app/main/ipc/setup.ts';
-import { memoryPrefs } from '../app/main/prefs.ts';
+import { defaultPrefs, memoryPrefs } from '../app/main/prefs.ts';
 import { stoppedStatusSource } from '../app/main/status.ts';
 import {
   draftErrors, draftRequest, emptyDraft, outcomeText, stepState, suggestId, visibleStep,
@@ -89,7 +89,7 @@ process.exit(0);
 };
 
 const context = (prefsDir: string | null = null): HandlerContext & { pushed: string[] } => {
-  const prefs = memoryPrefs({ theme: 'system', lastScreen: null, window: { width: 1100, height: 720, maximized: false }, profileDir: prefsDir, includePrereleases: null });
+  const prefs = memoryPrefs({ ...defaultPrefs, profileDir: prefsDir });
   const pushed: string[] = [];
   return {
     pushed,
