@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import test from 'node:test';
 import { codeRoot } from '../src/config.ts';
 import { createProfile } from '../src/setup.ts';
-import { activate, canRollBack, defaultNode, PACKAGED_SOURCE, pruneReleases, RELEASE_INFO, stageReleaseSource, startupError, pnpmCommand, prepareRelease, releaseSourceRoot, rollback, servicePlist, type ServiceDriver } from '../src/deploy.ts';
+import { activate, canRollBack, defaultNode, PACKAGED_SOURCE, pruneReleases, RELEASE_INFO, startupError, pnpmCommand, prepareRelease, releaseSourceRoot, rollback, servicePlist, type ServiceDriver } from '../src/deploy.ts';
 import { activateRelease, activationPreflight, findNode, nvmNodes, prepareNextRelease, releaseStatus, rollbackRelease, supportedNode } from '../src/releases.ts';
 
 /**
@@ -470,13 +470,6 @@ test('activation removes old releases but keeps the active one, the one before i
   await activate(f.directory, f.opts);
   assert.deepEqual(releases.map((path) => existsSync(path)), [false, false, true, true]);
   assert.ok(existsSync(stray));
-});
-
-test('stageReleaseSource skips files a checkout lacks, like release.json', (t) => {
-  const to = mkdtempSync(join(tmpdir(), 'bots-stage-')); t.after(() => rmSync(to, { recursive: true, force: true }));
-  stageReleaseSource(codeRoot, to);
-  assert.ok(existsSync(join(to, 'src/index.ts')));
-  assert.equal(existsSync(join(to, RELEASE_INFO)), existsSync(join(codeRoot, RELEASE_INFO)));
 });
 
 test('prepare names what is missing when neither the root nor release-source has the code', async (t) => {

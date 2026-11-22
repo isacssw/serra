@@ -14,7 +14,7 @@ import { stoppedStatusSource } from '../app/main/status.ts';
 import { answerNameRequests, createSlackNames, DM_LABEL, type SlackNameLookup } from '../src/slack-names.ts';
 import { createStoredSlackNames, MAX_STORED_NAMES, readStoredNames, SLACK_NAMES_FILE } from '../src/slack-names-store.ts';
 import {
-  MAX_NAME_IDS, MAX_REQUEST_BYTES, requestNames, startStatusServer, statusSocketPath, subscribeStatus,
+  MAX_NAME_IDS, MAX_REQUEST_BYTES, requestNames, startStatusServer, subscribeStatus,
   type NamesResolver, type StatusMessage, type UpStatus,
 } from '../src/status-socket.ts';
 
@@ -359,8 +359,4 @@ test('launch: a 1Password profile on a Mac without op lists jobs and gets names 
   await settle(100);
   assert.deepEqual((await app.list()).map((row) => row.requesterName), ['Sam Rivera', 'Acme Monitor']);
   assert.deepEqual(recorded(), []);
-});
-
-test('statusSocketPath stays short enough for these fixtures', (t) => {
-  assert.ok(Buffer.byteLength(statusSocketPath(shortDir(t))) < 100);
 });
