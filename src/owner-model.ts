@@ -23,25 +23,21 @@ export const pageAudience = (fields: Map<string, string> | null): Audience => {
 export const mayUse = (audience: Audience, visibility: Visibility): boolean =>
   visibility === 'owner' || (visibility === 'team' && audience !== 'owner') || audience === 'external';
 
-export const VISIBILITY_LABEL: Record<Visibility, string> = {
-  owner: 'only you', team: 'your team', external: 'people outside your company',
-};
-
 /** About me rides in every brief, so its size is a cost every job pays. About 1,000 tokens. */
 export const ABOUT_MAX_CHARS = 4000;
-export const OWNER_FOLDER = 'owner';
-export const PEOPLE_FOLDER = 'people';
+const OWNER_FOLDER = 'owner';
+const PEOPLE_FOLDER = 'people';
 /** The people roster is one line per person, so the worker knows who someone is before their name comes up. */
 const ROSTER_MAX_CHARS = 900;
 
 /** What every reply people outside the company may see follows, whatever the owner's pages say. */
-export const OUTSIDER_RULES = `People outside the company can see this reply. Don't share internal plans, people's details, prices, discounts or anything about pay, hiring or performance. Never promise or confirm a date or a commitment: say the owner will confirm.`;
+const OUTSIDER_RULES = `People outside the company can see this reply. Don't share internal plans, people's details, prices, discounts or anything about pay, hiring or performance. Never promise or confirm a date or a commitment: say the owner will confirm.`;
 
 /**
  * What a teammate's reply follows when an off-limits page is the owner's only: the page's topics can be the very facts
  * it protects, so this names none of them.
  */
-export const TEAM_RULES = `The owner keeps some topics private from the team. Don't share, guess at or offer help with anything about anyone's pay, promotion, hiring, performance, health or personal life: say the owner will answer it.`;
+const TEAM_RULES = `The owner keeps some topics private from the team. Don't share, guess at or offer help with anything about anyone's pay, promotion, hiring, performance, health or personal life: say the owner will answer it.`;
 
 /** One line for a person card: its title and its first bullet, like "Priya Nair: Product manager. Decides scope." */
 const rosterLine = (text: string): string | null => {
@@ -69,7 +65,7 @@ const currentBody = (text: string): string => text
   .replace(/^##\s+Replaced\b[\s\S]*?(?=^##\s|(?![\s\S]))/gim, '')
   .trim();
 
-export interface AboutMePage { path: string; reason?: string }
+interface AboutMePage { path: string; reason?: string }
 
 export interface AboutMe {
   /** The text that goes into the brief, or empty when no page qualifies. */

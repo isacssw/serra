@@ -27,7 +27,7 @@ export interface KnowledgeDrift {
  * Next to `knowledge/` in the profile (`.knowledge-approved/`), outside it and outside the backups undo lists. Named
  * after the folder, so two knowledge folders side by side never share one.
  */
-export const approvedDir = (knowledgeDir: string): string => {
+const approvedDir = (knowledgeDir: string): string => {
   const root = resolve(knowledgeDir);
   return join(dirname(root), `.${basename(root)}-approved`);
 };

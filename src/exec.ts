@@ -14,7 +14,7 @@ export interface ExecResult {
   timedOut: boolean;
 }
 
-export interface ExecOptions {
+interface ExecOptions {
   cwd?: string;
   env?: NodeJS.ProcessEnv;
   timeoutMs?: number;

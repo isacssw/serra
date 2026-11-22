@@ -175,7 +175,7 @@ const updaterFixture = async (t: TestContext, { dmgBody = 'disk image bytes', su
     fetch: async (url, init) => url === 'feed' ? new Response(JSON.stringify(feed)) : fetch(url, init),
     feedUrl: 'feed', bundlePath: bundle,
     getChoice: () => choice, setChoice: (next) => { choice = next; },
-    stage: async (dmg, expected, into) => { calls.push(`stage ${expected.version} ${expected.bundleId}`); mkdirSync(into, { recursive: true }); return into; },
+    stage: async (_dmg, expected, into) => { calls.push(`stage ${expected.version} ${expected.bundleId}`); mkdirSync(into, { recursive: true }); return into; },
     plan: () => plan,
     launchSwap: (script, args) => { calls.push(`swap ${args.slice(1, 3).map((p) => p.split('/').slice(-2).join('/')).join(' ')}`); assert.equal(readFileSync(script, 'utf8'), SWAP_SCRIPT); },
     quit: () => { calls.push('quit'); },

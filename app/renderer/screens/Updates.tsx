@@ -12,7 +12,7 @@ import { SETUP_PATH } from '../setup/setup.logic.ts';
 import { openedMessage, openRepo } from '../star.logic.ts';
 import { Button, cx, Dialog, GitHubMark, Page, useToast } from '../ui/index.ts';
 import {
-  actionStates, activateDialog, keepVersions, activationNotice, appCard, botLine, branch, busyLabel, canCheck, commitsHeading, homeOf, noteLines,
+  actionStates, activateDialog, keepVersions, activationNotice, appCard, botLine, busyLabel, canCheck, commitsHeading, homeOf, noteLines,
   preparedLabel, progressPercent, releaseLabel, rollbackDialog, rollbackNotice, sourceLabel, syncDialog,
   type AppCard, type CardAction, type CardTone, type Notice, type UpdatesStatus,
 } from './updates.logic.ts';
@@ -26,12 +26,12 @@ const ToneIcon = ({ tone, size = 18 }: { tone: CardTone; size?: number }) => {
     case 'busy': return <LoaderCircle {...props} className="shrink-0 animate-spin text-muted" />;
     case 'new': return <ArrowDownToLine {...props} className="shrink-0 text-ink" />;
     case 'down': return <TriangleAlert {...props} className="shrink-0 text-down" />;
-    default: return <Info {...props} className="shrink-0 text-muted" />;
+    case 'neutral': return <Info {...props} className="shrink-0 text-muted" />;
   }
 };
 
 /** The permanent, quiet way to star Serra (SERRA-53). Opening it also stops the in-app request. */
-export const StarLink = ({ onError, onSaveFailed }: { onError: (error: unknown) => void; onSaveFailed?: () => void }) => (
+const StarLink = ({ onError, onSaveFailed }: { onError: (error: unknown) => void; onSaveFailed?: () => void }) => (
   <p className="flex flex-wrap items-center gap-x-1.5 border-t border-line pt-4 text-[13px] text-muted">
     Serra is open source.
     <button

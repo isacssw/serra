@@ -7,6 +7,7 @@ state.json.lock
 logs/
 .local/
 /profile.json
+/secrets.json
 profiles/
 .env.*
 !.env.example
@@ -21,3 +22,6 @@ docs/app/qa/screenshots/
 
 # The approved copy of an eval fixture's knowledge, kept when something seeds it (profiles live outside the checkout).
 .*-approved/
+
+# Raw eval results live on the pr-assets/evals branch (pnpm evals:fetch); evals/RESULTS.md is the summary on main.
+evals/results/

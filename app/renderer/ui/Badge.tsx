@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import { cx } from './cx.ts';
 
-export type BadgeTone = 'neutral' | 'accent' | 'up' | 'warn' | 'down';
+type BadgeTone = 'neutral' | 'accent' | 'up' | 'warn' | 'down';
 
 const tones: Record<BadgeTone, string> = {
   neutral: 'bg-raised text-muted',

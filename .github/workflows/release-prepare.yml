@@ -73,5 +73,7 @@ jobs:
             echo "Open the release PR: $url" >> "$GITHUB_STEP_SUMMARY"
           fi
 
-      - name: Run CI on the release branch
-        run: gh workflow run ci.yml --ref "chore/release-v$VERSION"
+      - name: Run CI and the PR title check on the release branch
+        run: |
+          gh workflow run ci.yml --ref "chore/release-v$VERSION"
+          gh workflow run pr-title.yml --ref "chore/release-v$VERSION"

@@ -2,12 +2,14 @@ name: PR title
 
 # The PR title becomes the squash commit on main, so it must be a Conventional Commit (CONTRIBUTING.md › Naming).
 # It only reads the PR's title through the API, so the read-only token of a fork PR is enough, and `edited` reruns it
-# when only the title changes. A PR the workflow token opens (the release PR) gets no run here; its title is fixed in
-# release-prepare.yml.
+# when only the title changes. A PR the workflow token opens (the release PR) gets no pull_request run, so
+# release-prepare.yml dispatches this workflow on the release branch, and the job checks that branch's open PR.
+# `title` is a required check on main, so every PR needs it.
 
 on:
   pull_request:
     types: [opened, edited, reopened, synchronize]
+  workflow_dispatch:
 
 permissions:
   pull-requests: read
@@ -17,7 +19,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
-      - uses: amannn/action-semantic-pull-request@2252a14e810aa9b85c2d560bd7070c802206ecf6 # v6.1.2
+      - if: github.event_name == 'pull_request'
+        uses: amannn/action-semantic-pull-request@2252a14e810aa9b85c2d560bd7070c802206ecf6 # v6.1.2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
@@ -38,3 +41,16 @@ jobs:
           subjectPatternError: |
             The subject "{subject}" in the title "{title}" must start with a lowercase letter, not end with a
             period, and stay under 72 characters. Example: fix(palette): ignore late close events
+      # The same rules for the PR open on the dispatched branch (the release PR).
+      - if: github.event_name == 'workflow_dispatch'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BRANCH: ${{ github.ref_name }}
+        run: |
+          title=$(gh pr view "$BRANCH" --repo "$GITHUB_REPOSITORY" --json title --jq .title)
+          echo "PR title: $title"
+          pattern='^(feat|fix|perf|refactor|docs|test|build|ci|chore|revert)(\([^)]+\))?!?: (.+)$'
+          [[ "$title" =~ $pattern ]] || { echo "::error::\"$title\" isn't type(scope): subject"; exit 1; }
+          subject=${BASH_REMATCH[3]}
+          [[ ! "$subject" =~ ^[A-Z] && ! "$subject" =~ \.$ && ${#subject} -le 72 ]] || {
+            echo "::error::The subject must start lowercase, not end with a period, and stay under 72 characters"; exit 1; }

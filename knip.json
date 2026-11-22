@@ -1,0 +1,29 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "entry": [
+    "src/{index,manage,setup,doctor,onboard,check-knowledge}.ts",
+    "src/commands/*.ts",
+    "app/main/index.ts",
+    "app/preload.ts",
+    "tests/*.test.ts",
+    "evals/*.ts"
+  ],
+  "project": [
+    "src/**/*.ts",
+    "app/**/*.{ts,tsx}",
+    "scripts/**/*.ts",
+    "tests/**/*.ts",
+    "evals/**/*.ts"
+  ],
+  "ignore": [
+    "scripts/qa/**",
+    "src/jobs.ts",
+    "src/intake.ts",
+    "src/tasks.ts",
+    "src/status-socket.ts"
+  ],
+  "ignoreDependencies": [
+    "tailwindcss"
+  ],
+  "ignoreExportsUsedInFile": false
+}

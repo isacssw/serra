@@ -14,7 +14,7 @@ export const checkProjectAccess = async (paths: readonly string[],
   }
 };
 
-export const projectAccessMessage = (path: string, error: unknown): string => {
+const projectAccessMessage = (path: string, error: unknown): string => {
   const reason = (error instanceof Error ? error.message : String(error)).split('\n')[0];
   return `Can't read the repository ${path} (${reason}). If it is in Documents, Desktop or Downloads, macOS must ` +
     'allow this background service to read it: answer the macOS prompt, or allow "node" in System Settings › ' +

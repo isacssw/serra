@@ -25,8 +25,8 @@ import type { DetectedProject, OwnerConfirmed, ProfileDraft, ProfileSummary, Set
 // The one value import: a pure module, so the preload bundle stays free of Node.
 import { SETUP_INCOMPLETE, SetupIncomplete } from '../../src/setup-incomplete.ts';
 import type {
-  AppliesWhen, BotEvent, BotStatus, Diagnostic, JobListing, JobSummary, KnowledgePage, Profile, ProfileSection, Proposal,
-  ProposalDiff, ReleaseStatus, SecretName, SecretSource, SecretStatus,
+  AppliesWhen, BotEvent, BotStatus, Diagnostic, JobListing, KnowledgePage, Profile, ProfileSection, Proposal,
+  ProposalDiff, SecretName, SecretSource, SecretStatus,
 } from '../../src/contracts.ts';
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -100,7 +100,7 @@ export type BriefDocument = 'brief' | 'policy';
 export interface SavedSection { profile: Profile; applies: AppliesWhen; changed: boolean }
 
 /** The result of allowing a Slack member (APP-16). `changed` is false when they already had access. */
-export interface PersonAdded { slackUserId: string; changed: boolean; applies: AppliesWhen }
+interface PersonAdded { slackUserId: string; changed: boolean; applies: AppliesWhen }
 
 // ---------------------------------------------------------------------------------------------------------------
 // Request/response surface

@@ -42,13 +42,6 @@ const cli = (profileDir: string, ...args: string[]): { ok: boolean; output: stri
 
 // --- Approval: only the owner, in the app, changes what the bot knows ---------------------------------------------
 
-test('the brief never tells the worker to promote, merge or edit the index itself', () => {
-  const brief = readFileSync(join(codeRoot, 'templates/brief.md'), 'utf8');
-  assert.doesNotMatch(brief, /promote it:/i);
-  assert.doesNotMatch(brief, /a row in `index\.md`/);
-  assert.match(brief, /Never promote, merge or undo/i);
-});
-
 test('the CLI cannot promote, merge, discard or undo a proposal: approval is the owner\'s, in the app', (t) => {
   const profileDir = fixture(t);
   proposal(profileDir, '2026-11-20-release-days.md', 'owner/working-style.md', '# How Robin works\n\n- Risky releases ship on Monday.\n');

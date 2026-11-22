@@ -112,15 +112,12 @@ jobs:
           rm -rf "$RUNNER_TEMP/notary"
 
       - name: Smoke-test the packaged app
-        timeout-minutes: 12
-        # The smoke test's ⌘K palette check is occasionally flaky (it passes on a retry), so allow three tries.
+        # One run, as in CI's required `app` job: the ⌘K palette flake was a late close event, fixed in #6, and a retry
+        # would hide the next real one. One run takes about 40s; this bounds a hung window, not a slow one.
+        timeout-minutes: 5
         run: |
           app=$(ls -d release/mac*/Serra.app | head -n 1)
-          for attempt in 1 2 3; do
-            "$app/Contents/MacOS/Serra" --smoke && exit 0
-            echo "::warning::Smoke test attempt $attempt failed."
-          done
-          exit 1
+          "$app/Contents/MacOS/Serra" --smoke
 
       - uses: actions/upload-artifact@v4
         with:

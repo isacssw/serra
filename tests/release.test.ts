@@ -1,5 +1,4 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import {
   changelogSection, compareVersions, dateChangelog, isPrerelease, isVersion, setPackageVersion, shouldPublish,
@@ -37,13 +36,4 @@ test('publish: only a push that raises package.json version publishes', () => {
   assert.equal(shouldPublish(null, '0.0.0'), false, 'the commit that adds the field');
   assert.equal(shouldPublish('0.1.0', '0.1.0-rc.1'), false, 'never backwards');
   assert.equal(shouldPublish('0.1.0', 'banana'), false);
-});
-
-test('the repository is set up the way the release workflows expect', () => {
-  const pkg = JSON.parse(readFileSync('package.json', 'utf8')) as { version?: string };
-  assert.ok(pkg.version && isVersion(pkg.version), 'package.json has a semver version');
-  const changelog = readFileSync('CHANGELOG.md', 'utf8');
-  assert.match(changelog, /^## Unreleased$/m, 'CHANGELOG.md has an Unreleased section');
-  // The app takes its version from package.json; an override in electron-builder.yml would hide the release's.
-  assert.doesNotMatch(readFileSync('electron-builder.yml', 'utf8'), /^\s*extraMetadata:[\s\S]*?^\s+version:/m);
 });

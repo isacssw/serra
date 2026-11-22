@@ -29,7 +29,7 @@ The live and interview evals need the `claude` CLI signed in. They cost cents pe
 
 ## Reading results
 
-Results go to `results/<label>.md` (the table) and `<label>.json` (every reply and grade). Interview transcripts go to `results/interviews/`.
+Results go to `results/<label>.md` (the table) and `<label>.json` (every reply and grade). Interview transcripts go to `results/interviews/`. `results/` is git-ignored: [`RESULTS.md`](RESULTS.md) is the one-line-per-run summary on `main`, and the raw results live on the `pr-assets/evals` branch. `pnpm evals:fetch` extracts them into `results/`; to keep a new run, commit its files on that branch and run `node evals/summarize.ts` on yours.
 
 Live runs are noisy. Two runs of byte-identical briefs differed by 11 points in one category. So `compare.ts` counts each case once, as the mean of its runs, and gives a paired margin across cases. It also says how many cases were already at 100, since those can't show a gain.
 

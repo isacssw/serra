@@ -66,7 +66,7 @@ const SLACK_BOT_ID = /^B[A-Z0-9]+$/;
 const GITHUB_REPO = /^[\w.-]+\/[\w.-]+$/;
 
 /** Required single-line text, as `validateProfile` wants every string field. */
-export const textProblem = (value: string, label: string): Problem => {
+const textProblem = (value: string, label: string): Problem => {
   if (!value.trim()) return `${label} is required.`;
   if (/[\r\n\0]/.test(value)) return `${label} must be one line.`;
   return null;
@@ -86,33 +86,33 @@ export const channelIdProblem = (value: string): Problem => {
   return null;
 };
 
-export const botIdProblem = (value: string): Problem => {
+const botIdProblem = (value: string): Problem => {
   if (!value.trim()) return 'Bot id is required.';
   if (!/^[a-z][a-z0-9-]{0,47}$/.test(value)) return 'Start with a lowercase letter and use up to 48 lowercase letters, digits or hyphens.';
   return null;
 };
 
-export const absolutePathProblem = (value: string, label: string, example = '/Users/you/project'): Problem =>
+const absolutePathProblem = (value: string, label: string, example = '/Users/you/project'): Problem =>
   textProblem(value, label) ?? (value.startsWith('/') ? null : `${label} must be an absolute path, like ${example}.`);
 
-export const githubRepoProblem = (value: string): Problem => {
+const githubRepoProblem = (value: string): Problem => {
   if (!value.trim()) return 'Enter a GitHub repository.';
   if (!GITHUB_REPO.test(value.trim())) return 'Use owner/name, like acme/project.';
   return null;
 };
 
-export const githubLoginProblem = (value: string): Problem =>
+const githubLoginProblem = (value: string): Problem =>
   textProblem(value, 'GitHub login') ?? (/^[\w-]+$/.test(value) ? null : 'Use letters, digits, underscores and hyphens only.');
 
 /** Values that become command-line arguments must not read as flags. */
-export const notFlagProblem = (value: string, label: string): Problem =>
+const notFlagProblem = (value: string, label: string): Problem =>
   textProblem(value, label) ?? (value.startsWith('-') ? `${label} can't start with a hyphen.` : null);
 
-export const serviceLabelProblem = (value: string): Problem =>
+const serviceLabelProblem = (value: string): Problem =>
   textProblem(value, 'Service label') ?? (/^[a-zA-Z0-9][a-zA-Z0-9.-]+$/.test(value) ? null : 'Use letters, digits, dots and hyphens, like dev.serra.mybot.');
 
 /** The quick part of `branchPatternProblem`; the full Git-name check runs when saving. */
-export const branchPatternFieldProblem = (value: string): Problem => {
+const branchPatternFieldProblem = (value: string): Problem => {
   if (/[\r\n\0]/.test(value)) return 'The pattern must be one line.';
   if (!value.includes('{slug}') || !value.includes('{stamp}')) return 'Include {slug} and {stamp}, so two jobs never share a branch.';
   return null;
@@ -125,7 +125,7 @@ export const branchPatternFieldProblem = (value: string): Problem => {
 export type FormValues = Record<string, string>;
 export type FieldErrors = Record<string, string>;
 
-export interface FieldSpec {
+interface FieldSpec {
   key: string;
   label: string;
   hint?: string;
@@ -150,7 +150,7 @@ const collect = (checks: Record<string, Problem>): FieldErrors =>
   Object.fromEntries(Object.entries(checks).filter((entry): entry is [string, string] => entry[1] !== null));
 
 /** Repositories typed one per line or separated by commas. */
-export const splitList = (text: string): string[] => text.split(/[\n,]/).map((item) => item.trim()).filter(Boolean);
+const splitList = (text: string): string[] => text.split(/[\n,]/).map((item) => item.trim()).filter(Boolean);
 
 const optional = (value: string | undefined): string => value ?? '';
 

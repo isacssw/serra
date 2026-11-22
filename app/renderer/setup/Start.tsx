@@ -108,7 +108,7 @@ export const Start = () => {
   }, [view]);
 
   /** Makes `directory` the app's profile, then goes on from its first missing step. */
-  const use = async (directory: string) => {
+  const openProfile = async (directory: string) => {
     const bridge = serra();
     if (!bridge) return;
     setBusy(true);
@@ -126,7 +126,7 @@ export const Start = () => {
   const openFolder = async () => {
     try {
       const folder = await serra()?.setup.chooseFolder('profile');
-      if (folder) await use(folder);
+      if (folder) await openProfile(folder);
     } catch (failure) { setError(errorText(failure)); }
   };
 
@@ -195,7 +195,7 @@ export const Start = () => {
       )}
 
       {view === 'picker' && (
-        <form className="flex flex-col gap-6" onSubmit={(event) => { event.preventDefault(); if (chosen) void use(chosen); }}>
+        <form className="flex flex-col gap-6" onSubmit={(event) => { event.preventDefault(); if (chosen) void openProfile(chosen); }}>
           <Picker profiles={profiles} chosen={chosen} onChoose={setChosen} />
           <div className="flex flex-col items-center gap-3">
             <Button type="submit" variant="primary" className="h-10 px-5 text-[14px]" disabled={!chosen || busy}>

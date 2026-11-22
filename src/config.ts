@@ -1,10 +1,12 @@
-import { closeSync, existsSync, fsyncSync, openSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
-import { randomBytes } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
+import { isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { parseEnv } from 'node:util';
+import { readEnv, writeFileAtomic, type AtomicWriteIo } from './files.ts';
 import { resolveConfiguredSecretSync } from './secrets.ts';
+
+// Re-exported so the many callers that import them from here keep working.
+export { readEnv, writeFileAtomic, type AtomicWriteIo };
 
 export const codeRoot = fileURLToPath(new URL('..', import.meta.url));
 export const defaultProfileRoot = join(homedir(), '.local/share/serra');
@@ -50,7 +52,7 @@ export interface Profile {
   updates?: { source: string; ref?: string };
 }
 
-export const DEFAULT_BRANCH_PATTERN = '{id}/{slug}-{stamp}';
+const DEFAULT_BRANCH_PATTERN = '{id}/{slug}-{stamp}';
 const BRANCH_PLACEHOLDER = /\{(id|slug|stamp|DDMM|MMDD)\}/g;
 
 /** Why a branch pattern can't name a valid, unique Git branch, or null when it can. */
@@ -61,9 +63,6 @@ export const branchPatternProblem = (pattern: string): string | null => {
   if (!/^[A-Za-z0-9][A-Za-z0-9._/-]*$/.test(literal) || /\.\.|\/\/|\/$|\.lock$|\/\.|\.$/.test(literal)) return 'branchPattern must make a valid Git branch name';
   return null;
 };
-
-export const readEnv = (path: string): Record<string, string> =>
-  existsSync(path) ? parseEnv(readFileSync(path, 'utf8')) as Record<string, string> : {};
 
 export const profileArgument = (args = process.argv.slice(2)): string | undefined => {
   const index = args.indexOf('--profile');
@@ -169,38 +168,6 @@ export const validateProfile = (value: unknown): Profile => {
     if (problem) throw new Error(problem);
   }
   return value as unknown as Profile;
-};
-
-/** The file operations an atomic write uses. Tests swap them to simulate a crash part way through. */
-export interface AtomicWriteIo {
-  writeFileSync: (fd: number, data: string) => void;
-  renameSync: (from: string, to: string) => void;
-}
-const realIo: AtomicWriteIo = { writeFileSync, renameSync };
-
-/**
- * Replace `path` with `data` so a reader sees either the old file or the new one, never a partial write.
- * The data goes to a uniquely named temp file next to `path`, is flushed to disk, then renamed over it.
- * A crash before the rename leaves the old file untouched (and at worst a stray `.tmp` file that the next write ignores).
- */
-export const writeFileAtomic = (path: string, data: string, { mode = 0o600, io = realIo }: { mode?: number; io?: AtomicWriteIo } = {}): void => {
-  const temp = join(dirname(path), `.${basename(path)}.${process.pid}.${randomBytes(6).toString('hex')}.tmp`);
-  try {
-    const fd = openSync(temp, 'wx', mode);
-    try {
-      io.writeFileSync(fd, data);
-      fsyncSync(fd);
-    } finally { closeSync(fd); }
-    io.renameSync(temp, path);
-  } catch (error) {
-    rmSync(temp, { force: true });
-    throw error;
-  }
-  // Make the rename itself durable. Not every platform can fsync a directory, and the file is already in place.
-  try {
-    const dir = openSync(dirname(path), 'r');
-    try { fsyncSync(dir); } finally { closeSync(dir); }
-  } catch { /* best effort */ }
 };
 
 export const PROFILE_FILE = 'profile.json';

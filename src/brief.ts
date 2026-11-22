@@ -137,7 +137,7 @@ export type BriefPlaceholder = keyof typeof BRIEF_PLACEHOLDERS;
 export const REQUIRED_PLACEHOLDERS: readonly BriefPlaceholder[] = ['REQUEST', 'THREAD_CONTEXT', 'KNOWLEDGE_INDEX'];
 
 export type BriefDocumentName = 'brief' | 'policy';
-export const BRIEF_FILES: Record<BriefDocumentName, string> = { brief: 'brief.md', policy: 'policy.md' };
+const BRIEF_FILES: Record<BriefDocumentName, string> = { brief: 'brief.md', policy: 'policy.md' };
 
 export const isBriefDocument = (value: unknown): value is BriefDocumentName =>
   typeof value === 'string' && Object.hasOwn(BRIEF_FILES, value);
@@ -261,7 +261,7 @@ export const createBriefService = ({ profileDir, backupDir, now = () => new Date
 };
 
 /** The name of the brief update that brings a profile's brief up to the shipped knowledge rules. */
-export const KNOWLEDGE_BRIEF_UPDATE = 'knowledge-update';
+const KNOWLEDGE_BRIEF_UPDATE = 'knowledge-update';
 
 /**
  * A profile's `brief.md` is seeded once and then belongs to the owner, so later changes to the shipped template

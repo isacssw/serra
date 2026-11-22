@@ -46,7 +46,7 @@ const whenIdle = (ready: () => void): (() => void) => {
   return stop;
 };
 
-export const StarCard = ({ onChoose }: { onChoose: (choice: StarChoice) => void }) => {
+const StarCard = ({ onChoose }: { onChoose: (choice: StarChoice) => void }) => {
   const id = useId();
   // Escape anywhere in the card is Not now, like closing a toast.
   const onKeyDown = (event: KeyboardEvent<HTMLElement>): void => {

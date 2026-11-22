@@ -35,7 +35,7 @@ export interface FileChange {
 
 /** What a promote, merge or discard did, and everything `undoProposalChange` needs to reverse it. */
 /** The file Serra writes in a thread's proposals folder to say who started that thread. Not a proposal. */
-export const PROPOSAL_SOURCE_FILE = '.from.json';
+const PROPOSAL_SOURCE_FILE = '.from.json';
 
 /** The folder under knowledge/proposals/ a Slack thread's worker writes to. */
 export const threadProposalsFolder = (channel: string, threadTs: string): string => `from-slack/${channel}-${threadTs.replace(/\D/g, '-')}`;
