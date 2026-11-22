@@ -1,4 +1,4 @@
-import type { ButtonHTMLAttributes, ReactNode } from 'react';
+import type { ButtonHTMLAttributes, ReactNode, Ref } from 'react';
 import { cx } from './cx.ts';
 
 export type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger';
@@ -21,6 +21,8 @@ export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   size?: ButtonSize;
   /** A lucide icon element shown before the label. */
   icon?: ReactNode;
+  /** React 19 passes `ref` as a prop; it reaches the <button>. */
+  ref?: Ref<HTMLButtonElement>;
 }
 
 export const Button = ({ variant = 'secondary', size = 'md', icon, className, children, type = 'button', ...rest }: ButtonProps) => (
@@ -29,7 +31,7 @@ export const Button = ({ variant = 'secondary', size = 'md', icon, className, ch
     className={cx(
       'inline-flex shrink-0 items-center justify-center rounded-md border font-medium whitespace-nowrap transition-colors duration-150',
       'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus',
-      'disabled:pointer-events-none disabled:opacity-40',
+      'disabled:pointer-events-none disabled:opacity-40 aria-disabled:cursor-not-allowed aria-disabled:opacity-40',
       variants[variant], sizes[size], className,
     )}
     {...rest}

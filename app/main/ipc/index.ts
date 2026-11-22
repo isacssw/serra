@@ -1,4 +1,5 @@
 // Wires every bridge method to its handler. Kept free of Electron imports so tests can register on a fake ipcMain.
+import { SETUP_INCOMPLETE } from '../../../src/setup-incomplete.ts';
 import { bridgeMethods, invokeChannel, type Handlers, type InvokeResult, type Namespace } from '../bridge.ts';
 import { appHandlers } from './app.ts';
 import { botHandlers } from './bot.ts';
@@ -68,7 +69,9 @@ export const registerHandlers = (
         try {
           return { ok: true, value: await handler(...args) };
         } catch (error) {
-          return { ok: false, error: error instanceof Error ? error.message : String(error) };
+          const message = error instanceof Error ? error.message : String(error);
+          // No profile yet: the code lets the window show its shared setup state instead of the message.
+          return (error as { code?: unknown } | null)?.code === SETUP_INCOMPLETE ? { ok: false, error: message, code: SETUP_INCOMPLETE } : { ok: false, error: message };
         }
       });
       channels.push(channel);

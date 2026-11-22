@@ -8,7 +8,7 @@ import { Star } from 'lucide-react';
 import type { BotStatus, JobSummary } from '../../../src/contracts.ts';
 import { serra } from '../bridge.ts';
 import { REFRESH_COUNTS, TASK_SETTLED, TASK_STARTING } from './events.ts';
-import { WELCOME_PATH } from '../screens/Welcome/welcome.logic.ts';
+import { SETUP_PATH } from '../setup/setup.logic.ts';
 import {
   answer, calmMoment, countFinished, dueToAsk, finishedWell, IDLE_MS, MAX_WAIT_MS, markShown, openedMessage, openRepo, shouldAsk,
   startClock, updateStarPrompt, type StarChoice,
@@ -92,7 +92,7 @@ export const StarPrompt = ({ status, jobs }: { status: BotStatus | null; jobs: J
   // From sending a new task until the list reloaded after it, app tasks are unknown: T3 may already be running it.
   const [taskStarting, setTaskStarting] = useState(false);
   const starting = useRef({ on: false, settled: false, reloaded: false });
-  const moment = { status, jobs: taskStarting ? null : jobs, path: pathname, welcomePath: WELCOME_PATH };
+  const moment = { status, jobs: taskStarting ? null : jobs, path: pathname, welcomePath: SETUP_PATH };
   const live = useRef(moment);
   live.current = moment;
 

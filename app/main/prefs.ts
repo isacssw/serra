@@ -10,6 +10,7 @@ export const defaultPrefs: AppPrefs = {
   window: { width: 1100, height: 720, maximized: false },
   profileDir: null,
   includePrereleases: null,
+  setupDraft: null,
   starPrompt: { since: null, finished: 0, asks: 0, shownIn: null, snoozedUntil: null, done: false },
 };
 
@@ -21,6 +22,8 @@ export interface PrefsStore {
 
 const themes: readonly Theme[] = ['system', 'light', 'dark'];
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
+/** The setup form's fields (`ProfileDraft`), the only keys a saved draft may hold. */
+const DRAFT_FIELDS = ['botName', 'botId', 'ownerName', 'ownerSlackUserId', 'githubLogin', 'projectPath', 'remote', 'baseRef', 'githubRepo', 't3Bin', 'directory'];
 const MIN_WIDTH = 640;
 const MIN_HEIGHT = 420;
 
@@ -69,6 +72,16 @@ const parseField = (key: string, value: unknown): Partial<AppPrefs> => {
     case 'includePrereleases':
       if (value !== null && typeof value !== 'boolean') throw new Error('includePrereleases must be true, false or null.');
       return { includePrereleases: value };
+    case 'setupDraft': {
+      if (value === null) return { setupDraft: null };
+      if (!isRecord(value)) throw new Error('setupDraft must be an object or null.');
+      const draft: Record<string, string> = {};
+      for (const [field, text] of Object.entries(value)) {
+        if (!DRAFT_FIELDS.includes(field) || typeof text !== 'string' || text.length > 500) throw new Error(`setupDraft.${field} is not a setup field.`);
+        draft[field] = text;
+      }
+      return { setupDraft: draft };
+    }
     case 'starPrompt':
       return { starPrompt: parseStarPrompt(value) };
     case 'window': {

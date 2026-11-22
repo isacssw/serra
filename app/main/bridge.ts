@@ -5,7 +5,7 @@
  * screen or area, and its handlers live in `app/main/ipc/<namespace>.ts`. Screen tickets fill in their own handler
  * file and touch this file only when a stub's signature turns out wrong.
  *
- * This module is loaded in three places, so it must only import types:
+ * This module is loaded in three places, so it imports types only, plus one pure module (`setup-incomplete.ts`):
  * - the sandboxed preload (bundled to one CommonJS file; `createBridge` below builds `window.serra`),
  * - the main process (`bridgeMethods` and `invokeChannel` register the handlers),
  * - the renderer (`import type { SerraBridge }`).
@@ -21,7 +21,9 @@ import type { Prepared } from '../../src/deploy.ts';
 import type { AppUpdateView } from './app-updater.ts';
 import type { BotSync } from './bot-sync.ts';
 import type { InterviewPreview, StartedTask } from '../../src/tasks.ts';
-import type { DetectedProject, OwnerConfirmed, ProfileDraft, SetupProgress, SlackManifest } from '../../src/setup.ts';
+import type { DetectedProject, OwnerConfirmed, ProfileDraft, ProfileSummary, SetupProgress, SlackManifest } from '../../src/setup.ts';
+// The one value import: a pure module, so the preload bundle stays free of Node.
+import { SETUP_INCOMPLETE, SetupIncomplete } from '../../src/setup-incomplete.ts';
 import type {
   AppliesWhen, BotEvent, BotStatus, Diagnostic, JobListing, JobSummary, KnowledgePage, Profile, ProfileSection, Proposal,
   ProposalDiff, ReleaseStatus, SecretName, SecretSource, SecretStatus,
@@ -43,8 +45,24 @@ export interface AppPrefs {
   profileDir: string | null;
   /** Offer prerelease versions of the app (Updates). Null: the default, on while the installed version is a prerelease. */
   includePrereleases: boolean | null;
+  /** The setup's profile form as typed, so quitting halfway loses nothing. Cleared when the profile is created. */
+  setupDraft: Record<string, string> | null;
   /** When to ask for a GitHub star (SERRA-53). Local only: nothing about it leaves the Mac. */
   starPrompt: StarPromptState;
+}
+
+/** What setup found on this Mac: the profile in use and any others, each summarised (SERRA-51). */
+export interface SetupDetection {
+  /** The profile the app uses now, or null. */
+  selected: ProfileSummary | null;
+  /** Other profiles under the default folder, which the owner can switch to. */
+  others: ProfileSummary[];
+  /** True when `--profile` or `BOT_PROFILE` names the profile, so the window can't switch it. */
+  pinned: boolean;
+  /** Where new profiles go. */
+  profileRoot: string;
+  /** The home folder, so paths can show as `~/…`. */
+  home: string;
 }
 
 /** The star request's memory (SERRA-53). The rules that read it are in app/renderer/star.logic.ts. */
@@ -106,12 +124,18 @@ export interface SerraApi {
     /** The window drew its first screen. A launch that finishes an update confirms it with this (SERRA-46). */
     rendered(): void;
   };
-  /** First-run wizard (APP-27): create the profile, the Slack app, the owner and the service. Tokens use `secrets`. */
+  /** Setup (APP-27, SERRA-51): find what exists, create the profile, the Slack app, the owner and the service. Tokens use `secrets`. */
   setup: {
-    /** Which steps are done, read from the profile's files. Works with no profile selected. */
+    /** Which steps are done, read from the profile's files; the last needs the bot answering. Works with no profile. */
     progress(): SetupProgress;
-    /** Suggestions for the form: the `gh` login and where new profiles go. */
-    defaults(): { githubLogin: string; profileRoot: string };
+    /** The profile in use and the others found, with their tokens (presence only) and whether the service runs. */
+    detect(): SetupDetection;
+    /** Makes an existing profile folder the app's profile. Refuses a folder without a valid profile.json. */
+    useProfile(directory: string): SetupDetection;
+    /** A folder picked in the system's dialog (a repository, or a profile kept elsewhere), or null when cancelled. */
+    chooseFolder(purpose: 'repository' | 'profile'): string | null;
+    /** Suggestions for the form: the `gh` login, the Git name, and where new profiles go. */
+    defaults(): { githubLogin: string; ownerName: string; profileRoot: string };
     /** The repository's base branch and GitHub name, as the form's suggestions. */
     detectProject(path: string, remote?: string): DetectedProject;
     /** Creates the profile folder and makes it the app's profile. Refuses a folder that has one. */
@@ -335,7 +359,9 @@ const methods = <N extends Namespace>() => <const L extends readonly string[]>(l
 /** Every bridge method by namespace. The type check keeps it equal to `SerraApi`; the preload and main loop over it. */
 export const bridgeMethods = {
   app: methods<'app'>()(['info', 'getPrefs', 'setPrefs', 'openExternal', 'openProfileFolder', 'rendered']),
-  setup: methods<'setup'>()(['progress', 'defaults', 'detectProject', 'create', 'manifest', 'confirmOwner', 'installService']),
+  setup: methods<'setup'>()([
+    'progress', 'detect', 'useProfile', 'chooseFolder', 'defaults', 'detectProject', 'create', 'manifest', 'confirmOwner', 'installService',
+  ]),
   bot: methods<'bot'>()(['status', 'start', 'stop', 'restart']),
   jobs: methods<'jobs'>()(['list', 'cleanupWorktrees']),
   proposals: methods<'proposals'>()(['list', 'diff', 'targets', 'promote', 'mergeInto', 'discard', 'undo']),
@@ -362,7 +388,7 @@ export const pushChannel = (name: keyof SerraPushes): string => `serra:on.${name
  * What crosses IPC for an invoke. Main never throws across IPC: Electron would wrap the message in
  * "Error invoking remote method…". The preload turns `ok: false` back into an Error with just the message.
  */
-export type InvokeResult = { ok: true; value: unknown } | { ok: false; error: string };
+export type InvokeResult = { ok: true; value: unknown } | { ok: false; error: string; code?: typeof SETUP_INCOMPLETE };
 
 /**
  * Builds `window.serra` from two transport functions (the preload passes `ipcRenderer.invoke` and a wrapper of
@@ -378,7 +404,7 @@ export const createBridge = (
     for (const method of names) {
       api[method] = async (...args: unknown[]) => {
         const result = await invoke(invokeChannel(namespace, method), args);
-        if (!result.ok) throw new Error(result.error);
+        if (!result.ok) throw result.code === SETUP_INCOMPLETE ? new SetupIncomplete() : new Error(result.error);
         return result.value;
       };
     }

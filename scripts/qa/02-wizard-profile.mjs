@@ -1,17 +1,21 @@
 import { launch, shot, text } from './lib.mjs';
 const { app, page, logs } = await launch({ userData: '/tmp/serra-qa/ud-wizard' });
 await page.waitForTimeout(1200);
+// A1b: the welcome, then step 1
+await shot(page, 'A1b-setup-welcome');
+await page.getByRole('button', { name: 'Get started' }).click();
+await page.waitForTimeout(600);
 // A2: empty submit shows validation
 await page.getByRole('button', { name: 'Create profile' }).click();
 await page.waitForTimeout(300);
 console.log('ERRS', await page.evaluate(() => [...document.querySelectorAll('[aria-invalid=true]')].map((e) => document.querySelector(`label[for="${e.id}"]`)?.textContent + ': ' + document.getElementById(e.id + '-note')?.textContent)));
 await shot(page, 'A2-wizard-validation');
 // A3: relative path
-await page.getByLabel('Bot name', { exact: true }).fill('QA Bot');
+await page.getByLabel('Name', { exact: true }).fill('QA Bot');
 await page.getByLabel('Your name', { exact: true }).fill('QA Owner');
-await page.getByLabel('Your Slack member ID', { exact: true }).fill('U0123456789');
-await page.getByLabel('Repository', { exact: true }).fill('/tmp/serra-qa/project');
-await page.getByLabel('Repository', { exact: true }).blur();
+await page.getByLabel('Slack member ID', { exact: true }).fill('U0123456789');
+await page.getByLabel('Folder', { exact: true }).fill('/tmp/serra-qa/project');
+await page.getByLabel('Folder', { exact: true }).blur();
 await page.waitForTimeout(1500);
 console.log('DETECTED', await page.getByLabel('Base branch', { exact: true }).inputValue(), await page.getByLabel('GitHub repository', { exact: true }).inputValue());
 await page.getByText('More options').click();

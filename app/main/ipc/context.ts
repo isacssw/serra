@@ -6,8 +6,12 @@ import type { AppInfo, SerraPushes } from '../bridge.ts';
 import type { AppUpdater } from '../app-updater.ts';
 
 export interface HandlerContext {
-  /** The profile folder in use. Throws a message for the window when none is selected. */
+  /** The profile folder in use. Throws `SetupIncomplete` (src/setup-incomplete.ts) when none is selected. */
   profileDir(): string;
+  /** True when `--profile` or `BOT_PROFILE` names the profile, so the window can't switch to another. */
+  profilePinned?: boolean;
+  /** Asks for a folder in the system's dialog. Null when cancelled. Absent in tests that don't need it. */
+  chooseFolder?(options: { title: string; buttonLabel: string; defaultPath?: string }): Promise<string | null>;
   /** Like `profileDir()`, but null instead of throwing. */
   profileDirOrNull(): string | null;
   prefs: PrefsStore;

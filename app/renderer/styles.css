@@ -20,6 +20,8 @@
   --color-line-subtle: light-dark(#0000000f, #ffffff0f);
   --color-line: light-dark(#0000001a, #ffffff1a);
   --color-line-strong: light-dark(#0000002e, #ffffff2e);
+  /* A control's edge where it must stand out at 3:1 (WCAG 1.4.11): setup's fields and choices. */
+  --color-line-control: light-dark(#00000075, #ffffff5c);
   --color-hover: light-dark(#0000000a, #ffffff0d);
   --color-selected: light-dark(#00000012, #ffffff17);
   /* Text, strongest to weakest. `faint` still reads at 4.5:1 or better on canvas, panel and raised. */
@@ -61,6 +63,9 @@ body {
 
 /* Thin scrollbars that keep out of the way, like the system's overlay ones. */
 * { scrollbar-width: thin; scrollbar-color: var(--color-line-strong) transparent; }
+
+/* Setup is many people's first form in Serra: its fields' edges meet 3:1 against the page, not just a hairline. */
+[data-serra-setup] input:not([type="radio"], [aria-invalid="true"]) { border-color: var(--color-line-control); }
 
 /* A heading focused by a shortcut (⌘,) marks where focus went without a ring: it isn't a control. */
 [data-serra-main] h1[tabindex="-1"]:focus { outline: none; }

@@ -27,6 +27,10 @@ interface PageReport {
 /** APP-10: the built renderer mounted, its header shows real state, and each sidebar link opens its own screen. */
 interface RendererReport {
   title: string;
+  /** SERRA-51: with no profile the window opens on setup's welcome, full-window, with no sidebar. */
+  setup: { hash: string; heading: string | null; sidebar: boolean };
+  /** Sidebar items that showed the shared "finish setup" state instead of their screen. */
+  gated: string[];
   header: string | null;
   visited: { route: string; label: string; heading: string | null; hash: string }[];
   /**
@@ -53,8 +57,12 @@ const pageScript = `(async () => {
     renderer: await (async () => {
       const wait = async (check) => { for (let i = 0; i < 60 && !check(); i++) await new Promise((r) => setTimeout(r, 50)); return check(); };
       const header = () => document.querySelector('[data-status-tone]')?.textContent ?? null;
+      await wait(() => document.querySelector('[data-serra-setup] h1'));
+      const setup = { hash: location.hash, heading: document.querySelector('[data-serra-setup] h1')?.textContent ?? null, sidebar: Boolean(document.querySelector('[data-serra-sidebar]')) };
+      location.hash = '#/jobs/needs-you';
       await wait(() => header() === 'Serra · stopped');
       const visited = [];
+      const gated = [];
       for (const link of document.querySelectorAll('[data-serra-sidebar] a[data-route]')) {
         const label = link.querySelector('span')?.textContent ?? '';
         link.click();
@@ -63,6 +71,7 @@ const pageScript = `(async () => {
           ?? document.querySelector('[data-serra-main] h1')?.textContent ?? null;
         await wait(() => heading() === label);
         visited.push({ route: link.dataset.route, label, heading: heading(), hash: location.hash });
+        if (document.querySelector('[data-serra-main] [data-setup-required]')) gated.push(link.dataset.route);
       }
       const palette = await (async () => {
         const dialog = () => document.querySelector('dialog[data-command-palette]');
@@ -97,7 +106,7 @@ const pageScript = `(async () => {
         await wait(() => heading() === 'Diagnostics' && !dialog()?.open);
         return { opened, notOpened, shutByLateClose, options, ranTo: dialog()?.open ? null : heading() };
       })();
-      return { title: document.title, header: header(), visited, palette };
+      return { title: document.title, setup, gated, header: header(), visited, palette };
     })(),
   };
 })()`;
@@ -145,6 +154,8 @@ interface LayoutReport { width: number; screens: { route: string; overflow: numb
 const layoutScript = (profileDir: string): string => `(async () => {
   const wait = async (check) => { for (let i = 0; i < 80 && !check(); i++) await new Promise((r) => setTimeout(r, 50)); return check(); };
   await window.serra.app.setPrefs({ profileDir: ${JSON.stringify(profileDir)} });
+  window.dispatchEvent(new Event('serra:setup-changed'));
+  await wait(() => !document.querySelector('[data-setup-required]'));
   const screens = [];
   for (const link of document.querySelectorAll('[data-serra-sidebar] a[data-route]')) {
     if (link.dataset.route === 'diagnostics') continue;
@@ -164,6 +175,7 @@ const layoutScript = (profileDir: string): string => `(async () => {
     screens.push({ route: link.dataset.route, overflow: Math.max(main.scrollWidth - main.clientWidth, cut), detailWidth: detail ? Math.round(detail.getBoundingClientRect().width) : null });
   }
   await window.serra.app.setPrefs({ profileDir: null });
+  window.dispatchEvent(new Event('serra:setup-changed'));
   return { width: window.innerWidth, screens };
 })()`;
 
@@ -257,7 +269,7 @@ interface ContrastReport { route: string; checked: number; low: { text: string; 
  */
 const contrastScript = (route: string): string => `(async () => {
   const wait = async (check) => { for (let i = 0; i < 80 && !check(); i++) await new Promise((r) => setTimeout(r, 50)); return check(); };
-  document.querySelector('[data-serra-sidebar] a[data-route="${route}"]')?.click();
+  ${route.startsWith('#') ? `location.hash = '${route}'; await new Promise((r) => setTimeout(r, 100));` : `document.querySelector('[data-serra-sidebar] a[data-route="${route}"]')?.click();`}
   await wait(() => document.querySelector('[data-serra-main] h1, [data-serra-main] [data-screen-label]'));
   await new Promise((r) => setTimeout(r, 400));
   const ctx = document.createElement('canvas').getContext('2d', { willReadFrequently: true });
@@ -330,8 +342,17 @@ const runThemeChecks = async (window: BrowserWindow): Promise<string[]> => {
     if (nativeTheme.themeSource !== theme) failures.push(`${where}: nativeTheme.themeSource is ${nativeTheme.themeSource}`);
     if (theme !== 'system' && report.prefersDark !== (theme === 'dark')) failures.push(`${where}: the page's prefers-color-scheme did not follow nativeTheme`);
   };
+  /** Selects a profile (or none) the way setup does, so the shell's gate and setup's state follow. */
+  const useProfile = (dir: string | null): Promise<unknown> => run(`(async () => {
+    await window.serra.app.setPrefs({ profileDir: ${JSON.stringify(dir)} });
+    window.dispatchEvent(new Event('serra:setup-changed'));
+    await new Promise((r) => setTimeout(r, 300));
+  })()`);
+  /** Setup's screens (SERRA-51): with the layout profile (made, nothing else), then with none, plus a gated screen. */
+  const withProfile = ['#/setup', '#/setup/you', '#/setup/slack', '#/setup/owner', '#/setup/service'];
+  const withoutProfile = ['#/setup', '#/setup/you', '#/settings/bot'];
   try {
-    await run(`window.serra.app.setPrefs({ profileDir: ${JSON.stringify(directory)} })`);
+    await useProfile(directory);
     if (nativeTheme.themeSource !== 'system') failures.push(`nativeTheme.themeSource starts as ${nativeTheme.themeSource}, not the default system`);
     for (const theme of ['dark', 'light', 'system'] as const) expect(theme, await run(themeControlScript(theme)));
     for (const [theme, label] of [['dark', 'Dark'], ['light', 'Light'], ['system', 'System']] as const) expect(theme, await run(themePaletteScript(theme, label)));
@@ -347,11 +368,26 @@ const runThemeChecks = async (window: BrowserWindow): Promise<string[]> => {
         if (report.checked === 0) failures.push(`${theme}: no text found on ${route}`);
         for (const item of report.low) failures.push(`${theme}: "${item.text}" on ${route} reads at ${item.ratio}:1 (${item.color} on ${item.background})`);
       }
+      const setupPass = async (hashes: string[], tag: string): Promise<void> => {
+        for (const hash of hashes) {
+          const report = await run<ContrastReport>(contrastScript(hash));
+          const name = `${tag}${hash.slice(2).replaceAll('/', '-')}`;
+          reports.push({ ...report, route: name });
+          if (shots) writeFileSync(join(shots, `${theme}-${name}.png`), (await window.webContents.capturePage()).toPNG());
+          if (report.checked === 0) failures.push(`${theme}: no text found on ${name}`);
+          for (const item of report.low) failures.push(`${theme}: "${item.text}" on ${name} reads at ${item.ratio}:1 (${item.color} on ${item.background})`);
+        }
+      };
+      await setupPass(withProfile, '');
+      await useProfile(null);
+      await setupPass(withoutProfile, 'none-');
+      await useProfile(directory);
+      await run(`location.hash = '#/jobs/needs-you'`);
       console.log(`[serra] smoke contrast in ${theme}:`, JSON.stringify(reports.map(({ route, checked, low }) => ({ route, checked, low: low.length }))));
     }
   } finally {
     await run(themeControlScript('system')).catch(() => null);
-    await run('window.serra.app.setPrefs({ profileDir: null })').catch(() => null);
+    await useProfile(null).catch(() => null);
     rmSync(join(directory, '..'), { recursive: true, force: true });
   }
   return failures;
@@ -379,6 +415,12 @@ export const runSmokeChecks = async (window: BrowserWindow, resendStatus: () => 
     report.savedScreen !== '/smoke' && 'prefs did not save',
     report.renderer.title !== 'Serra' && 'the window is not titled Serra',
     report.renderer.header !== 'Serra · stopped' && 'the sidebar header does not show the stopped status',
+    report.renderer.setup.hash !== '#/setup' && `with no profile the window opened on ${report.renderer.setup.hash}, not setup`,
+    // "Welcome back" when profiles already exist on this Mac (they are only read).
+    !/^Welcome (to Serra|back)$/.test(report.renderer.setup.heading ?? '') && 'setup did not open on its welcome',
+    report.renderer.setup.sidebar && 'setup shows the sidebar',
+    report.renderer.gated.length !== report.renderer.visited.length - 2 && `with no profile, ${report.renderer.gated.length} of ${report.renderer.visited.length} screens showed the setup state, not all but Updates and Appearance`,
+    ...['updates', 'settings-appearance'].filter((route) => report.renderer.gated.includes(route)).map((route) => `${route} is gated but works without a profile`),
     report.renderer.visited.length < 15 && 'the sidebar does not list every screen',
     ...report.renderer.visited.filter((v) => v.heading !== v.label).map((v) => `sidebar item ${v.route} did not open its screen`),
     ...report.renderer.palette.notOpened.map((route) => `⌘K did not open the command palette on ${route}`),

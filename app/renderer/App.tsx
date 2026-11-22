@@ -1,10 +1,17 @@
-// The window's shell and router: the sidebar, a route per screen, last-screen memory and toasts.
-// Each screen lives in its own file under screens/.
+// The window's router: setup as its own full-window mode (setup/), and the shell with the sidebar, a route per
+// screen, last-screen memory and toasts. Each screen lives in its own file under screens/; a screen that needs a
+// profile shows the shared setup state until there is one (the route's `needs`).
 import { useEffect, useLayoutEffect, useRef, type ReactElement } from 'react';
 import { HashRouter, Navigate, Route, Routes, useLocation } from 'react-router';
 import { serra } from './bridge.ts';
 import { CommandPalette } from './commands/Palette.tsx';
 import { defaultPath, routeForPath, routes, type RouteId } from './routes.ts';
+import type { SetupProgress } from '../../src/setup.ts';
+import './setup/commands.ts';
+import { SETUP_PATH } from './setup/setup.logic.ts';
+import { SetupFlow } from './setup/SetupFlow.tsx';
+import { SetupGate } from './setup/SetupRequired.tsx';
+import { SetupProvider } from './setup/SetupState.tsx';
 import { BriefPolicy } from './screens/BriefPolicy.tsx';
 import { Diagnostics } from './screens/Diagnostics.tsx';
 import { Jobs } from './screens/Jobs.tsx';
@@ -21,8 +28,6 @@ import { Repositories } from './screens/settings/Repositories.tsx';
 import { Worker } from './screens/settings/Worker.tsx';
 import { Tools } from './screens/Tools.tsx';
 import { Updates } from './screens/Updates.tsx';
-import { Welcome } from './screens/Welcome/Welcome.tsx';
-import { WELCOME_PATH } from './screens/Welcome/welcome.logic.ts';
 import { useBadgeCounts, useBotStatus } from './shell/live.ts';
 import { FollowNavigation } from './shell/navigate.ts';
 import { focusScreen, Shortcuts } from './shell/Shortcuts.tsx';
@@ -97,29 +102,34 @@ const Shell = () => {
         <div className="drag h-10 shrink-0" aria-hidden />
         <main className="min-h-0 flex-1 overflow-y-auto [scrollbar-gutter:stable]" data-serra-main data-path={pathname}>
           <Routes>
-            {routes.map((route) => <Route key={route.id} path={route.path} element={screens[route.id]} />)}
-            {/* The first-run wizard (APP-27) isn't a sidebar item: the window opens on it until a profile exists. */}
-            <Route path={WELCOME_PATH} element={<Welcome />} />
+            {routes.map((route) => <Route key={route.id} path={route.path} element={<SetupGate route={route}>{screens[route.id]}</SetupGate>} />)}
             <Route path="*" element={<Navigate to={defaultPath} replace />} />
           </Routes>
         </main>
       </div>
       <RememberScreen />
       <CommandPalette />
-      <FollowNavigation />
       <Shortcuts />
       <ScrollToTop />
-      <Rendered />
       <StarPrompt status={status} jobs={currentJobs} />
     </div>
   );
 };
 
 // A hash router: the built page loads from a file: URL, where path-based URLs don't resolve.
-export const App = () => (
+export const App = ({ setup }: { setup: SetupProgress | null }) => (
   <HashRouter>
     <ToastProvider>
-      <Shell />
+      <SetupProvider initial={setup}>
+        <Routes>
+          <Route path={`${SETUP_PATH}/*`} element={<SetupFlow />} />
+          {/* The old first-run wizard's address (APP-27), from a saved link or an older notification. */}
+          <Route path="/welcome" element={<Navigate to={SETUP_PATH} replace />} />
+          <Route path="*" element={<Shell />} />
+        </Routes>
+        <FollowNavigation />
+        <Rendered />
+      </SetupProvider>
     </ToastProvider>
   </HashRouter>
 );

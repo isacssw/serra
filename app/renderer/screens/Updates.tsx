@@ -8,7 +8,7 @@ import {
   RotateCw, TriangleAlert, Undo2,
 } from 'lucide-react';
 import { serra } from '../bridge.ts';
-import { WELCOME_PATH } from './Welcome/welcome.logic.ts';
+import { SETUP_PATH } from '../setup/setup.logic.ts';
 import { openedMessage, openRepo } from '../star.logic.ts';
 import { Button, cx, Dialog, GitHubMark, Page, useToast } from '../ui/index.ts';
 import {
@@ -398,7 +398,7 @@ export const Updates = () => {
       {(() => {
         const botAction = () => {
           if (!bot?.action) return;
-          if (bot.action.kind === 'setup') void navigate(WELCOME_PATH);
+          if (bot.action.kind === 'setup') void navigate(SETUP_PATH);
           else if (bot.action.kind === 'rollback') void ask('rollback');
           else void ask('sync');
         };

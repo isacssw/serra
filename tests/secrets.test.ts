@@ -194,7 +194,7 @@ test('checkSecret runs Slack verification, records when it passed and the worksp
   assert.equal(bad.verifiedAt, now.toISOString(), 'keeps when it last passed');
   const thrown: SlackVerify = async () => { throw new Error(`socket hang up near ${BOT}`); };
   const leaked = await checkSecret(f.dir, 'SLACK_BOT_TOKEN', { tools: f.tools, verify: thrown });
-  assert.equal(leaked.error, 'Slack rejected SLACK_BOT_TOKEN: socket hang up near [hidden]');
+  assert.equal(leaked.error, "Couldn't reach Slack: socket hang up near [hidden]");
 
   const statuses = await secretStatus(f.dir, { tools: f.tools });
   assert.deepEqual(statuses.map((s) => [s.name, s.set, s.error !== null]), [['SLACK_BOT_TOKEN', true, true], ['SLACK_APP_TOKEN', true, false]]);

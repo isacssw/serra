@@ -183,6 +183,11 @@ export interface SecretStatus {
   verifiedAt: string | null;
   /** Why the last resolve or check failed, without the value. */
   error: string | null;
+  /**
+   * True when looking for the Keychain item just now failed (locked, timed out), so `set` is unknown rather than
+   * false. Absent otherwise. A definite miss is `set: false` without it.
+   */
+  lookupFailed?: true;
 }
 
 // ---------------------------------------------------------------------------------------------------------------

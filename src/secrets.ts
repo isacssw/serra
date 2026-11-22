@@ -255,17 +255,18 @@ const statusOf = async (profileDir: string, name: SecretName, file: SecretsFile,
   const check = file.checks[name] ?? { verifiedAt: null, error: null };
   let set: boolean;
   let error = check.error;
+  let lookupFailed = false;
   if (source.kind === 'env') {
     const value = readEnv(join(resolve(profileDir), '.env'))[name]?.trim() ?? '';
     set = Boolean(value) && !/replace-me|\.\.\./.test(value);
   } else if (source.kind === 'keychain') {
     try { set = await keychainHas(source, tools); }
-    catch (caught) { set = false; error = (caught as Error).message; }
+    catch (caught) { set = false; error = (caught as Error).message; lookupFailed = true; }
   } else {
     // Reading a 1Password reference can open an unlock prompt, so the list doesn't. Check resolves it.
     set = true;
   }
-  return { name, source, set, verifiedAt: check.verifiedAt, error };
+  return { name, source, set, verifiedAt: check.verifiedAt, error, ...(lookupFailed ? { lookupFailed: true as const } : {}) };
 };
 
 /** What the Secrets screen and `pnpm bot secrets` show for each token. Never the value. */
@@ -337,7 +338,8 @@ export const checkSecret = async (profileDir: string, name: SecretName, options:
     try { result = await verify(name, value); }
     catch (caught) {
       const code = (caught as { data?: { error?: unknown } }).data?.error;
-      throw new Error(`Slack rejected ${name}: ${typeof code === 'string' ? code : (caught as Error).message}`);
+      // Slack's own answer means it refused the token; anything else means the check never reached a verdict.
+      throw new Error(typeof code === 'string' ? `Slack rejected ${name}: ${code}` : `Couldn't reach Slack: ${(caught as Error).message}`);
     }
   } catch (caught) {
     error = scrub(caught instanceof Error ? caught.message : String(caught), [value]);

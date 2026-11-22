@@ -3,21 +3,16 @@ import { execSync } from 'node:child_process';
 const BOT = 'xoxb-qa-canary-7f3e91', APPT = 'xapp-qa-canary-2b8d44';
 const { app, page, logs } = await launch({ userData: '/tmp/serra-qa/ud-wizard' });
 await page.waitForTimeout(1200);
-await page.evaluate(() => { location.hash = '/welcome'; }); await page.waitForTimeout(800);
-await page.locator('[data-setup-step="tokens"]').click(); await page.waitForTimeout(500);
+await page.evaluate(() => { location.hash = '/setup/slack'; }); await page.waitForTimeout(1200);
+// Each paste field stores the token in the Keychain, then checks it with Slack (fake tokens: invalid_auth).
 for (const [name, value] of [['SLACK_BOT_TOKEN', BOT], ['SLACK_APP_TOKEN', APPT]]) {
-  await page.locator(`#${name}-source`).selectOption('keychain'); await page.waitForTimeout(300);
-  const card = page.locator(`#${name}-source`).locator('xpath=ancestor::*[.//input[@type="password"]][1]');
-  await card.locator('input[type=password]').fill(value);
-  await card.getByRole('button', { name: 'Save' }).click();
-  await page.waitForTimeout(2500);
+  const row = page.locator(`[data-token="${name}"]`);
+  await row.locator('input[type=password]').fill(value);
+  await row.getByRole('button', { name: 'Save' }).click();
+  await page.waitForTimeout(5000);
 }
-await shot(page, 'A7-wizard-tokens-saved');
-console.log('AFTER SAVE:', (await text(page)).split('Slack bot token')[1]?.slice(0, 600));
-const checks = page.getByRole('button', { name: 'Check' });
-for (let i = 0; i < await checks.count(); i++) { await checks.nth(i).click(); await page.waitForTimeout(4000); }
-await shot(page, 'A8-wizard-tokens-checked');
-console.log('AFTER CHECK:', (await text(page)).split('Slack bot token')[1]?.slice(0, 800));
+await shot(page, 'A7-setup-tokens-saved-and-checked');
+console.log('AFTER SAVE:', (await text(page)).split('Its tokens')[1]?.slice(0, 800));
 // Everything the bridge returns for secrets and setup, plus the whole DOM and storage
 const dump = await page.evaluate(async () => JSON.stringify({
   list: await window.serra.secrets.list(), progress: await window.serra.setup.progress(), diag: await window.serra.diagnostics.run().catch((e) => e.message),

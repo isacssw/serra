@@ -1,14 +1,14 @@
-// Setup guide from Diagnostics and ⌘K, adding a repository, and Jobs rereading on a daemon event.
+// Setup from Diagnostics and ⌘K, adding a repository, and Jobs rereading on a daemon event.
 import { readFileSync, writeFileSync } from 'node:fs';
 import { launch, shot, text, go, fakeDaemon } from './lib.mjs';
 const P = '/tmp/serra-qa/profile';
 const { app, page } = await launch({ profile: P, userData: '/tmp/serra-qa/ud' });
 await page.waitForTimeout(1000);
 await go(page, '/settings/diagnostics'); await page.waitForTimeout(800);
-await page.getByRole('button', { name: 'Setup guide' }).click(); await page.waitForTimeout(800);
-console.log('SETUP GUIDE button ->', page.url().replace(/.*#/, '#'), (await text(page)).split('\n')[0]);
+await page.getByRole('button', { name: 'Setup', exact: true }).click(); await page.waitForTimeout(800);
+console.log('SETUP button ->', page.url().replace(/.*#/, '#'), (await text(page)).split('\n')[0]);
 await go(page, '/jobs/needs-you'); await page.keyboard.press('Meta+k'); await page.waitForTimeout(300); await page.keyboard.type('setup'); await page.waitForTimeout(300); await page.keyboard.press('Enter'); await page.waitForTimeout(800);
-console.log('SETUP GUIDE ⌘K ->', page.url().replace(/.*#/, '#'));
+console.log('SETUP ⌘K ->', page.url().replace(/.*#/, '#'));
 // Repositories: add one
 await go(page, '/settings/repositories'); await page.waitForTimeout(1000);
 await page.getByRole('button', { name: 'Add repository' }).click(); await page.waitForTimeout(400);

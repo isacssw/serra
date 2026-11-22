@@ -1,5 +1,6 @@
 // The shared primitives. Screens build from these and the colour tokens in styles.css instead of one-off styling.
 export { Badge, type BadgeTone } from './Badge.tsx';
+export { BrandMark } from './BrandMark.tsx';
 export { Button, type ButtonSize, type ButtonVariant } from './Button.tsx';
 export { cx } from './cx.ts';
 export { Dialog } from './Dialog.tsx';
