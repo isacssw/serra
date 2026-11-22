@@ -1,0 +1,175 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  // Lint gate (pnpm lint). Rules here catch defects the type checker can't: lost promise rejections, conditional
+  // hooks, non-exhaustive switches, import cycles and imports that cross a layer. Run: pnpm lint.
+  "plugins": ["typescript", "import", "react", "promise", "unicorn", "oxc"],
+  "categories": { "correctness": "error" },
+  "ignorePatterns": ["**/out/**", "release/**", "evals/results/**", "scripts/qa/**"],
+  "rules": {
+    // node:test's test() and describe() return promises the runner awaits itself.
+    "typescript/no-floating-promises": ["error", { "allowForKnownSafeCalls": [{ "from": "package", "package": "node:test", "name": ["test", "describe", "it", "suite", "before", "after", "beforeEach", "afterEach"] }] }],
+    "typescript/no-misused-promises": "error",
+    "typescript/await-thenable": "error",
+    "typescript/switch-exhaustiveness-check": "error",
+    "typescript/no-explicit-any": "error",
+    "typescript/no-base-to-string": "error",
+    "typescript/only-throw-error": "error",
+    "typescript/no-unsafe-type-assertion": "error",
+    "react/rules-of-hooks": "error",
+    "react/exhaustive-deps": "error",
+    "import/no-cycle": "error",
+    // Node runs the TypeScript as is, so a relative import names its file, extension included.
+    "import/extensions": ["error", "always", { "ignorePackages": true }],
+    "no-unused-vars": "error",
+    // A suppression goes through oxlint-disable with a reason (pnpm lint:repo checks), never @ts-ignore.
+    "typescript/ban-ts-comment": "error",
+    // `node:fs`, never bare `fs`, so the import rules below see every Node module.
+    "unicorn/prefer-node-protocol": "error",
+    // Off, with the reason. Interfaces here declare methods that are implemented as closures, so no `this` is lost.
+    "typescript/unbound-method": "off",
+    // React Compiler rules; the app doesn't use the compiler, and the latest-value ref is a deliberate pattern here.
+    "react/set-state-in-effect": "off",
+    "react/refs": "off",
+    "react/immutability": "off",
+    // Flags any setState in a .then(); not a defect here.
+    "promise/no-callback-in-promise": "off",
+    // Wrong here: `for (const x of [...set])` copies on purpose, because the loop body removes from the set.
+    "unicorn/no-useless-spread": "off",
+    // Style, not defects.
+    "unicorn/prefer-string-starts-ends-with": "off",
+    "unicorn/no-new-array": "off"
+  },
+  "overrides": [
+    {
+      // Layer rule: the daemon, CLI and services never reach into the app or a UI library.
+      "files": ["src/**"],
+      "rules": {
+        "react/rules-of-hooks": "off",
+        "no-restricted-imports": ["error", { "patterns": [
+          { "regex": "(^|/)app/", "message": "src/ never imports from app/: the app calls src, not the reverse." },
+          { "regex": "^(electron|react|react-dom|react-router)($|/)", "message": "src/ runs in plain Node: no Electron or React." }
+        ] }]
+      }
+    },
+    {
+      // Layer rule: the renderer is browser code. It takes types from anywhere, but values only from itself, React,
+      // and the few pure src modules listed. Everything else goes through the typed bridge (window.serra).
+      "files": ["app/renderer/**"],
+      "rules": { "no-restricted-imports": ["error", { "patterns": [
+          { "regex": "^node:|^(fs|path|os|child_process|crypto|url|util)$", "allowTypeImports": true, "message": "The renderer has no Node. Ask the main process through the bridge." },
+          { "regex": "^electron($|/)", "allowTypeImports": true, "message": "The renderer has no Electron. Use the bridge." },
+          { "regex": "(^|/)main/", "allowTypeImports": true, "message": "The renderer reaches app/main only through import type and the bridge." },
+          { "group": ["**/src/**", "!**/src/contracts.ts", "!**/src/owner-model.ts", "!**/src/knowledge-rules.ts", "!**/src/tool-catalog.ts", "!**/src/token-errors.ts", "!**/src/setup-incomplete.ts"], "allowTypeImports": true, "message": "The renderer imports values only from pure src modules (no Node). Add one to this list only if it and its imports are pure." }
+        ] }] }
+    },
+    {
+      "files": ["app/renderer/vite.config.ts"],
+      "rules": { "no-restricted-imports": "off" }
+    },
+    {
+      // Layer rule: the main process never imports renderer code.
+      "files": ["app/main/**", "app/preload.ts"],
+      "rules": {
+        "react/rules-of-hooks": "off",
+        "no-restricted-imports": ["error", { "patterns": [{ "regex": "(^|/)renderer/", "allowTypeImports": true, "message": "app/main never imports renderer code." }] }]
+      }
+    },
+    {
+      // Layer rule: a *.logic.ts file is the pure, tested half of a screen or a service: no React, Electron or Node
+      // values. (Listed per folder because an override replaces the folder's own list.)
+      "files": ["app/renderer/**/*.logic.ts"],
+      "rules": { "no-restricted-imports": ["error", { "patterns": [
+          { "regex": "^node:|^(fs|path|os|child_process|crypto|url|util)$", "allowTypeImports": true, "message": "The renderer has no Node. Ask the main process through the bridge." },
+          { "regex": "^electron($|/)", "allowTypeImports": true, "message": "The renderer has no Electron. Use the bridge." },
+          { "regex": "(^|/)main/", "allowTypeImports": true, "message": "The renderer reaches app/main only through import type and the bridge." },
+          { "group": ["**/src/**", "!**/src/contracts.ts", "!**/src/owner-model.ts", "!**/src/knowledge-rules.ts", "!**/src/tool-catalog.ts", "!**/src/token-errors.ts", "!**/src/setup-incomplete.ts"], "allowTypeImports": true, "message": "The renderer imports values only from pure src modules (no Node). Add one to this list only if it and its imports are pure." },
+          { "regex": "^(node:|react|react-dom|react-router|electron)", "allowTypeImports": true, "message": "A .logic.ts file is pure: move this import to the screen or handler that calls it." }
+        ] }] }
+    },
+    {
+      "files": ["app/main/**/*.logic.ts"],
+      "rules": { "no-restricted-imports": ["error", { "patterns": [{ "regex": "(^|/)renderer/", "allowTypeImports": true, "message": "app/main never imports renderer code." }, { "regex": "^(node:|react|react-dom|react-router|electron)", "allowTypeImports": true, "message": "A .logic.ts file is pure: move this import to the screen or handler that calls it." }] }] }
+    },
+    {
+      // Tests cast fakes on purpose (a recorded Slack client as WebClient); eval and release scripts read their own files.
+      "files": ["tests/**", "evals/**", "scripts/**"],
+      "rules": { "typescript/no-unsafe-type-assertion": "off" }
+    },
+    {
+      // Test fakes stringify fetch's url union and push payloads on purpose, and sort plain strings.
+      "files": ["tests/**"],
+      "rules": {
+        "typescript/no-base-to-string": "off",
+        "typescript/restrict-template-expressions": "off",
+        "typescript/require-array-sort-compare": "off"
+      }
+    },
+    {
+      // New folders start strict: no `!` assertions either. Old code moves here as it is reworked.
+      "files": ["src/lib/**", "src/chat/**", "src/slack/**"],
+      "rules": { "typescript/no-non-null-assertion": "error" }
+    },
+    {
+      // TODO(SERRA-61): that branch rewrites str() here with field guards (isac/validate-file-socket-reads).
+      "files": ["src/status-socket.ts"],
+      "rules": { "typescript/no-base-to-string": "off" }
+    },
+    {
+      // Casts that existed when the rule was turned on: mostly JSON and file reads, which move 7 replaces with guards.
+      // Every other file, and every new one, is held to the rule. Remove a file from this list once it's clean;
+      // never add one.
+      "files": [
+        "app/build.ts",
+        "app/main/app-updater.ts",
+        "app/main/bridge.ts",
+        "app/main/ipc/index.ts",
+        "app/main/ipc/proposals.ts",
+        "app/main/ipc/settings.ts",
+        "app/main/ipc/setup.ts",
+        "app/main/notifications.logic.ts",
+        "app/main/prefs.ts",
+        "app/main/smoke.ts",
+        "app/main/tray.ts",
+        "app/preload.ts",
+        "app/renderer/bridge.ts",
+        "app/renderer/screens/Secrets.tsx",
+        "app/renderer/screens/settings/Alerts.tsx",
+        "app/renderer/screens/settings/SettingsKit.tsx",
+        "app/renderer/screens/settings/settings.logic.ts",
+        "app/renderer/setup/YouStep.tsx",
+        "app/renderer/setup/setup.logic.ts",
+        "app/renderer/shell/Sidebar.tsx",
+        "app/renderer/theme.logic.ts",
+        "scripts/release.ts",
+        "src/app-updates.ts",
+        "src/bot.ts",
+        "src/brief.ts",
+        "src/cleanup.ts",
+        "src/commands/secrets.ts",
+        "src/commands/settings.ts",
+        "src/config.ts",
+        "src/deploy.ts",
+        "src/intake.ts",
+        "src/jobs.ts",
+        "src/lock.ts",
+        "src/mcp-live.ts",
+        "src/mcp.ts",
+        "src/owner-model.ts",
+        "src/profile-reload.ts",
+        "src/profile-settings.ts",
+        "src/proposals.ts",
+        "src/releases.ts",
+        "src/secrets.ts",
+        "src/setup.ts",
+        "src/slack-names-store.ts",
+        "src/slack-names.ts",
+        "src/state.ts",
+        "src/status-socket.ts",
+        "src/t3-questions.ts",
+        "src/t3.ts",
+        "src/tasks.ts"
+      ],
+      "rules": { "typescript/no-unsafe-type-assertion": "off" }
+    }
+  ]
+}

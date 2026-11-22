@@ -82,7 +82,7 @@ export const addAllowedUser: Action = {
   },
 };
 
-export const starOnGitHub: Action = {
+const starOnGitHub: Action = {
   id: 'app:star-on-github',
   title: 'Star Serra on GitHub',
   group: 'Actions',

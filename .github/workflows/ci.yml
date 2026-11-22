@@ -33,7 +33,19 @@ jobs:
           corepack enable --install-directory "$RUNNER_TEMP/pnpm-bin" pnpm
           echo "$RUNNER_TEMP/pnpm-bin" >> "$GITHUB_PATH"
       - run: pnpm install --frozen-lockfile
+      # Type check, then `pnpm lint`: oxlint (type-aware), the repo rules in scripts/lint-repo.ts, and knip.
       - run: pnpm check
+      # Secret scan of every commit with .gitleaks.toml. The binary is pinned by version and checksum.
+      - name: Scan for secrets
+        env:
+          GITLEAKS_VERSION: 8.30.1
+          GITLEAKS_SHA256: b40ab0ae55c505963e365f271a8d3846efbc170aa17f2607f13df610a9aeb6a5
+        run: |
+          archive="gitleaks_${GITLEAKS_VERSION}_darwin_arm64.tar.gz"
+          curl -fsSLo "$RUNNER_TEMP/$archive" "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/$archive"
+          echo "$GITLEAKS_SHA256  $RUNNER_TEMP/$archive" | shasum -a 256 -c -
+          tar -xzf "$RUNNER_TEMP/$archive" -C "$RUNNER_TEMP" gitleaks
+          "$RUNNER_TEMP/gitleaks" git . --config .gitleaks.toml --redact --no-banner
       - run: pnpm test
       - run: pnpm knowledge
       - run: ./scripts/install.sh --help

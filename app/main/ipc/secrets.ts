@@ -1,6 +1,7 @@
 // Secrets (APP-15), on APP-8's token sources in `src/secrets.ts`. Only sources and check results go back to the
 // window, never a token's value. A value the owner types for a Keychain item arrives here in `setSource`, goes to
 // `setSecret` (which hands it to `security` on stdin) and is never returned, logged or echoed in an error.
+import { readProfileFile } from '../../../src/config.ts';
 import type { SecretName, SecretSource, SecretStatus } from '../../../src/contracts.ts';
 import {
   checkSecret, defaultKeychainSource, isSecretName, scrub, SECRET_NAMES, secretStatus, setSecret,
@@ -50,7 +51,7 @@ export const secretsHandlers = (context: HandlerContext, options: SecretsHandler
       const dir = context.profileDir();
       // A Keychain source with no service and account means the bot's default item for this token.
       const chosen = source && typeof source === 'object' && source.kind === 'keychain' && !source.service && !source.account
-        ? defaultKeychainSource(dir, token)
+        ? defaultKeychainSource(readProfileFile(dir), token)
         : source;
       return plainStatus(await setSecret(dir, token, chosen, typed, options));
     });

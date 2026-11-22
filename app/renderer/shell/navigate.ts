@@ -6,7 +6,7 @@ import { routeForPath } from '../routes.ts';
 import { isSetupPath } from '../setup/setup.logic.ts';
 
 /** A pushed target the window can show: a known route with an optional query, or setup. Anything else is ignored. */
-export const knownTarget = (target: unknown): string | null => {
+const knownTarget = (target: unknown): string | null => {
   if (typeof target !== 'string') return null;
   const [path] = target.split('?');
   return path && (routeForPath(path) || isSetupPath(path)) ? target : null;

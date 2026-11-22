@@ -72,7 +72,7 @@ Or by hand:
 ```sh
 corepack enable pnpm
 pnpm install --frozen-lockfile
-pnpm check       # TypeScript for the daemon, the app main process and the renderer
+pnpm check       # types for the daemon, app and renderer, then pnpm lint (oxlint, repo rules, unused code)
 pnpm test        # node --test tests/*.test.ts; no Slack, launchd or T3 needed
 pnpm knowledge   # checks the knowledge template
 pnpm app:dev     # build and run the app from the checkout
@@ -137,8 +137,9 @@ For an Intel Mac: `pnpm app:build && pnpm exec electron-builder --mac --x64`. Re
 
 ## Code rules
 
-- Node runs the TypeScript directly with type stripping, so use only erasable syntax (no enums, namespaces or parameter properties) and include the `.ts` extension in imports.
-- Never commit real tokens, Slack IDs, names, local paths or screenshots of a real workspace. Use the placeholders already in the tests (`U0123456789`, `xoxb-1111-2222-fixturevalue`, `/Users/you/…`, `acme/project`).
+`pnpm check` enforces most of them, and fails when a PR changes what the gates enforce beyond removing an exception (a change the maintainer agreed to sets the fingerprint it prints): erasable TypeScript only, `.ts` extensions, no unhandled promises, which folder may import which (see [AGENTS.md](AGENTS.md)), and no unused code. CI also scans for secrets. The rest:
+
+- Never commit real Slack IDs, names, local paths or screenshots of a real workspace. Use the placeholders already in the tests (`U0123456789`, `xoxb-1111-2222-fixturevalue`, `/Users/you/…`, `acme/project`).
 - Templates under `templates/` must stay generic: no one's personal knowledge or workflow.
 - Update the README or `docs/` when behaviour a user sees changes, and add a line to `CHANGELOG.md`.
 
@@ -148,7 +149,7 @@ For an Intel Mac: `pnpm app:build && pnpm exec electron-builder --mac --x64`. Re
 
 1. Fork the repository and branch off `main`, with a branch name that follows [Naming](#naming).
 2. Open a PR with a [valid title](#naming) and fill in the template.
-3. CI (`check`) runs `pnpm check`, `pnpm test`, `pnpm knowledge` and the installer's `--help` on macOS. `PR title` checks the title. A first-time contributor's run waits for the maintainer to approve it.
+3. Three checks must pass: `check` (`pnpm check`, a secret scan, `pnpm test`, `pnpm knowledge`, the installer's `--help`), `app` (packages the app and smoke-tests it) and `title`. A first-time contributor's run waits for the maintainer to approve it.
 4. The PR needs the code owner's approval, every review conversation resolved, and a branch that is up to date with `main` (use **Update branch**). A new push dismisses earlier approvals.
 5. It lands as one squash commit whose message is the PR title and description, and the branch is deleted.
 
@@ -158,35 +159,10 @@ Squash merging makes the PR title the commit on `main`, so the title is what mat
 
 ### PR titles
 
-A [Conventional Commit](https://www.conventionalcommits.org) header: `type(scope): subject`.
+A [Conventional Commit](https://www.conventionalcommits.org) header, `type(scope): subject`, for example `fix(palette): ignore late close events`. The `title` check enforces the types and the subject rules, and that a `feat` or `fix` adds a `CHANGELOG.md` line (Dependabot's `fix(deps)` and `fix(deps-dev)` excepted). It says what to fix; a title fix needs no push. Scope is optional: the part it touches (`daemon`, `app`, `setup`, `knowledge`, `ci`, `deps`, `release`, …).
 
-- **Type:** `feat`, `fix`, `perf`, `refactor`, `docs`, `test`, `build`, `ci`, `chore` or `revert`.
-- **Scope:** optional, the part it touches: `daemon`, `app`, `palette`, `setup`, `knowledge`, `ci`, `deps`, `release`, …
-- **Subject:** starts lowercase, no trailing period, 72 characters at most. Say what changes, in plain language.
+### Branch names and commits
 
-```text
-fix(palette): ignore late close events
-feat(knowledge): show pending proposals in the app
-docs: explain how to rotate the Slack tokens
-chore(release): v0.1.0
-```
-
-The `PR title` check fails until the title follows these rules. Fix it by editing the title; no push is needed.
-
-### Branch names
-
-`type/short-kebab-description`, with the same types as the title: lowercase, words joined by `-`, a few words at most.
-
-```text
-fix/palette-late-close
-docs/rotate-slack-tokens
-chore/release-v0.1.0
-```
-
-Branches that tools make, such as Dependabot's `dependabot/…`, keep their own names.
-
-### Commits
-
-Write commits on your branch in the same format, for example `fix(palette): ignore late close events`. Only the PR title is checked, because the commits are squashed into it.
+Branches are `type/short-kebab-description` with the same types, such as `fix/palette-late-close`; tools keep their own (`dependabot/…`). Commits on a branch can use the title format too, but only the PR title is checked, because the commits are squashed into it.
 
 By contributing, you agree that your contributions are licensed under the [MIT License](LICENSE).

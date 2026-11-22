@@ -32,7 +32,7 @@ export const Shortcuts = () => {
       event.preventDefault();
       const palette = document.querySelector('dialog[data-command-palette][open]');
       window.dispatchEvent(new Event(CLOSE_COMMAND_PALETTE));
-      navigate(path);
+      void navigate(path);
       // With the palette open, focus moves as it closes, so don't treat that as the owner moving on.
       focusScreen(path, palette ? null : document.activeElement);
     };

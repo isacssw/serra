@@ -1,7 +1,6 @@
 // Brief and policy (APP-21), on the services in src/brief.ts. Handlers check the shape of what the window sent and
 // call them. The preview goes through `fillBrief`/`fillBriefText` with the profile's config and knowledge index,
 // the same call the daemon makes for a job. Tokens are read lazily by the config and are never touched here.
-import { join } from 'node:path';
 import { briefProblems, createBriefService, fillBrief, fillBriefText, isBriefDocument, sampleBriefInput, type BriefDocumentName } from '../../../src/brief.ts';
 import { loadConfig } from '../../../src/config.ts';
 import { createKnowledge } from '../../../src/knowledge.ts';

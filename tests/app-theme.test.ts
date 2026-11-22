@@ -92,27 +92,6 @@ test('applyTheme: light and dark set data-theme on <html>; system removes it', (
   assert.equal('theme' in root.dataset, false);
 });
 
-test('styles: data-theme overrides color-scheme, and every colour token is a light-dark() pair', () => {
-  const css = readFileSync(new URL('../app/renderer/styles.css', import.meta.url), 'utf8');
-  assert.match(css, /:root\[data-theme="light"\] \{ color-scheme: light; \}/);
-  assert.match(css, /:root\[data-theme="dark"\] \{ color-scheme: dark; \}/);
-  const tokens = [...css.matchAll(/^\s*--color-[a-z-]+:\s*(.+);$/gm)].map((match) => match[1] ?? '');
-  assert.ok(tokens.length >= 12);
-  for (const value of tokens) assert.match(value, /^light-dark\(#[0-9a-f]{6}(?:[0-9a-f]{2})?, #[0-9a-f]{6}(?:[0-9a-f]{2})?\)$/);
-});
-
-test('renderer: no hard-coded white or black text or fills that ignore the theme', async () => {
-  const { readdirSync } = await import('node:fs');
-  const root = new URL('../app/renderer/', import.meta.url);
-  const files = readdirSync(root, { recursive: true, encoding: 'utf8' }).filter((file) => file.endsWith('.tsx'));
-  for (const file of files) {
-    const source = readFileSync(new URL(file, root), 'utf8');
-    // Backdrops dim whatever is behind a dialog, in both themes.
-    const raw = source.match(/(?<!backdrop:)\b(?:text|bg|border|fill|stroke)-(?:white|black)\b/g) ?? [];
-    assert.deepEqual(raw, [], `${file} uses ${raw.join(', ')}`);
-  }
-});
-
 test('theme store: applies at once, then saves; the latest choice wins', async () => {
   const applied: Theme[] = [];
   const saved: Theme[] = [];

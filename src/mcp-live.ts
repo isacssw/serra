@@ -38,7 +38,7 @@ const CLAUDE_ROW = /^(.+?): (.*?) - ((?:[✓✔✗✘!⏸⊘○•-]\s(?=\p{L})|
  * `⏸ Pending approval (run \`claude\` to approve)`), which is never kept. A status Serra doesn't know is `unknown`:
  * the row is kept, marked uncertain, rather than dropped.
  */
-export const claudeStatus = (status: string): { health: McpHealth | null; disabled: boolean; unknown: boolean } => {
+const claudeStatus = (status: string): { health: McpHealth | null; disabled: boolean; unknown: boolean } => {
   const text = status.replace(/^[^\p{L}]+/u, '');
   const found = (health: McpHealth | null, disabled = false) => ({ health, disabled, unknown: false });
   if (/^(Disabled|Rejected|Blocked)\b/i.test(text)) return found(null, true);

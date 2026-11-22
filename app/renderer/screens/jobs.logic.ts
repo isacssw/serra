@@ -9,7 +9,7 @@ export type JobRow = JobListing['jobs'][number];
 export const APP_TASK_CHANNEL = 'app';
 
 /** Whether a row is a task the owner started in the app, which T3 reports on rather than the daemon. */
-export const isAppTask = (job: JobRow): boolean => job.channel === APP_TASK_CHANNEL;
+const isAppTask = (job: JobRow): boolean => job.channel === APP_TASK_CHANNEL;
 
 export interface JobSection {
   group: JobGroup;
@@ -21,18 +21,11 @@ export interface JobSection {
 const ORDER: JobGroup[] = ['needs you', 'running', 'done'];
 const TITLES: Record<JobGroup, string> = { 'needs you': 'Needs you', running: 'Running', done: 'Done today' };
 
-/** What a section says when it has no rows, so an empty Needs you reads as good news rather than as broken. */
-export const EMPTY_TEXT: Record<JobGroup, string> = {
-  'needs you': 'Nothing is waiting on you.',
-  running: 'No job is running.',
-  done: 'No job finished today.',
-};
-
 /** What a task started in the app shows where a Slack job shows its channel. */
 export const APP_TASK_CHANNEL_LABEL = 'Serra app';
 
 /** A channel as the screen shows it: `#name` once Slack named it, else the raw ID (APP-29). */
-export const channelLabel = (channel: string, name?: string): string =>
+const channelLabel = (channel: string, name?: string): string =>
   channel === APP_TASK_CHANNEL ? APP_TASK_CHANNEL_LABEL : name || channel;
 
 /** The channel filter's options: every channel with a job, plus the one picked if its jobs are gone, sorted. */

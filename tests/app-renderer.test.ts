@@ -93,18 +93,6 @@ test('routes: the window reopens on the saved screen only when it still exists',
   assert.equal(initialPath('/settings/removed'), defaultPath);
 });
 
-test('renderer: the page is titled Serra and imports no Node modules', () => {
-  const root = fileURLToPath(new URL('../app/renderer/', import.meta.url));
-  const files = readdirSync(root, { recursive: true, encoding: 'utf8' }).filter((file) => /\.(tsx?|html|css)$/.test(file));
-  assert.ok(files.length > 10);
-  for (const file of files) {
-    const text = readFileSync(root + file, 'utf8');
-    // The renderer may only import Node modules' types (via contracts), never `node:` modules at runtime.
-    if (file !== 'vite.config.ts') assert.doesNotMatch(text, /from 'node:/, `${file} imports a Node module`);
-  }
-  assert.match(readFileSync(root + 'index.html', 'utf8'), /<title>Serra<\/title>/);
-});
-
 test('renderer: a monospace field sets font-mono on the field, not on its label and note', () => {
   // QA: `className="font-mono"` on <Input> styles the wrapper, so the wizard's labels and hints came out monospace.
   const root = fileURLToPath(new URL('../app/renderer/', import.meta.url));

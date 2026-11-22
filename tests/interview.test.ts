@@ -13,7 +13,6 @@ import { followProposals } from '../app/main/proposals-watch.ts';
 import { stoppedStatusSource } from '../app/main/status.ts';
 import { defaultFolder, folderChoices, interviewStartedText } from '../app/renderer/screens/proposals.logic.ts';
 import { codeRoot, loadConfig } from '../src/config.ts';
-import { createProposals } from '../src/proposals.ts';
 import { createProfile, onboardingPrompt } from '../src/setup.ts';
 import {
   INTERVIEW_PROGRESS, INTERVIEW_TEMPLATE, INTERVIEW_TITLE, interviewBrief, previewInterview, readTasks, startInterview,

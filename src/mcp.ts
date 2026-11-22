@@ -20,7 +20,7 @@ export type McpTransport = 'stdio' | 'http' | 'sse';
  * Whether a T3 job will get the server: `loads`, `disabled` (turned off in the config), or `unsure` (it depends on
  * something Serra can't see from the files, such as a project approval or which folder the job runs in).
  */
-export type McpLoad = 'loads' | 'disabled' | 'unsure';
+type McpLoad = 'loads' | 'disabled' | 'unsure';
 
 /**
  * Where a server comes from: for every folder (`user`), the project's checkout (`project`), one folder (`local`),
@@ -98,7 +98,7 @@ export interface McpListing {
  * Tools a message trigger's instructions can name, and how to recognise their MCP server. A tool counts as needed
  * only when a trigger's instructions name it, so the words here are product names, not ordinary English.
  */
-export const KNOWN_TOOLS: readonly { id: string; label: string; mentioned: RegExp; server: RegExp }[] = [
+const KNOWN_TOOLS: readonly { id: string; label: string; mentioned: RegExp; server: RegExp }[] = [
   { id: 'sentry', label: 'Sentry', mentioned: /\bsentry\b/i, server: /sentry/i },
   { id: 'datadog', label: 'Datadog', mentioned: /\bdatadog\b/i, server: /datadog/i },
   { id: 'pagerduty', label: 'PagerDuty', mentioned: /\bpager\s?duty\b/i, server: /pager-?duty/i },
@@ -113,7 +113,7 @@ export interface McpOptions {
   env?: Record<string, string | undefined>;
 }
 
-export const DRIVER_LABELS: Record<WorkerDriver, string> = { claude: 'Claude', codex: 'Codex' };
+const DRIVER_LABELS: Record<WorkerDriver, string> = { claude: 'Claude', codex: 'Codex' };
 
 /** Which provider kinds a profile's `worker.provider` can mean. */
 export const workerDrivers = (provider: string | undefined): McpOverview['worker'] => {

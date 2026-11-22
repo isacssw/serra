@@ -475,7 +475,7 @@ test('Restart to update pauses new requests first, so the bot can move to the ne
   let pausedAtInstall: unknown = 'not called';
   const appUpdater = { install: () => { pausedAtInstall = readPause(f.directory)?.reason ?? null; return installing; } } as unknown as NonNullable<HandlerContext['appUpdater']>;
   const quiet = updatesHandlers({ ...contextFor(f.directory, []), appUpdater, botFollowsApp: false }, { echo: () => {} });
-  quiet.install();
+  await quiet.install();
   assert.equal(readPause(f.directory), null, 'a copy run from source leads no bot: nothing paused');
   const handlers = updatesHandlers({ ...contextFor(f.directory, []), appUpdater, botFollowsApp: true }, { echo: () => {} });
   assert.equal((await handlers.install()).state, 'installing');

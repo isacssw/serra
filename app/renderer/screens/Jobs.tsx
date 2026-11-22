@@ -10,7 +10,6 @@ import {
 import { useSearchParams } from 'react-router';
 import type { CleanupVerdict, JobGroup } from '../../../src/contracts.ts';
 import { serra } from '../bridge.ts';
-import { routeForPath } from '../routes.ts';
 import { useBotStatus } from '../shell/live.ts';
 import { resumePath } from '../setup/setup.logic.ts';
 import { useSetup } from '../setup/SetupState.tsx';
@@ -301,13 +300,14 @@ export const Jobs = ({ group }: { group: JobGroup }) => {
   useEffect(() => {
     if (!ready || !focusedKey) return;
     const job = load.rows.find((row) => row.key === focusedKey);
-    if (job && job.group !== group) { navigate(`${PATHS[job.group]}?job=${encodeURIComponent(focusedKey)}`, { replace: true }); return; }
+    if (job && job.group !== group) { void navigate(`${PATHS[job.group]}?job=${encodeURIComponent(focusedKey)}`, { replace: true }); return; }
     const row = [...document.querySelectorAll<HTMLElement>('[data-job-key]')].find((element) => element.dataset.jobKey === focusedKey);
     row?.scrollIntoView({ block: 'center' });
+  // oxlint-disable-next-line react-hooks/exhaustive-deps -- scroll when the focused job or tab changes, not on every list refresh.
   }, [group, ready, focusedKey]);
 
   const pick = (next: JobGroup, focus: boolean): void => {
-    navigate(PATHS[next]);
+    void navigate(PATHS[next]);
     if (focus) requestAnimationFrame(() => document.getElementById(TAB_IDS[next])?.focus());
   };
 
@@ -348,6 +348,7 @@ export const Jobs = ({ group }: { group: JobGroup }) => {
     if (!cleanupAsked) return;
     setSearch((current) => { const next = new URLSearchParams(current); next.delete(CLEANUP_PARAM); return next; }, { replace: true });
     if (cleanup.step === 'closed') startCleanup();
+  // oxlint-disable-next-line react-hooks/exhaustive-deps -- only the parameter appearing triggers it; the dialog's own steps must not.
   }, [cleanupAsked]);
 
   const rows = ready ? load.rows : [];
@@ -403,7 +404,7 @@ export const Jobs = ({ group }: { group: JobGroup }) => {
                     <EmptyState
                       icon={<ListChecks size={18} strokeWidth={1.75} />}
                       title="Finish setup to get requests"
-                      action={<Button size="sm" onClick={() => navigate(resumePath(setup.progress))}>Continue setup</Button>}
+                      action={<Button size="sm" onClick={() => void navigate(resumePath(setup.progress))}>Continue setup</Button>}
                     >
                       Requests from Slack show here once the bot is connected and running.
                     </EmptyState>
@@ -412,7 +413,7 @@ export const Jobs = ({ group }: { group: JobGroup }) => {
                     <EmptyState
                       icon={empty.icon}
                       title={empty.title}
-                      action={empty.start ? <Button size="sm" icon={<Plus size={14} />} onClick={() => navigate('/jobs/new')}>New task</Button> : undefined}
+                      action={empty.start ? <Button size="sm" icon={<Plus size={14} />} onClick={() => void navigate('/jobs/new')}>New task</Button> : undefined}
                     >
                       {empty.body}
                     </EmptyState>

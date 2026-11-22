@@ -15,14 +15,14 @@ const plural = (count: number, one: string, many: string): string => `${count} $
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 /** `Nov 21` (and the year when it isn't this year's), in the owner's time zone. Empty when unknown. */
-export const shortDate = (iso: string | null | undefined, now = new Date()): string => {
+const shortDate = (iso: string | null | undefined, now = new Date()): string => {
   const at = iso ? new Date(iso) : null;
   if (!at || Number.isNaN(at.getTime())) return '';
   return `${MONTHS[at.getMonth()]} ${at.getDate()}${at.getFullYear() === now.getFullYear() ? '' : `, ${at.getFullYear()}`}`;
 };
 
 /** `just now`, `5 min ago`, `3 h ago`, else the date. */
-export const checkedLabel = (iso: string, now = new Date()): string => {
+const checkedLabel = (iso: string, now = new Date()): string => {
   const minutes = Math.floor((now.getTime() - new Date(iso).getTime()) / 60_000);
   if (Number.isNaN(minutes)) return '';
   if (minutes < 1) return 'Checked just now';
@@ -35,7 +35,7 @@ export const checkedLabel = (iso: string, now = new Date()): string => {
 export const keepVersions = (text: string): string => text.replace(/(\d+\.\d+\.\d+)-(?=[0-9A-Za-z])/g, '$1\u2011');
 
 /** `76 of 122 MB` while downloading; `76 MB` when the size is unknown. */
-export const progressLabel = (received: number, total: number | null): string => {
+const progressLabel = (received: number, total: number | null): string => {
   const mb = (bytes: number): string => String(Math.round(bytes / 1_000_000));
   return total ? `${mb(received)} of ${mb(total)} MB` : `${mb(received)} MB`;
 };
@@ -162,7 +162,7 @@ export interface BotLine {
 const was = (from: string | null): string => from ? `version ${from}` : 'an earlier version';
 
 /** The first of several problems (health checks are joined with `; `); the rest are in Show details. */
-export const firstProblem = (message: string): string => {
+const firstProblem = (message: string): string => {
   const parts = message.split('; ').filter(Boolean);
   return parts.length > 1 ? `${parts[0]} (and ${parts.length - 1} more)` : message;
 };
@@ -237,7 +237,7 @@ export const preparedLabel = (release: Pick<Prepared, 'preparedAt'> | null): str
 };
 
 /** The branch name for headings: `origin/main` → `main`. */
-export const branch = (ref: string | null): string => (ref ?? 'main').replace(/^[^/]+\//, '');
+const branch = (ref: string | null): string => (ref ?? 'main').replace(/^[^/]+\//, '');
 
 /** The heading above the commits list: `4 new commits on main`, `Up to date with main`, or why it can't say. */
 export const commitsHeading = (status: Pick<ReleaseOverview, 'newCommits' | 'commitsProblem' | 'ref'>): string => {
@@ -247,7 +247,7 @@ export const commitsHeading = (status: Pick<ReleaseOverview, 'newCommits' | 'com
 };
 
 /** `git@github.com:owner/serra.git` or `https://github.com/owner/serra` → `owner/serra`; other URLs as they are. */
-export const repositoryName = (url: string): string => {
+const repositoryName = (url: string): string => {
   const github = /github\.com[:/]([\w.-]+\/[\w.-]+?)(?:\.git)?\/?$/.exec(url);
   return github ? github[1]! : url;
 };
@@ -271,7 +271,7 @@ type DeveloperAction = 'prepare' | 'activate' | 'rollback';
 const BUSY: Record<UpdateAction, string> = { prepare: 'Building…', activate: 'Restarting the bot…', rollback: 'Undoing…', sync: 'Updating the bot…' };
 
 /** Why a build can't be used, in the screen's words (the release service speaks the CLI's prepare/activate). */
-export const buildProblem = (problem: string): string => problem
+const buildProblem = (problem: string): string => problem
   .replace('No prepared release. Run prepare first.', 'Nothing built yet.')
   .replace('Prepared dependencies missing. Run prepare again.', "The build's dependencies are missing. Build again.")
   .replace('Prepared release changed. Prepare a new release before activation.', 'The build changed since it was made. Build again.')

@@ -41,6 +41,7 @@ export const OwnerStep = () => {
     if (tried.current || confirmed || !slackReady || !owner?.slackUserId) return;
     tried.current = true;
     void confirm(owner.slackUserId);
+  // oxlint-disable-next-line react-hooks/exhaustive-deps -- runs once (tried ref) when the owner becomes known; confirm is a fresh closure each render.
   }, [confirmed, slackReady, owner?.slackUserId]);
 
   const tone = busy ? 'busy' : confirmed ? 'done' : error ? 'problem' : 'todo';

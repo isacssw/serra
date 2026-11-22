@@ -6,7 +6,7 @@ import type { SetupProgress } from '../../../src/setup.ts';
 import { serra, SETUP_INCOMPLETE_EVENT } from '../bridge.ts';
 
 /** A setup step dispatches this on `window` after it changed the profile (created it, checked a token…). */
-export const SETUP_CHANGED = 'serra:setup-changed';
+const SETUP_CHANGED = 'serra:setup-changed';
 
 export const setupChanged = (): void => { window.dispatchEvent(new Event(SETUP_CHANGED)); };
 

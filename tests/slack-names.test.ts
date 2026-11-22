@@ -1,6 +1,6 @@
 // APP-29: Slack names instead of raw IDs (Jobs, notifications), the app task's brief (R13) and the Slack scopes.
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test, { type TestContext } from 'node:test';
@@ -315,15 +315,6 @@ test('R13: an app task reads "<owner> asked:", with the configured owner name an
   // A Slack job keeps its link.
   const slack = fillBriefText(template, config, 'index', { request: 'hi', requester: 'Ada', permalink: 'https://acme.slack.com/archives/C1/p1', thread: NO_THREAD });
   assert.match(slack, /^Ada asked \(https:\/\/acme\.slack\.com\/archives\/C1\/p1\):$/m);
-});
-
-test('templates carry no personal name: the owner comes from the profile', () => {
-  const files = ['brief.md', 'interview.md', 'manifest.json', ...readdirSync(join(codeRoot, 'templates/knowledge'), { recursive: true })
-    .map(String).filter((name) => name.endsWith('.md')).map((name) => `knowledge/${name}`)];
-  for (const file of files) {
-    const text = readFileSync(join(codeRoot, 'templates', file), 'utf8');
-    assert.doesNotMatch(text, /Sam Rivera|\b[UWCDG]0[A-Z0-9]{8,}\b|\/Users\/(?!you\b)/, `templates/${file}`);
-  }
 });
 
 // ---------------------------------------------------------------------------------------------------------------

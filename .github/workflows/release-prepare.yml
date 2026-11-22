@@ -66,7 +66,11 @@ jobs:
             echo
             echo "Edit CHANGELOG.md on this branch to change the notes before merging."
           } > body.md
-          if ! gh pr create --base main --head "chore/release-v$VERSION" --title "chore(release): v$VERSION" --body-file body.md; then
+          if gh pr create --base main --head "chore/release-v$VERSION" --title "chore(release): v$VERSION" --body-file body.md; then
+            # The workflow token's PR gets no pull_request runs, so start its required title check here. A PR opened by
+            # hand (below) gets one the usual way.
+            gh workflow run pr-title.yml --ref "chore/release-v$VERSION"
+          else
             # Needs Settings › Actions › General › "Allow GitHub Actions to create and approve pull requests".
             url="https://github.com/${GITHUB_REPOSITORY}/compare/main...chore/release-v$VERSION?expand=1"
             echo "::warning::Couldn't open the PR with the workflow token. Open it yourself: $url"

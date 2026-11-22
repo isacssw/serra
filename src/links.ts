@@ -17,7 +17,7 @@ export interface PathRoots {
 const inside = (path: string, root: string): string | null => (path.startsWith(`${root}${sep}`) ? path.slice(root.length + 1) : null);
 
 /** A path as a Slack reader can use it: from the repository root when it is code, `~/…` otherwise. */
-export const shortPath = (path: string, { repos, worktrees, home = homedir() }: PathRoots): string => {
+const shortPath = (path: string, { repos, worktrees, home = homedir() }: PathRoots): string => {
   for (const root of worktrees) {
     const rest = inside(path, root)?.split(sep).slice(2).join(sep);
     if (rest) return rest;

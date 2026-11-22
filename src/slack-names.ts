@@ -51,7 +51,7 @@ const slackError = (error: unknown): Error => {
 };
 
 /** The real lookup, through Bolt's WebClient with the bot token. */
-export const slackApiLookup = async (token: string): Promise<SlackNameLookup> => {
+const slackApiLookup = async (token: string): Promise<SlackNameLookup> => {
   // Loaded here so the renderer-facing modules that import this file don't pull in Bolt.
   const { webApi } = await import('@slack/bolt');
   const client = new webApi.WebClient(token, { retryConfig: { retries: 0 }, timeout: 10_000, logLevel: webApi.LogLevel.ERROR });
@@ -225,7 +225,7 @@ export const slackMentions = (text: string): { users: string[]; channels: string
  */
 export const slackPlainText = (text: string, names: { user?: (id: string) => string | undefined; channel?: (id: string) => string | undefined } = {}): string => text
   .replace(/<([^<>]+)>/g, (_whole, inner: string) => {
-    const [target = '', label] = inner.split('|', 2) as [string, string | undefined];
+    const [target, label] = inner.split('|', 2) as [string, string | undefined];
     if (target.startsWith('@')) return `@${names.user?.(target.slice(1)) ?? label ?? target.slice(1)}`;
     if (target.startsWith('#')) {
       const name = names.channel?.(target.slice(1)) ?? (label ? `#${label}` : target);
@@ -238,7 +238,7 @@ export const slackPlainText = (text: string, names: { user?: (id: string) => str
   })
   .replace(/:([a-z0-9_+-]+):/g, (_whole, code: string) => EMOJI[code] ?? '')
   // Bold, italic and strike marks hug the words they wrap; a lone mark (cut-off title) also goes, a `*` in `2 * 3` stays.
-  .replace(/(^|[\s(\[])[*_~]+(?=\S)|(?<=\S)[*_~]+(?=$|[\s).,:;!?\]])/g, '$1')
+  .replace(/(^|[\s([])[*_~]+(?=\S)|(?<=\S)[*_~]+(?=$|[\s).,:;!?\]])/g, '$1')
   .replace(/`+/g, '')
   .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&')
   .replace(/[ \t]{2,}/g, ' ')

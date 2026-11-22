@@ -36,7 +36,7 @@ const tokenValues = (config: Config): (string | undefined)[] => [
 ].map((read) => { try { return read(); } catch { return undefined; } });
 
 /** The daemon's log, where launchd sends its stdout and stderr (`deploy.ts`). */
-export const daemonLogPath = (profileDir: string): string => join(profileDir, 'logs', 'bot.log');
+const daemonLogPath = (profileDir: string): string => join(profileDir, 'logs', 'bot.log');
 
 export const diagnosticsHandlers = (context: HandlerContext, options: DiagnosticsHandlerOptions = {}): Handlers<'diagnostics'> => {
   const load = options.loadConfig ?? ((profileDir: string) => loadConfig({ profileDir, env: {} }));

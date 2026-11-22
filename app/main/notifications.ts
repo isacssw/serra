@@ -8,7 +8,7 @@ import {
   notificationPlanner, notificationTarget, notificationText, type NotificationPlanner, type PlannedNotification,
 } from './notifications.logic.ts';
 
-export interface NotificationFeed {
+interface NotificationFeed {
   current(): BotStatus;
   subscribe(listener: { status(status: BotStatus): void; event(event: BotEvent): void }): () => void;
 }

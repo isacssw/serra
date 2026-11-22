@@ -213,6 +213,7 @@ export const FieldsCard = ({ form, profile, settings, state }: { form: SectionFo
   // A saved section, or one changed outside the app, replaces what the form shows. Reloading an unchanged profile
   // (on window focus) keeps the owner's unsaved edits.
   const current = JSON.stringify((profile as unknown as Record<string, unknown>)[form.section] ?? null);
+  // oxlint-disable-next-line react-hooks/exhaustive-deps -- keyed on the section's content: a reload of the same profile must keep unsaved edits.
   useEffect(() => { setValues(form.toForm(profile)); setSaveError(null); }, [form, current]);
   const { value, errors } = form.parse(values);
   const changed = formChanged(form, profile, values);
@@ -269,6 +270,7 @@ export const useListEditor = <Row,>(
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const current = JSON.stringify((profile as unknown as Record<string, unknown>)[section] ?? null);
+  // oxlint-disable-next-line react-hooks/exhaustive-deps -- keyed on the section's content: a reload of the same profile must keep unsaved edits.
   useEffect(() => { setRows(toRows(profile)); setSaveError(null); }, [current]);
   const { value, errors } = parse(rows);
   const changed = JSON.stringify(value ?? null) !== current;
