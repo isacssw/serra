@@ -114,7 +114,8 @@ const SENSITIVE = new RegExp([
  */
 const PERSON = "(?:(?!(?:We|It|This|That|These|Those|The|Our|Their|Its|There|Then|So|And|But|Also|Now|Today|Yesterday|Build|Release|Canary|Deploy)\\b)[A-Z][a-z]+|[Hh]e|[Ss]he|[Tt]hey)";
 const SENSITIVE_CASED = new RegExp([
-  '(?:put|placed) on (?:a )?PIP', `PIP (?:for|with) ${PERSON}`, `fire ${PERSON}`, `cut ${PERSON}['’]s pay`,
+  '(?:put|placed|is|was|are) on (?:a )?PIP', `PIP (?:for|with) ${PERSON}`, `${PERSON}['’]s PIP`, `(?:fire|fired|promoted|terminated) ${PERSON}`, `cut ${PERSON}['’]s pay`, `give ${PERSON} a (?:raise|pay rise)`,
+  `${PERSON} (?:was|has been|is being|got) terminated`, `${PERSON} (?:is|was|has been) on leave`,
   `performance (?:review|reviews) (?:for|of|with) ${PERSON}`, `[Rr]aise for ${PERSON}`, `${PERSON} (?:got|gets|is getting|asked for|wants) a (?:raise|pay rise)`,
   `${PERSON} (?:is|was|are|were) leaving the company`, `${PERSON} (?:has |have |just )?(?:quit|quits|is quitting|resigned|is resigning|are resigning)\\b(?! (?:the|this|that|its|their|on|early|unexpectedly) (?:process|job|build|run|worker|app|binary)s?\\b)`,
   `${PERSON} (?:got|gets|has been|have been|was|were|is|will be) promoted(?! to (?:prod|production|staging|main|stable|release|beta|live)\\b)`,

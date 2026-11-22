@@ -96,7 +96,7 @@ export const meetingPages = (knowledgeDir: string): { team: TeamPage[]; existing
 };
 
 /** Model text as plain Slack text: `&`, `<` and `>` escaped, so an injected line can't become a link or a mention. */
-const plain = (text: string): string => text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+const plain = (text: string): string => text.replace(/`/g, "'").replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
   // A bare URL would still turn into a link: code formatting keeps it plain text.
   .replace(/\b(?:https?:\/\/|www\.)[^\s`]*[^\s`.,;:!?)]|\b[\w-]+(?:\.[\w-]+)*\.[a-z]{2,}(?![\w-])(?:\/[^\s`]*[^\s`.,;:!?)])?/gi, (url) => `\`${url}\``);
 

@@ -437,6 +437,8 @@ test('a link inside a pasted transcript is part of the meeting, not its source; 
   assert.equal(meetingRequest("remember this meeting's notes please").trigger, false);
   assert.equal(meetingRequest('remember this meeting — https://notes.granola.ai/d/f3e45e0f-24cc-480b-9a6c-8b1f5e3d7a2c').link?.provider, 'granola');
   assert.equal(meetingRequest('remember this meeting, here it is: https://notes.granola.ai/d/f3e45e0f-24cc-480b-9a6c-8b1f5e3d7a2c').link?.provider, 'granola');
+  assert.equal(meetingRequest('remember this meeting\nAna: see https://notes.granola.ai/d/f3e45e0f-24cc-480b-9a6c-8b1f5e3d7a2c').link, null, 'a link on a transcript line is part of the transcript');
+  assert.equal(meetingRequest('remember this meeting: decided per https://docs.google.com/document/d/1AbCdEfGhIjKlMnOpQrStUvWxYz0123456789 that retries stop at 3').link, null);
 });
 
 test('the digest thread is closed: a reply there never starts a job with unreviewed meeting text', async (t) => {
