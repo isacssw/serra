@@ -3,10 +3,12 @@
  * name), a bot ID like `B0123456789` (an alert posted by an integration or webhook) as the bot's name, and a channel
  * ID as `#name`, so Jobs and notifications don't show raw IDs. `slackPlainText` turns Slack's mrkdwn into plain text.
  *
- * Lookups never block: `userName` and `channelName` answer from the cache only, and `request` looks the misses up in
- * the background with the bot token (`users.info`, `bots.info`, `conversations.info`), then calls `onResolved` so the caller can
- * show the names. A lookup that fails leaves the raw ID in place and isn't retried for a while. The token is read per
- * batch from its configured source, held only for that batch, and never logged: errors carry Slack's error code only.
+ * `createSlackNames` runs in the daemon (SERRA-55): the app asks the bot over the status socket and gets names back,
+ * so the app never reads the bot token (`slack-names-store.ts` is the app's side). Lookups never block: `userName`
+ * and `channelName` answer from the cache only, and `request` looks the misses up with the bot token (`users.info`,
+ * `bots.info`, `conversations.info`), then calls `onResolved`. A lookup that fails leaves the raw ID in place and
+ * isn't retried for a while. The token comes from `token()` (the daemon's own, already in memory) and is never
+ * logged: errors carry Slack's error code only.
  */
 
 /** The labels a DM or group DM gets. Their IDs start with `D` (or come back as `is_im`/`is_mpim`). */
@@ -149,7 +151,7 @@ export const createSlackNames = ({
         tokenReported = false;
       } catch {
         // Whatever went wrong reading the token, its message isn't repeated: it could name the source or worse.
-        if (!tokenReported) log('[serra] Slack names are off: the bot token could not be read. Jobs shows Slack IDs.');
+        if (!tokenReported) log('[serra] Slack names are off: the bot token could not be read. The app shows Slack IDs.');
         tokenReported = true;
         for (const [kind, id] of wanted) fail(kind, id, 'no token', true);
         return false;
@@ -184,6 +186,17 @@ export const createSlackNames = ({
     channelName: (id) => cached('channel', id),
     request: (ids) => request(ids).catch(() => false),
   };
+};
+
+/**
+ * Answers the app's name requests in the daemon (`StatusServerOptions.names`): looks up the misses, then gives the
+ * names it knows for exactly the IDs asked, and nothing else. Never rejects.
+ */
+export const answerNameRequests = (names: SlackNames) => async ({ users, channels }: { users: string[]; channels: string[] }): Promise<{ users: Record<string, string>; channels: Record<string, string> }> => {
+  await names.request({ users, channels });
+  const named = (ids: string[], name: (id: string) => string | undefined): Record<string, string> =>
+    Object.fromEntries(ids.flatMap((id) => { const found = name(id); return found ? [[id, found]] : []; }));
+  return { users: named(users, names.userName), channels: named(channels, names.channelName) };
 };
 
 // ---------------------------------------------------------------------------------------------------------------

@@ -4,6 +4,8 @@ Serra follows [Semantic Versioning](https://semver.org) once it reaches 1.0. Unt
 
 ## Unreleased
 
+- Fixed: opening Serra with the bot token in 1Password asked for 1Password approval on every launch. The app no longer reads the bot token to show Slack names in Jobs: the running bot names the IDs and the app keeps the names in the profile (`slack-names.json`, names only). New names need the bot running on this version; the bot's own 1Password prompt when it starts is unchanged.
+- Fixed: Jobs listed Slack threads as running when T3 wasn't running them. A run that started and finished between two of the bot's checks left a stale "seen run" behind, and state carried over from an older install could keep 👀, loading or a progress line forever. The bot now forgets a seen run once a later reply is posted, checks every job saved as running against T3 when it starts (clearing the 👀, loading status and progress line of threads T3 isn't running, and following the ones it is), and the Jobs list asks T3 before showing a Slack job as running.
 - Docs: the README now starts from the released app (download, checksum, install, first run), says how updates work and what a reinstall keeps, and how to migrate from a checkout-run Serra or another self-hosted bot. Running from source moved to CONTRIBUTING.
 
 ## 0.1.0-alpha.3 (2026-11-21)

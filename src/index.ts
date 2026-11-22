@@ -11,6 +11,7 @@ import { incomingMessage } from './incoming.ts';
 import { eventLog, timestampedLogger } from './logging.ts';
 import { QUESTION_ACTION, questionInteraction } from './questions.ts';
 import { jobCounts, startStatusServer, type StatusServer } from './status-socket.ts';
+import { answerNameRequests, createSlackNames } from './slack-names.ts';
 import { watchProfile } from './profile-reload.ts';
 import { checkProjectAccess } from './project-access.ts';
 import { acknowledgePause, admit, dropHeld, heldThread, holdRequest, readHeld, readPause } from './intake.ts';
@@ -161,10 +162,14 @@ for (const state of ['disconnected', 'reconnecting']) receiver.client.on(state, 
 await app.start();
 slackConnected = true;
 const startedAt = new Date().toISOString();
+// The app's Jobs names (SERRA-55): the app asks over the status socket and gets names back, so it never reads the bot
+// token. The token is the one this process already holds; it never leaves it, and lookups never throw into the bot.
+const slackNames = createSlackNames({ token: async () => config.botToken, log: (message) => app.logger.warn(message) });
 // The app's live view. Without it the bot still works, and the app shows "stopped".
 status = await startStatusServer({
   profileDir: config.profileDir,
   status: () => ({ state: 'up', pid: process.pid, startedAt, slackConnected, counts: jobCounts(store.allJobs().map(([, job]) => job)) }),
+  names: answerNameRequests(slackNames),
 }).catch((error: unknown) => {
   app.logger.warn(`Status socket not started: ${errorMessage(error)}`);
   return null;
@@ -180,6 +185,10 @@ app.logger.info(
 const profileWatcher = watchProfile(config.profileDir, bot.reloadProfile, {
   onError: (error) => app.logger.warn(`Not watching profile.json, changes apply after a restart: ${errorMessage(error)}`),
 });
+// Jobs saved as running that T3 no longer runs (a run that ended while the bot was stopped, state from an older
+// install) are cleared once, before the first poll, so the Jobs list matches T3.
+void track(bot.reconcile()).catch((error: unknown) => app.logger.error(`Reconciling jobs failed: ${errorMessage(error)}`))
+  .finally(() => status?.refresh());
 // Requests held while the previous bot was paused for an update start now.
 acknowledge();
 void releaseHeld();
