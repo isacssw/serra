@@ -524,7 +524,9 @@ export const createBot = ({
     }
     const text = problem ? setupNotice(problem) : check && check.revoked.length > 0 ? WITHHELD : reply;
     const runMs = job.runSeen?.runId === runId ? now() - Date.parse(job.runSeen.at) : undefined;
-    const measured = { key, runId, byWorker, runMs, jobAgeMs: now() - Date.parse(job.createdAt) };
+    // A notice posted in place of the reply (a Slack setup problem, or a withheld answer) isn't the run's result.
+    const inPlace = Boolean(problem) || text === WITHHELD;
+    const measured = { key, runId, byWorker, runMs, jobAgeMs: now() - Date.parse(job.createdAt), ...(inPlace ? { notice: true } : {}) };
     await clearProgress(key, job);
     if (QUIET.test(text)) {
       // Nothing to say: the 👀 goes away, which tells the thread the message was seen.

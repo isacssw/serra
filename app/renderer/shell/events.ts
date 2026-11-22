@@ -8,3 +8,6 @@ export const CLOSE_COMMAND_PALETTE = 'serra:close-command-palette';
 
 /** A screen that changed what a sidebar badge counts (say, promoted a proposal) dispatches this to refresh the counts. */
 export const REFRESH_COUNTS = 'serra:refresh-counts';
+
+/** New task dispatches this when it sends a task, before T3 answers: the star request holds off until the list has it. */
+export const TASK_STARTING = 'serra:task-starting';

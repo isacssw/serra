@@ -155,6 +155,8 @@ test('daemon events map to the app contract, and others are dropped', () => {
   const when = '2026-11-19T10:00:00.000Z';
   assert.deepEqual(toBotEvent('reply', { key: 'k', kind: 'quiet', runId: 'r' }, when), { at: when, event: 'reply', key: 'k', kind: 'quiet' });
   assert.equal(toBotEvent('reply', { key: 'k', kind: 'unknown' }, when), null);
+  // A notice in place of the reply is marked, so the app doesn't take it for a result (SERRA-53).
+  assert.deepEqual(toBotEvent('reply', { key: 'k', kind: 'reply', notice: true }, when), { at: when, event: 'reply', key: 'k', kind: 'reply', notice: true });
   assert.equal(toBotEvent('question_shown', { key: 'k' }, when), null);
 });
 

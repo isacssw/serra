@@ -5,7 +5,7 @@ import type { AppPrefs, StarPromptState } from '../app/main/bridge.ts';
 import { combineStarPrompt, defaultPrefs, mergePrefs, readPrefs } from '../app/main/prefs.ts';
 import { builtinActions } from '../app/renderer/commands/builtin.ts';
 import {
-  answer, countFinished, finishedWell, finishTracker, FAILURE_SHADOW_MS, MAX_ASKS, markShown, MIN_DAYS, MIN_FINISHED, openRepo, REPO_URL, shouldAsk,
+  answer, countFinished, finishedWell, MAX_ASKS, markShown, MIN_DAYS, MIN_FINISHED, openRepo, REPO_URL, shouldAsk,
   SNOOZE_DAYS, startClock, updateStarPrompt, type AskContext,
 } from '../app/renderer/star.logic.ts';
 import type { BotStatus, JobSummary } from '../src/contracts.ts';
@@ -33,19 +33,10 @@ test('a finish is a reply the daemon posted that does not need the owner; failur
   assert.equal(finishedWell({ at, event: 'reply', key: 'k', kind: 'status_posted' }), true);
   assert.equal(finishedWell({ at, event: 'reply', key: 'k', kind: 'reply', needsOwner: true }), false);
   assert.equal(finishedWell({ at, event: 'reply', key: 'k', kind: 'quiet' }), false, 'nothing was said');
+  assert.equal(finishedWell({ at, event: 'reply', key: 'k', kind: 'reply', notice: true }), false, 'a setup or withheld notice');
   assert.equal(finishedWell({ at, event: 'failure', key: 'k', error: 'boom' }), false);
   assert.equal(finishedWell({ at, event: 'needs_owner', key: 'k' }), false);
   assert.equal(finishedWell({ at, event: 'job_started', key: 'k', t3ThreadId: 't', requester: 'U1' }), false);
-});
-
-test('a reply right after a failure on the same job is its notice, not a finish', () => {
-  const isFinish = finishTracker();
-  const at = start.toISOString();
-  const t = start.getTime();
-  assert.equal(isFinish({ at, event: 'failure', key: 'k', error: 'missing_scope' }, t), false);
-  assert.equal(isFinish({ at, event: 'reply', key: 'k', kind: 'reply' }, t + 1000), false, 'the setup notice');
-  assert.equal(isFinish({ at, event: 'reply', key: 'other', kind: 'reply' }, t + 1000), true, 'other jobs still count');
-  assert.equal(isFinish({ at, event: 'reply', key: 'k', kind: 'status_posted' }, t + FAILURE_SHADOW_MS + 1), true, 'a later run counts');
 });
 
 test('the clock starts once and finished jobs stop counting at the threshold', () => {

@@ -7,15 +7,21 @@ import { useLocation } from 'react-router';
 import { Star } from 'lucide-react';
 import type { BotStatus, JobSummary } from '../../../src/contracts.ts';
 import { serra } from '../bridge.ts';
+import { REFRESH_COUNTS, TASK_STARTING } from './events.ts';
 import { WELCOME_PATH } from '../screens/Welcome/welcome.logic.ts';
 import {
-  answer, calmMoment, countFinished, dueToAsk, finishTracker, IDLE_MS, MAX_WAIT_MS, markShown, openedMessage, openRepo, shouldAsk,
+  answer, calmMoment, countFinished, dueToAsk, finishedWell, IDLE_MS, MAX_WAIT_MS, markShown, openedMessage, openRepo, shouldAsk,
   startClock, updateStarPrompt, type StarChoice,
 } from '../star.logic.ts';
 import { Button, GitHubMark, useToast, useToastStack } from '../ui/index.ts';
 
 // Input that means the owner is busy in the window; the card waits for a pause.
 const ACTIVITY = ['pointerdown', 'keydown', 'wheel'] as const;
+
+// The last input anywhere in the window, so the card checks the owner is still idle right before it opens.
+let lastInputAt = 0;
+const noteInput = (): void => { lastInputAt = Date.now(); };
+const idleNow = (): boolean => document.hasFocus() && Date.now() - lastInputAt >= IDLE_MS;
 
 /** Calls `ready` once the window has focus and has had no input for IDLE_MS. Returns a cancel. */
 const whenIdle = (ready: () => void): (() => void) => {
@@ -83,14 +89,33 @@ export const StarPrompt = ({ status, jobs }: { status: BotStatus | null; jobs: J
   const asked = useRef(false);
   const cancelWait = useRef((): void => {});
   // What the idle wait reads when it ends: the moment may have passed (a job started, setup opened).
-  const moment = { status, jobs, path: pathname, welcomePath: WELCOME_PATH };
+  // From sending a new task until the list reloaded after it, app tasks are unknown: T3 may already be running it.
+  const [taskStarting, setTaskStarting] = useState(false);
+  const starting = useRef({ on: false, reloaded: false });
+  const moment = { status, jobs: taskStarting ? null : jobs, path: pathname, welcomePath: WELCOME_PATH };
   const live = useRef(moment);
   live.current = moment;
 
   useEffect(() => {
     void serra()?.app.info().then((info) => { version.current = info.version; }, () => {});
-    return () => cancelWait.current();
+    const onStarting = (): void => { starting.current = { on: true, reloaded: false }; setTaskStarting(true); };
+    // New task asks for this reload once T3 answered; the list after it has the task.
+    const onRefresh = (): void => { if (starting.current.on) starting.current.reloaded = true; };
+    for (const type of ACTIVITY) window.addEventListener(type, noteInput, { capture: true, passive: true });
+    window.addEventListener(TASK_STARTING, onStarting);
+    window.addEventListener(REFRESH_COUNTS, onRefresh);
+    return () => {
+      cancelWait.current();
+      for (const type of ACTIVITY) window.removeEventListener(type, noteInput, true);
+      window.removeEventListener(TASK_STARTING, onStarting);
+      window.removeEventListener(REFRESH_COUNTS, onRefresh);
+    };
   }, []);
+
+  // The reload after the start landed (the list is null while it runs): app tasks are known again.
+  useEffect(() => {
+    if (taskStarting && starting.current.reloaded && jobs) { starting.current = { on: false, reloaded: false }; setTaskStarting(false); }
+  }, [jobs, taskStarting]);
 
   // The days-of-use clock starts the first time the bot is up, so setup time doesn't count.
   useEffect(() => {
@@ -110,31 +135,35 @@ export const StarPrompt = ({ status, jobs }: { status: BotStatus | null; jobs: J
       // Only what's saved decides here; whether the moment is calm is checked when the card would show.
       if (asked.current || !version.current || !dueToAsk(state, { now: new Date(), version: version.current }).ask) return;
       asked.current = true;
-      cancelWait.current = whenIdle(() => {
+      const tryShow = (): void => {
         // Came back too late: this finish is old news. The next one can ask.
         if (Date.now() - finishedAt > MAX_WAIT_MS) { asked.current = false; return; }
         let shown = false;
         updateStarPrompt(bridge.app, (current) => {
           const context = { ...live.current, now: new Date(), version: version.current ?? '' };
-          if (!shouldAsk(current, context).ask) return current;
+          // Typing again or away since the wait ended: wait for the next pause instead.
+          if (!idleNow() || !shouldAsk(current, context).ask) return current;
           shown = true;
           // Saved before it shows: a card whose answer can't be kept would come back every time, so it never shows.
           return markShown(current, context.version, context.now);
         }).then(() => {
-          // Not calm any more: the session's next finish can try again. If it was saved as shown in the instant
-          // between, that ask is spent; a rare cost that keeps "shown" honest about what was saved.
-          if (shown && calmMoment(live.current).ask) setOpen(true);
-          else asked.current = shown;
+          if (shown && calmMoment(live.current).ask && idleNow()) { setOpen(true); return; }
+          // Saved as shown but the moment changed in the instant between: that ask is spent, a rare cost that keeps
+          // "shown" honest about what was saved. Not shown because the owner is busy: wait for the next pause.
+          if (shown) return;
+          if (calmMoment(live.current).ask) cancelWait.current = whenIdle(tryShow);
+          else asked.current = false;
         }, () => { asked.current = false; });
-      });
+      };
+      cancelWait.current = whenIdle(tryShow);
     };
-    const isFinish = finishTracker();
-    return bridge.on.event((event) => { if (isFinish(event, Date.now())) void onFinish(); });
+    return bridge.on.event((event) => { if (finishedWell(event)) void onFinish(); });
   }, []);
 
   // The moment passed while the card was up (a job started, setup opened): close it. It was saved as shown.
   // A list mid-reload says nothing new, so it doesn't close the card; the daemon's counts still do.
-  const calm = calmMoment({ ...moment, jobs: jobs ?? [] }).ask;
+  // Sending a new task closes it: the owner is busy.
+  const calm = !taskStarting && calmMoment({ ...moment, jobs: jobs ?? [] }).ask;
   useEffect(() => { if (open && !calm) setOpen(false); }, [open, calm]);
 
   const choose = (choice: StarChoice): void => {

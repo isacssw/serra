@@ -27,30 +27,13 @@ const addDays = (now: Date, days: number): string => new Date(now.getTime() + da
 export const MAX_WAIT_MS = 15 * 60 * 1000;
 
 /**
- * Whether a daemon event is a job finishing well: its reply was posted (or its status message updated) and it
- * doesn't need the owner. A failure is its own `failure` event and a blocker sets `needsOwner`, so neither counts.
- * Events come over the local status socket: nothing is fetched.
+ * Whether a daemon event is a job finishing well: its reply was posted (or its status message updated), it doesn't
+ * need the owner, and it isn't a notice posted in its place (a Slack setup problem, a withheld answer). A failure is
+ * its own `failure` event. A clarifying question to the requester still counts; the calm check and the idle wait
+ * make that a fine moment anyway. Events come over the local status socket: nothing is fetched.
  */
 export const finishedWell = (event: BotEvent): boolean =>
-  event.event === 'reply' && event.kind !== 'quiet' && event.needsOwner !== true;
-
-/** A reply this soon after a failure on the same job is the notice about it (a Slack setup problem), not a result. */
-export const FAILURE_SHADOW_MS = 60_000;
-
-/**
- * Follows the event stream and says which events are a good finish: `finishedWell`, minus replies that come right
- * after a failure on the same job. A clarifying question to the requester still counts; the calm check and the
- * idle wait make that a fine moment anyway.
- */
-export const finishTracker = (): ((event: BotEvent, now: number) => boolean) => {
-  const failedAt = new Map<string, number>();
-  return (event, now) => {
-    if (event.event === 'failure') { failedAt.set(event.key, now); return false; }
-    if (!finishedWell(event)) return false;
-    const failed = failedAt.get(event.key);
-    return failed === undefined || now - failed > FAILURE_SHADOW_MS;
-  };
-};
+  event.event === 'reply' && event.kind !== 'quiet' && event.needsOwner !== true && event.notice !== true;
 
 /** What the owner is told after opening the repo from anywhere: thanks, or that the answer wasn't kept. */
 export const openedMessage = (saved: boolean): { message: string; tone: 'success' | 'info' } => saved

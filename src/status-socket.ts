@@ -45,7 +45,11 @@ export const toBotEvent = (name: string, fields: Record<string, unknown>, at: st
     case 'reply': {
       const kind = fields.kind;
       if (kind !== 'reply' && kind !== 'quiet' && kind !== 'status_posted' && kind !== 'status_edited') return null;
-      return { at, event: 'reply', key, kind, ...(typeof fields.needsOwner === 'boolean' ? { needsOwner: fields.needsOwner } : {}) };
+      return {
+        at, event: 'reply', key, kind,
+        ...(typeof fields.needsOwner === 'boolean' ? { needsOwner: fields.needsOwner } : {}),
+        ...(fields.notice === true ? { notice: true } : {}),
+      };
     }
     case 'needs_owner':
       return { at, event: 'needs_owner', key };

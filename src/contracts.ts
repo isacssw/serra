@@ -152,7 +152,8 @@ export type BotStatus =
  */
 export type BotEvent =
   | { at: string; event: 'job_started'; key: string; t3ThreadId: string; requester: string }
-  | { at: string; event: 'reply'; key: string; kind: 'reply' | 'quiet' | 'status_posted' | 'status_edited'; needsOwner?: boolean }
+  /** `notice`: a setup or withheld notice was posted in place of the run's reply. */
+  | { at: string; event: 'reply'; key: string; kind: 'reply' | 'quiet' | 'status_posted' | 'status_edited'; needsOwner?: boolean; notice?: boolean }
   | { at: string; event: 'needs_owner'; key: string }
   | { at: string; event: 'failure'; key: string; error: string };
 
