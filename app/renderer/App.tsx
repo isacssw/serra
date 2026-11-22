@@ -26,6 +26,7 @@ import { BotSlack } from './screens/settings/BotSlack.tsx';
 import { People } from './screens/settings/People.tsx';
 import { Repositories } from './screens/settings/Repositories.tsx';
 import { Worker } from './screens/settings/Worker.tsx';
+import { Meetings } from './screens/settings/Meetings.tsx';
 import { Tools } from './screens/Tools.tsx';
 import { Updates } from './screens/Updates.tsx';
 import { useBadgeCounts, useBotStatus } from './shell/live.ts';
@@ -50,6 +51,7 @@ const screens: Record<RouteId, ReactElement> = {
   'settings-repositories': <Repositories />,
   'settings-alerts': <Alerts />,
   'settings-worker': <Worker />,
+  'settings-meetings': <Meetings />,
   secrets: <Secrets />,
   tools: <Tools />,
   updates: <Updates />,

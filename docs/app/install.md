@@ -52,7 +52,7 @@ The background bot keeps running through the app's update. It then follows the a
 
 The app is ad-hoc signed, not notarized, so the checksum is what guards an update: it catches a broken or swapped download, but `SHA256SUMS` comes from the same release. Serra downloads updates itself, so macOS doesn't quarantine them and doesn't ask again.
 
-To work on Serra itself, set Settings › Worker › **Developer: update from a checkout** to a clone of the repository (the profile's `updates`, see [configuration](../configuration.md)). Updates then switches to developer mode: it lists the new commits on the branch, **Build from checkout** makes a bot build from the clone, **Restart bot on it** switches the bot to that build, and **Undo last switch** goes back to the one before (shown only when there is one). The app's own updates still come from GitHub Releases.
+To work on Serra itself, set Settings › Worker › **Developer: update from a checkout** to a clone of the repository (the profile's `updates`, see [configuration](../configuration.md)). Updates then switches to developer mode: it lists the new commits on the branch, **Build from checkout** makes a bot build from the clone, **Restart bot on it** switches the bot to that build, and **Undo last switch** goes back to the one before (shown only when there is one). The app's own updates still come from GitHub Releases. **Follow app updates** on Updates leaves developer mode (it clears the setting after copying `profile.json` to the profile's `backups/`). A packaged app clears an update source that can't work, such as a folder that's gone or holds neither git nor Serra's code, the same way, and says so on Updates.
 
 [`app/main/runtime-files.ts`](../../app/main/runtime-files.ts) lists the files the code reads from disk. `tests/app-package.test.ts` checks that `electron-builder.yml` copies each of them, and `--smoke` checks that they are there in the built app.
 
@@ -61,7 +61,7 @@ To work on Serra itself, set Settings › Worker › **Developer: update from a 
 1. Open the `.dmg` and drag **Serra** to **Applications**.
 2. Eject the disk image.
 
-From alpha.3 on, Serra updates itself (see [Updates](#updates)). To install by hand (alpha.2 or older, or a build of your own), quit Serra (menubar icon, or ⌘Q with the window focused), then drag the new version over the old one. App preferences and the bot's profile are kept.
+From alpha.3 on, Serra updates itself (see [Updates](#updates)). To install by hand (alpha.2 or older, or a build of your own), quit Serra (⌘Q with its window focused; the menubar icon has no Quit), then drag the new version over the old one. App preferences and the bot's profile are kept.
 
 ## First launch past Gatekeeper
 

@@ -1,0 +1,116 @@
+{
+  "transcript": "long-planning.txt",
+  "heldOut": false,
+  "tests": "a long transcript near the cap: the 8-item cap holds and most kept items are real decisions",
+  "cap": 8,
+  "memory": [
+    {
+      "id": "refund-approver",
+      "kind": "decision",
+      "match": [
+        "10[,.]?000",
+        "approv"
+      ],
+      "quote": "refunds over 10,000 euros need a second approver in the dashboard.",
+      "target": "product/refunds-api.md"
+    },
+    {
+      "id": "append-only",
+      "kind": "constraint",
+      "match": [
+        "append|revers"
+      ],
+      "quote": "ledger entries are append-only",
+      "target": "product/architecture.md"
+    },
+    {
+      "id": "retention-90",
+      "kind": "decision",
+      "match": [
+        "90"
+      ],
+      "quote": "we delete raw card-network logs after 90 days.",
+      "target": "product/data-retention.md"
+    },
+    {
+      "id": "api-version-field",
+      "kind": "decision",
+      "match": [
+        "api_version"
+      ],
+      "quote": "every webhook payload carries an api_version field from now on.",
+      "target": "product/webhooks.md"
+    },
+    {
+      "id": "invoice-locale",
+      "kind": "decision",
+      "match": [
+        "locale"
+      ],
+      "quote": "invoice PDFs use the merchant's locale for number and date formats.",
+      "target": "product/invoices.md"
+    },
+    {
+      "id": "tax-id",
+      "kind": "constraint",
+      "match": [
+        "tax id"
+      ],
+      "quote": "we store the tax ID exactly as the merchant entered it",
+      "target": "product/tax.md"
+    },
+    {
+      "id": "sandbox-wipe",
+      "kind": "decision",
+      "match": [
+        "sunday"
+      ],
+      "quote": "sandbox data is wiped every Sunday night",
+      "target": "product/sandbox.md"
+    },
+    {
+      "id": "proration-day",
+      "kind": "decision",
+      "match": [
+        "prorat",
+        "day"
+      ],
+      "quote": "proration is calculated to the day, not to the second.",
+      "target": "product/billing-cycles.md"
+    },
+    {
+      "id": "oncall-deploys",
+      "kind": "constraint",
+      "match": [
+        "on.?call",
+        "deploy"
+      ],
+      "quote": "the on-call engineer never deploys during their own on-call shift",
+      "target": "product/oncall.md"
+    },
+    {
+      "id": "export-24h",
+      "kind": "decision",
+      "match": [
+        "24"
+      ],
+      "quote": "export links expire after 24 hours.",
+      "target": "product/exports.md"
+    }
+  ],
+  "reply": [
+    {
+      "kind": "action",
+      "match": [
+        "refund approval|write up"
+      ]
+    },
+    {
+      "kind": "action",
+      "match": [
+        "schema docs|api_version"
+      ]
+    }
+  ],
+  "forbidden": []
+}

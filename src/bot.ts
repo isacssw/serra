@@ -11,6 +11,7 @@ import { revokedAt, type Heard } from './hearing.ts';
 import type { Config, MessageTrigger } from './config.ts';
 import { audienceOf, createBatcher, followUpMessage, isPing, ownerNotice, speakerName, type Audience, type ThreadLine } from './conversation.ts';
 import { shareImages, type Upload } from './images.ts';
+import { meetingRequest } from './meeting-sources.ts';
 import { matchMessageTrigger } from './message-triggers.ts';
 import { localLinksToText } from './links.ts';
 import { createProfileReloader } from './profile-reload.ts';
@@ -198,6 +199,8 @@ export const createBot = ({
     for (const m of history.lines) {
       // The earlier worker's replies, cards and files may carry what was taken back: a fresh session doesn't get them.
       if (withoutBot && (m.from.kind === 'self' || m.from.kind === 'bot')) continue;
+      // A meeting sent in a thread (SERRA-62) was turned away, not read: its text and files never reach a worker.
+      if (meetingRequest(m.text).trigger) continue;
       const text = await toReadable(m.text);
       const files = m.files;
       if (!text && !files.length) continue;

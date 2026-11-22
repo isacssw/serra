@@ -1,0 +1,97 @@
+WEBVTT
+
+NOTE Payments sync, 2026-11-20. Fake meeting for Serra's evals: every person and company is invented.
+
+1
+00:00:02.000 --> 00:00:05.500
+<v Mei>Can everyone hear me? I think Tomás is still
+<v Mei>joining from the train.
+
+2
+00:00:06.000 --> 00:00:09.000
+<v Robin>I can hear you. Morning all. Did anyone watch the match last night?
+
+3
+00:00:09.500 --> 00:00:13.000
+<v Priya>Only the second half. Terrible refereeing. Okay, let's start, we have a lot.
+
+4
+00:00:13.500 --> 00:00:20.000
+<v Priya>First topic is webhook retries. Right now deliveries retry with backoff for 72 hours and merchants say it's too long, they get
+<v Priya>stale events days later.
+
+5
+00:00:20.500 --> 00:00:28.000
+<v Mei>We looked at the numbers. Ninety-four percent of deliveries that succeed at all succeed within the first three attempts. After that it's mostly dead endpoints.
+
+6
+00:00:28.500 --> 00:00:33.000
+<v Tomás>Sorry, I'm here now. Train wifi. What did I miss?
+
+7
+00:00:33.500 --> 00:00:36.000
+<v Robin>Webhook retries. Mei has numbers.
+
+8
+00:00:36.500 --> 00:00:44.000
+<v Mei>My proposal: three attempts and then we dead-letter it. Merchants can replay from the dead-letter queue in the dashboard.
+
+9
+00:00:44.500 --> 00:00:48.000
+<v Robin>Yes, let's do that. Three attempts, then dead-letter. Tomás, does that work for the worker?
+
+10
+00:00:48.500 --> 00:00:53.000
+<v Tomás>It's a config change mostly. I can update the retry config by Thursday the 27th.
+
+11
+00:00:53.500 --> 00:01:00.000
+<v Priya>How long do we keep things in the dead-letter queue? Some merchants only look at the dashboard once a week.
+
+12
+00:01:00.500 --> 00:01:06.000
+<v Mei>Seven days?
+
+13
+00:01:06.500 --> 00:01:12.000
+<v Robin>Make it fourteen. Dead-lettered events are kept for 14 days, then deleted. A week is too short for small merchants.
+
+14
+00:01:12.500 --> 00:01:15.000
+<v Mei>Fine by me, fourteen days.
+
+15
+00:01:15.500 --> 00:01:22.000
+<v Priya>Should we email merchants when something lands in the dead-letter queue? I don't know if that's helpful or just noise.
+
+16
+00:01:22.500 --> 00:01:26.000
+<v Robin>Let's not decide that today. Priya, can you ask two or three merchants?
+
+17
+00:01:26.500 --> 00:01:30.000
+<v Priya>Sure. I'll also write the customer note about the retry change.
+
+18
+00:01:30.500 --> 00:01:38.000
+<v Tomás>One more thing while we're on payments-api. I saw a PR last week where payments-api wrote to the ledger tables directly.
+
+19
+00:01:38.500 --> 00:01:46.000
+<v Robin>That can't happen. payments-api never calls the ledger directly. It always goes through the ledger service. Everyone agree?
+
+20
+00:01:46.500 --> 00:01:48.000
+<v Mei>Agreed.
+
+21
+00:01:48.500 --> 00:01:50.000
+<v Tomás>Agreed, I'll leave a comment on that PR.
+
+22
+00:01:50.500 --> 00:01:56.000
+<v Priya>Okay. Quick round, anything else? No? Then the rest is status, I'll post it in the channel. Thanks all.
+
+23
+00:01:56.500 --> 00:01:59.000
+<v Mei>Bye! Enjoy the weekend.

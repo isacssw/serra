@@ -8,7 +8,8 @@ import { createKnowledge } from '../src/knowledge.ts';
 import { HELD_REQUESTS, holdRequest, pauseIntake, readHeld, resumeIntake } from '../src/intake.ts';
 import { fakeClock } from './fakes/clock.ts';
 import { startTestDaemon, TestReceiver } from './fakes/daemon.ts';
-import { BOT, SAM, testProfile } from './fakes/profile.ts';
+import { BOT, OWNER, SAM, testProfile } from './fakes/profile.ts';
+import { writeMeetingSettings } from '../src/meeting-settings.ts';
 import { createFakeSlack } from './fakes/slack.ts';
 
 const mention = (ts: string, text: string): Record<string, unknown> => ({
@@ -107,4 +108,41 @@ test('[INTAKE-008] a request that can\'t be held for an update is handled at onc
   assert.ok(h.logs.some((line) => /Couldn't hold a request in C1 for after the update, so handling it now/.test(line)), 'the failure is logged');
   assert.equal(h.t3.started.length, 1, 'the request started instead of being lost');
   assert.deepEqual(h.slack.reactionsOn('C1', '1700000100.000100'), ['eyes'], 'and shows 👀, not the hourglass');
+});
+
+const dm = (ts: string, text: string): Record<string, unknown> => ({
+  type: 'event_callback', team_id: 'THOME', api_app_id: 'A1', event_id: `Ev${ts}`, event_time: 1,
+  authorizations: [{ team_id: 'THOME', user_id: BOT, is_bot: true }],
+  event: { type: 'message', channel_type: 'im', user: OWNER, text, ts, channel: 'D1', event_ts: ts, team: 'THOME' },
+});
+
+test('[SERRA-62] a meeting in the owner\'s DM goes to the extractor, never to T3, and isn\'t held during an update', async (t) => {
+  const prompts: string[] = [];
+  const h = await startTestDaemon(t, { meetings: { extractor: { extract: async (prompt) => { prompts.push(prompt); return '<meeting-digest>{"items":[],"reply":[{"kind":"action","text":"Sam sends the notes"}]}</meeting-digest>'; } } } });
+  writeMeetingSettings(h.config.profileDir, true);
+  pauseIntake(h.config.profileDir, 'bot-update', { now: h.clock.now() });
+  await h.deliver(dm('1700000200.000100', 'remember this meeting\nSam: we ship retries at 3. TRANSCRIPT-PHRASE'));
+  assert.equal(h.t3.started.length, 0, 'no T3 thread');
+  assert.equal(readHeld(h.config.profileDir).length, 0, 'not held for after the update: refused instead');
+  assert.equal(prompts.length, 0);
+  resumeIntake(h.config.profileDir);
+  await h.deliver(dm('1700000300.000100', 'remember this meeting\nSam: we ship retries at 3. TRANSCRIPT-PHRASE'));
+  assert.equal(prompts.length, 1);
+  assert.match(prompts[0]!, /TRANSCRIPT-PHRASE/);
+  assert.equal(h.t3.started.length, 0);
+  assert.ok(h.slack.callsTo('chat.postMessage').some((call) => /Sam sends the notes/.test(String(call.text))), 'the digest is posted');
+  // A reply in the meeting's thread is turned away, not sent to a worker.
+  await h.deliver({ ...dm('1700000301.000100', 'and one more thing'), event: { ...(dm('1700000301.000100', 'and one more thing').event as object), thread_ts: '1700000300.000100' } });
+  assert.equal(h.t3.started.length + h.t3.sends.length, 0);
+});
+
+test('[SERRA-62] a meeting request held by an older Serra is dropped at start, never replayed to a worker', async (t) => {
+  const h = await startTestDaemon(t);
+  writeMeetingSettings(h.config.profileDir, true);
+  holdRequest(h.config.profileDir, { channel: 'D1', threadTs: '1700000400.000100', messageTs: '1700000400.000100', user: OWNER, text: 'remember this meeting\nSam: TRANSCRIPT', direct: true, im: true });
+  await h.restart();
+  await h.advance(60_000);
+  assert.equal(h.t3.started.length, 0);
+  assert.equal(readHeld(h.config.profileDir).length, 0);
+  assert.ok(h.slack.callsTo('chat.postMessage').some((call) => /Send it again/.test(String(call.text))));
 });

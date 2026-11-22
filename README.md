@@ -32,7 +32,7 @@ Serra is a bridge between your team chat and the coding agents on your Mac. It c
 Slack is the only chat channel in this alpha; others are planned. Each engineer runs their own bot: their own Slack app, their own Mac, their own GitHub login.
 
 - **New here?** [What you need](#what-you-need) → [Get the app](#1-get-the-app) → [Install it](#2-install-it) → [First run](#3-first-run).
-- **On the Serra app, alpha.2 or older?** [Install alpha.3 by hand once](#updating).
+- **On the Serra app, alpha.2 or older?** [Install the latest release by hand once](#updating); it updates itself after that.
 - **Running Serra from a checkout?** [Move to the app](#from-serra-run-from-a-checkout-pnpm-run-setup-pnpm-bot-activate).
 - **Coming from another self-hosted bot?** [Migrate](#from-another-self-hosted-bot-not-serra).
 
@@ -110,7 +110,7 @@ Open **Knowledge › Proposals › Start interview**. A T3 thread interviews you
 2. **Restart to update**. If Serra can't replace itself (for example it runs from the disk image), it offers **Open installer**: drag the new copy to Applications.
 3. The background bot moves to the new version on its own once no job is running. New requests wait (⌛) until it's back. A bot you stopped stays stopped: **Update now** on the same screen moves it.
 
-**On alpha.2 or older:** install alpha.3 by hand, once. Open the Serra window and press **⌘Q**, then do [Get the app](#1-get-the-app) and [Install it](#2-install-it) again, replacing the old copy. macOS asks to allow it once more. From then on, updates are automatic. If you had set **Settings › Worker › Developer: update from a checkout** (alpha.2 called it Update source), clear **Checkout path** and **Branch**, or the bot keeps following that checkout instead of the app.
+**Upgrading from alpha.2 or older:** alpha.2 can't find new versions, so install the latest release by hand, one last time. Open the Serra window and press **⌘Q** (closing the window doesn't quit; the bot keeps running), then do [Get the app](#1-get-the-app) and [Install it](#2-install-it), choosing **Replace**. macOS asks to allow it once more. Nothing to delete or set up again: the bot moves to the new version on its own once no job is running, and from then on updates are automatic. If alpha.2's **Update source** is set, Serra clears it shortly after launch when it can't work; otherwise Updates offers **Follow app updates**.
 
 **What a reinstall or update keeps.** Your bot's data lives outside the app, so replacing `Serra.app` keeps it. The bot keeps running while the app is replaced; its switch to the new version then rewrites the service file and removes all but the last two bot builds in `releases/`.
 

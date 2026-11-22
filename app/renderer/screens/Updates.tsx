@@ -12,7 +12,7 @@ import { SETUP_PATH } from '../setup/setup.logic.ts';
 import { openedMessage, openRepo } from '../star.logic.ts';
 import { Button, cx, Dialog, GitHubMark, Page, useToast } from '../ui/index.ts';
 import {
-  actionStates, activateDialog, keepVersions, activationNotice, appCard, botLine, busyLabel, canCheck, commitsHeading, homeOf, noteLines,
+  actionStates, activateDialog, clearedLine, DEVELOPER_LINE, followDialog, keepVersions, activationNotice, appCard, botLine, busyLabel, canCheck, commitsHeading, homeOf, noteLines,
   preparedLabel, progressPercent, releaseLabel, rollbackDialog, rollbackNotice, sourceLabel, syncDialog,
   type AppCard, type CardAction, type CardTone, type Notice, type UpdatesStatus,
 } from './updates.logic.ts';
@@ -178,7 +178,7 @@ const Row = ({ label, children }: { label: string; children: ReactNode }) => (
   </div>
 );
 
-type Confirm = { action: 'activate' | 'rollback' | 'sync'; jobs: number } | null;
+type Confirm = { action: 'activate' | 'rollback' | 'sync' | 'follow'; jobs: number } | null;
 
 export const Updates = () => {
   const toast = useToast();
@@ -292,9 +292,10 @@ export const Updates = () => {
   };
 
   /** Opens the confirm dialog with the jobs running now, read fresh so the count is current. */
-  const ask = async (action: 'activate' | 'rollback' | 'sync') => {
+  const ask = async (action: 'activate' | 'rollback' | 'sync' | 'follow') => {
     const bridge = serra();
     if (!bridge) return;
+    if (action === 'follow') { setConfirm({ action, jobs: 0 }); return; }
     try {
       const jobs = await bridge.updates.runningJobs();
       setConfirm({ action, jobs: jobs.length });
@@ -303,13 +304,13 @@ export const Updates = () => {
     }
   };
 
-  const run = async (action: 'activate' | 'rollback' | 'sync') => {
+  const run = async (action: 'activate' | 'rollback' | 'sync' | 'follow') => {
     const bridge = serra();
     if (!bridge) return;
     setConfirm(null);
     setNotice(null);
     setLines([]);
-    setRunning(action);
+    if (action !== 'follow') setRunning(action);
     try {
       if (action === 'activate') {
         const outcome = await bridge.updates.activate();
@@ -319,6 +320,9 @@ export const Updates = () => {
         const outcome = await bridge.updates.rollback();
         const next = await reload();
         setNotice(rollbackNotice(outcome, next?.releases?.active ?? null));
+      } else if (action === 'follow') {
+        await bridge.updates.followApp();
+        await reload();
       } else {
         await bridge.updates.syncBot();
         await reload();
@@ -341,7 +345,8 @@ export const Updates = () => {
   const card = app ? appCard(app) : null;
   const bot = botLine(status.bot);
   const syncTarget = ('to' in status.bot ? status.bot.to : null) ?? status.appVersion;
-  const dialog = confirm?.action === 'activate'
+  const dialog = confirm?.action === 'follow' ? followDialog(status.appVersion)
+    : confirm?.action === 'activate'
     ? activateDialog(releases?.prepared ?? null, confirm.jobs)
     : confirm?.action === 'rollback' ? rollbackDialog(confirm.jobs, developer ? 'build' : 'version')
     : confirm ? syncDialog(syncTarget, confirm.jobs, {
@@ -393,6 +398,19 @@ export const Updates = () => {
           <CircleCheck size={16} aria-hidden className="text-up" />
           {keepVersions(`Updated from ${status.app.updatedFrom} to ${status.app.current}.`)}
         </p>
+      )}
+      {!developer && status.sourceCleared && (
+        <p role="status" className="flex items-start gap-2 text-[13px] text-muted">
+          <Info size={16} aria-hidden className="mt-px shrink-0" />
+          <span className="min-w-0 break-words">{clearedLine(status.sourceCleared, homeOf(status.sourceCleared.backup))}</span>
+        </p>
+      )}
+      {developer && status.followsApp && (
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg border border-line bg-panel px-4 py-3">
+          <GitBranch size={16} aria-hidden className="shrink-0 text-muted" />
+          <span className="min-w-0 flex-1 text-[13px]">{DEVELOPER_LINE}</span>
+          <Button size="sm" disabled={running !== null} onClick={() => void ask('follow')}>Follow app updates</Button>
+        </div>
       )}
 
       {(() => {
@@ -467,7 +485,7 @@ export const Updates = () => {
               variant={confirm?.action === 'rollback' ? 'danger' : 'primary'}
               onClick={() => { if (confirm) void run(confirm.action); }}
             >
-              {confirm?.action === 'rollback' ? 'Undo' : confirm?.action === 'sync' ? 'Update now' : 'Restart bot'}
+              {confirm?.action === 'rollback' ? 'Undo' : confirm?.action === 'sync' ? 'Update now' : confirm?.action === 'follow' ? 'Follow app updates' : 'Restart bot'}
             </Button>
           </>
         )}

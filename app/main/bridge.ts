@@ -18,9 +18,13 @@ import type { ProposalTargets, Reviewed } from '../../src/proposals.ts';
 import type { AboutMe, Visibility } from '../../src/owner-model.ts';
 import type { ActivationOutcome, ReleaseOverview, RollbackOutcome, RunningJob } from '../../src/releases.ts';
 import type { Prepared } from '../../src/deploy.ts';
+import type { ClearedSource } from '../../src/update-migration.ts';
 import type { AppUpdateView } from './app-updater.ts';
 import type { BotSync } from './bot-sync.ts';
 import type { InterviewPreview, StartedTask } from '../../src/tasks.ts';
+import type { MeetingReviewed, MeetingView } from '../../src/meeting-store.ts';
+import type { MeetingSettings } from '../../src/meeting-settings.ts';
+import type { ProviderStatus } from '../../src/meeting-sources.ts';
 import type { DetectedProject, OwnerConfirmed, ProfileDraft, ProfileSummary, SetupProgress, SlackManifest } from '../../src/setup.ts';
 // The one value import: a pure module, so the preload bundle stays free of Node.
 import { SETUP_INCOMPLETE, SetupIncomplete } from '../../src/setup-incomplete.ts';
@@ -262,6 +266,10 @@ export interface SerraApi {
       running: 'prepare' | 'activate' | 'rollback' | 'sync' | null;
       /** The lines of the running or last bot action, so the log survives leaving the screen. */
       log: string[];
+      /** The bot can follow this app's version (a packaged app), so developer mode is a choice the owner can leave. */
+      followsApp: boolean;
+      /** The last update source Serra cleared on its own for this profile in the past week, for a one-line notice. Null in developer mode. */
+      sourceCleared: ClearedSource | null;
     };
     /** Jobs the bot is following, which a restart pauses, for the confirm dialogs. */
     runningJobs(): RunningJob[];
@@ -270,6 +278,8 @@ export interface SerraApi {
     /** Never throws for a failed cutover: the outcome says whether the old release is back and whether to roll back. */
     activate(): ActivationOutcome;
     rollback(): RollbackOutcome;
+    /** Leaves developer mode: backs up profile.json, then removes `updates` so the bot follows the app again. */
+    followApp(): ClearedSource | null;
     /** Brings the bot to the app's version now, even with jobs running (they continue after the restart). */
     syncBot(): { ok: true; waiting: boolean } | { ok: false; error: string };
     /** Looks for a newer release on GitHub. */
@@ -304,6 +314,25 @@ export interface SerraApi {
     previewInterview(): InterviewPreview;
     /** Starts the knowledge interview as a T3 thread, recorded like a task. Its proposals arrive on `on.proposals`. */
     startInterview(): StartedTask;
+  };
+  /** Meetings (SERRA-62): the opt-in, which transcript sources work, and each meeting's edits for review. */
+  meetings: {
+    /** Whether capture is on, and the notice the owner acknowledges by turning it on. */
+    settings(): MeetingSettings & { notice: string };
+    setEnabled(enabled: boolean): MeetingSettings & { notice: string };
+    /** Whether Granola and Google Meet can be read through Claude Code now, and what to do if not. Takes a few seconds. */
+    sources(): ProviderStatus[];
+    /** Meetings with edits waiting, each rendered against the page as it is now. */
+    list(): MeetingView[];
+    /** Every meeting Serra kept anything from, for Forget meeting. */
+    history(): Pick<MeetingView, 'id' | 'title' | 'date' | 'source' | 'createdAt' | 'pages' | 'state'>[];
+    /** Approve one edit as the screen showed it. Undo goes through `proposals.undo`. */
+    approve(id: string, item: string, reviewed: MeetingReviewed): UndoHandle;
+    discard(id: string, item: string): void;
+    /** Discard every pending edit of a meeting and its evidence. Can't be undone. */
+    discardMeeting(id: string): void;
+    /** Remove everything a meeting added, everywhere. Can't be undone. */
+    forget(id: string): { pages: string[]; backups: number; snapshots: number };
   };
 }
 
@@ -371,12 +400,13 @@ export const bridgeMethods = {
   secrets: methods<'secrets'>()(['list', 'setSource', 'check']),
   tools: methods<'tools'>()(['overview', 'clis']),
   updates: methods<'updates'>()([
-    'status', 'runningJobs', 'prepare', 'activate', 'rollback', 'syncBot',
+    'status', 'runningJobs', 'prepare', 'activate', 'rollback', 'syncBot', 'followApp',
     'check', 'download', 'cancelDownload', 'install', 'openInstaller', 'setPrereleases',
   ]),
   diagnostics: methods<'diagnostics'>()(['run', 'logTail']),
   people: methods<'people'>()(['add']),
   tasks: methods<'tasks'>()(['preview', 'start', 'previewInterview', 'startInterview']),
+  meetings: methods<'meetings'>()(['settings', 'setEnabled', 'sources', 'list', 'history', 'approve', 'discard', 'discardMeeting', 'forget']),
 } satisfies { [N in Namespace]: readonly (keyof SerraApi[N])[] };
 
 const pushChannels = ['status', 'event', 'releaseLog', 'appUpdate', 'navigate', 'proposals', 'jobs'] as const satisfies readonly (keyof SerraPushes)[];

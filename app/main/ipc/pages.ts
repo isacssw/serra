@@ -2,6 +2,7 @@
 import { join } from 'node:path';
 import { readProfileFile } from '../../../src/config.ts';
 import { createKnowledge, profileRoots, type KnowledgeRoot } from '../../../src/knowledge.ts';
+import { createMeetingStore } from '../../../src/meeting-store.ts';
 import type { Handlers } from '../bridge.ts';
 import type { HandlerContext } from './context.ts';
 
@@ -23,6 +24,8 @@ export const pagesHandlers = (context: HandlerContext): Handlers<'pages'> => {
   };
   return {
     list: () => {
+      // A meeting approval a crash left half done is rolled back before Pages shows anything (SERRA-62).
+      try { createMeetingStore({ knowledgeDir: join(context.profileDir(), 'knowledge') }).recover(); } catch { /* a damaged registry shows in Proposals, never blocks Pages */ }
       const knowledge = service();
       // Opening Pages starts the approved copy for a profile that has none yet (one from before it existed).
       knowledge.seedApproved();
