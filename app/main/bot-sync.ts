@@ -25,15 +25,6 @@ export type BotSync =
   /** The last switch stopped halfway; rollback puts the earlier bot back. */
   | { state: 'interrupted' };
 
-/**
- * Whether a bot holds new requests while paused (src/intake.ts, alpha.3). The released alpha.2 records no version in
- * active.json. A version is recorded only by builds made since then, where a checkout between alpha.2 and alpha.3
- * still says 0.1.0-alpha.2, so that counts; a build from older code (0.0.0, alpha.1) doesn't.
- */
-export const holdsRequests = (appVersion: string | undefined): boolean => {
-  try { return appVersion !== undefined && compareVersions(appVersion, '0.1.0-alpha.2') >= 0; } catch { return false; }
-};
-
 /** `pause`: hold new requests so the running jobs can finish before the restart (intake.ts). */
 export type BotSyncAction = 'none' | 'pause' | 'prepare' | 'activate';
 

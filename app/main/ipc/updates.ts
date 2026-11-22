@@ -16,7 +16,7 @@ import { launchd, preparedProblems, type DeployOptions, type PrepareOptions } fr
 import { pauseIntake, readAck, readPause, readPauseFile, resumeIntake } from '../../../src/intake.ts';
 import type { Handlers } from '../bridge.ts';
 import { clearUpdateSource, lastCleared, sourceProblem, staleSource } from '../../../src/update-migration.ts';
-import { botSyncDecision, holdsRequests, type BotSync } from '../bot-sync.ts';
+import { botSyncDecision, type BotSync } from '../bot-sync.ts';
 import type { HandlerContext } from './context.ts';
 
 export type UpdateAction = 'prepare' | 'activate' | 'rollback' | 'sync';
@@ -147,14 +147,17 @@ export const updatesService = (context: HandlerContext, deps: UpdatesDeps = {}) 
     });
   };
 
-  /** A bot from before alpha.3 (no version in active.json, or an older one built from a checkout) doesn't hold requests while paused, unless its acknowledgment says so. */
-  const honorsPause = (profileDir: string, active: { appVersion?: string } | null | undefined): boolean =>
-    holdsRequests(active?.appVersion) || readAck(profileDir, now()) !== null;
+  /**
+   * Whether the running bot holds new requests while paused: its build has the intake pause (src/intake.ts, alpha.3),
+   * or it acknowledged one. A version number can't tell: main reported 0.1.0-alpha.2 both before and after the pause.
+   */
+  const honorsPause = (profileDir: string, active: { release?: string } | null | undefined): boolean =>
+    (typeof active?.release === 'string' && existsSync(join(active.release, 'src/intake.ts'))) || readAck(profileDir, now()) !== null;
   /** `active`: the bot's active.json as the caller read it; read here when not given. */
-  const pause = (profileDir: string, active?: { appVersion?: string } | null): void => {
+  const pause = (profileDir: string, active?: { release?: string } | null): void => {
     if (!readPause(profileDir, now())) {
       let holds = true;
-      try { holds = honorsPause(profileDir, active !== undefined ? active : JSON.parse(readFileSync(join(profileDir, 'active.json'), 'utf8')) as { appVersion?: string }); } catch { /* no bot yet */ }
+      try { holds = honorsPause(profileDir, active !== undefined ? active : JSON.parse(readFileSync(join(profileDir, 'active.json'), 'utf8')) as { release?: string }); } catch { /* no bot yet */ }
       line(holds ? 'New requests wait until the bot has restarted; running jobs finish first.' : 'The bot restarts once the running jobs finish.');
     }
     pauseIntake(profileDir, 'bot-update', { now: now() });
@@ -180,7 +183,7 @@ export const updatesService = (context: HandlerContext, deps: UpdatesDeps = {}) 
       // Preparing can take a minute; a job may have started meanwhile. Then the activation waits for the next tick,
       // with new requests held so it finishes.
       if (!force && runningJobs(profileDir).length > 0) {
-        line('A job started while preparing.');
+        line('A job started while preparing. The bot restarts when no job is running.');
         pause(profileDir, status.active);
         return { ok: true as const, waiting: true };
       }
@@ -297,6 +300,7 @@ export const updatesService = (context: HandlerContext, deps: UpdatesDeps = {}) 
     }),
     // Developer mode → release mode, from the Updates screen. Not while a bot action runs (it may be building from the checkout).
     followApp: () => {
+      if (context.botFollowsApp !== true) throw new Error('This copy of Serra runs from source, so the bot can’t follow it.');
       if (running) throw new Error(`${busyName(running)} is still running. Wait for it to finish.`);
       const profileDir = context.profileDir();
       const done = clearUpdateSource(profileDir, '', new Date(now()));

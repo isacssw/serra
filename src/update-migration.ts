@@ -39,7 +39,7 @@ const ABSENT = new Set(['ENOENT', 'ENOTDIR']);
  * gives `missing`, `inside-app` or `not-a-checkout`; any error that isn't "no such file" gives `unknown`.
  */
 export const classifySource = (source: string): SourceKind => {
-  // Only the path's text: safe before any read.
+  // An app bundle's contents, by the path alone: no read needed, and alpha.2's own folder there had no git.
   if (/\.app\/Contents(\/|$)/.test(source)) return 'inside-app';
   // A disk that isn't connected isn't gone; and a network mount could hang the read.
   if (/^\/(Volumes|Network|net)\//.test(source)) return 'unknown';
@@ -52,8 +52,15 @@ export const classifySource = (source: string): SourceKind => {
     try { if (realpathSync(up).startsWith('/Volumes/')) return 'unknown'; } catch { return 'unknown'; }
   }
   let link: boolean;
-  try { link = lstatSync(source).isSymbolicLink(); } catch (error) { return ABSENT.has(code(error) ?? '') ? 'missing' : 'unknown'; }
+  try { link = lstatSync(source).isSymbolicLink(); } catch (error) {
+    if (!ABSENT.has(code(error) ?? '')) return 'unknown';
+    // Gone, unless the nearest folder that exists looks like a mount point waiting for its disk.
+    let at = dirname(source);
+    while (at !== dirname(at)) { try { statSync(at); break; } catch { at = dirname(at); } }
+    return unmounted(at) ? 'unknown' : 'missing';
+  }
   try { if (!statSync(source).isDirectory()) return link ? 'unknown' : 'not-a-checkout'; } catch { return 'unknown'; }
+  if (unmounted(source)) return 'unknown';
   let name: unknown;
   try { name = (JSON.parse(readFileSync(join(source, 'package.json'), 'utf8')) as { name?: unknown }).name; }
   catch (error) { if (!ABSENT.has(code(error) ?? '')) return 'unknown'; }
@@ -64,6 +71,18 @@ export const classifySource = (source: string): SourceKind => {
     if (at === dirname(at)) break;
   }
   return 'not-a-checkout';
+};
+
+/**
+ * A folder that may be a mount point (an empty folder, or one on another device than its parent): a disk image,
+ * sshfs or a NAS mounted outside /Volumes, possibly not connected yet. Errors count as yes.
+ */
+const unmounted = (folder: string): boolean => {
+  try {
+    if (folder === dirname(folder)) return false;
+    if (readdirSync(folder).filter((name) => name !== '.DS_Store').length === 0) return true;
+    return statSync(folder).dev !== statSync(dirname(folder)).dev;
+  } catch { return true; }
 };
 
 /** Why a source was cleared, in the owner's words. */
@@ -119,8 +138,9 @@ export const clearUpdateSource = (profileDir: string, reason = '', now = new Dat
   try { writeProfileFile(profileDir, next); }
   catch (error) { rmSync(backup, { recursive: true, force: true }); throw error; }
   const done: ClearedSource = { source, reason, backup, at: now.toISOString() };
-  // Kept beside the backup, so Updates can say what happened after a restart too (`lastCleared`).
-  try { writeFileSync(join(backup, NOTICE), JSON.stringify(done, null, 2) + '\n', { mode: 0o600 }); } catch { /* the notice is a nicety */ }
+  // Kept beside the backup, so Updates can say what happened after a restart too (`lastCleared`). Not when the owner
+  // asked: they know.
+  if (reason) try { writeFileSync(join(backup, NOTICE), JSON.stringify(done, null, 2) + '\n', { mode: 0o600 }); } catch { /* the notice is a nicety */ }
   return done;
 };
 
@@ -133,14 +153,14 @@ export const lastCleared = (profileDir: string, now = new Date()): ClearedSource
   const root = join(resolve(profileDir), 'backups');
   let names: string[];
   try { names = readdirSync(root).filter((name) => name.endsWith('-update-source')).sort().reverse(); } catch { return null; }
-  for (const name of names) {
-    try {
-      const notice = JSON.parse(readFileSync(join(root, name, NOTICE), 'utf8')) as ClearedSource;
-      const age = now.getTime() - Date.parse(notice.at);
-      return age >= 0 && age <= NOTICE_DAYS * 24 * 60 * 60_000 ? notice : null;
-    } catch { /* a folder without a notice: look at the one before */ }
-  }
-  return null;
+  // Only the latest clear counts: after Follow app updates (no notice), an older automatic one no longer applies.
+  const latest = names[0];
+  if (!latest) return null;
+  try {
+    const notice = JSON.parse(readFileSync(join(root, latest, NOTICE), 'utf8')) as ClearedSource;
+    const age = now.getTime() - Date.parse(notice.at);
+    return age >= 0 && age <= NOTICE_DAYS * 24 * 60 * 60_000 ? notice : null;
+  } catch { return null; }
 };
 
 /**
@@ -158,8 +178,8 @@ export const staleSource = (profileDir: string, packaged: boolean): { source: st
 /**
  * In a packaged app, clears an update source that can never work, so an owner who set one under alpha.2 isn't left
  * in developer mode. A real Serra checkout is kept: that is a choice only the owner can undo. Never throws; returns
- * what it cleared, or null, and passes a failure to `log`. The app looks twice before clearing a `missing` one
- * (app/main/ipc/updates.ts), in case the folder was only being moved.
+ * what it cleared, or null, and passes a failure to `log`. One look: the app itself (app/main/ipc/updates.ts) uses
+ * `staleSource` and `clearUpdateSource` directly, looking twice before clearing a `missing` one in case it was moving.
  */
 export const migrateStaleUpdateSource = (profileDir: string, { packaged, now = new Date(), log }: { packaged: boolean; now?: Date; log?: (line: string) => void }): ClearedSource | null => {
   const stale = staleSource(profileDir, packaged);

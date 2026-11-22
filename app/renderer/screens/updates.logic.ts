@@ -238,7 +238,7 @@ export const DEVELOPER_LINE = "The bot builds from this checkout and doesn't fol
 /** The confirm dialog for Follow app updates. */
 export const followDialog = (appVersion: string): { title: string; body: string } => ({
   title: 'Follow app updates?',
-  body: `Serra removes the checkout path and branch from Settings › Worker, after backing up profile.json; the folder itself isn't touched. Once no job is running, the bot restarts on version ${appVersion}, even if your checkout's build is newer (a bot you stopped stays stopped), then follows each app update.`,
+  body: `Serra removes the checkout path and branch from Settings › Worker and backs up profile.json; the folder isn't touched. The bot then moves to ${appVersion} once no job is running, unless it's stopped or already newer.`,
 });
 
 // ---------------------------------------------------------------------------------------------------------------

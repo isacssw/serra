@@ -5,7 +5,7 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSyn
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test, { type TestContext } from 'node:test';
-import { botSyncDecision, holdsRequests, type BotSyncInput } from '../app/main/bot-sync.ts';
+import { botSyncDecision, type BotSyncInput } from '../app/main/bot-sync.ts';
 import type { HandlerContext } from '../app/main/ipc/context.ts';
 import { updatesHandlers, updatesService } from '../app/main/ipc/updates.ts';
 import { memoryPrefs } from '../app/main/prefs.ts';
@@ -65,7 +65,10 @@ test('an update source is Serra’s code, clearly unusable, or unknown, and only
   assert.equal(classifySource(join(f.root, 'gone')), 'missing');
   assert.equal(classifySource('/Applications/Serra.app/Contents/Resources/app'), 'inside-app');
   assert.equal(classifySource(dir('acme', { 'package.json': '{"name":"acme"}' })), 'not-a-checkout', 'another package, no git');
-  assert.equal(classifySource(dir('empty')), 'not-a-checkout');
+  // An empty folder may be a mount point waiting for its disk, and so may the nearest folder above a missing one.
+  assert.equal(classifySource(dir('empty')), 'unknown');
+  dir('mnt');
+  assert.equal(classifySource(join(f.root, 'mnt/serra')), 'unknown');
 
   // Anything it can't be sure of stays.
   assert.equal(classifySource('/Volumes/Work/serra'), 'unknown', 'a disk that may not be connected is not read');
@@ -183,7 +186,7 @@ test('the Updates screen: a stale source is cleared once per launch and said in 
   assert.ok(existsSync(join(done!.backup, 'profile.json')));
   const after = await developer.status();
   assert.equal(after.releases?.mode, 'release');
-  assert.equal(clearedLine(after.sourceCleared!), 'The bot follows app updates again. profile.json was backed up first.');
+  assert.equal(after.sourceCleared, null, 'the owner asked: no notice, and the older automatic one no longer applies');
   assert.equal(await developer.followApp(), null, 'nothing left to clear');
   f.unchanged();
 
@@ -195,25 +198,15 @@ test('the Updates screen: a stale source is cleared once per launch and said in 
   assert.equal(source.sourceCleared, null);
 });
 
-test('the follow dialog says what is removed, that the folder stays, and when the bot restarts', () => {
+test('the follow dialog says what is removed, that the folder stays, and when the bot moves', () => {
   const body = followDialog('0.1.0-alpha.4').body;
-  assert.match(body, /removes the checkout path and branch .* backing up profile\.json; the folder itself isn't touched/);
-  assert.match(body, /Once no job is running, the bot restarts on version 0\.1\.0-alpha\.4, even if your checkout.s build is newer \(a bot you stopped stays stopped\)/);
+  assert.match(body, /removes the checkout path and branch from Settings › Worker and backs up profile\.json; the folder isn't touched/);
+  assert.match(body, /The bot then moves to 0\.1\.0-alpha\.4 once no job is running, unless it's stopped or already newer\.$/);
 });
 
 const input = (patch: Partial<BotSyncInput> = {}): BotSyncInput => ({
   mode: 'release', follows: true, serviceLoaded: true, appVersion: '0.1.0-alpha.4', active: { appVersion: '0.1.0-alpha.3', fromApp: true }, prepared: null, preparedReady: false,
   activation: 'active', jobs: 1, running: null, failed: null, paused: false, mayPause: true, ...patch,
-});
-
-test('only a bot built with the pause holds requests while paused', () => {
-  assert.equal(holdsRequests(undefined), false, 'alpha.2 wrote no version');
-  assert.equal(holdsRequests('0.1.0-alpha.1'), false, 'a build from alpha.1 code');
-  assert.equal(holdsRequests('0.0.0'), false);
-  assert.equal(holdsRequests('0.1.0-alpha.2'), true, 'main between alpha.2 and alpha.3 had the pause');
-  assert.equal(holdsRequests('0.1.0-alpha.3'), true);
-  assert.equal(holdsRequests('0.1.0'), true);
-  assert.equal(holdsRequests('not a version'), false);
 });
 
 test('a bot from before alpha.3 ignores the pause, so the screen does not promise that requests wait', () => {
@@ -253,4 +246,13 @@ test('with a bot from before alpha.3 running a job, Updates and its log make no 
   await tick();
   assert.deepEqual(log, ['The bot restarts once the running jobs finish.']);
   assert.deepEqual((await handlers.status()).bot, { state: 'waiting', from: null, to: '0.1.0-alpha.4', jobs: 1, paused: false }, 'still no promise once paused');
+
+  // A build that has the intake pause holds new requests, whatever version it reports (main said alpha.2 for a while).
+  const release = join(f.directory, 'releases/new');
+  mkdirSync(join(release, 'src'), { recursive: true });
+  writeFileSync(join(release, 'src/intake.ts'), '');
+  writeFileSync(join(f.directory, 'active.json'), JSON.stringify({ release, label: 'dev.serra.friday', appVersion: '0.1.0-alpha.2', fromApp: true }));
+  const holding = await updatesService({ ...contextFor(f.directory, true), every: () => {} }, { echo: () => {}, deploy: { driver } }).handlers.status();
+  assert.equal(holding.bot.state === 'waiting' && holding.bot.paused, true);
+  assert.match(botLine(holding.bot)!.detail, /New requests wait until then/);
 });
