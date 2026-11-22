@@ -137,7 +137,7 @@ For an Intel Mac: `pnpm app:build && pnpm exec electron-builder --mac --x64`. Re
 
 ## Code rules
 
-`pnpm check` enforces most of them: erasable TypeScript only, `.ts` extensions, no unhandled promises, which folder may import which (see [AGENTS.md](AGENTS.md)), and no unused code. CI also scans for secrets. The rest:
+`pnpm check` enforces most of them, and fails when a PR changes what the gates enforce beyond removing an exception (a change the maintainer agreed to sets the fingerprint it prints): erasable TypeScript only, `.ts` extensions, no unhandled promises, which folder may import which (see [AGENTS.md](AGENTS.md)), and no unused code. CI also scans for secrets. The rest:
 
 - Never commit real Slack IDs, names, local paths or screenshots of a real workspace. Use the placeholders already in the tests (`U0123456789`, `xoxb-1111-2222-fixturevalue`, `/Users/you/…`, `acme/project`).
 - Templates under `templates/` must stay generic: no one's personal knowledge or workflow.

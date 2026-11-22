@@ -7,7 +7,7 @@ Rules a tool checks are left out here; `pnpm check` and CI tell you. Humans: [CO
 
 - `pnpm install --frozen-lockfile`
 - `pnpm check`: types for the three projects, then `pnpm lint` (oxlint type-aware, `scripts/lint-repo.ts`, knip). About 5 s.
-- `pnpm test`: `node --test tests/*.test.ts`, about 35 s; no Slack, T3 or network.
+- `pnpm test`: `node --test tests/*.test.ts`, about 35-60 s; no Slack, T3 or network.
 - `pnpm app:dev` runs the app; `pnpm app:package`, then `release/mac-arm64/Serra.app/Contents/MacOS/Serra --smoke`.
 - Before a PR: `pnpm check && pnpm test`. CI adds a gitleaks scan, the packaged-app smoke test and the `title` check.
 

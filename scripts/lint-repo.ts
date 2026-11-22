@@ -142,7 +142,7 @@ check('renderer: no hard-coded white or black text, fills or borders that ignore
 /** Files git tracks or would add (not ignored), so build output and node_modules are never read. */
 const tracked = (): string[] => execFileSync('git', ['ls-files', '-z', '--cached', '--others', '--exclude-standard'], { cwd: codeRoot, encoding: 'utf8' })
   .split('\0').filter((file) => file && existsSync(join(codeRoot, file)));
-const code = (): string[] => tracked().filter((file) => /\.(ts|tsx|js|jsx|mjs|cjs)$/.test(file) && !file.startsWith('scripts/qa/'));
+const code = (): string[] => tracked().filter((file) => /\.(?:[cm]?[jt]s|[jt]sx)$/.test(file) && !file.startsWith('scripts/qa/'));
 
 check('lint: every suppression covers one line, names its rule and says why, after " -- "', () => {
   const bad = code().filter((file) => file !== 'scripts/lint-repo.ts').flatMap((file) => read(file).split('\n').flatMap((line, index) =>
@@ -208,7 +208,9 @@ const gates = (source: (path: string) => string | null, keep: Set<string> | null
     if (text === null) return [path, null];
     if (path.endsWith('.json') || path.endsWith('.jsonc')) return [path, parseJsonc(text)];
     // An action's version is Dependabot's to bump, not a gate change.
-    return [path, path.endsWith('.yml') ? text.replace(/^(\s*-?\s*uses:\s*[^@\s]+)@\S+.*$/gm, '$1') : text];
+    // Whole-line comments and blank lines in YAML and TOML aren't gates either.
+    const plain = path.endsWith('.yml') || path.endsWith('.toml') ? text.split('\n').filter((line) => line.trim() !== '' && !/^\s*#/.test(line)).join('\n') : text;
+    return [path, path.endsWith('.yml') ? plain.replace(/^(\s*-?\s*uses:\s*[^@\s]+)@\S+.*$/gm, '$1') : plain];
   }));
   const oxlint = parsed['.oxlintrc.json'] as { overrides?: Override[] } | null;
   const knip = parsed['knip.jsonc'] as { ignore?: string[] } | null;
@@ -223,7 +225,7 @@ const gates = (source: (path: string) => string | null, keep: Set<string> | null
   if (oxlint?.overrides?.length === 0) delete oxlint.overrides;
   if (knip?.ignore?.length === 0) delete knip.ignore;
   const pkg = JSON.parse(source('package.json') ?? '{}') as { scripts?: Record<string, string>; knip?: unknown };
-  const scripts = Object.fromEntries(['check', 'lint', 'lint:repo', 'test'].map((name) => [name, pkg.scripts?.[name]]));
+  const scripts = Object.fromEntries(['check', 'lint', 'lint:repo', 'test', 'knowledge', 'app:build', 'app:package'].map((name) => [name, pkg.scripts?.[name]]));
   return JSON.stringify({ ...parsed, scripts, packageKnip: pkg.knip });
 };
 /** The exception entries the branch still has; any of main's that are missing were removed. */
@@ -245,7 +247,9 @@ check('gates: unchanged against main, except exceptions removed (lint, knip, tsc
   const before = gates((path) => atBase(commit, path), exceptionsNow());
   const now = gates(current, null);
   if (now === before) return;
-  const fingerprint = createHash('sha256').update(`${before}\0${now}`).digest('hex').slice(0, 16);
+  // Salted with main's acknowledgement too, so a value left behind can't approve the same change a second time.
+  const mainAck = /const ACKNOWLEDGED_GATE_CHANGE = '([0-9a-f]*)'/.exec(atBase(commit, 'scripts/lint-repo.ts') ?? '')?.[1] ?? '';
+  const fingerprint = createHash('sha256').update(`${before}\0${now}\0${mainAck}`).digest('hex').slice(0, 16);
   assert.equal(ACKNOWLEDGED_GATE_CHANGE, fingerprint,
     `the gates changed against main (beyond removing exceptions). If that is the point of this PR, set ACKNOWLEDGED_GATE_CHANGE in scripts/lint-repo.ts to '${fingerprint}'; otherwise fix the code instead.`);
 });
@@ -257,8 +261,11 @@ check('gates: no second config that a tool would read instead of, or on top of, 
     || (/(^|\/)(\.oxlintrc|knip)\.jsonc?$/.test(file) && file.includes('/')));
   assert.deepEqual(side, [], 'one config per tool, at the root');
   assert.equal((JSON.parse(read('package.json')) as { knip?: unknown }).knip, undefined, 'knip is configured in knip.jsonc only');
-  const allow = files.filter((file) => file !== 'scripts/lint-repo.ts' && /\.(ts|tsx|js|jsx|mjs|cjs|json|ya?ml|md|sh|toml|env)$/.test(file) && read(file).includes('gitleaks:allow'));
-  assert.deepEqual(allow, [], 'no inline gitleaks:allow; fix the fixture instead');
+  const marked = (marker: string): string[] => execFileSync('git', ['grep', '-lI', '--untracked', '--exclude-standard', '-F', marker, '--', '.', ':!scripts/lint-repo.ts'], { cwd: codeRoot, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).split('\n').filter(Boolean);
+  const grep = (marker: string): string[] => { try { return marked(marker); } catch { return []; } }; // git grep exits 1 on no match
+  assert.deepEqual(grep('gitleaks:allow'), [], 'no inline gitleaks:allow; fix the fixture instead');
+  // knip skips an export tagged @public, which would be an unreviewed exception.
+  assert.deepEqual(grep('@public'), [], 'no @public tags; remove the unused export instead');
   // A tracked file that .gitignore also matches is skipped by oxlint (and is usually a mistake).
   const ignored = execFileSync('git', ['ls-files', '-ci', '--exclude-standard'], { cwd: codeRoot, encoding: 'utf8' }).trim();
   assert.equal(ignored, '', 'tracked files that .gitignore matches');
