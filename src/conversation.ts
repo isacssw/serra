@@ -110,6 +110,10 @@ export const createBatcher = <T>({ quietMs, retryMs, busy, flush, onError }: {
       items.set(key, batch.slice(-keep));
       if (wake) schedule(key, quietMs);
     },
+    /** Something said in this thread is waiting to be handed over. */
+    holds(key: string): boolean {
+      return (items.get(key)?.length ?? 0) > 0;
+    },
     /** Sends what is waiting for a turn, without waiting for quiet. For shutdown. */
     async drain(): Promise<void> {
       const waiting = [...timers.keys()];

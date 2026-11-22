@@ -161,6 +161,8 @@ export interface TaskState {
   pr?: string;
   /** When T3 last saw the thread change. */
   updatedAt?: string;
+  /** The thread's newest run, going or finished. Absent before its first run. */
+  latestRunId?: string;
 }
 
 /** Reads a task's thread. Resolves null when it can't, so one unreadable thread never fails the list. */
@@ -180,12 +182,14 @@ export const t3TaskState = (
     const link = typeof thread.link === 'string' && thread.link ? thread.link : undefined;
     const pr = threadPullRequest(thread);
     const updatedAt = typeof thread.updatedAt === 'string' && thread.updatedAt ? thread.updatedAt : undefined;
+    const latestRunId = typeof thread.latestRunId === 'string' && thread.latestRunId ? thread.latestRunId : undefined;
     return {
       running: typeof thread.activeRunId === 'string' && thread.activeRunId !== '',
       waiting: typeof thread.pendingRequestCount === 'number' && thread.pendingRequestCount > 0,
       ...(link ? { link } : {}),
       ...(pr ? { pr } : {}),
       ...(updatedAt ? { updatedAt } : {}),
+      ...(latestRunId ? { latestRunId } : {}),
     };
   } catch {
     return null;

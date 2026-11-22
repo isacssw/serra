@@ -103,8 +103,8 @@ export const jobsHandlers = (context: HandlerContext, { run = runCommand, now = 
       const { jobs } = await listJobs(profileDir, {
         now: now(),
         ...(slackUrl ? { slackUrl } : {}),
-        // Tasks started in the app are read from T3 on every reload: the daemon doesn't report them.
-        ...(t3Bin ? { threads: cachedLookup(threads, t3Bin, run, () => now().getTime()), tasks: t3TaskState(t3Bin, run) } : {}),
+        // Tasks started in the app, and Slack jobs saved as running, are read from T3 on every reload: T3 says what runs.
+        ...(t3Bin ? { threads: cachedLookup(threads, t3Bin, run, () => now().getTime()), tasks: t3TaskState(t3Bin, run), runs: t3TaskState(t3Bin, run) } : {}),
       });
       return withNames(jobs, namesFor(profileDir));
     },

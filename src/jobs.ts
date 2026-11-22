@@ -43,6 +43,12 @@ export interface ListJobsOptions {
    * one runs or waits. Without it, or when T3 can't be read, a task is listed as done with no T3 link.
    */
   tasks?: TaskStateLookup;
+  /**
+   * Reads a Slack job's thread in T3 when `state.json` says it runs. T3 has the last word: a thread with no run going,
+   * nothing waiting and its newest run posted is done, whatever flags were left in the file (SERRA-54). Without it,
+   * or when T3 can't be read, the file decides.
+   */
+  runs?: TaskStateLookup;
 }
 
 const GROUP_ORDER: JobGroup[] = ['needs you', 'running', 'done'];
@@ -120,6 +126,10 @@ const classify = (job: Record<string, unknown>, last: { event: string; error?: s
   return { group: 'done' };
 };
 
+/** A job the file lists as running that T3 shows idle, with nothing waiting and its newest run already posted. */
+const idleInT3 = (live: TaskState | null, lastPostedRunId: unknown): boolean =>
+  live !== null && !live.running && !live.waiting && (live.latestRunId ?? null) === (text(lastPostedRunId) ?? null);
+
 /** A task's group, from what T3 says now. Nothing to read means nothing is known to run: it counts as done. */
 const taskGroup = (live: TaskState | null): Pick<JobRow, 'group' | 'needsYouReason'> => {
   if (live?.waiting) return { group: 'needs you', needsYouReason: 'waiting in T3' };
@@ -136,7 +146,7 @@ const prLink = (job: Record<string, unknown>): string | undefined =>
  * default), newest activity first in each group, with the channels seen for the filter. Never writes a file.
  */
 export const listJobs = async (profileDir: string, {
-  channel, doneTodayOnly = true, now = new Date(), threads, slackUrl, tasks,
+  channel, doneTodayOnly = true, now = new Date(), threads, slackUrl, tasks, runs,
 }: ListJobsOptions = {}): Promise<JobListing> => {
   const rawState = readOptional(join(profileDir, 'state.json'));
   const state = rawState === null ? {} : JSON.parse(rawState) as unknown;
@@ -144,13 +154,16 @@ export const listJobs = async (profileDir: string, {
   const events = lastEvents(readOptional(join(profileDir, 'logs', 'events.jsonl')));
   const today = startOfDay(now);
 
-  const all = Object.entries(state as Record<string, unknown>).flatMap(([key, value]): (JobRow & { t3ThreadId?: string })[] => {
+  const all = (await Promise.all(Object.entries(state as Record<string, unknown>).map(async ([key, value]): Promise<(JobRow & { t3ThreadId?: string })[]> => {
     const job = record(value);
     const jobChannel = text(job.channel);
     const createdAt = text(job.createdAt);
     if (!jobChannel || !createdAt) return [];
     const last = events.get(key);
-    const { group, reason, ownerQuestion, error } = classify(job, last);
+    const saved = classify(job, last);
+    const t3ThreadId = text(job.t3ThreadId);
+    const live = saved.group === 'running' && runs && t3ThreadId ? await runs(t3ThreadId).catch(() => null) : null;
+    const { group, reason, ownerQuestion, error } = idleInT3(live, job.lastPostedRunId) ? { group: 'done' as const } : saved;
     const threadTs = text(job.threadTs);
     const slack = slackUrl && threadTs ? slackThreadLink(slackUrl, jobChannel, threadTs) : undefined;
     const pr = prLink(job);
@@ -166,9 +179,9 @@ export const listJobs = async (profileDir: string, {
       ...(reason ? { needsYouReason: reason } : {}),
       ...(error ? { error } : {}),
       links: { ...(slack ? { slack } : {}), ...(pr ? { pr } : {}) },
-      ...(text(job.t3ThreadId) ? { t3ThreadId: text(job.t3ThreadId) } : {}),
+      ...(t3ThreadId ? { t3ThreadId } : {}),
     }];
-  });
+  }))).flat();
 
   const taskRows = await Promise.all(readTasks(profileDir).map(async (task): Promise<JobRow> => {
     const live = tasks ? await tasks(task.t3ThreadId).catch(() => null) : null;

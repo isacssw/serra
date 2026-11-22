@@ -180,6 +180,10 @@ app.logger.info(
 const profileWatcher = watchProfile(config.profileDir, bot.reloadProfile, {
   onError: (error) => app.logger.warn(`Not watching profile.json, changes apply after a restart: ${errorMessage(error)}`),
 });
+// Jobs saved as running that T3 no longer runs (a run that ended while the bot was stopped, state from an older
+// install) are cleared once, before the first poll, so the Jobs list matches T3.
+void track(bot.reconcile()).catch((error: unknown) => app.logger.error(`Reconciling jobs failed: ${errorMessage(error)}`))
+  .finally(() => status?.refresh());
 // Requests held while the previous bot was paused for an update start now.
 acknowledge();
 void releaseHeld();
