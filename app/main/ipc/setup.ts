@@ -37,6 +37,8 @@ export interface SetupDeps {
   secrets?: SecretOptions;
   /** Where launchd plists live (tests: a temp folder). */
   launchAgentsDir?: string;
+  /** How long to give a daemon that has a socket to answer, right after launch (default 1.5 s; tests: 0). */
+  answerWaitMs?: number;
   /** Where log lines go besides the window (default: the main process's console). */
   echo?: (line: string) => void;
 }
@@ -80,23 +82,40 @@ export const setupHandlers = (context: HandlerContext, deps: SetupDeps = {}): Ha
 
   const lookup = deps.launchAgentsDir ? { launchAgentsDir: deps.launchAgentsDir } : {};
 
+  /**
+   * Whether the profile's bot answers on its status socket. Right after launch the app may not have heard from it
+   * yet, so with a socket present it waits a moment for the first answer instead of calling a running bot stopped.
+   */
+  const running = async (): Promise<boolean> => {
+    if (context.status.current().state === 'up') return true;
+    const directory = context.profileDirOrNull();
+    if (!directory || !existsSync(join(directory, 'status.sock'))) return false;
+    return new Promise((done) => {
+      let off: () => void = () => {};
+      const timer = setTimeout(() => { off(); done(context.status.current().state === 'up'); }, deps.answerWaitMs ?? 1_500);
+      off = context.status.subscribe({ status: (status) => { if (status.state === 'up') { clearTimeout(timer); off(); done(true); } }, event: () => {} });
+    });
+  };
+
   const detect = async (): Promise<SetupDetection> => {
     const current = context.profileDirOrNull();
     const selectedDir = current ? resolve(current) : null;
     // Only the profile in use has a status socket the app follows, so only it can be called running.
-    const running = context.status.current().state === 'up';
+    const up = selectedDir ? await running() : false;
     const options = { ...lookup, ...(deps.secrets ? { secrets: deps.secrets } : {}) };
     const others = profilesUnder(root).map((dir) => resolve(dir)).filter((dir) => dir !== selectedDir);
     return {
-      selected: selectedDir ? await summarizeProfile(selectedDir, { ...options, running }) : null,
+      selected: selectedDir ? await summarizeProfile(selectedDir, { ...options, running: up }) : null,
       others: await Promise.all(others.map((dir) => summarizeProfile(dir, options))),
       pinned: context.profilePinned === true,
       profileRoot: root,
+      home: homedir(),
     };
   };
 
   return {
-    progress: () => setupProgress(context.profileDirOrNull(), lookup),
+    // Setup is done only when the bot runs: installed but stopped leaves the last step open.
+    progress: async () => setupProgress(context.profileDirOrNull(), { ...lookup, running: await running() }),
 
     detect,
 
@@ -143,7 +162,7 @@ export const setupHandlers = (context: HandlerContext, deps: SetupDeps = {}): Ha
       if (!current || resolve(current) !== directory) {
         throw new Error(`Profile created at ${directory}, but the app was started with --profile ${current}. Quit and open Serra without --profile to finish setting it up.`);
       }
-      return setupProgress(directory, lookup);
+      return setupProgress(directory, { ...lookup, running: false });
     },
 
     manifest: () => slackManifest(context.profileDir()),

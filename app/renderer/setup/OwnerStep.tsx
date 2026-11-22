@@ -1,6 +1,7 @@
 // Step 3: Slack confirms the owner's member ID with the bot token. The profile already holds the ID, so the check
 // runs by itself as the step opens; the field only appears when it fails or the owner wants another ID.
 import { useEffect, useRef, useState } from 'react';
+import { BadgeCheck } from 'lucide-react';
 import { useNavigate } from 'react-router';
 import { serra } from '../bridge.ts';
 import { Button, Input } from '../ui/index.ts';
@@ -49,7 +50,7 @@ export const OwnerStep = () => {
 
   return (
     <div className="flex flex-col gap-8">
-      <StepHeader step={step} />
+      <StepHeader step={step} icon={<BadgeCheck size={18} strokeWidth={1.75} />} />
       <Card className="flex flex-col gap-3 px-4 py-3.5">
         <div className="flex items-center gap-3">
           <StateIcon tone={tone} />

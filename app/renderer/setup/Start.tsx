@@ -11,7 +11,7 @@ import { defaultPath } from '../routes.ts';
 import { BrandMark, Button, cx } from '../ui/index.ts';
 import serraIcon from '../../../assets/brand/serra-icon.png';
 import { Alert, Card, errorText, StateIcon } from './parts.tsx';
-import { FLOW, foundLine, pickable, resumePath, startView, summaryRows, type StartView } from './setup.logic.ts';
+import { FLOW, foundLine, hasProfile, pickable, resumePath, shortPath, startView, summaryRows, type StartView } from './setup.logic.ts';
 import { setupChanged, useSetup } from './SetupState.tsx';
 
 const Need = ({ icon, title, detail }: { icon: ReactNode; title: string; detail: string }) => (
@@ -24,7 +24,7 @@ const Need = ({ icon, title, detail }: { icon: ReactNode; title: string; detail:
   </li>
 );
 
-const Found = ({ summary }: { summary: ProfileSummary }) => (
+const Found = ({ summary, home }: { summary: ProfileSummary; home: string }) => (
   <Card>
     <div className="flex items-baseline justify-between gap-3 border-b border-line-subtle px-4 py-3.5">
       <p className="min-w-0 truncate text-[14px]">Found <span className="font-semibold">{summary.bot?.name}</span></p>
@@ -40,7 +40,7 @@ const Found = ({ summary }: { summary: ProfileSummary }) => (
         </li>
       ))}
     </ul>
-    <p className="truncate border-t border-line-subtle px-4 py-2.5 font-mono text-[11px] text-muted" title={summary.profileDir}>{summary.profileDir}</p>
+    <p className="truncate border-t border-line-subtle px-4 py-2.5 font-mono text-[11px] text-muted" title={summary.profileDir}>{shortPath(summary.profileDir, home)}</p>
   </Card>
 );
 
@@ -57,11 +57,11 @@ const Picker = ({ profiles, chosen, onChoose }: { profiles: ProfileSummary[]; ch
           className={cx(
             'flex cursor-pointer items-center gap-3 rounded-xl border px-4 py-3 transition-colors duration-150',
             'has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-focus',
-            selected ? 'border-line-strong bg-raised' : 'border-line bg-panel hover:bg-hover',
+            selected ? 'border-ink bg-raised' : 'border-line-control bg-panel hover:bg-hover',
           )}
         >
           <input id={id} type="radio" name="profile" className="sr-only" checked={selected} onChange={() => onChoose(profile.profileDir)} />
-          <span aria-hidden className={cx('grid size-4 shrink-0 place-items-center rounded-full border-[1.5px]', selected ? 'border-ink' : 'border-line-strong')}>
+          <span aria-hidden className={cx('grid size-4 shrink-0 place-items-center rounded-full border-[1.5px]', selected ? 'border-ink' : 'border-line-control')}>
             {selected && <span className="size-2 rounded-full bg-ink" />}
           </span>
           <span className="flex min-w-0 flex-1 flex-col">
@@ -76,7 +76,7 @@ const Picker = ({ profiles, chosen, onChoose }: { profiles: ProfileSummary[]; ch
 
 export const Start = () => {
   const navigate = useNavigate();
-  const { refresh } = useSetup();
+  const { progress, refresh } = useSetup();
   const [detection, setDetection] = useState<SetupDetection | null>(null);
   const [view, setView] = useState<StartView | null>(null);
   const [chosen, setChosen] = useState<string | null>(null);
@@ -120,7 +120,8 @@ export const Start = () => {
 
   const selected = detection?.selected ?? null;
   const profiles = detection ? pickable(detection) : [];
-  const returning = view === 'summary' || view === 'picker';
+  // Until detection answers, the profile in use (if any) already says whether this is a return visit.
+  const returning = view ? view !== 'fresh' : hasProfile(progress);
   const complete = selected !== null && selected.next === null;
 
   return (
@@ -158,7 +159,7 @@ export const Start = () => {
 
       {view === 'summary' && selected && (
         <div className="flex flex-col gap-6">
-          <Found summary={selected} />
+          <Found summary={selected} home={detection?.home ?? ''} />
           <div className="flex flex-col items-center gap-3">
             <Button
               variant="primary" className="h-10 px-5 text-[14px]" icon={<ArrowRight size={16} aria-hidden />}

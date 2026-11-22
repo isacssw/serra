@@ -1,13 +1,14 @@
 // Step 4: install the bot under launchd and see it running. "Running" means the daemon answers on its status socket,
 // not only that a release was activated, so the step waits for it to report in before it calls setup done.
 import { useEffect, useRef, useState } from 'react';
+import { Power } from 'lucide-react';
 import { useNavigate } from 'react-router';
 import type { ActivationOutcome } from '../../../src/releases.ts';
 import { serra } from '../bridge.ts';
 import { useBotStatus } from '../shell/live.ts';
 import { Button } from '../ui/index.ts';
 import { Alert, Card, errorText, StateIcon, StepFooter, StepHeader } from './parts.tsx';
-import { FLOW, nextPath, outcomeText, previousPath, stepDone } from './setup.logic.ts';
+import { FLOW, nextPath, outcomeText, previousPath } from './setup.logic.ts';
 import { setupChanged, useSetup } from './SetupState.tsx';
 
 const step = FLOW[3]!;
@@ -18,8 +19,10 @@ export const ServiceStep = () => {
   const navigate = useNavigate();
   const { progress, refresh } = useSetup();
   const status = useBotStatus();
-  const installed = stepDone(progress, 'service');
-  const running = status?.state === 'up';
+  const installed = progress?.installed === true;
+  // Really running: the daemon answers and is connected to Slack.
+  const running = status?.state === 'up' && status.slackConnected;
+  const disconnected = status?.state === 'up' && !status.slackConnected;
   const name = progress?.bot?.name ?? 'The bot';
   const [busy, setBusy] = useState<'install' | 'start' | null>(null);
   const [log, setLog] = useState<string[]>([]);
@@ -66,21 +69,22 @@ export const ServiceStep = () => {
 
   const result = outcome && !outcome.ok ? outcomeText(outcome) : null;
   const tone = running ? 'done' : busy || waiting ? (late ? 'problem' : 'busy') : result ? 'problem' : 'todo';
-  const line = running ? `${name} is running${status?.state === 'up' && status.slackConnected ? ' and connected to Slack' : ''}.`
+  const line = running ? `${name} is running and connected to Slack.`
+    : disconnected && !busy ? `${name} is running but not connected to Slack yet.`
     : busy === 'install' ? (log.at(-1) ?? 'Preparing…')
     : busy === 'start' ? `Starting ${name}…`
-    : waiting ? (late ? `${name} hasn’t answered yet. Diagnostics shows why.` : `Waiting for ${name} to answer…`)
+    : waiting ? (late ? `${name} hasn’t answered yet. Diagnostics shows why; Skip for now keeps setup open.` : `Waiting for ${name} to answer…`)
     : installed ? `${name} is installed but not running.`
-    : 'Runs every check first. Nothing is installed if one fails.';
+    : 'Not installed yet.';
   const latest = log.at(-1);
 
   return (
     <div className="flex flex-col gap-8">
-      <StepHeader step={step} />
+      <StepHeader step={step} icon={<Power size={18} strokeWidth={1.75} />} />
       <Card className="flex flex-col gap-3 px-4 py-3.5">
         <div className="flex items-center gap-3">
           <StateIcon tone={tone} />
-          <p className="min-w-0 flex-1 truncate text-[14px]" role="status" title={line}>{line}</p>
+          <p className="min-w-0 flex-1 text-[14px] break-words" role="status">{line}</p>
           {!running && !busy && !waiting && installed && <Button size="sm" onClick={() => void start()}>Start</Button>}
           {!running && !busy && (!waiting || late) && (
             <Button size="sm" variant={installed ? 'ghost' : 'primary'} onClick={() => void install()}>
@@ -104,8 +108,7 @@ export const ServiceStep = () => {
       {error && <Alert>{error}</Alert>}
       <p className="text-[13px] text-muted">It starts again on its own when you log in.</p>
       <StepFooter back={previousPath(step.path)}>
-        {late && installed && <Button variant="ghost" onClick={() => void navigate(nextPath(progress, step.path))}>Continue anyway</Button>}
-        <Button variant="primary" aria-disabled={running && installed ? undefined : true} onClick={() => { if (running && installed) void navigate(nextPath(progress, step.path)); }}>
+        <Button variant="primary" aria-disabled={running && installed ? undefined : true} onClick={() => { if (running && installed) void refresh().then((latest) => navigate(nextPath(latest ?? progress, step.path))); }}>
           Continue
         </Button>
       </StepFooter>

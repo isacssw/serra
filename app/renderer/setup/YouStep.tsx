@@ -1,8 +1,8 @@
 // Step 1: who the bot works for and where it works. Fields Serra can find are filled in (Git name, `gh` login, the
 // repository's base branch and GitHub name); the form is saved as it's typed, so quitting halfway loses nothing.
 // Once the profile exists, the step shows it instead.
-import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { FolderOpen } from 'lucide-react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { FolderOpen, UserRound } from 'lucide-react';
 import { useNavigate } from 'react-router';
 import { serra } from '../bridge.ts';
 import { Button, Input } from '../ui/index.ts';
@@ -86,18 +86,26 @@ const ProfileForm = () => {
     return () => { live = false; };
   }, []);
 
-  // Saves the form a moment after typing stops.
+  // Saves the form a moment after typing stops, and at once when the step closes (Back, Skip, the window going away),
+  // so the last edit is never lost. Not after Create: main has cleared the draft for good.
+  const latest = useRef<string | null>(null);
+  const created = useRef(false);
+  const flush = useCallback(() => {
+    const text = latest.current;
+    if (created.current || text === null || text === saved.current) return;
+    saved.current = text;
+    serra()?.app.setPrefs({ setupDraft: JSON.parse(text) as Record<string, string> | null }).catch(() => {});
+  }, []);
   useEffect(() => {
     if (!draft) return;
-    const next = draftToSave(draft);
-    const text = JSON.stringify(next);
-    if (text === saved.current) return;
-    const timer = setTimeout(() => {
-      saved.current = text;
-      serra()?.app.setPrefs({ setupDraft: next }).catch(() => {});
-    }, 400);
+    latest.current = JSON.stringify(draftToSave(draft));
+    const timer = setTimeout(flush, 300);
     return () => clearTimeout(timer);
-  }, [draft]);
+  }, [draft, flush]);
+  useEffect(() => {
+    window.addEventListener('beforeunload', flush);
+    return () => { window.removeEventListener('beforeunload', flush); flush(); };
+  }, [flush]);
 
   if (!draft) return <p className="text-[13px] text-muted" role="status">Loading…</p>;
 
@@ -138,12 +146,12 @@ const ProfileForm = () => {
     if (!bridge) return;
     setBusy(true);
     try {
+      created.current = true;
       await bridge.setup.create(draftRequest(draft));
-      saved.current = 'null';
       setupChanged();
       const progress = await refresh();
       void navigate(nextPath(progress, step.path));
-    } catch (failure) { setError(errorText(failure)); }
+    } catch (failure) { created.current = false; setError(errorText(failure)); }
     finally { setBusy(false); }
   };
 
@@ -200,7 +208,7 @@ export const YouStep = () => {
   const { progress } = useSetup();
   return (
     <div className="flex flex-col gap-8">
-      <StepHeader step={step} />
+      <StepHeader step={step} icon={<UserRound size={18} strokeWidth={1.75} />} />
       {hasProfile(progress) ? <Existing /> : <ProfileForm />}
     </div>
   );

@@ -59,6 +59,8 @@ export interface SetupDetection {
   pinned: boolean;
   /** Where new profiles go. */
   profileRoot: string;
+  /** The home folder, so paths can show as `~/…`. */
+  home: string;
 }
 
 export interface AppInfo {
@@ -106,7 +108,7 @@ export interface SerraApi {
   };
   /** Setup (APP-27, SERRA-51): find what exists, create the profile, the Slack app, the owner and the service. Tokens use `secrets`. */
   setup: {
-    /** Which steps are done, read from the profile's files. Works with no profile selected. */
+    /** Which steps are done, read from the profile's files; the last needs the bot answering. Works with no profile. */
     progress(): SetupProgress;
     /** The profile in use and the others found, with their tokens (presence only) and whether the service runs. */
     detect(): SetupDetection;

@@ -17,7 +17,7 @@ import { setupChanged, useSetup } from './SetupState.tsx';
 const step = FLOW[1]!;
 const LABELS: Record<SecretName, string> = { SLACK_BOT_TOKEN: 'Bot token', SLACK_APP_TOKEN: 'App token' };
 
-const TokenRow = ({ status, checking, onChange }: { status: SecretStatus; checking: boolean; onChange: (next: SecretStatus) => void }) => {
+const TokenRow = ({ status, checking, workspace, onChange }: { status: SecretStatus; checking: boolean; workspace: string | null; onChange: (next: SecretStatus) => void }) => {
   const token = toToken(status);
   const [value, setValue] = useState('');
   const [replacing, setReplacing] = useState(false);
@@ -62,8 +62,8 @@ const TokenRow = ({ status, checking, onChange }: { status: SecretStatus; checki
         <StateIcon tone={tone} />
         <div className="flex min-w-0 flex-1 flex-col">
           <p className="text-[14px] font-medium">{label} <span className="font-mono text-[12px] font-normal text-muted">{SECRET_PREFIXES[status.name]}…</span></p>
-          <p className={cx('truncate text-[13px]', token.state === 'rejected' && !busy ? 'text-down' : 'text-muted')} role="status">
-            {checking || busy ? 'Checking with Slack…' : tokenText(token, null)}
+          <p className={cx('text-[13px]', token.state === 'rejected' && !busy ? 'text-down' : 'text-muted')} role="status" title={token.error ?? undefined}>
+            {checking || busy ? 'Checking with Slack…' : tokenText(token, workspace)}
           </p>
         </div>
         {token.state === 'found' && !checking && <Button size="sm" onClick={() => void check()} disabled={busy}>Check</Button>}
@@ -73,7 +73,7 @@ const TokenRow = ({ status, checking, onChange }: { status: SecretStatus; checki
         <form className="flex items-start gap-2 pl-8" onSubmit={(event) => { event.preventDefault(); void save(); }}>
           <Input id={fieldId} aria-label={`${label} value`} type="password" autoComplete="off" spellCheck={false} className="min-w-0 flex-1"
             placeholder={`Paste the ${SECRET_PREFIXES[status.name]} token`} value={value} disabled={busy}
-            onChange={(event) => { setValue(event.target.value); setError(null); }} error={error} hint="Stored in your Keychain. It never comes back to this window." />
+            onChange={(event) => { setValue(event.target.value); setError(null); }} error={error} hint={status.source.kind === 'keychain' ? 'Stored in your Keychain. It never comes back to this window.' : `Saving moves it from ${token.where} to your Keychain.`} />
           <Button type="submit" disabled={busy || !value.trim()}>Save</Button>
           {replacing && <Button variant="ghost" onClick={() => { setReplacing(false); setValue(''); setError(null); }}>Cancel</Button>}
         </form>
@@ -92,16 +92,23 @@ export const SlackStep = () => {
   const [manifest, setManifest] = useState<SlackManifest | null>(null);
   const [advanced, setAdvanced] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [workspace, setWorkspace] = useState<string | null>(null);
   const prechecked = useRef(false);
 
+  /** The workspace the bot token last checked against, so a verified row says which Slack it is. */
+  const loadWorkspace = useCallback(() => {
+    serra()?.setup.detect().then((found) => setWorkspace(found.selected?.workspace ?? null), () => {});
+  }, []);
   const replace = useCallback((next: SecretStatus) => {
     setStatuses((list) => list?.map((status) => (status.name === next.name ? next : status)) ?? [next]);
     setupChanged();
-  }, []);
+    if (next.name === 'SLACK_BOT_TOKEN') loadWorkspace();
+  }, [loadWorkspace]);
 
   useEffect(() => {
     const bridge = serra();
     if (!bridge) return;
+    loadWorkspace();
     bridge.setup.manifest().then(setManifest, (failure) => setError(errorText(failure)));
     bridge.secrets.list().then(async (list) => {
       setStatuses(list);
@@ -116,7 +123,7 @@ export const SlackStep = () => {
         setChecking((current) => current.filter((item) => item !== name));
       }
     }, (failure) => setError(errorText(failure)));
-  }, [replace]);
+  }, [replace, loadWorkspace]);
 
   const copy = async () => {
     if (!manifest) return;
@@ -126,7 +133,7 @@ export const SlackStep = () => {
 
   const tokens = statuses?.map(toToken) ?? [];
   const connected = tokens.length > 0 && tokens.every((token) => token.state === 'verified');
-  const haveTokens = tokens.length > 0 && tokens.every((token) => token.state !== 'missing');
+  const haveTokens = tokens.length > 0 && tokens.every((token) => token.state === 'verified' || token.state === 'found');
   const proceed = async () => {
     if (!connected) return;
     const latest = await refresh();
@@ -170,11 +177,11 @@ export const SlackStep = () => {
         </p>
         <Card>
           {statuses
-            ? <ul className="flex flex-col divide-y divide-line-subtle">{statuses.map((status) => <TokenRow key={status.name} status={status} checking={checking.includes(status.name)} onChange={replace} />)}</ul>
+            ? <ul className="flex flex-col divide-y divide-line-subtle">{statuses.map((status) => <TokenRow key={status.name} status={status} checking={checking.includes(status.name)} workspace={workspace} onChange={replace} />)}</ul>
             : <p className="px-4 py-3.5 text-[13px] text-muted" role="status">Looking for tokens…</p>}
         </Card>
         <div>
-          <Button variant="ghost" size="sm" className="text-muted" aria-expanded={advanced} onClick={() => setAdvanced(!advanced)}>
+          <Button variant="ghost" size="sm" className="-ml-2.5 text-muted" aria-expanded={advanced} onClick={() => setAdvanced(!advanced)}>
             {advanced ? 'Hide other sources' : 'Use 1Password or .env instead'}
           </Button>
         </div>

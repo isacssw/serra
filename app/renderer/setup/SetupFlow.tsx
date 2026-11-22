@@ -10,7 +10,9 @@ import { Button, cx } from '../ui/index.ts';
 import { DoneStep } from './DoneStep.tsx';
 import { OwnerStep } from './OwnerStep.tsx';
 import { ServiceStep } from './ServiceStep.tsx';
-import { announcement, FLOW, hasProfile, resumePath, stepDone, stepOpen, SETUP_PATH } from './setup.logic.ts';
+import { announcement, DONE_PATH, FLOW, hasProfile, lockedReason, resumePath, stepDone, stepOpen, SETUP_PATH } from './setup.logic.ts';
+import type { SetupStepId } from '../../../src/setup.ts';
+import type { ReactElement } from 'react';
 import { useSetup } from './SetupState.tsx';
 import { SlackStep } from './SlackStep.tsx';
 import { Start } from './Start.tsx';
@@ -36,6 +38,7 @@ const Rail = ({ pathname }: { pathname: string }) => {
                 aria-disabled={open ? undefined : true}
                 onClick={() => { if (open) void navigate(step.path); }}
                 data-setup-step={step.id}
+                title={open ? undefined : lockedReason(progress, step.id)}
                 className={cx(
                   'flex h-7 items-center gap-1.5 rounded-full px-2 text-xs transition-colors duration-150',
                   'focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-focus',
@@ -53,7 +56,7 @@ const Rail = ({ pathname }: { pathname: string }) => {
                 </span>
                 {/* Narrow windows show the numbers only; the name stays for screen readers. */}
                 <span className="max-md:sr-only">{step.short}</span>
-                {(done || !open) && <span className="sr-only">{done ? ', done' : ', available once the profile exists'}</span>}
+                {(done || !open) && <span className="sr-only">{done ? ', done' : `, ${lockedReason(progress, step.id).toLowerCase()}`}</span>}
               </button>
             </li>
           );
@@ -87,13 +90,17 @@ export const SetupFlow = () => {
   }, [pathname]);
 
   const profile = hasProfile(progress);
+  /** A step not open yet (its prerequisite isn't done) sends the owner to the first one that is. */
+  const guard = (id: SetupStepId, element: ReactElement): ReactElement =>
+    (stepOpen(progress, id) ? element : <Navigate to={resumePath(progress)} replace />);
   return (
     <div className="flex h-full flex-col bg-canvas" data-serra-main data-serra-setup data-path={pathname}>
-      <div className={cx('drag grid h-[52px] shrink-0 grid-cols-[1fr_auto_1fr] items-center gap-3 pr-3', isMac ? 'pl-[84px]' : 'pl-4')}>
-        <span />
+      {/* Equal side tracks keep the rail centred on the window; the left one keeps clear of the traffic lights. */}
+      <div className="drag grid h-[52px] shrink-0 grid-cols-[1fr_auto_1fr] items-center gap-3 px-3">
+        <span className={isMac ? 'min-w-[72px]' : undefined} />
         {onStart ? <span /> : <Rail pathname={pathname} />}
         <div className="flex justify-end">
-          {profile && (
+          {profile && pathname !== DONE_PATH && (
             <Button variant="ghost" size="sm" className="no-drag text-muted" onClick={() => void navigate(defaultPath)}>
               {progress?.next ? 'Skip for now' : 'Open Serra'}
             </Button>
@@ -106,9 +113,9 @@ export const SetupFlow = () => {
           <Routes>
             <Route index element={<Start />} />
             <Route path="you" element={<YouStep />} />
-            <Route path="slack" element={profile ? <SlackStep /> : <Navigate to={FLOW[0]!.path} replace />} />
-            <Route path="owner" element={profile ? <OwnerStep /> : <Navigate to={FLOW[0]!.path} replace />} />
-            <Route path="service" element={profile ? <ServiceStep /> : <Navigate to={FLOW[0]!.path} replace />} />
+            <Route path="slack" element={guard('slack', <SlackStep />)} />
+            <Route path="owner" element={guard('owner', <OwnerStep />)} />
+            <Route path="service" element={guard('service', <ServiceStep />)} />
             <Route path="done" element={progress && !progress.next ? <DoneStep /> : <Navigate to={progress ? resumePath(progress) : SETUP_PATH} replace />} />
             <Route path="*" element={<Navigate to={SETUP_PATH} replace />} />
           </Routes>

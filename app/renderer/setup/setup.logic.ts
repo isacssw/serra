@@ -26,7 +26,7 @@ export const FLOW: readonly FlowStep[] = [
   { id: 'profile', path: '/setup/you', title: 'You and your repository', short: 'You & repo', summary: 'Who the bot works for, and where it works.' },
   { id: 'slack', path: '/setup/slack', title: 'Connect Slack', short: 'Slack', summary: 'Create the Slack app, then add its two tokens.' },
   { id: 'owner', path: '/setup/owner', title: 'Confirm it’s you', short: 'Confirm you', summary: 'Slack checks the member ID, so the bot knows who to ask.' },
-  { id: 'service', path: '/setup/service', title: 'Install and start', short: 'Install', summary: 'Runs every check, then starts the bot in the background.' },
+  { id: 'service', path: '/setup/service', title: 'Install and start', short: 'Install', summary: 'Runs every check, then starts the bot. Nothing changes if a check fails.' },
 ];
 
 export const isSetupPath = (path: string): boolean => path === SETUP_PATH || path.startsWith(`${SETUP_PATH}/`);
@@ -41,8 +41,24 @@ export const resumePath = (progress: SetupProgress | null): string =>
 
 export const hasProfile = (progress: SetupProgress | null): boolean => progress?.steps[0]?.done === true;
 
-/** Every step but the profile needs the profile; the rest can be done in any order once it exists. */
-export const stepOpen = (progress: SetupProgress | null, id: SetupStepId): boolean => id === 'profile' || hasProfile(progress);
+const indexOf = (id: SetupStepId): number => FLOW.findIndex((step) => step.id === id);
+
+/**
+ * Whether a step can be opened: one already done, or any up to the first that isn't. Later steps wait, since each
+ * needs the one before it (the owner check needs Slack's token; the install's checks need both).
+ */
+export const stepOpen = (progress: SetupProgress | null, id: SetupStepId): boolean => {
+  if (id === 'profile') return true;
+  if (!progress) return false;
+  if (stepDone(progress, id)) return true;
+  return progress.next !== null && indexOf(id) <= indexOf(progress.next);
+};
+
+/** Why a step can't be opened yet, for screen readers and the tooltip. */
+export const lockedReason = (progress: SetupProgress | null, id: SetupStepId): string => {
+  const waitingOn = progress?.next ? FLOW[indexOf(progress.next)] : FLOW[0];
+  return `Available after ${waitingOn?.short ?? 'the step before'}`;
+};
 
 export const stepDone = (progress: SetupProgress | null, id: SetupStepId): boolean =>
   progress?.steps.find((step) => step.id === id)?.done === true;
@@ -111,13 +127,14 @@ export const summaryRows = (summary: ProfileSummary): SummaryRow[] => {
       value: summary.owner ? (summary.owner.slackName ? `${summary.owner.slackName} · ${summary.owner.slackUserId}` : `${summary.owner.slackUserId}, not confirmed`) : 'Not set',
       done: done('owner'),
     },
-    { id: 'service', label: 'Service', value: summary.service === 'running' ? 'Running' : summary.service === 'installed' ? 'Installed, not running' : 'Not installed', done: done('service') },
+    // Done only when it answers: installed but stopped is a step still to take.
+    { id: 'service', label: 'Service', value: summary.service === 'running' ? 'Running' : summary.service === 'installed' ? 'Installed, not running' : 'Not installed', done: summary.service === 'running' },
   ];
 };
 
 /** The card's headline: how much of setup the profile already has. */
 export const foundLine = (summary: ProfileSummary): string => {
-  const done = doneCount(summary);
+  const done = summaryRows(summary).filter((row) => row.done).length;
   return done === FLOW.length ? 'Everything is set up.' : `${done} of ${FLOW.length} steps already done.`;
 };
 
@@ -210,6 +227,10 @@ export const draftRequest = (draft: DraftForm): ProfileDraft => {
 export const profileFolder = (draft: DraftForm, root: string): string =>
   draft.directory.trim() || `${root.replace(/\/+$/, '')}/${draft.botId.trim() || suggestId(draft.botName)}`;
 
+/** A profile folder as the owner reads it: the home folder as `~`. */
+export const shortPath = (path: string, home: string): string =>
+  home && (path === home || path.startsWith(`${home}/`)) ? `~${path.slice(home.length)}` : path;
+
 /** How an install outcome reads. */
 export const outcomeText = (outcome: ActivationOutcome): { tone: 'up' | 'down'; text: string } => {
   if (outcome.ok) return { tone: 'up', text: 'Installed. Waiting for the bot to answer…' };
@@ -221,9 +242,9 @@ export const outcomeText = (outcome: ActivationOutcome): { tone: 'up' | 'down'; 
 /** A token's state as its row says it. */
 export const tokenText = (token: TokenSummary, workspace: string | null): string => {
   switch (token.state) {
-    case 'verified': return workspace && token.name === 'SLACK_BOT_TOKEN' ? `Verified · ${workspace}` : 'Verified';
+    case 'verified': return ['Verified', token.name === 'SLACK_BOT_TOKEN' ? workspace : null, `from ${token.where}`].filter(Boolean).join(' · ');
     case 'found': return `Found in ${token.where}`;
-    case 'rejected': return token.error ?? 'Slack rejected it';
+    case 'rejected': return 'Slack didn’t accept this token. Paste a new one.';
     default: return 'Not added yet';
   }
 };
@@ -233,7 +254,7 @@ const WHERE: Record<SecretStatus['source']['kind'], TokenSummary['where']> = { k
 /** A Secrets status as setup reads it (the same rule as `tokenState` in src/setup.ts). */
 export const toToken = (status: SecretStatus): TokenSummary => ({
   name: status.name,
-  state: status.verifiedAt && !status.error ? 'verified' : status.error ? 'rejected' : status.set ? 'found' : 'missing',
+  state: !status.set ? (status.error ? 'rejected' : 'missing') : status.verifiedAt && !status.error ? 'verified' : status.error ? 'rejected' : 'found',
   where: WHERE[status.source.kind],
   error: status.error,
 });
