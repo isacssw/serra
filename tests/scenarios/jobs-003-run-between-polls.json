@@ -40,6 +40,12 @@
           "C1:1700000100.000100": {
             "runSeen": {
               "runId": "run-1"
+            },
+            "phase": {
+              "state": "following",
+              "run": {
+                "id": "run-1"
+              }
             }
           }
         },
@@ -98,7 +104,11 @@
         "state": {
           "C1:1700000100.000100": {
             "lastPostedRunId": "run-2",
-            "runSeen": "$absent"
+            "runSeen": "$absent",
+            "phase": {
+              "state": "following",
+              "run": "$absent"
+            }
           }
         },
         "jobs": {
@@ -119,7 +129,10 @@
         ],
         "state": {
           "C1:1700000100.000100": {
-            "watching": false
+            "watching": false,
+            "phase": {
+              "state": "idle"
+            }
           }
         },
         "jobs": {

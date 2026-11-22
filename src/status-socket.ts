@@ -94,8 +94,9 @@ export const jobCounts = (jobs: Iterable<Job>): UpStatus['counts'] => {
   let needsYou = 0;
   let running = 0;
   for (const job of jobs) {
-    if (job.ownerAskOpen === true || (job.waitingInT3 === true && !job.question)) needsYou += 1;
-    else if (job.loadingRequested === true && job.waitingInT3 !== true) running += 1;
+    const waiting = job.phase.state === 'waiting';
+    if (job.ownerAskOpen === true || (job.phase.state === 'waiting' && !job.phase.card)) needsYou += 1;
+    else if (job.loadingRequested === true && !waiting) running += 1;
   }
   return { needsYou, running };
 };

@@ -1,3 +1,5 @@
+import { looksRunning } from './lifecycle.ts';
+import type { Job } from './types.ts';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { runCommand, type Runner } from './cleanup.ts';
@@ -110,20 +112,15 @@ interface Classified {
  * on them in T3, a question is open in Slack, or the job's last event is a failure. Running: a request is pending or
  * a seen run hasn't been posted yet. Everything else is done.
  */
-const classify = (job: Record<string, unknown>, last: { event: string; error?: string } | undefined): Classified => {
-  const question = record(job.question);
-  const questions = Array.isArray(question.questions) ? question.questions.map(record) : [];
-  const index = typeof question.index === 'number' ? question.index : 0;
-  const asked = text(questions[index]?.question);
-  if (job.waitingInT3 === true) return { group: 'needs you', reason: 'waiting in T3' };
+const classify = (job: Job, last: { event: string; error?: string } | undefined): Classified => {
+  const card = job.phase.state === 'waiting' ? job.phase.card : undefined;
+  const asked = card?.questions[card.index]?.question;
+  if (job.phase.state === 'waiting' && !card) return { group: 'needs you', reason: 'waiting in T3' };
   if (asked) return { group: 'needs you', reason: 'question', ownerQuestion: asked };
   if (job.ownerAskOpen === true) return { group: 'needs you', reason: 'owner pinged' };
   if (last?.event === 'failure') return { group: 'needs you', reason: 'failed', ...(last.error ? { error: last.error } : {}) };
 
-  const runSeen = record(job.runSeen);
-  const unposted = text(runSeen.runId) !== undefined && runSeen.runId !== job.lastPostedRunId;
-  const pending = texts(job.pendingReactions).length > 0 || text(job.pendingReactionTs) !== undefined;
-  if (job.loadingRequested === true || pending || unposted || text(record(job.progress).ts)) return { group: 'running' };
+  if (looksRunning(job) || job.pendingReactionTs !== null) return { group: 'running' };
   return { group: 'done' };
 };
 
@@ -166,19 +163,19 @@ export const listJobs = async (profileDir: string, {
   const today = startOfDay(now);
 
   const all = (await Promise.all(Object.entries(state).map(async ([key, value]): Promise<(JobRow & { t3ThreadId?: string })[]> => {
-    const job = record(value);
+    const job = value;
     const jobChannel = text(job.channel);
     const createdAt = text(job.createdAt);
     if (!jobChannel || !createdAt) return [];
     const last = events.get(key);
-    const saved = classify(job, last);
+    const saved = classify(value, last);
     const t3ThreadId = text(job.t3ThreadId);
     const live = saved.group === 'running' && runs && t3ThreadId ? await runs(t3ThreadId).catch(() => null) : null;
     const lastActivityAt = later(later(createdAt, text(job.lastActivityAt)), last?.at);
-    const { group, reason, ownerQuestion, error } = idleInT3(live, job, lastActivityAt, now) ? { group: 'done' as const } : saved;
+    const { group, reason, ownerQuestion, error } = idleInT3(live, { ...job }, lastActivityAt, now) ? { group: 'done' as const } : saved;
     const threadTs = text(job.threadTs);
     const slack = slackUrl && threadTs ? slackThreadLink(slackUrl, jobChannel, threadTs) : undefined;
-    const pr = prLink(job);
+    const pr = prLink({ ...job });
     return [{
       key,
       group,

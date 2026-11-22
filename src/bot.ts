@@ -18,6 +18,7 @@ import { handleReviewRequest, type PostReview } from './review.ts';
 import { slackKey, type createStore } from './state.ts';
 import { findThreads, jobThreadInput, run, sendToThread, showThread, startThread } from './t3.ts';
 import { answerQuestion, listQuestions, type T3QuestionRequest } from './t3-questions.ts';
+import { follow, followed, forgetRun, looksRunning, replied, RECENT_MESSAGES, seeRun, seenRun, settle, step, stopWaiting, waitFor, waitStep, withProgress, type PollStep } from './lifecycle.ts';
 import { canShowQuestion, choiceAnswer, typedAnswer, type QuestionAnswer, type QuestionCard, type QuestionInteraction } from './questions.ts';
 import type { IncomingFile, IncomingMessage, Job, T3Message, T3Thread } from './types.ts';
 import { createTracker, systemClock, type Clock } from './clock.ts';
@@ -34,8 +35,6 @@ const FOLLOW_UP_QUIET_MS = 4_000;
 /** How often to look again while the worker is still busy with its current turn. */
 const FOLLOW_UP_RETRY_MS = 5_000;
 const THREAD_CONTEXT_LIMIT = 20_000;
-/** How many of a thread's latest messages a poll reads: enough to see what started the run and its latest note. */
-const RECENT_MESSAGES = 40;
 /** A run someone is waiting on shows what it is doing once it has gone on this long. */
 const PROGRESS_AFTER_MS = 3 * 60_000;
 const PROGRESS_TEXT_LIMIT = 300;
@@ -64,56 +63,15 @@ const newestThatFit = (lines: string[]): string[] => {
   return kept;
 };
 
-const replyText = (thread: T3Thread, last: T3Message | undefined): string =>
-  last?.role === 'assistant' && last.runId === thread.latestRunId
-    ? (last.text ?? '')
-    : `The run ended without a reply (status: ${thread.status}).`;
-
-/**
- * Whether the worker started a run on its own, to follow CI or a bot's review, rather than for a message
- * from Slack. Such runs have no user message. When the messages read don't reach back to the run's start,
- * it can't be told, and the run counts as someone's: their reply is never hidden in an edit.
- */
-const startedByWorker = (runId: string, messages: T3Message[]): boolean => {
-  const reachesStart = messages.length < RECENT_MESSAGES || messages[0]?.runId !== runId;
-  return reachesStart && !messages.some((message) => message.role === 'user' && message.runId === runId);
-};
-
-/**
- * Whether someone in Slack is waiting on this run: it answers them, and they @mentioned the bot or asked it in a DM.
- * Serra records that when it sends the turn (`nextTurnWaits`) and binds it to the run the first time a poll sees the
- * run (`runSeen.waits`), because `t3 thread send` returns no run ID. A turn sent before Serra recorded this counts as
- * someone's: at worst they see a progress line they didn't need.
- */
-const someoneWaits = (job: Job, runId: string, messages: T3Message[]): boolean => {
-  if (startedByWorker(runId, messages)) return false;
-  if (job.runSeen?.runId === runId && job.runSeen.waits !== undefined) return job.runSeen.waits;
-  return job.nextTurnWaits ?? true;
-};
-
 /** How much of a reply's text its saved intent keeps. A reply's fallback text is at most 3,000 characters. */
 const INTENT_TEXT = 3_000;
 
 /** The worker's latest note in a run that is still going, such as "Reproducing the bug locally first." */
+/** The question card open in the job's thread, if any. */
+const cardOf = (job: Job): QuestionCard | undefined => (job.phase.state === 'waiting' ? job.phase.card : undefined);
+
 const latestNote = (runId: string, messages: T3Message[]): string | undefined =>
   messages.findLast((message) => message.role === 'assistant' && message.runId === runId && message.text?.trim())?.text?.trim();
-
-/**
- * A run that answered someone and finished, but was never posted because the worker started another run
- * before the next poll. Runs are read in order; only those after the last posted one count.
- */
-const missedReply = (messages: T3Message[], lastPosted: string | null, current: string): { runId: string; text: string } | null => {
-  const runs = [...new Set(messages.flatMap((message) => (message.runId ? [message.runId] : [])))];
-  const from = lastPosted === null ? -1 : runs.indexOf(lastPosted);
-  // The last posted run is out of the window read: what came after it can't be told apart, so nothing is guessed.
-  if (lastPosted !== null && from === -1) return null;
-  for (const runId of runs.slice(from + 1).toReversed()) {
-    if (runId === current || !messages.some((message) => message.role === 'user' && message.runId === runId)) continue;
-    const text = messages.findLast((message) => message.role === 'assistant' && message.runId === runId)?.text;
-    return text === undefined ? null : { runId, text };
-  }
-  return null;
-};
 
 const oneParagraph = (text: string): string => {
   const flat = text.split(/\n\s*\n/)[0]!.replace(/\s+/g, ' ').trim();
@@ -128,14 +86,6 @@ const withoutReactions = (job: Job, cleared: string[]): Partial<Job> => ({
   pendingReactionTs: null,
   pendingReactions: pendingReactions(job).filter((ts) => !cleared.includes(ts)),
 });
-
-/**
- * Forgets the run the bot saw going once a reply is posted, unless it is the run going now. Left behind, a seen run
- * that never matches the last posted one keeps the job listed as running forever: a run that started and ended
- * between two polls is posted without ever being seen (SERRA-54).
- */
-const seenOver = (job: Job, thread: Pick<T3Thread, 'activeRunId'>): Partial<Job> =>
-  job.runSeen && job.runSeen.runId !== thread.activeRunId ? { runSeen: undefined } : {};
 
 /** The job's record of chat messages it has taken in, with one more. Bounded: retries come within minutes. */
 const heardNow = (job: Job, ts: string): Partial<Job> => ({ heard: [...(job.heard ?? []).filter((seen) => seen !== ts), ts].slice(-50) });
@@ -404,7 +354,7 @@ export const createBot = ({
       nextTurnWaits: true,
       heard: [msg.messageTs],
       lastPostedRunId: null,
-      watching: true,
+      phase: { state: 'following' },
       ownerFollows: msg.user === config.owner,
       ...(knowledge ? { visibility, knowledgeRead: knowledge.read, knowledgeDir: knowledge.readDir } : {}),
       branch: input.branch,
@@ -425,9 +375,10 @@ export const createBot = ({
 
   /** Takes the "still working" line away once its run has a reply. */
   const clearProgress = async (key: string, job: Job): Promise<void> => {
-    if (!job.progress) return;
-    await chat.remove(messageIn(job, job.progress.ts));
-    updateJob(key, () => ({ progress: undefined }));
+    const run = seenRun(job.phase);
+    if (!run?.progress) return;
+    await chat.remove(messageIn(job, run.progress.ts));
+    updateJob(key, (latest) => ({ phase: withProgress(latest.phase, run.id, undefined) }));
   };
 
   /**
@@ -468,7 +419,7 @@ export const createBot = ({
       if (out) updateJob(key, (latest) => (latest.delivering ? { delivering: { ...latest.delivering, ...flags } } : {}));
       id = await chat.notice(targetOf(job), instead, inPlaceOf);
     }
-    updateJob(key, (latest) => ({ lastPostedRunId: runId, delivering: undefined, ...seenOver(latest, thread), ...turnOver(latest, runId, byWorker), ...flags }));
+    updateJob(key, (latest) => ({ lastPostedRunId: runId, delivering: undefined, phase: replied(latest.phase, thread.activeRunId), ...turnOver(latest, runId, byWorker), ...flags }));
     return { id, notice: instead !== null };
   };
 
@@ -477,7 +428,7 @@ export const createBot = ({
    * turn's `nextTurnWaits` is spent, and must not carry over to a later run started in T3.
    */
   const turnOver = (job: Job, runId: string, byWorker: boolean): Partial<Job> =>
-    !byWorker && job.runSeen?.runId !== runId && job.nextTurnWaits !== undefined ? { nextTurnWaits: undefined } : {};
+    !byWorker && seenRun(job.phase)?.id !== runId && job.nextTurnWaits !== undefined ? { nextTurnWaits: undefined } : {};
 
   /**
    * Posts the worker's review request in the code-review channel through `deliver`: only when everyone there may hear
@@ -519,7 +470,8 @@ export const createBot = ({
     }
     /** A notice in place of the reply (a setup problem, or a withheld answer): it isn't the run's result. */
     let replaced: Notice | null = problem ? { kind: 'setup-problem', problem } : check && check.revoked.length > 0 ? { kind: 'withheld' } : null;
-    const runMs = job.runSeen?.runId === runId ? now() - Date.parse(job.runSeen.at) : undefined;
+    const seen = seenRun(job.phase);
+    const runMs = seen?.id === runId ? now() - Date.parse(seen.at) : undefined;
     const measured = { key, runId, byWorker, runMs, jobAgeMs: now() - Date.parse(job.createdAt), ...(replaced ? { notice: true } : {}) };
     await clearProgress(key, job);
     // The bot stopped while posting this run's reply (REPLY-009): if the thread has it, it isn't posted again.
@@ -529,9 +481,9 @@ export const createBot = ({
     if (recovered) {
       const cleared = await clearEyes(job);
       const { ownerFollows, ownerAskOpen } = job.delivering ?? {};
-      updateJob(key, (latest) => ({ lastPostedRunId: runId, delivering: undefined, ...seenOver(latest, thread), ...withoutReactions(latest, cleared),
+      updateJob(key, (latest) => ({ lastPostedRunId: runId, delivering: undefined, phase: replied(latest.phase, thread.activeRunId), ...withoutReactions(latest, cleared),
         ...turnOver(latest, runId, byWorker), ...(ownerFollows === undefined ? {} : { ownerFollows }), ...(ownerAskOpen === undefined ? {} : { ownerAskOpen }),
-        ...(byWorker ? { statusTs: recovered } : { statusTs: undefined }), watching: true, waitingInT3: false, lastActivityAt: new Date(now()).toISOString() }));
+        ...(byWorker ? { statusTs: recovered } : { statusTs: undefined }), lastActivityAt: new Date(now()).toISOString() }));
       await finishLoading(key, job);
       logger.info(`The reply to ${runId} in ${key} was posted before a restart; not posting it again.`);
       events('reply', { ...measured, kind: byWorker ? 'status_posted' : 'reply', recovered: true });
@@ -540,7 +492,7 @@ export const createBot = ({
     if (!replaced && QUIET.test(reply)) {
       // Nothing to say: the 👀 goes away, which tells the thread the message was seen.
       const cleared = await clearEyes(job);
-      updateJob(key, (latest) => ({ lastPostedRunId: runId, delivering: undefined, ...seenOver(latest, thread), ...turnOver(latest, runId, byWorker), ...withoutReactions(latest, cleared) }));
+      updateJob(key, (latest) => ({ lastPostedRunId: runId, delivering: undefined, phase: replied(latest.phase, thread.activeRunId), ...turnOver(latest, runId, byWorker), ...withoutReactions(latest, cleared) }));
       await finishLoading(key, job);
       events('reply', { ...measured, kind: 'quiet' });
       return;
@@ -613,10 +565,8 @@ export const createBot = ({
         lastPostedRunId: runId,
         delivering: undefined,
         ...turnOver(latest, runId, byWorker),
-        ...seenOver(latest, thread),
+        phase: replied(latest.phase, thread.activeRunId),
         ...(statusTs ? { statusTs } : {}),
-        watching: true,
-        waitingInT3: false,
         lastActivityAt: new Date(now()).toISOString(),
       }));
       await finishLoading(key, job);
@@ -637,11 +587,9 @@ export const createBot = ({
     const cleared = await clearEyes(job);
     updateJob(key, (latest) => ({
       lastPostedRunId: runId,
-      ...seenOver(latest, thread),
+      phase: replied(latest.phase, thread.activeRunId),
       ...withoutReactions(latest, cleared),
       ...ownerAfter(told, needs, latest),
-      watching: true,
-      waitingInT3: false,
       // The next status update goes below this reply, not into a message further up.
       statusTs: undefined,
       lastActivityAt: new Date(now()).toISOString(),
@@ -655,40 +603,40 @@ export const createBot = ({
    * A run someone is waiting on that has gone on for a few minutes shows the worker's latest note in one line,
    * edited as the note changes, so the thread isn't just 👀 for half an hour. The line goes when the reply comes.
    */
-  const showProgress = async (key: string, job: Job, thread: T3Thread, messages: T3Message[]): Promise<void> => {
-    const runId = thread.activeRunId;
-    if (!runId) return;
-    if (job.progress && job.progress.runId !== runId) await clearProgress(key, job);
-    if (job.runSeen?.runId !== runId) {
+  const showProgress = async (key: string, job: Job, next: Extract<PollStep, { do: 'follow' }>, messages: T3Message[]): Promise<void> => {
+    const { runId } = next;
+    if (next.firstSight) {
+      // A line left from an earlier run goes first: it belongs to the run being replaced.
+      await clearProgress(key, job);
       // The first sight of a run binds the turn Serra sent to it. A run the worker started on its own leaves that
       // turn for the run that answers it.
-      const byWorker = startedByWorker(runId, messages);
-      updateJob(key, () => ({ runSeen: { runId, at: new Date(now()).toISOString(), waits: someoneWaits(job, runId, messages) },
-        ...(byWorker ? {} : { nextTurnWaits: undefined }) }));
+      updateJob(key, () => ({ phase: seeRun({ id: runId, at: new Date(now()).toISOString(), waits: next.waits }),
+        ...(next.byWorker ? {} : { nextTurnWaits: undefined }) }));
       return;
     }
-    if (now() - Date.parse(job.runSeen.at) < PROGRESS_AFTER_MS || !someoneWaits(job, runId, messages)) return;
+    const run = seenRun(job.phase);
+    if (!run || now() - Date.parse(run.at) < PROGRESS_AFTER_MS || !next.waits) return;
     const note = latestNote(runId, messages);
     if (!note) return;
     const text = `⏳ Still on it: ${oneParagraph(localLinksToText(note, pathRoots))}`;
-    if (job.progress?.runId === runId && job.progress.text === text) return;
+    if (run.progress?.text === text) return;
     // A progress note is the worker's own words: none from a thread whose knowledge was taken back, checked by
     // `deliver` right before it goes out.
     const out: WorkerOut = { kind: 'progress', text };
-    if (job.progress?.runId === runId) {
-      const ts = job.progress.ts;
+    if (run.progress) {
+      const ts = run.progress.ts;
       const revised = await deliver(deliveryFor(job), { op: 'revise', ref: messageIn(job, ts), out })
         .catch((error: unknown) => { logger.debug(`Editing the progress line in ${key} failed: ${errorMessage(error)}`); return null; });
       if (revised && !revised.ok) return;
-      updateJob(key, () => ({ progress: { ts, runId, text } }));
+      updateJob(key, (latest) => ({ phase: withProgress(latest.phase, runId, { ts, text }) }));
       return;
     }
-    const posted = await deliver(deliveryFor(job), { op: 'send', out });
-    if (!posted.ok) return;
-    updateJob(key, () => ({ progress: { ts: posted.value, runId, text } }));
+    const sent = await deliver(deliveryFor(job), { op: 'send', out });
+    if (!sent.ok) return;
+    updateJob(key, (latest) => ({ phase: withProgress(latest.phase, runId, { ts: sent.value, text }) }));
     // Posting any message clears Slack's native status, even when it is only a progress update.
     await setLoading(job.channel, job.threadTs, true, true);
-    events('progress_shown', { key, runId, afterMs: now() - Date.parse(job.runSeen.at) });
+    events('progress_shown', { key, runId, afterMs: now() - Date.parse(run.at) });
   };
 
   const mayAnswer = (job: Job, user: string): boolean => config.allowed.has(user) && (user === config.owner || user === job.requester);
@@ -697,9 +645,9 @@ export const createBot = ({
    * Takes a question card down: it shows the answers chosen, through `deliver`, since the questions are the worker's
    * words. A card closed because its thread's knowledge was taken back, or that `deliver` refuses, gets fixed copy.
    */
-  const clearQuestion = async (key: string, job: Job, answeredBy?: string, state = job.question, closed = false): Promise<void> => {
+  const clearQuestion = async (key: string, job: Job, answeredBy?: string, state = cardOf(job), closed = false): Promise<void> => {
     if (!state) return;
-    updateJob(key, () => ({ question: undefined, waitingInT3: false }));
+    updateJob(key, (latest) => ({ phase: stopWaiting(latest.phase) }));
     const ref = messageIn(job, state.ts);
     if (!closed) {
       const revised = await deliver(deliveryFor(job), { op: 'revise', ref, out: { kind: 'answered', card: state, ...(answeredBy ? { by: answeredBy } : {}) } })
@@ -715,8 +663,8 @@ export const createBot = ({
   };
 
   const showQuestion = async (key: string, job: Job, thread: T3Thread, request: T3QuestionRequest): Promise<void> => {
-    if (job.question?.requestId === request.requestId) return;
-    if (job.question) await clearQuestion(key, job);
+    if (cardOf(job)?.requestId === request.requestId) return;
+    if (cardOf(job)) await clearQuestion(key, job);
     // A question card is the worker's own words too: a thread whose knowledge was taken back gets a stop instead,
     // checked before the card would be posted. When the chat can't say who sees the thread, the card waits.
     const check = loadKnowledge ? await revocation(job) : null;
@@ -733,7 +681,7 @@ export const createBot = ({
     // Checked again by `deliver` right before the card goes out. Refused, the next poll decides again.
     const posted = await deliver(deliveryFor(job), { op: 'send', out: { kind: 'question', card: state, to: recipient } });
     if (!posted.ok) return;
-    updateJob(key, (latest) => ({ question: { ...state, ts: posted.value }, waitingInT3: true, ownerFollows: latest.ownerFollows || recipient === config.owner }));
+    updateJob(key, (latest) => ({ phase: waitFor(latest.phase, { ...state, ts: posted.value }), ownerFollows: latest.ownerFollows || recipient === config.owner }));
     events('question_shown', { key, requestId: request.requestId, count: request.questions.length });
   };
 
@@ -742,7 +690,7 @@ export const createBot = ({
 
   /** Recheck T3 before accepting a selection: another client may already have answered the form. */
   const submitAnswer = async (key: string, job: Job, answer: QuestionAnswer, user: string, messageTs?: string): Promise<void> => {
-    const state = job.question;
+    const state = cardOf(job);
     if (!state) return;
     const pending = (await questions.listQuestions(job.t3ThreadId, config.t3Bin)).find((request) => request.requestId === state.requestId);
     if (!pending || JSON.stringify(pending.questions) !== JSON.stringify(state.questions)) {
@@ -768,7 +716,7 @@ export const createBot = ({
     const typed = typeof answer === 'string' && !question.options.some((option) => (option.value ?? option.label) === answer);
     const note = `Answered a question from the earlier session${typed ? `: "${answered}"` : ''}. The question isn't repeated here because it used knowledge that's no longer available: ask again if you still need it.`;
     // On a restart, the old card is closed and the old session told to stop before anything else (see restartIfRevoked).
-    if (await restartIfRevoked(key, { ...job, question: state }, [{ speaker: user === config.owner ? `${config.ownerName} (your owner)` : await displayName(user), text: note, audience: 'bot', ts: messageTs ?? job.threadTs }])) {
+    if (await restartIfRevoked(key, { ...job, phase: waitFor(job.phase, state) }, [{ speaker: user === config.owner ? `${config.ownerName} (your owner)` : await displayName(user), text: note, audience: 'bot', ts: messageTs ?? job.threadTs }])) {
       updateJob(key, rememberReply);
       return;
     }
@@ -794,25 +742,26 @@ export const createBot = ({
         if (!posted.ok) return await refusedCard(posted);
         next.ts = posted.value;
       }
-      updateJob(key, (latest) => ({ question: next, ...rememberReply(latest) }));
+      updateJob(key, (latest) => ({ phase: waitFor(latest.phase, next), ...rememberReply(latest) }));
       return;
     }
     await questions.answerQuestion(job.t3ThreadId, state.requestId, answers, config.t3Bin);
     updateJob(key, rememberReply);
     await clearQuestion(key, job, user, { ...state, answers });
-    updateJob(key, () => ({ watching: true, loadingRequested: true, lastActivityAt: new Date(now()).toISOString() }));
+    updateJob(key, (latest) => ({ phase: follow(latest.phase), loadingRequested: true, lastActivityAt: new Date(now()).toISOString() }));
     await setLoading(job.channel, job.threadTs, true);
     events('question_answered', { key, requestId: state.requestId, user });
   };
 
   const handleQuestionAction = async (action: QuestionInteraction): Promise<void> => {
-    const found = allJobs().find(([, job]) => job.channel === action.channel && job.question?.ts === action.messageTs);
+    const found = allJobs().find(([, job]) => job.channel === action.channel && cardOf(job)?.ts === action.messageTs);
     if (!found) return;
     const [key] = found;
     await exclusive(key, async () => {
       const job = getJob(key);
-      if (!job?.question || job.question.nonce !== action.nonce || !mayAnswer(job, action.user)) return;
-      const answer = choiceAnswer(job.question.questions[job.question.index]!, action.indices);
+      const card = job ? cardOf(job) : undefined;
+      if (!job || !card || card.nonce !== action.nonce || !mayAnswer(job, action.user)) return;
+      const answer = choiceAnswer(card.questions[card.index]!, action.indices);
       if (answer === null) {
         await questionFeedback(job, 'choose');
         return;
@@ -828,74 +777,75 @@ export const createBot = ({
   const postWaitingNotice = async (key: string, job: Job, thread: T3Thread): Promise<void> => {
     await setLoading(job.channel, job.threadTs, false, job.loadingRequested === true);
     await notify(job.channel, job.threadTs, { kind: 'waiting-in-t3', link: t3LinkOf(thread.link) });
-    updateJob(key, () => ({ waitingInT3: true, ownerFollows: true, lastActivityAt: new Date(now()).toISOString() }));
+    updateJob(key, (latest) => ({ phase: waitFor(latest.phase), ownerFollows: true, lastActivityAt: new Date(now()).toISOString() }));
     logger.info(`T3 thread ${job.t3ThreadId} is waiting on a request; told the owner in ${key}`);
     events('waiting_in_t3', { key, t3ThreadId: job.t3ThreadId });
     events('needs_owner', { key });
   };
 
+  /**
+   * One poll of one job: `step` (lifecycle.ts) decides from the saved job and what T3 shows; this performs it through
+   * the chat and T3, and saves the phase it leads to.
+   */
   const pollJob = async (key: string): Promise<void> => {
     const job = getJob(key);
     if (!job) return;
-    const { thread, messages } = await t3.showThread(job.t3ThreadId, config.t3Bin, RECENT_MESSAGES);
-    const current = thread.activeRunId ?? thread.latestRunId;
-    // A reply to someone that the worker's next run (following CI, say) started before the bot saw it finish.
-    const missed = current ? missedReply(messages, job.lastPostedRunId, current) : null;
-    if (missed && current !== job.lastPostedRunId) {
-      await postRunResult(key, job, thread, missed.text, false, missed.runId);
+    const observed = await t3.showThread(job.t3ThreadId, config.t3Bin, RECENT_MESSAGES);
+    const { thread, messages } = observed;
+    let next = step(job, observed);
+    if (next.do === 'post' && next.missed) {
+      // A reply to someone that the worker's next run (following CI, say) started before the bot saw it finish.
+      await postRunResult(key, job, thread, next.text, false, next.runId);
+      next = step(getJob(key) ?? job, observed, { missed: false });
     }
     const latest = getJob(key) ?? job;
 
-    if ((thread.pendingRequestCount ?? 0) > 0) {
+    if (next.do === 'wait') {
       await setLoading(latest.channel, latest.threadTs, false);
       const requests = await questions.listQuestions(job.t3ThreadId, config.t3Bin).catch((error: unknown) => {
         logger.debug(`Reading questions in ${key} failed: ${errorMessage(error)}`);
         return null;
       });
-      const request = requests?.find(canShowQuestion);
-      if (request) await showQuestion(key, latest, thread, request);
-      else if (requests !== null) {
-        if (latest.question) await clearQuestion(key, latest);
-        if (!(getJob(key) ?? latest).waitingInT3) {
-          for (const unsupported of requests) {
-            const options = unsupported.questions.flatMap((question) => question.options);
-            const limits = {
-              questionCount: unsupported.questions.length,
-              maxQuestionChars: Math.max(0, ...unsupported.questions.map((question) => question.question.length)),
-              maxOptionCount: Math.max(0, ...unsupported.questions.map((question) => question.options.length)),
-              maxLabelChars: Math.max(0, ...options.map((option) => option.label.length)),
-              maxDescriptionChars: Math.max(0, ...options.map((option) => option.description.length)),
-            };
-            logger.warn(`Question ${unsupported.requestId} in ${key} exceeds the chat's display limits; using the T3 link.`);
-            events('question_fallback', { key, requestId: unsupported.requestId, reason: 'display_limits', ...limits });
-          }
-          await postWaitingNotice(key, getJob(key) ?? latest, thread);
+      const shown = waitStep(latest.phase, requests, canShowQuestion);
+      if (shown.do === 'card') await showQuestion(key, latest, thread, shown.request);
+      else if (shown.do === 'in-t3') {
+        if (shown.closeCard) await clearQuestion(key, latest);
+        for (const unsupported of shown.unsupported) {
+          const options = unsupported.questions.flatMap((question) => question.options);
+          const limits = {
+            questionCount: unsupported.questions.length,
+            maxQuestionChars: Math.max(0, ...unsupported.questions.map((question) => question.question.length)),
+            maxOptionCount: Math.max(0, ...unsupported.questions.map((question) => question.options.length)),
+            maxLabelChars: Math.max(0, ...options.map((option) => option.label.length)),
+            maxDescriptionChars: Math.max(0, ...options.map((option) => option.description.length)),
+          };
+          logger.warn(`Question ${unsupported.requestId} in ${key} exceeds the chat's display limits; using the T3 link.`);
+          events('question_fallback', { key, requestId: unsupported.requestId, reason: 'display_limits', ...limits });
         }
-      } else if (!latest.question && !latest.waitingInT3) await postWaitingNotice(key, latest, thread);
+        await postWaitingNotice(key, getJob(key) ?? latest, thread);
+      }
       return;
     }
-    if (latest.question) await clearQuestion(key, latest);
+    // T3 no longer waits on anyone: a card still up is closed, and the job is followed as before.
+    if (cardOf(latest)) await clearQuestion(key, latest);
+    else if (latest.phase.state === 'waiting') updateJob(key, (current) => ({ phase: stopWaiting(current.phase) }));
+    const saved = getJob(key) ?? latest;
 
-    if (thread.activeRunId) {
-      if (latest.waitingInT3) updateJob(key, () => ({ waitingInT3: false }));
-      await setLoading(latest.channel, latest.threadTs, latest.loadingRequested === true || someoneWaits(latest, thread.activeRunId, messages));
-      await showProgress(key, getJob(key) ?? latest, thread, messages);
-      return;
+    switch (next.do) {
+      case 'follow':
+        await setLoading(saved.channel, saved.threadTs, saved.loadingRequested === true || next.waits);
+        await showProgress(key, saved, next, messages);
+        return;
+      case 'post':
+        await postRunResult(key, saved, thread, next.text, next.byWorker, next.runId);
+        return;
+      case 'settle':
+        // Nothing runs and every run is posted: a progress line or a seen run left from earlier is over too.
+        await clearProgress(key, saved);
+        await finishLoading(key, saved);
+        updateJob(key, () => ({ phase: settle() }));
+        return;
     }
-
-    const runId = thread.latestRunId;
-    if (runId !== null && runId !== latest.lastPostedRunId) {
-      const byWorker = startedByWorker(runId, messages);
-      const last = messages.at(-1);
-      // A run the worker started that wrote nothing has nothing to tell anyone; it mustn't overwrite the status message.
-      const silent = byWorker && !(last?.role === 'assistant' && last.runId === runId);
-      await postRunResult(key, latest, thread, silent ? '(quiet)' : replyText(thread, last), byWorker, runId);
-      return;
-    }
-    // Nothing runs and every run is posted: a progress line or a seen run left from earlier is over too.
-    await clearProgress(key, latest);
-    await finishLoading(key, latest);
-    updateJob(key, () => ({ watching: false, waitingInT3: false, runSeen: undefined }));
   };
 
   /**
@@ -933,8 +883,8 @@ export const createBot = ({
     }
     // An open question card is the old worker's words: it's closed with fixed copy, and the old session told to stop,
     // before the thread's history is read for the fresh brief, so the question never reaches it.
-    if (job.question) {
-      const open = job.question;
+    const open = cardOf(job);
+    if (open) {
       await questions.answerQuestion(job.t3ThreadId, open.requestId, Object.fromEntries(open.questions.map((item) => [item.id, 'Stop here: this thread moved to a fresh session. Do nothing more.'])), config.t3Bin)
         .catch((error: unknown) => logger.warn(`Could not close the question in the earlier T3 thread ${job.t3ThreadId}: ${errorMessage(error)}`));
       await clearQuestion(key, job, undefined, open, true);
@@ -952,7 +902,7 @@ export const createBot = ({
       now: new Date(now()),
     });
     const t3ThreadId = await t3.startThread({ ...input, ...(job.branch ? { baseRef: job.branch } : {}) }, config.t3Bin);
-    updateJob(key, () => ({ t3ThreadId, visibility, knowledgeRead: knowledge.read, knowledgeDir: knowledge.readDir, branch: input.branch, lastPostedRunId: null, runSeen: undefined, nextTurnWaits: lines.some((line) => line.audience === 'bot'), delivering: undefined, watching: true, question: undefined, waitingInT3: false }));
+    updateJob(key, () => ({ t3ThreadId, visibility, knowledgeRead: knowledge.read, knowledgeDir: knowledge.readDir, branch: input.branch, lastPostedRunId: null, nextTurnWaits: lines.some((line) => line.audience === 'bot'), delivering: undefined, phase: { state: 'following' } }));
     await notify(job.channel, job.threadTs, { kind: 'fresh-session' });
     logger.info(`${folderGone ? 'The knowledge folder this thread read was cleaned up' : `Knowledge this thread used was taken back (${revoked.length} page(s))`}; continued ${key} in a fresh T3 thread ${t3ThreadId}`);
     events('knowledge_revoked', { key, t3ThreadId });
@@ -980,7 +930,7 @@ export const createBot = ({
       // The reply just posted took every 👀 with it. These messages are only now with the worker, so they get theirs back.
       const waiting = lines.filter((line) => line.audience !== 'others').map((line) => line.ts);
       for (const ts of waiting) await setEyes(job.channel, ts, true);
-      updateJob(key, (latest) => ({ watching: true, loadingRequested, nextTurnWaits: loadingRequested, lastActivityAt: new Date(now()).toISOString(), pendingReactionTs: null, pendingReactions: [...new Set([...pendingReactions(latest), ...waiting])] }));
+      updateJob(key, (latest) => ({ phase: follow(latest.phase), loadingRequested, nextTurnWaits: loadingRequested, lastActivityAt: new Date(now()).toISOString(), pendingReactionTs: null, pendingReactions: [...new Set([...pendingReactions(latest), ...waiting])] }));
       logger.info(`Forwarded ${lines.length} thread message(s) to T3 thread ${getJob(key)?.t3ThreadId ?? job.t3ThreadId}`);
     }),
     onError: async (key, error) => {
@@ -999,8 +949,9 @@ export const createBot = ({
     if (!(await toReadable(msg.text)) && !(allowed && msg.files?.length)) return;
     const job = getJob(key);
     if (job?.answeredQuestionMessages?.includes(msg.messageTs)) return;
-    if (job?.question && mayAnswer(job, msg.user) && said !== 'others' && !msg.files?.length) {
-      const answer = typedAnswer(job.question.questions[job.question.index]!, await toReadable(msg.text));
+    const card = job ? cardOf(job) : undefined;
+    if (job && card && mayAnswer(job, msg.user) && said !== 'others' && !msg.files?.length) {
+      const answer = typedAnswer(card.questions[card.index]!, await toReadable(msg.text));
       if (answer === null) await questionFeedback(job, 'invalid-answer');
       else await submitAnswer(key, job, answer, msg.user, msg.messageTs).catch(async (error: unknown) => {
         logger.error(`Answering question in ${key} failed: ${errorMessage(error)}`);
@@ -1013,7 +964,7 @@ export const createBot = ({
     if (audience !== 'others') await setEyes(msg.channel, msg.messageTs, true);
     if (audience === 'bot') {
       updateJob(key, () => ({ loadingRequested: true }));
-      if (!getJob(key)?.waitingInT3) await setLoading(msg.channel, msg.threadTs, true);
+      if (getJob(key)?.phase.state !== 'waiting') await setLoading(msg.channel, msg.threadTs, true);
     }
     const text = await messageContent(msg.text, allowed ? msg.files : []);
     const line: HeardLine = { speaker: await speaker(msg.user), text, audience, ts: msg.messageTs };
@@ -1094,7 +1045,7 @@ export const createBot = ({
 
   /** Watched jobs every poll; idle ones every IDLE_POLL_MS until FOLLOW_UP_MS after their last activity. */
   const isDue = (key: string, job: Job, now: number): boolean => {
-    if (job.watching) return true;
+    if (followed(job.phase)) return true;
     if (now - Date.parse(job.lastActivityAt ?? job.createdAt) > FOLLOW_UP_MS) return false;
     if (now - (lastIdleCheck.get(key) ?? 0) < IDLE_POLL_MS) return false;
     lastIdleCheck.set(key, now);
@@ -1122,36 +1073,35 @@ export const createBot = ({
     }
   };
 
-  /** What the Jobs screen reads as running (`classify` in jobs.ts), from the saved job alone. */
-  const looksRunning = (job: Job): boolean => job.loadingRequested === true || pendingReactions(job).length > 0
-    || job.progress !== undefined || (job.runSeen !== undefined && job.runSeen.runId !== job.lastPostedRunId);
-
   const reconcileJob = async (key: string): Promise<void> => {
     const job = getJob(key);
     // A message waiting to reach the worker keeps its 👀 and loading: it is about to start a run.
     if (!job || followUps.holds(key)) return;
     // A seen run that was posted tells nothing more.
-    if (job.runSeen && job.runSeen.runId === job.lastPostedRunId) updateJob(key, () => ({ runSeen: undefined }));
+    const seen = seenRun(job.phase);
+    if (seen && seen.id === job.lastPostedRunId && !seen.progress) updateJob(key, (latest) => ({ phase: forgetRun(latest.phase) }));
     const saved = getJob(key) ?? job;
-    if (!looksRunning(saved)) return;
+    if (!looksRunning({ ...saved, pendingReactions: pendingReactions(saved) })) return;
     const { thread } = await t3.showThread(saved.t3ThreadId, config.t3Bin);
     // Going or waiting in T3: the poll follows it from here.
     if (thread.activeRunId || (thread.pendingRequestCount ?? 0) > 0) {
-      if (!saved.watching) updateJob(key, () => ({ watching: true }));
+      updateJob(key, (latest) => ({ phase: follow(latest.phase) }));
       return;
     }
     // A finished run that was never posted is posted by the next poll, which clears the rest: always for a job the bot
     // was following, and for one it wasn't unless the thread went quiet so long ago that a reply would come from nowhere.
     const unposted = thread.latestRunId !== null && thread.latestRunId !== saved.lastPostedRunId;
-    if (unposted && (saved.watching || now() - Date.parse(saved.lastActivityAt ?? saved.createdAt) <= FOLLOW_UP_MS)) {
-      if (!saved.watching) updateJob(key, () => ({ watching: true }));
+    if (unposted && (followed(saved.phase) || now() - Date.parse(saved.lastActivityAt ?? saved.createdAt) <= FOLLOW_UP_MS)) {
+      updateJob(key, (latest) => ({ phase: follow(latest.phase) }));
       return;
     }
-    // Nothing runs in T3 for this thread: the flags are left from a run nobody followed to its end.
+    // Nothing runs in T3 for this thread: what's left is from a run nobody followed to its end. A card still up waits
+    // for nothing any more.
     await clearProgress(key, saved);
+    if (cardOf(saved)) await clearQuestion(key, getJob(key) ?? saved);
     const cleared = await clearEyes(saved);
     await finishLoading(key, saved);
-    updateJob(key, (latest) => ({ ...withoutReactions(latest, cleared), runSeen: undefined, watching: false, waitingInT3: false }));
+    updateJob(key, (latest) => ({ ...withoutReactions(latest, cleared), phase: settle() }));
     logger.info(`${key} was saved as running, but T3 thread ${saved.t3ThreadId} isn't: cleared it.`);
     events('job_reconciled', { key, t3ThreadId: saved.t3ThreadId, unposted });
   };
@@ -1195,7 +1145,7 @@ export const createBot = ({
   };
 
   /** A job in this thread is running now (its worker is being followed). Its messages still reach it while new work is paused. */
-  const runningIn = (channel: string, threadTs: string): boolean => getJob(slackKey(channel, threadTs))?.watching === true;
+  const runningIn = (channel: string, threadTs: string): boolean => { const job = getJob(slackKey(channel, threadTs)); return job !== undefined && followed(job.phase); };
 
   /** Resolves once nothing the bot started is still running: no job step, no batch being checked or handed over. */
   const idle = async (): Promise<void> => {

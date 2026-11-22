@@ -18,6 +18,7 @@ import { slackChat } from './fakes/chat.ts';
 import { addAllowedUser, PROFILE_SETTINGS, updateProfileSection } from '../src/profile-settings.ts';
 import { watchProfile } from '../src/profile-reload.ts';
 import { listJobs } from '../src/jobs.ts';
+import { followed, seenRun } from '../src/lifecycle.ts';
 
 
 /** A bot wired to the shared recording Slack and scriptable T3 (tests/fakes), on a fake clock the test moves by hand. */
@@ -839,7 +840,7 @@ const nativeQuestion = (id = 'request-1'): T3QuestionRequest => ({ requestId: id
   id: 'scope', header: 'Scope', question: 'Which area should I investigate?',
   options: [{ label: 'Frontend', description: 'Browser behavior', value: 'front' }, { label: 'Backend', description: 'API behavior', value: 'back' }],
 }] });
-const savedQuestion = (f: ReturnType<typeof fixture>) => createStore(f.config.statePath).allJobs()[0]![1].question!;
+const savedQuestion = (f: ReturnType<typeof fixture>) => { const { phase } = createStore(f.config.statePath).allJobs()[0]![1]; return (phase.state === 'waiting' ? phase.card : undefined)!; };
 const choose = async (f: ReturnType<typeof fixture>, index: number, user = SAM, bot = f.bot): Promise<void> => {
   const state = savedQuestion(f);
   const action = questionInteraction({ type: 'block_actions', channel: { id: 'C1' }, user: { id: user }, message: { ts: state.ts },
@@ -1184,7 +1185,7 @@ test('a run that starts and ends between two polls is posted and leaves the job 
   const f = fixture(t);
   await f.say(SAM, `<@${BOT}> how does scoring work?`, true);
   await f.bot.poll();
-  assert.equal(savedJob(f)[1].runSeen?.runId, 'run-1', 'the first run was seen going');
+  assert.equal(seenRun(savedJob(f)[1].phase)?.id, 'run-1', 'the first run was seen going');
   await f.workerReplies('Scoring works like this.');
 
   // The follow-up's run starts and ends before the bot polls again: it is never seen going.
@@ -1194,7 +1195,7 @@ test('a run that starts and ends between two polls is posted and leaves the job 
 
   const [, job] = savedJob(f);
   assert.equal(job.lastPostedRunId, 'run-2');
-  assert.equal(job.runSeen, undefined, 'the run seen earlier is forgotten once its successor is posted');
+  assert.equal(seenRun(job.phase), undefined, 'the run seen earlier is forgotten once its successor is posted');
   assert.equal(await listedGroup(f), 'done');
 });
 
@@ -1205,7 +1206,7 @@ test('a run still going keeps its seen run when an earlier reply is posted', asy
   await f.bot.poll();
   const [, job] = savedJob(f);
   assert.equal(job.lastPostedRunId, 'run-1');
-  assert.equal(job.runSeen?.runId, 'run-2', 'the run going now is still being timed');
+  assert.equal(seenRun(job.phase)?.id, 'run-2', 'the run going now is still being timed');
   assert.equal(await listedGroup(f), 'running');
 });
 
@@ -1217,11 +1218,12 @@ test('at start, a stale migrated job that T3 is not running is cleared: 👀, lo
   // and so long ago that the poll no longer looks at it.
   const [key, job] = savedJob(f);
   const longAgo = new Date(Date.parse('2026-11-18T10:00:00Z') - 60 * 24 * 60 * 60_000).toISOString();
-  createStore(f.config.statePath).putJob(key, {
-    ...job, pendingReactionTs: '100.050', pendingReactions: undefined, loadingRequested: true, watching: false,
+  const { phase: _phase, ...rest } = job;
+  writeFileSync(f.config.statePath, JSON.stringify({ [key]: {
+    ...rest, pendingReactionTs: '100.050', pendingReactions: undefined, loadingRequested: true, watching: false,
     progress: { ts: '200.900', runId: 'run-0', text: '⏳ Still on it' }, runSeen: { runId: 'run-0', at: longAgo },
     createdAt: longAgo, lastActivityAt: longAgo,
-  });
+  } }));
   f.eyes.add('100.050');
   const bot = f.restart();
   await bot.poll();
@@ -1232,8 +1234,7 @@ test('at start, a stale migrated job that T3 is not running is cleared: 👀, lo
   assert.equal(after.loadingRequested, false);
   assert.equal(after.pendingReactionTs, null);
   assert.deepEqual(after.pendingReactions, []);
-  assert.equal(after.progress, undefined);
-  assert.equal(after.runSeen, undefined);
+  assert.equal(seenRun(after.phase), undefined, 'the seen run and its line are gone');
   assert.equal(after.lastPostedRunId, 'run-1', 'what was posted is kept');
   assert.ok(!f.eyes.has('100.050'), 'the 👀 left in Slack is removed');
   assert.ok(f.deleted.includes('200.900'), 'the progress line left in Slack is removed');
@@ -1246,19 +1247,19 @@ test('at start, a job T3 is still running, or whose finished run is unposted, is
   await f.say(SAM, `<@${BOT}> how does scoring work?`, true);
   const [key, job] = savedJob(f);
   // Saved as idle by a bot that stopped mid-run.
-  createStore(f.config.statePath).putJob(key, { ...job, watching: false });
+  createStore(f.config.statePath).putJob(key, { ...job, phase: { state: 'idle' } });
   const bot = f.restart();
   await bot.reconcile();
-  assert.equal(savedJob(f)[1].watching, true, 'the run going in T3 is followed again');
+  assert.equal(followed(savedJob(f)[1].phase), true, 'the run going in T3 is followed again');
   assert.equal(savedJob(f)[1].loadingRequested, true, 'and keeps its loading status');
   assert.equal(f.eyes.size, 1);
 
   // It finished while nobody watched: it is followed, and the next poll posts it, which clears the rest.
   f.workerRepliesUnwatched('Scoring works like this.');
-  createStore(f.config.statePath).putJob(key, { ...savedJob(f)[1], watching: false });
+  createStore(f.config.statePath).putJob(key, { ...savedJob(f)[1], phase: { state: 'idle' } });
   const again = f.restart();
   await again.reconcile();
-  assert.equal(savedJob(f)[1].watching, true);
+  assert.equal(followed(savedJob(f)[1].phase), true);
   assert.equal(savedJob(f)[1].loadingRequested, true, 'its reply is still owed');
   assert.equal(f.posts.length, 0, 'reconciling posts nothing itself');
   await again.poll();
@@ -1276,7 +1277,7 @@ test('at start, a followed job whose run finished while the bot was stopped is p
   createStore(f.config.statePath).putJob(key, { ...job, createdAt: longAgo, lastActivityAt: longAgo });
   const bot = f.restart();
   await bot.reconcile();
-  assert.equal(savedJob(f)[1].watching, true, 'a reply the bot was following is still owed');
+  assert.equal(followed(savedJob(f)[1].phase), true, 'a reply the bot was following is still owed');
   await bot.poll();
   assert.deepEqual(f.posts.map((post) => post.text), ['Scoring works like this.']);
 });

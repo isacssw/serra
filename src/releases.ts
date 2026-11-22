@@ -5,6 +5,7 @@
  * restoring the previous installation when the new one fails to start), rollback switches back. These wrappers add
  * a read-only status, a preflight that lists running jobs, streamed log lines and results the UI can act on.
  */
+import { followed } from './lifecycle.ts';
 import { existsSync, readdirSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, delimiter, join, resolve } from 'node:path';
@@ -175,7 +176,7 @@ export interface ActivationPreflight {
 
 /** Jobs the bot is following now, read from `state.json` without writing it. */
 export const runningJobs = (directory: string): RunningJob[] => createStore(join(resolve(directory), 'state.json')).allJobs()
-  .filter(([, job]) => job.watching)
+  .filter(([, job]) => followed(job.phase))
   .map(([key, job]) => ({
     key, requester: job.requester, channel: job.channel, t3ThreadId: job.t3ThreadId,
     createdAt: job.createdAt, lastActivityAt: job.lastActivityAt ?? job.createdAt,

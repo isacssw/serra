@@ -3,9 +3,16 @@
  * release switch, cleanup) goes through `readState`, which checks each job's shape instead of trusting a cast and
  * migrates what older builds wrote, so one bad entry can't crash the bot or mislead a reader. Only the bot writes the
  * file, atomically, and backs it up first when reading it changed anything.
+ *
+ * A job's lifecycle is saved as `phase` (`lifecycle.ts`). Each write also saves the flags builds before it read
+ * (`watching`, `waitingInT3`, `question`, `runSeen`, `progress`), made from the phase, so a rolled-back bot or app
+ * reads the same state. A file whose flags don't match its phase was written by such an older build since: the phase
+ * is made from the flags again.
  */
 import { copyFileSync, existsSync, readFileSync } from 'node:fs';
 import { writeFileAtomic } from './lib/atomic.ts';
+import { IDLE, type Phase, type SeenRun } from './lifecycle.ts';
+import type { QuestionCard } from './questions.ts';
 import type { Job } from './types.ts';
 import { isArrayOf, isBoolean, isOneOf, isRecord, isString, isStringOrNull, isTime } from './lib/guards.ts';
 
@@ -15,7 +22,7 @@ const isAudience = isOneOf('owner', 'team', 'external');
 /** The fields a job may leave out. */
 type OptionalKeys<T> = { [K in keyof T]-?: undefined extends T[K] ? K : never }[keyof T];
 /** The fields every job has. Listed here so a new required field must be given a default in `migrateJob`. */
-const REQUIRED = ['t3ThreadId', 'channel', 'threadTs', 'requester', 'pendingReactionTs', 'lastPostedRunId', 'watching', 'createdAt'] as const satisfies readonly Exclude<keyof Job, OptionalKeys<Job>>[];
+const REQUIRED = ['t3ThreadId', 'channel', 'threadTs', 'requester', 'pendingReactionTs', 'lastPostedRunId', 'phase', 'createdAt'] as const satisfies readonly Exclude<keyof Job, OptionalKeys<Job>>[];
 /** Compiles only while `REQUIRED` lists every required field of `Job`. */
 const requiredComplete: [Exclude<Exclude<keyof Job, OptionalKeys<Job>>, (typeof REQUIRED)[number]>] extends [never] ? true : never = true;
 void requiredComplete;
@@ -28,18 +35,68 @@ const UNSAFE_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
  */
 const OPTIONAL: { [K in OptionalKeys<Job>]: (value: unknown) => boolean } = {
   pendingReactions: isStrings, loadingRequested: isBoolean, ownerFollows: isBoolean, ownerAskOpen: isBoolean,
-  lastActivityAt: isString, waitingInT3: isBoolean,
-  question: (x) => isRecord(x) && isString(x.ts) && isString(x.requestId) && isString(x.nonce) && Array.isArray(x.questions)
-    && Number.isSafeInteger(x.index) && isRecord(x.answers),
+  lastActivityAt: isString,
   answeredQuestionMessages: isStrings, reviewRequestedPrs: isStrings, statusTs: isString,
-  progress: (x) => isRecord(x) && isString(x.ts) && isString(x.runId) && isString(x.text),
-  runSeen: (x) => isRecord(x) && isString(x.runId) && isString(x.at) && (x.waits === undefined || isBoolean(x.waits)),
   nextTurnWaits: isBoolean, heard: isStrings,
   delivering: (x) => isRecord(x) && isString(x.runId) && isTime(x.at) && (x.text === undefined || isString(x.text))
     && (x.ownerFollows === undefined || isBoolean(x.ownerFollows)) && (x.ownerAskOpen === undefined || isBoolean(x.ownerAskOpen)),
   visibility: isAudience,
   knowledgeRead: (x) => isRecord(x) && Object.values(x).every(isAudience),
   knowledgeDir: isString, branch: isString,
+};
+
+const isCard = (x: unknown): x is QuestionCard => isRecord(x) && isString(x.ts) && isString(x.requestId) && isString(x.nonce) && Array.isArray(x.questions)
+  && Number.isSafeInteger(x.index) && isRecord(x.answers);
+const isProgress = (x: unknown): x is { ts: string; text: string } => isRecord(x) && isString(x.ts) && isString(x.text);
+const isSeenRun = (x: unknown): x is SeenRun => isRecord(x) && isString(x.id) && isString(x.at) && (x.waits === undefined || isBoolean(x.waits))
+  && (x.progress === undefined || isProgress(x.progress));
+const isPhase = (x: unknown): x is Phase => isRecord(x) && (x.state === 'idle'
+  || (x.state === 'following' && (x.run === undefined || isSeenRun(x.run)))
+  || (x.state === 'waiting' && (x.run === undefined || isSeenRun(x.run)) && (x.card === undefined || isCard(x.card))));
+
+/** The flags builds before `phase` read, as they would have saved them. */
+const LEGACY = ['watching', 'waitingInT3', 'question', 'runSeen', 'progress'] as const;
+const legacyOf = (phase: Phase): Record<(typeof LEGACY)[number], unknown> => {
+  const run = phase.state === 'idle' ? undefined : phase.run;
+  return {
+    watching: phase.state !== 'idle',
+    waitingInT3: phase.state === 'waiting',
+    question: phase.state === 'waiting' ? phase.card : undefined,
+    runSeen: run ? { runId: run.id, at: run.at, ...(run.waits === undefined ? {} : { waits: run.waits }) } : undefined,
+    progress: run?.progress ? { ts: run.progress.ts, runId: run.id, text: run.progress.text } : undefined,
+  };
+};
+
+/** Whether the saved flags are what `phase` saves: no older build changed them since. */
+const flagsMatch = (value: Record<string, unknown>, phase: Phase): boolean => {
+  const expected = legacyOf(phase);
+  // `waitingInT3: false` and no field mean the same.
+  const flag = (field: (typeof LEGACY)[number], found: unknown): unknown => (field === 'waitingInT3' && found === undefined ? false : found);
+  return LEGACY.every((field) => JSON.stringify(flag(field, value[field])) === JSON.stringify(flag(field, expected[field])));
+};
+
+/**
+ * The phase older builds' flags describe. A card means waiting with it, `waitingInT3` waiting without one, `watching`
+ * following. A job not watched that still has a seen run nobody posted, or a progress line, is followed too: the next
+ * poll then settles it properly (clearing the line in the chat) instead of it being dropped here.
+ */
+const phaseFromFlags = (value: Record<string, unknown>): Phase => {
+  const seen = isRecord(value.runSeen) && isString(value.runSeen.runId) && isString(value.runSeen.at) ? value.runSeen : undefined;
+  const line = isRecord(value.progress) && isString(value.progress.ts) && isString(value.progress.runId) && isString(value.progress.text) ? value.progress : undefined;
+  const runId = seen ? seen.runId : line?.runId;
+  const run: SeenRun | undefined = isString(runId) ? {
+    id: runId,
+    at: seen && isString(seen.at) ? seen.at : isString(value.createdAt) ? value.createdAt : new Date(0).toISOString(),
+    ...(seen && isBoolean(seen.waits) ? { waits: seen.waits } : {}),
+    // A line left from another run than the one seen can't be told apart from it any more: it goes with that run.
+    ...(line && isString(line.ts) && isString(line.text) && line.runId === runId ? { progress: { ts: line.ts, text: line.text } } : {}),
+  } : undefined;
+  const withRun = run ? { run } : {};
+  if (isCard(value.question)) return { state: 'waiting', ...withRun, card: value.question };
+  if (value.waitingInT3 === true) return { state: 'waiting', ...withRun };
+  const unposted = run !== undefined && (run.id !== value.lastPostedRunId || run.progress !== undefined);
+  if (value.watching === true || unposted) return { state: 'following', ...withRun };
+  return IDLE;
 };
 
 /**
@@ -65,17 +122,23 @@ const migrateJob = (key: string, value: unknown): { job: Job; repaired: boolean 
     requester: pick('requester', isString, ''),
     pendingReactionTs: pick('pendingReactionTs', isStringOrNull, null),
     lastPostedRunId: pick('lastPostedRunId', isStringOrNull, null),
-    watching: pick('watching', isBoolean, false),
+    phase: isPhase(value.phase) && flagsMatch(value, value.phase) ? value.phase : ((repaired = true), phaseFromFlags(value)),
     createdAt: pick('createdAt', isString, isString(value.lastActivityAt) ? value.lastActivityAt : ''),
   };
   for (const [field, found] of Object.entries(value)) {
-    if (found === undefined || UNSAFE_KEYS.has(field) || (REQUIRED as readonly string[]).includes(field)) continue;
+    if (found === undefined || UNSAFE_KEYS.has(field) || (REQUIRED as readonly string[]).includes(field) || (LEGACY as readonly string[]).includes(field)) continue;
     const guard = (OPTIONAL as Record<string, ((value: unknown) => boolean) | undefined>)[field];
     // A field this build doesn't know (written by a newer one) is kept as it is, so a rollback loses nothing.
     if (!guard || guard(found)) Object.assign(job, { [field]: found });
     else repaired = true;
   }
   return { job, repaired };
+};
+
+/** A job as saved: its phase, and the flags older builds read made from it. */
+const toDisk = (job: Job): Record<string, unknown> => {
+  const flags = Object.fromEntries(Object.entries(legacyOf(job.phase)).filter(([, value]) => value !== undefined));
+  return { ...job, ...flags };
 };
 
 export interface SavedState {
@@ -126,7 +189,7 @@ export const createStore = (file: string, { warn = (_message: string): void => {
       if (existsSync(file) && !existsSync(backup)) copyFileSync(file, backup);
       backedUp = true;
     }
-    writeFileAtomic(file, JSON.stringify(jobs, null, 2));
+    writeFileAtomic(file, JSON.stringify(Object.fromEntries(Object.entries(jobs).map(([key, job]) => [key, toDisk(job)])), null, 2));
   };
 
   const getJob = (key: string): Job | undefined => jobs[key];

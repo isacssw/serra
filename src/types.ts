@@ -1,4 +1,4 @@
-import type { QuestionCard } from './questions.ts';
+import type { Phase } from './lifecycle.ts';
 
 /** The fields of `t3 thread show --json` that the bot reads. */
 export interface T3Thread {
@@ -22,7 +22,7 @@ export interface T3ThreadDetail {
   messages: T3Message[];
 }
 
-/** One Slack thread the bot owns, keyed `${channel}:${threadTs}` in state.json. */
+/** One chat thread the bot owns, keyed `${channel}:${threadTs}` in state.json. */
 export interface Job {
   t3ThreadId: string;
   channel: string;
@@ -39,15 +39,11 @@ export interface Job {
   /** The owner was pinged for a blocker and hasn't written in the thread since, so the same ask isn't pinged again. */
   ownerAskOpen?: boolean;
   lastPostedRunId: string | null;
-  /** Polled until a finished run has been posted and nothing new started. */
-  watching: boolean;
+  /** Where the job is in its lifecycle: idle, following a run, or waiting in T3 (`lifecycle.ts`). */
+  phase: Phase;
   createdAt: string;
   /** Last time a request came in or a reply went out. Absent on jobs saved before it existed. */
   lastActivityAt?: string;
-  /** The run is waiting on a request in T3's UI and the owner was told in Slack, so it isn't posted twice. */
-  waitingInT3?: boolean;
-  /** The current native T3 question shown in the chat. Saved so answers and buttons survive daemon restarts. */
-  question?: QuestionCard;
   /** Recent thread replies consumed as question answers, so Slack retries cannot answer the next question. */
   answeredQuestionMessages?: string[];
   /** PRs whose review request the bot already posted, so a resumed worker can't post twice. */
@@ -58,13 +54,6 @@ export interface Job {
    * so the next update lands below it.
    */
   statusTs?: string;
-  /** The "still working" line shown during a long run someone is waiting on. Deleted when the run's reply is posted. */
-  progress?: { ts: string; runId: string; text: string };
-  /**
-   * The run the bot last saw running, and when it first saw it: how long a run has been going. `waits`: someone in
-   * Slack is waiting on it (bound from `nextTurnWaits` the first time a poll sees the run).
-   */
-  runSeen?: { runId: string; at: string; waits?: boolean };
   /**
    * The last turn Serra sent answers someone who addressed the bot (a mention, a DM, a request), as opposed to chatter
    * the worker only hears. Recorded when the turn is sent; `t3 thread send` returns no run ID, so it is bound to the

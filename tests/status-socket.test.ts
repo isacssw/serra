@@ -163,14 +163,14 @@ test('daemon events map to the app contract, and others are dropped', () => {
 test('counts: an open owner ask or a T3-only wait needs the owner; a waiting request is running', () => {
   const job = (fields: Partial<Job>): Job => ({
     t3ThreadId: 't', channel: 'C0123', threadTs: '1.0', requester: 'U0123456789', pendingReactionTs: null,
-    lastPostedRunId: null, watching: true, createdAt: '2026-11-19T09:00:00.000Z', ...fields,
+    lastPostedRunId: null, phase: { state: 'following' }, createdAt: '2026-11-19T09:00:00.000Z', ...fields,
   });
   assert.deepEqual(jobCounts([
     job({ ownerAskOpen: true }),
-    job({ waitingInT3: true }),
-    job({ waitingInT3: true, loadingRequested: true, question: { requestId: 'q' } as Job['question'] }), // Waits on the requester in Slack.
+    job({ phase: { state: 'waiting' } }),
+    job({ loadingRequested: true, phase: { state: 'waiting', card: { requestId: 'q' } as never } }), // Waits on the requester in Slack.
     job({ loadingRequested: true }),
-    job({ waitingInT3: true, loadingRequested: true }),
+    job({ loadingRequested: true, phase: { state: 'waiting' } }),
     job({}),
   ]), { needsYou: 3, running: 1 });
 });

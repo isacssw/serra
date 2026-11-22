@@ -514,7 +514,7 @@ test('a thread from before audiences, and an answer to a pending question, also 
   const question = { id: 'q1', header: 'Day', question: 'Which day?', options: [{ label: 'Tuesday', description: '' }, { label: 'Thursday', description: '' }] };
   asked.setQuestions([{ requestId: 'r1', questions: [question] }]);
   const withQuestion = asked.store.getJob('CTEAM:2.1')!;
-  asked.store.putJob('CTEAM:2.1', { ...withQuestion, question: { requestId: 'r1', questions: [question], ts: '2.5', nonce: 'n', index: 0, answers: {}, runId: null } as never });
+  asked.store.putJob('CTEAM:2.1', { ...withQuestion, phase: { state: 'waiting', card: { requestId: 'r1', questions: [question], ts: '2.5', nonce: 'n', index: 0, answers: {}, runId: null } as never } });
   asked.restrict('workflows/release.md');
   await asked.bot.handle({ channel: 'CTEAM', threadTs: '2.1', messageTs: '2.6', user: PRIYA, text: 'Tuesday', direct: false });
   await settle(50);
@@ -660,7 +660,7 @@ test('a thread whose knowledge was taken back posts no question card, no progres
     if (revoke) run.restrict('workflows/release.md');
     run.working('Reading the release runbook: never Thursday.');
     const job = run.store.getJob('CTEAM:7.1')!;
-    run.store.putJob('CTEAM:7.1', { ...job, loadingRequested: true, runSeen: { runId: 'run-2', at: '2020-01-01T00:00:00.000Z' } });
+    run.store.putJob('CTEAM:7.1', { ...job, loadingRequested: true, phase: { state: 'following', run: { id: 'run-2', at: '2020-01-01T00:00:00.000Z' } } });
     await run.bot.poll();
     return run.posted;
   };
@@ -703,7 +703,7 @@ test('the next question of a form, a thread from before Serra recorded its pages
   ];
   form.setQuestions([{ requestId: 'r9', questions }]);
   const job = form.store.getJob('CTEAM:9.1')!;
-  form.store.putJob('CTEAM:9.1', { ...job, question: { requestId: 'r9', questions, ts: '9.5', nonce: 'n', index: 0, answers: {}, runId: null } as never });
+  form.store.putJob('CTEAM:9.1', { ...job, phase: { state: 'waiting', card: { requestId: 'r9', questions, ts: '9.5', nonce: 'n', index: 0, answers: {}, runId: null } as never } });
   form.restrict('workflows/release.md');
   await form.bot.handle({ channel: 'CTEAM', threadTs: '9.1', messageTs: '9.6', user: PRIYA, text: 'Tuesday', direct: false });
   await settle(50);
@@ -813,7 +813,7 @@ test('a channel shared outside since, an outside review channel, a page shared s
   const question = { id: 'q1', header: 'Day', question: 'Release on Thursday despite the freeze?', options: [{ label: 'Yes', description: '' }, { label: 'No', description: '' }] };
   form.setQuestions([{ requestId: 'r18', questions: [question] }]);
   const job = form.store.getJob('CTEAM:18.1')!;
-  form.store.putJob('CTEAM:18.1', { ...job, question: { requestId: 'r18', questions: [question], ts: '18.5', nonce: 'n', index: 0, answers: {}, runId: null } as never });
+  form.store.putJob('CTEAM:18.1', { ...job, phase: { state: 'waiting', card: { requestId: 'r18', questions: [question], ts: '18.5', nonce: 'n', index: 0, answers: {}, runId: null } as never } });
   form.restrict('workflows/release.md');
   await form.bot.handle({ channel: 'CTEAM', threadTs: '18.1', messageTs: '18.6', user: PRIYA, text: 'Yes', direct: false });
   await settle(50);
@@ -855,7 +855,7 @@ test('checks run right before each send, follow the version a worker read, and e
   await form.bot.handle({ channel: 'CTEAM', threadTs: '22.1', messageTs: '22.1', user: PRIYA, text: '<@UMOSS> how do I cut a release?', direct: true });
   const question = { id: 'q1', header: 'Day', question: 'Release on Thursday despite the freeze?', options: [{ label: 'Yes', description: '' }, { label: 'No', description: '' }] };
   const job = form.store.getJob('CTEAM:22.1')!;
-  form.store.putJob('CTEAM:22.1', { ...job, question: { requestId: 'r22', questions: [question], ts: '22.5', nonce: 'n', index: 0, answers: { q1: 'Yes' }, runId: null } as never });
+  form.store.putJob('CTEAM:22.1', { ...job, phase: { state: 'waiting', card: { requestId: 'r22', questions: [question], ts: '22.5', nonce: 'n', index: 0, answers: { q1: 'Yes' }, runId: null } as never } });
   form.restrict('workflows/release.md');
   await form.bot.poll();
   assert.ok(form.updated.some((body) => /This question was closed/.test(body)));
@@ -922,7 +922,7 @@ test('a fresh session never sees the old question through Slack history, an olde
   form.hooks.history.push({ ts: '26.1', user: PRIYA, text: '<@UMOSS> how do I cut a release?' }, { ts: '26.5', bot_id: 'BMOSS', text: question.question });
   form.setQuestions([{ requestId: 'r26', questions: [question] }]);
   const job = form.store.getJob('CTEAM:26.1')!;
-  form.store.putJob('CTEAM:26.1', { ...job, question: { requestId: 'r26', questions: [question], ts: '26.5', nonce: 'n', index: 0, answers: {}, runId: null } as never });
+  form.store.putJob('CTEAM:26.1', { ...job, phase: { state: 'waiting', card: { requestId: 'r26', questions: [question], ts: '26.5', nonce: 'n', index: 0, answers: {}, runId: null } as never } });
   form.restrict('workflows/release.md');
   form.hooks.history.push({ ts: '26.6', user: PRIYA, text: 'next Tuesday instead' });
   await form.bot.handle({ channel: 'CTEAM', threadTs: '26.1', messageTs: '26.6', user: PRIYA, text: 'next Tuesday instead', direct: false });
@@ -965,7 +965,7 @@ test('a fresh session leaves out the earlier worker\'s messages even when Slack 
   form.hooks.failUpdates = true;
   form.setQuestions([{ requestId: 'r28', questions: [question] }]);
   const job = form.store.getJob('CTEAM:28.1')!;
-  form.store.putJob('CTEAM:28.1', { ...job, question: { requestId: 'r28', questions: [question], ts: '28.5', nonce: 'n', index: 0, answers: {}, runId: null } as never });
+  form.store.putJob('CTEAM:28.1', { ...job, phase: { state: 'waiting', card: { requestId: 'r28', questions: [question], ts: '28.5', nonce: 'n', index: 0, answers: {}, runId: null } as never } });
   form.restrict('workflows/release.md');
   form.hooks.history.push({ ts: '28.6', user: PRIYA, text: 'next Tuesday instead' });
   await form.bot.handle({ channel: 'CTEAM', threadTs: '28.1', messageTs: '28.6', user: PRIYA, text: 'next Tuesday instead', direct: false });
@@ -984,7 +984,7 @@ test('a new card in place of a failed edit is checked again: knowledge taken bac
   ];
   form.setQuestions([{ requestId: 'r29', questions }]);
   const job = form.store.getJob('CTEAM:29.1')!;
-  form.store.putJob('CTEAM:29.1', { ...job, question: { requestId: 'r29', questions, ts: '29.5', nonce: 'n', index: 0, answers: {}, runId: null } as never });
+  form.store.putJob('CTEAM:29.1', { ...job, phase: { state: 'waiting', card: { requestId: 'r29', questions, ts: '29.5', nonce: 'n', index: 0, answers: {}, runId: null } as never } });
   // The owner takes the page back while Slack is failing to edit the card.
   form.hooks.onUpdate = () => { form.hooks.onUpdate = undefined; form.restrict('workflows/release.md'); form.hooks.failUpdates = true; };
   await form.bot.handle({ channel: 'CTEAM', threadTs: '29.1', messageTs: '29.6', user: PRIYA, text: 'Tuesday', direct: false });
@@ -1002,13 +1002,13 @@ test('during a Slack outage a form doesn\'t move on, a review request needs a co
   ];
   form.setQuestions([{ requestId: 'r30', questions }]);
   const job = form.store.getJob('CTEAM:30.1')!;
-  form.store.putJob('CTEAM:30.1', { ...job, question: { requestId: 'r30', questions, ts: '30.5', nonce: 'n', index: 0, answers: {}, runId: null } as never });
+  form.store.putJob('CTEAM:30.1', { ...job, phase: { state: 'waiting', card: { requestId: 'r30', questions, ts: '30.5', nonce: 'n', index: 0, answers: {}, runId: null } as never } });
   form.outside.add('FAIL');
   await form.bot.handle({ channel: 'CTEAM', threadTs: '30.1', messageTs: '30.6', user: PRIYA, text: 'Tuesday', direct: false });
   await settle(50);
   assert.ok(![...form.posted, ...form.updated].some((text) => /despite the freeze/.test(text)));
   assert.ok(form.posted.some((text) => /answer again in a minute/.test(text)));
-  assert.equal(form.store.getJob('CTEAM:30.1')!.question?.index, 0, 'the form stays on the first question');
+  assert.equal((p => p.state === 'waiting' ? p.card?.index : undefined)(form.store.getJob('CTEAM:30.1')!.phase), 0, 'the form stays on the first question');
 
   // Slack can't describe the review channel: the request is the owner's to post.
   const review = await botOn(fixture(t));

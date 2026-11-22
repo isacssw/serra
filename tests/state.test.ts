@@ -21,16 +21,56 @@ const alpha3Job = {
   runSeen: { runId: 'run-1', at: '2026-11-20T10:00:15.000Z' },
 };
 
-test('[JOBS-002] a state.json written by alpha.3 reads as it was, and the first write keeps every field without a backup', (t) => {
+test('[JOBS-002] a state.json written by alpha.3 reads into a phase, is backed up before the first rewrite, and keeps every flag alpha.3 reads', (t) => {
   const dir = folder(t);
   const file = join(dir, 'state.json');
-  writeFileSync(file, JSON.stringify({ 'C1:1700000000.000100': alpha3Job }, null, 2));
+  const original = JSON.stringify({ 'C1:1700000000.000100': alpha3Job }, null, 2);
+  writeFileSync(file, original);
   const read = readState(file);
-  assert.deepEqual(read, { jobs: { 'C1:1700000000.000100': alpha3Job }, invalid: [], repaired: [] });
-  const store = createStore(file);
+  const { watching: _watching, runSeen: _runSeen, ...rest } = alpha3Job;
+  assert.deepEqual(read, { jobs: { 'C1:1700000000.000100': { ...rest, phase: { state: 'following', run: { id: 'run-1', at: '2026-11-20T10:00:15.000Z' } } } }, invalid: [], repaired: ['C1:1700000000.000100'] });
+  const store = createStore(file, { now: () => new Date('2026-11-22T02:00:00Z') });
   store.putJob('C1:1700000000.000100', { ...store.getJob('C1:1700000000.000100')!, nextTurnWaits: true });
-  assert.deepEqual(JSON.parse(readFileSync(file, 'utf8'))['C1:1700000000.000100'], { ...alpha3Job, nextTurnWaits: true });
-  assert.deepEqual(readdirSync(dir).filter((name) => name.includes('backup')), []);
+  const saved = JSON.parse(readFileSync(file, 'utf8'))['C1:1700000000.000100'];
+  // An older build reading the new file sees what it wrote, plus the phase it keeps as a field it doesn't know.
+  assert.deepEqual(saved, { ...alpha3Job, nextTurnWaits: true, waitingInT3: false, phase: { state: 'following', run: { id: 'run-1', at: '2026-11-20T10:00:15.000Z' } } });
+  assert.equal(readFileSync(join(dir, 'state.json.backup-2026-11-22T02-00-00.000Z'), 'utf8'), original, 'the alpha.3 file is kept before the first rewrite');
+  // Read again, nothing needs repairing.
+  assert.deepEqual(readState(file).repaired, []);
+});
+
+test('[JOBS-002] the old flags migrate to one phase: a card is a wait with it, a T3 wait without one, a stale seen run is followed until settled', (t) => {
+  const dir = folder(t);
+  const file = join(dir, 'state.json');
+  const card = { requestId: 'r1', questions: [], ts: '2.5', nonce: 'n', index: 0, answers: {}, runId: 'run-1' };
+  const base = { t3ThreadId: 'thr', channel: 'C1', requester: 'USAM', pendingReactionTs: null, lastPostedRunId: 'run-1', createdAt: '2026-11-20T10:00:00.000Z' };
+  writeFileSync(file, JSON.stringify({
+    'C1:1.1': { ...base, threadTs: '1.1', watching: true, waitingInT3: true, question: card },
+    'C1:2.2': { ...base, threadTs: '2.2', watching: false, waitingInT3: true },
+    // SERRA-54 as an older build left it: nothing follows the job, but a seen run was never posted and its line is up.
+    'C1:3.3': { ...base, threadTs: '3.3', watching: false, runSeen: { runId: 'run-2', at: 'x' }, progress: { ts: '9.9', runId: 'run-2', text: '⏳' } },
+    'C1:4.4': { ...base, threadTs: '4.4', watching: false, runSeen: { runId: 'run-1', at: 'x' } },
+  }));
+  const { jobs } = readState(file);
+  assert.deepEqual(jobs['C1:1.1']!.phase, { state: 'waiting', card });
+  assert.deepEqual(jobs['C1:2.2']!.phase, { state: 'waiting' });
+  assert.deepEqual(jobs['C1:3.3']!.phase, { state: 'following', run: { id: 'run-2', at: 'x', progress: { ts: '9.9', text: '⏳' } } });
+  assert.deepEqual(jobs['C1:4.4']!.phase, { state: 'idle' }, 'a seen run that was posted tells nothing');
+});
+
+test('[JOBS-002] after a rollback, the flags an older build changed win over the phase it kept', (t) => {
+  const dir = folder(t);
+  const file = join(dir, 'state.json');
+  const store = createStore(file);
+  store.putJob('C1:1.1', { t3ThreadId: 'thr', channel: 'C1', threadTs: '1.1', requester: 'USAM', pendingReactionTs: null, lastPostedRunId: null,
+    createdAt: '2026-11-20T10:00:00.000Z', phase: { state: 'following', run: { id: 'run-1', at: 'x' } } });
+  // An older build posted run-1 and stopped following: it rewrote its flags and kept `phase` as it was.
+  const saved = JSON.parse(readFileSync(file, 'utf8'));
+  const job = saved['C1:1.1'];
+  writeFileSync(file, JSON.stringify({ 'C1:1.1': { ...job, watching: false, runSeen: undefined, lastPostedRunId: 'run-1' } }));
+  const read = readState(file);
+  assert.deepEqual(read.jobs['C1:1.1']!.phase, { state: 'idle' });
+  assert.deepEqual(read.repaired, ['C1:1.1']);
 });
 
 test('[JOBS-002] an older or damaged job is migrated on read, and the original file is backed up before the first rewrite', (t) => {
@@ -48,14 +88,14 @@ test('[JOBS-002] an older or damaged job is migrated on read, and the original f
   const old = store.getJob('C1:1.1')!;
   assert.equal(old.requester, '', 'a field an older build never wrote gets its neutral default');
   assert.equal(old.pendingReactionTs, '1.1', 'what it did write is kept');
-  assert.equal(old.progress, undefined, 'a field of the wrong shape is dropped, not the job');
+  assert.deepEqual(old.phase, { state: 'idle' }, 'a progress line of the wrong shape is dropped, not the job');
   assert.equal(store.getJob('C1:2.2'), undefined);
   assert.match(warnings.join('\n'), /1 entry that aren't jobs \(C1:2\.2\)/);
 
-  store.putJob('C1:1.1', { ...old, watching: true });
+  store.putJob('C1:1.1', { ...old, phase: { state: 'following' } });
   const backup = join(dir, 'state.json.backup-2026-11-22T02-00-00.000Z');
   assert.equal(readFileSync(backup, 'utf8'), original, 'the file as it was is kept before anything is rewritten');
-  store.putJob('C1:1.1', { ...old, watching: false });
+  store.putJob('C1:1.1', { ...old, phase: { state: 'idle' } });
   assert.equal(readdirSync(dir).filter((name) => name.includes('backup')).length, 1, 'backed up once');
 });
 
@@ -86,10 +126,11 @@ test('[INTAKE-008] held requests and the pause are read through guards: a broken
 test('[JOBS-002] a field this build doesn\'t know (from a newer build) survives a read and a write, so a rollback loses nothing', (t) => {
   const dir = folder(t);
   const file = join(dir, 'state.json');
-  writeFileSync(file, JSON.stringify({ 'C1:1700000000.000100': { ...alpha3Job, futureField: { kept: 1 } } }));
+  const current = { ...alpha3Job, waitingInT3: false, phase: { state: 'following', run: { id: 'run-1', at: '2026-11-20T10:00:15.000Z' } } };
+  writeFileSync(file, JSON.stringify({ 'C1:1700000000.000100': { ...current, futureField: { kept: 1 } } }));
   const store = createStore(file);
   assert.deepEqual(readState(file).repaired, [], 'not counted as a repair');
-  store.putJob('C1:1700000000.000100', { ...store.getJob('C1:1700000000.000100')!, watching: false });
+  store.putJob('C1:1700000000.000100', { ...store.getJob('C1:1700000000.000100')!, phase: { state: 'idle' } });
   assert.deepEqual(JSON.parse(readFileSync(file, 'utf8'))['C1:1700000000.000100'].futureField, { kept: 1 });
 });
 

@@ -10,7 +10,7 @@ import type { Clock, Timer } from '../../src/clock.ts';
 import type { Config } from '../../src/config.ts';
 import { startDaemon, type Daemon, type DaemonDeps } from '../../src/daemon.ts';
 import { createKnowledge } from '../../src/knowledge.ts';
-import { readState } from '../../src/state.ts';
+import { existsSync, readFileSync } from 'node:fs';
 import { fakeClock, type FakeClock } from './clock.ts';
 import { testProfile, BOT, type ProfileOverrides } from './profile.ts';
 import { createFakeSlack, type FakeSlack, type FakeSlackOptions } from './slack.ts';
@@ -87,7 +87,7 @@ export interface DaemonHarness {
   crash(): Promise<void>;
   stop(): Promise<void>;
   /** The jobs saved in state.json now. */
-  state(): ReturnType<typeof readState>['jobs'];
+  state(): Record<string, Record<string, unknown>>;
 }
 
 export const startTestDaemon = async (t: TestContext, options: DaemonHarnessOptions = {}): Promise<DaemonHarness> => {
@@ -153,6 +153,7 @@ export const startTestDaemon = async (t: TestContext, options: DaemonHarnessOpti
       await clock.settle();
     },
     stop: async () => { if (current) await current.daemon.stop(); current = null; },
-    state: () => readState(config.statePath).jobs,
+    /** `state.json` as saved on disk: each job's `phase`, and the flags older builds read made from it. */
+    state: (): Record<string, Record<string, unknown>> => (existsSync(config.statePath) ? JSON.parse(readFileSync(config.statePath, 'utf8')) as Record<string, Record<string, unknown>> : {}),
   };
 };

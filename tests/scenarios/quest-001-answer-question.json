@@ -77,6 +77,12 @@
             "waitingInT3": true,
             "question": {
               "requestId": "req-1"
+            },
+            "phase": {
+              "state": "waiting",
+              "card": {
+                "requestId": "req-1"
+              }
             }
           }
         }
@@ -113,7 +119,7 @@
             "count": 1,
             "args": {
               "channel": "C1",
-              "text": "Answer sent. Continuing…",
+              "text": "Answer sent. Continuing\u2026",
               "blocks": [
                 {},
                 {
@@ -129,7 +135,7 @@
             "method": "assistant.threads.setStatus",
             "since": "card",
             "args": {
-              "status": "is looking into it…"
+              "status": "is looking into it\u2026"
             }
           }
         ],
@@ -137,7 +143,11 @@
           "C1:1700000100.000100": {
             "question": "$absent",
             "waitingInT3": false,
-            "watching": true
+            "watching": true,
+            "phase": {
+              "state": "following",
+              "card": "$absent"
+            }
           }
         }
       }
