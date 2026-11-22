@@ -139,16 +139,12 @@ export const noteLines = (markdown: string): NoteLine[] => {
     .replace(/`([^`]+)`/g, '$1')
     .trim();
   const lines: NoteLine[] = [];
-  for (const [index, raw] of markdown.split('\n').entries()) {
+  for (const raw of markdown.split('\n')) {
     const line = raw.trim();
     if (!line) continue;
-    // A rule followed only by how to upgrade by hand (scripts/release.ts adds it to every release) ends the notes:
-    // an app that updates itself doesn't need it. Any other rule is skipped.
-    if (/^([-*_])(\s*\1){2,}$/.test(line)) {
-      const rest = markdown.split('\n').slice(index + 1).map((next) => next.trim()).filter(Boolean);
-      if (rest.length > 0 && rest.every((next) => next.startsWith(UPGRADE_NOTE_START))) break;
-      continue;
-    }
+    // Rules aren't lines; how to upgrade by hand (scripts/release.ts adds it to every release) isn't for an app that
+    // updates itself.
+    if (/^([-*_])(\s*\1){2,}$/.test(line) || line.startsWith(UPGRADE_NOTE_START)) continue;
     const heading = /^#{1,6}\s+(.*)$/.exec(line);
     const item = /^[-*+]\s+(.*)$/.exec(line);
     if (heading) lines.push({ kind: 'heading', text: plain(heading[1]!) });
@@ -242,7 +238,7 @@ export const DEVELOPER_LINE = "The bot builds from this checkout and doesn't fol
 /** The confirm dialog for Follow app updates. */
 export const followDialog = (appVersion: string): { title: string; body: string } => ({
   title: 'Follow app updates?',
-  body: `Serra removes the checkout path and branch from Settings › Worker, after backing up profile.json; the folder itself isn't touched. Once no job is running, the bot restarts on version ${appVersion} (a bot you stopped stays stopped), then follows each app update.`,
+  body: `Serra removes the checkout path and branch from Settings › Worker, after backing up profile.json; the folder itself isn't touched. Once no job is running, the bot restarts on version ${appVersion}, even if your checkout's build is newer (a bot you stopped stays stopped), then follows each app update.`,
 });
 
 // ---------------------------------------------------------------------------------------------------------------

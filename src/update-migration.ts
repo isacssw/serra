@@ -13,7 +13,7 @@
  *
  * Nothing else in the profile changes: knowledge, jobs, tokens and bot builds aren't touched.
  */
-import { chmodSync, copyFileSync, lstatSync, mkdirSync, readFileSync, realpathSync, rmSync, statSync } from 'node:fs';
+import { chmodSync, copyFileSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { PROFILE_FILE, validateProfile, writeProfileFile } from './config.ts';
 
@@ -42,7 +42,7 @@ export const classifySource = (source: string): SourceKind => {
   // Only the path's text: safe before any read.
   if (/\.app\/Contents(\/|$)/.test(source)) return 'inside-app';
   // A disk that isn't connected isn't gone; and a network mount could hang the read.
-  if (source.startsWith('/Volumes/')) return 'unknown';
+  if (/^\/(Volumes|Network|net)\//.test(source)) return 'unknown';
   // The folders above it must be readable, and a link among them must lead to a folder that exists, not on a disk:
   // a link to a disk that isn't connected, like the source itself, may come back.
   for (let up = dirname(source); up !== dirname(up); up = dirname(up)) {
@@ -118,20 +118,52 @@ export const clearUpdateSource = (profileDir: string, reason = '', now = new Dat
   const backup = backupProfile(profileDir, 'update-source', now);
   try { writeProfileFile(profileDir, next); }
   catch (error) { rmSync(backup, { recursive: true, force: true }); throw error; }
-  return { source, reason, backup, at: now.toISOString() };
+  const done: ClearedSource = { source, reason, backup, at: now.toISOString() };
+  // Kept beside the backup, so Updates can say what happened after a restart too (`lastCleared`).
+  try { writeFileSync(join(backup, NOTICE), JSON.stringify(done, null, 2) + '\n', { mode: 0o600 }); } catch { /* the notice is a nicety */ }
+  return done;
+};
+
+const NOTICE = 'cleared.json';
+/** How long Updates mentions a cleared source. */
+export const NOTICE_DAYS = 7;
+
+/** The latest clear of this profile's update source, if it was in the last `NOTICE_DAYS` days. */
+export const lastCleared = (profileDir: string, now = new Date()): ClearedSource | null => {
+  const root = join(resolve(profileDir), 'backups');
+  let names: string[];
+  try { names = readdirSync(root).filter((name) => name.endsWith('-update-source')).sort().reverse(); } catch { return null; }
+  for (const name of names) {
+    try {
+      const notice = JSON.parse(readFileSync(join(root, name, NOTICE), 'utf8')) as ClearedSource;
+      const age = now.getTime() - Date.parse(notice.at);
+      return age >= 0 && age <= NOTICE_DAYS * 24 * 60 * 60_000 ? notice : null;
+    } catch { /* a folder without a notice: look at the one before */ }
+  }
+  return null;
+};
+
+/**
+ * The profile's update source, when a packaged app may clear it on its own: only `missing`, `inside-app` and
+ * `not-a-checkout`. Null for Serra's code, anything uncertain, a profile without one, or a copy run from source.
+ */
+export const staleSource = (profileDir: string, packaged: boolean): { source: string; kind: 'missing' | 'inside-app' | 'not-a-checkout' } | null => {
+  if (!packaged) return null;
+  const source = currentSource(profileDir);
+  if (source === null) return null;
+  const kind = classifySource(source);
+  return kind === 'checkout' || kind === 'unknown' ? null : { source, kind };
 };
 
 /**
  * In a packaged app, clears an update source that can never work, so an owner who set one under alpha.2 isn't left
  * in developer mode. A real Serra checkout is kept: that is a choice only the owner can undo. Never throws; returns
- * what it cleared, or null, and passes a failure to `log`.
+ * what it cleared, or null, and passes a failure to `log`. The app looks twice before clearing a `missing` one
+ * (app/main/ipc/updates.ts), in case the folder was only being moved.
  */
 export const migrateStaleUpdateSource = (profileDir: string, { packaged, now = new Date(), log }: { packaged: boolean; now?: Date; log?: (line: string) => void }): ClearedSource | null => {
-  if (!packaged) return null;
-  const source = currentSource(profileDir);
-  if (source === null) return null;
-  const kind = classifySource(source);
-  if (kind === 'checkout' || kind === 'unknown') return null;
-  try { return clearUpdateSource(profileDir, sourceProblem(kind), now, source); }
-  catch (error) { log?.(`Couldn't clear the update source ${source}: ${error instanceof Error ? error.message : String(error)}`); return null; }
+  const stale = staleSource(profileDir, packaged);
+  if (!stale) return null;
+  try { return clearUpdateSource(profileDir, sourceProblem(stale.kind), now, stale.source); }
+  catch (error) { log?.(`Couldn't clear the update source ${stale.source}: ${error instanceof Error ? error.message : String(error)}`); return null; }
 };

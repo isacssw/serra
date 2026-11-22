@@ -15,8 +15,8 @@ import {
 import { launchd, preparedProblems, type DeployOptions, type PrepareOptions } from '../../../src/deploy.ts';
 import { pauseIntake, readAck, readPause, readPauseFile, resumeIntake } from '../../../src/intake.ts';
 import type { Handlers } from '../bridge.ts';
-import { clearUpdateSource, migrateStaleUpdateSource, type ClearedSource } from '../../../src/update-migration.ts';
-import { botSyncDecision, type BotSync } from '../bot-sync.ts';
+import { clearUpdateSource, lastCleared, sourceProblem, staleSource } from '../../../src/update-migration.ts';
+import { botSyncDecision, holdsRequests, type BotSync } from '../bot-sync.ts';
 import type { HandlerContext } from './context.ts';
 
 export type UpdateAction = 'prepare' | 'activate' | 'rollback' | 'sync';
@@ -41,6 +41,8 @@ const MAX_LOG_LINES = 500;
 /** How often the bot's version is compared with the app's, after a first look shortly after launch. */
 const SYNC_EVERY_MS = 60_000;
 const SYNC_FIRST_MS = 20_000;
+/** A missing update source is cleared only when it is still missing this long after it was first seen. */
+const MISSING_CONFIRM_MS = 60_000;
 /** After a pause lapsed with jobs still running, new requests flow again for this long; the update waits for a quiet moment. */
 const PAUSE_COOLDOWN_MS = 60 * 60_000;
 
@@ -69,21 +71,28 @@ export const updatesService = (context: HandlerContext, deps: UpdatesDeps = {}) 
   const ourPauses = new Set<string>();
   const lapsed = new Map<string, number>();
   const now = deps.now ?? (() => Date.now());
-  /** Profiles whose update source was looked at since the app opened, and what was cleared in each (SERRA-63). */
+  /** Profiles whose update source was settled since the app opened, and a missing one seen once (SERRA-63). */
   const looked = new Set<string>();
-  const cleared = new Map<string, ClearedSource>();
+  const missingSeen = new Map<string, { source: string; at: number }>();
   /**
-   * Once per profile, in a packaged app: an update source that can never work (set under alpha.2, say) is cleared,
-   * after a backup, so the bot follows the app instead of sitting in developer mode. A real checkout is kept.
+   * In a packaged app: an update source that can never work (set under alpha.2, say) is cleared, after a backup, so
+   * the bot follows the app instead of sitting in developer mode. A real checkout, or anything uncertain, is kept. A
+   * missing folder is cleared only when it is still missing a minute later, in case it was only being moved.
    */
   const migrate = (profileDir: string | null): void => {
     if (!profileDir || looked.has(profileDir)) return;
-    looked.add(profileDir);
-    const done = migrateStaleUpdateSource(profileDir, { packaged: context.botFollowsApp === true, now: new Date(now()), log: echo });
-    if (done) {
-      cleared.set(profileDir, done);
-      echo(`Cleared the update source ${done.source} (${done.reason}); the bot follows the app again. profile.json was copied to ${done.backup}.`);
+    const stale = staleSource(profileDir, context.botFollowsApp === true);
+    if (!stale) { looked.add(profileDir); missingSeen.delete(profileDir); return; }
+    if (stale.kind === 'missing') {
+      const seen = missingSeen.get(profileDir);
+      if (!seen || seen.source !== stale.source) { missingSeen.set(profileDir, { source: stale.source, at: now() }); return; }
+      if (now() - seen.at < MISSING_CONFIRM_MS) return;
     }
+    looked.add(profileDir);
+    try {
+      const done = clearUpdateSource(profileDir, sourceProblem(stale.kind), new Date(now()), stale.source);
+      if (done) echo(`Cleared the update source ${done.source} (${done.reason}); the bot follows the app again. profile.json was copied to ${done.backup}.`);
+    } catch (error) { echo(`Couldn't clear the update source ${stale.source}: ${errorText(error)}`); }
   };
 
   const line = (text: string): void => {
@@ -138,9 +147,9 @@ export const updatesService = (context: HandlerContext, deps: UpdatesDeps = {}) 
     });
   };
 
-  /** A bot from before alpha.3 (no version in active.json) doesn't hold requests while paused, unless its acknowledgment says so. */
+  /** A bot from before alpha.3 (no version in active.json, or an older one built from a checkout) doesn't hold requests while paused, unless its acknowledgment says so. */
   const honorsPause = (profileDir: string, active: { appVersion?: string } | null | undefined): boolean =>
-    active?.appVersion !== undefined || readAck(profileDir, now()) !== null;
+    holdsRequests(active?.appVersion) || readAck(profileDir, now()) !== null;
   /** `active`: the bot's active.json as the caller read it; read here when not given. */
   const pause = (profileDir: string, active?: { appVersion?: string } | null): void => {
     if (!readPause(profileDir, now())) {
@@ -171,8 +180,8 @@ export const updatesService = (context: HandlerContext, deps: UpdatesDeps = {}) 
       // Preparing can take a minute; a job may have started meanwhile. Then the activation waits for the next tick,
       // with new requests held so it finishes.
       if (!force && runningJobs(profileDir).length > 0) {
-        line('A job started while preparing. New requests wait, and the bot restarts when the job finishes.');
-        pause(profileDir);
+        line('A job started while preparing.');
+        pause(profileDir, status.active);
         return { ok: true as const, waiting: true };
       }
       // No new job may start during the switch itself; held requests start on the new bot.
@@ -254,8 +263,6 @@ export const updatesService = (context: HandlerContext, deps: UpdatesDeps = {}) 
       // Not in the middle of a bot action: a build may be reading the source right now.
       if (!running) migrate(profileDir);
       const releases = profileDir ? await releaseStatus(profileDir, { ...deps.status, fetch: options?.fetch === true }) : null;
-      // Back in developer mode (the owner set a source again): the old notice no longer applies.
-      if (profileDir && releases?.mode === 'developer') cleared.delete(profileDir);
       const bot: BotSync = (await decide(profileDir, releases ?? undefined))?.sync ?? { state: 'not-installed' };
       return {
         appVersion: context.runtime.version,
@@ -265,7 +272,8 @@ export const updatesService = (context: HandlerContext, deps: UpdatesDeps = {}) 
         running,
         log: [...log],
         followsApp: context.botFollowsApp === true,
-        sourceCleared: (profileDir && cleared.get(profileDir)) || null,
+        // Not once back in developer mode (the owner set a source again): the notice no longer applies.
+        sourceCleared: profileDir && releases?.mode === 'release' ? lastCleared(profileDir, new Date(now())) : null,
       };
     },
     runningJobs: () => runningJobs(context.profileDir()),
@@ -290,8 +298,9 @@ export const updatesService = (context: HandlerContext, deps: UpdatesDeps = {}) 
     // Developer mode → release mode, from the Updates screen. Not while a bot action runs (it may be building from the checkout).
     followApp: () => {
       if (running) throw new Error(`${busyName(running)} is still running. Wait for it to finish.`);
-      const done = clearUpdateSource(context.profileDir(), '', new Date(now()));
-      if (done) { cleared.set(context.profileDir(), done); line(`The bot follows the app again. profile.json was copied to ${done.backup}.`); }
+      const profileDir = context.profileDir();
+      const done = clearUpdateSource(profileDir, '', new Date(now()));
+      if (done) { log = []; line(`The bot follows the app again. profile.json was copied to ${done.backup}.`); }
       return done;
     },
     // The owner asked: update now even with jobs running (the confirm dialog names them), and retry after a failure.

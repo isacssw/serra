@@ -5,7 +5,7 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSyn
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test, { type TestContext } from 'node:test';
-import { botSyncDecision, type BotSyncInput } from '../app/main/bot-sync.ts';
+import { botSyncDecision, holdsRequests, type BotSyncInput } from '../app/main/bot-sync.ts';
 import type { HandlerContext } from '../app/main/ipc/context.ts';
 import { updatesHandlers, updatesService } from '../app/main/ipc/updates.ts';
 import { memoryPrefs } from '../app/main/prefs.ts';
@@ -152,19 +152,31 @@ const contextFor = (profileDir: string, packaged: boolean): HandlerContext => ({
 test('the Updates screen: a stale source is cleared once per launch and said in one line; Follow app updates leaves developer mode', async (t) => {
   const f = fixture(t);
   f.setSource(join(f.root, 'deleted-clone'));
-  const handlers = updatesHandlers(contextFor(f.directory, true), { echo: () => {} });
+  let clock = Date.parse('2026-11-22T10:00:00.000Z');
+  const handlers = updatesHandlers(contextFor(f.directory, true), { echo: () => {}, now: () => clock });
+  // A missing folder may only be being moved: the first look keeps it, a look a minute later clears it.
+  assert.equal((await handlers.status()).releases?.mode, 'developer');
+  clock += 30_000;
+  assert.equal((await handlers.status()).releases?.mode, 'developer', 'not yet a minute');
+  clock += 31_000;
   const status = await handlers.status();
   assert.equal(status.releases?.mode, 'release');
   assert.equal(status.followsApp, true);
   assert.equal(status.sourceCleared?.source, join(f.root, 'deleted-clone'));
   assert.equal(clearedLine(status.sourceCleared!, f.root), 'Cleared the old update source ~/deleted-clone (the folder is gone), so the bot follows app updates again. profile.json was backed up first.');
 
+  // The notice outlives a restart, for a week.
+  const restarted = updatesHandlers(contextFor(f.directory, true), { echo: () => {}, now: () => clock + 6 * 24 * 60 * 60_000 });
+  assert.equal((await restarted.status()).sourceCleared?.source, join(f.root, 'deleted-clone'));
+  const later = updatesHandlers(contextFor(f.directory, true), { echo: () => {}, now: () => clock + 8 * 24 * 60 * 60_000 });
+  assert.equal((await later.status()).sourceCleared, null);
+
   // A checkout the owner set on purpose stays until they choose otherwise.
   f.setSource(f.checkout);
-  const developer = updatesHandlers(contextFor(f.directory, true), { echo: () => {} });
+  const developer = updatesHandlers(contextFor(f.directory, true), { echo: () => {}, now: () => clock + 60 * 60_000 });
   const before = await developer.status();
   assert.equal(before.releases?.mode, 'developer');
-  assert.equal(before.sourceCleared, null);
+  assert.equal(before.sourceCleared, null, 'no notice in developer mode');
   const done = await developer.followApp();
   assert.equal(done?.source, f.checkout);
   assert.equal(done?.reason, '');
@@ -186,12 +198,22 @@ test('the Updates screen: a stale source is cleared once per launch and said in 
 test('the follow dialog says what is removed, that the folder stays, and when the bot restarts', () => {
   const body = followDialog('0.1.0-alpha.4').body;
   assert.match(body, /removes the checkout path and branch .* backing up profile\.json; the folder itself isn't touched/);
-  assert.match(body, /Once no job is running, the bot restarts on version 0\.1\.0-alpha\.4 \(a bot you stopped stays stopped\)/);
+  assert.match(body, /Once no job is running, the bot restarts on version 0\.1\.0-alpha\.4, even if your checkout.s build is newer \(a bot you stopped stays stopped\)/);
 });
 
 const input = (patch: Partial<BotSyncInput> = {}): BotSyncInput => ({
   mode: 'release', follows: true, serviceLoaded: true, appVersion: '0.1.0-alpha.4', active: { appVersion: '0.1.0-alpha.3', fromApp: true }, prepared: null, preparedReady: false,
   activation: 'active', jobs: 1, running: null, failed: null, paused: false, mayPause: true, ...patch,
+});
+
+test('only a bot built with the pause holds requests while paused', () => {
+  assert.equal(holdsRequests(undefined), false, 'alpha.2 wrote no version');
+  assert.equal(holdsRequests('0.1.0-alpha.1'), false, 'a build from alpha.1 code');
+  assert.equal(holdsRequests('0.0.0'), false);
+  assert.equal(holdsRequests('0.1.0-alpha.2'), true, 'main between alpha.2 and alpha.3 had the pause');
+  assert.equal(holdsRequests('0.1.0-alpha.3'), true);
+  assert.equal(holdsRequests('0.1.0'), true);
+  assert.equal(holdsRequests('not a version'), false);
 });
 
 test('a bot from before alpha.3 ignores the pause, so the screen does not promise that requests wait', () => {
@@ -205,7 +227,7 @@ test('a bot from before alpha.3 ignores the pause, so the screen does not promis
 
 test('release notes end with how to upgrade by hand, which the app leaves out', () => {
   const notes = releaseNotes('# Changelog\n\n## 0.1.0-alpha.4 (2026-11-23)\n\n- Smoother upgrades.\n\n## 0.1.0-alpha.3 (2026-11-21)\n\n- Older.\n', '0.1.0-alpha.4');
-  assert.equal(notes, `- Smoother upgrades.\n\n---\n\n${UPGRADE_NOTE}`);
+  assert.equal(notes, `- Smoother upgrades.\n\n${UPGRADE_NOTE}`);
   assert.match(UPGRADE_NOTE, /github\.com\/isacssw\/serra#updating/);
   assert.deepEqual(noteLines(notes).map((line) => line.text), ['Smoother upgrades.'], 'the app updates itself: the manual-install line is left out');
   assert.ok(UPGRADE_NOTE.startsWith(UPGRADE_NOTE_START), 'the app recognises the footer');

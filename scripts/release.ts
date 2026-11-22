@@ -83,7 +83,7 @@ export const UPGRADE_NOTE = 'On alpha.2 or older? Install this version by hand o
   + 'See [Updating](https://github.com/isacssw/serra#updating).';
 
 /** The GitHub Release body: the changelog section, then how to upgrade. */
-export const releaseNotes = (changelog: string, version: string): string => `${changelogSection(changelog, version)}\n\n---\n\n${UPGRADE_NOTE}`;
+export const releaseNotes = (changelog: string, version: string): string => `${changelogSection(changelog, version)}\n\n${UPGRADE_NOTE}`;
 
 /**
  * Whether a push to main should publish a release: only when it changed package.json's version to a newer one,
