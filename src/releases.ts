@@ -12,7 +12,7 @@ import { codeRoot, readProfileFile } from './config.ts';
 import type { ReleaseStatus } from './contracts.ts';
 import {
   activate, activationPhase, canRollBack, CutoverError, DEFAULT_UPDATES_REF, preparedProblems, prepareRelease, rollback,
-  type DeployOptions, type Prepared, type PrepareOptions,
+  type DeployLog, type DeployOptions, type Prepared, type PrepareOptions,
 } from './deploy.ts';
 import { createStore } from './state.ts';
 import { run } from './t3.ts';
@@ -58,7 +58,7 @@ export interface StatusOptions {
 }
 
 /** Developer mode: the profile names a Serra checkout to update from (Settings › Worker). */
-const updateMode = (directory: string): ReleaseOverview['mode'] => {
+export const updateMode = (directory: string): ReleaseOverview['mode'] => {
   try { return readProfileFile(directory).updates ? 'developer' : 'release'; } catch { return 'release'; }
 };
 
@@ -79,7 +79,7 @@ const remoteOf = async (root: string, ref: string): Promise<{ remote: string; br
 };
 
 /** Where updates come from: the profile's `updates` section, else the running code and its `origin/main`. */
-const updateSource = (directory: string, options: Pick<StatusOptions, 'root' | 'ref'> = {}): { root: string; ref?: string } => {
+export const updateSource = (directory: string, options: Pick<StatusOptions, 'root' | 'ref'> = {}): { root: string; ref?: string } => {
   let updates: { source: string; ref?: string } | undefined;
   try { updates = readProfileFile(directory).updates; } catch { /* status still works on a broken profile */ }
   if (options.root) return { root: options.root, ref: options.ref };
@@ -297,3 +297,5 @@ export const rollbackRelease = async (directory: string, options: DeployOptions 
     return { ok: true, release: readRelease(join(resolve(directory), 'active.json'))?.release ?? null };
   } catch (error) { return { ok: false, error: errorText(error) }; }
 };
+
+export type { DeployLog };

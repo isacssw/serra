@@ -1,12 +1,10 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
+import { writeFileAtomic, type AtomicWriteIo } from './lib/atomic.ts';
 import { homedir } from 'node:os';
 import { isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { readEnv, writeFileAtomic, type AtomicWriteIo } from './files.ts';
+import { parseEnv } from 'node:util';
 import { resolveConfiguredSecretSync } from './secrets.ts';
-
-// Re-exported so the many callers that import them from here keep working.
-export { readEnv, writeFileAtomic, type AtomicWriteIo };
 
 export const codeRoot = fileURLToPath(new URL('..', import.meta.url));
 export const defaultProfileRoot = join(homedir(), '.local/share/serra');
@@ -52,7 +50,7 @@ export interface Profile {
   updates?: { source: string; ref?: string };
 }
 
-const DEFAULT_BRANCH_PATTERN = '{id}/{slug}-{stamp}';
+export const DEFAULT_BRANCH_PATTERN = '{id}/{slug}-{stamp}';
 const BRANCH_PLACEHOLDER = /\{(id|slug|stamp|DDMM|MMDD)\}/g;
 
 /** Why a branch pattern can't name a valid, unique Git branch, or null when it can. */
@@ -63,6 +61,9 @@ export const branchPatternProblem = (pattern: string): string | null => {
   if (!/^[A-Za-z0-9][A-Za-z0-9._/-]*$/.test(literal) || /\.\.|\/\/|\/$|\.lock$|\/\.|\.$/.test(literal)) return 'branchPattern must make a valid Git branch name';
   return null;
 };
+
+export const readEnv = (path: string): Record<string, string> =>
+  existsSync(path) ? parseEnv(readFileSync(path, 'utf8')) as Record<string, string> : {};
 
 export const profileArgument = (args = process.argv.slice(2)): string | undefined => {
   const index = args.indexOf('--profile');
@@ -169,6 +170,8 @@ export const validateProfile = (value: unknown): Profile => {
   }
   return value as unknown as Profile;
 };
+
+export { writeFileAtomic, type AtomicWriteIo } from './lib/atomic.ts';
 
 export const PROFILE_FILE = 'profile.json';
 

@@ -2,6 +2,7 @@
 // oxlint can't express. Each check is named for the rule it holds. These were tests that read source instead of
 // running behaviour (SERRA-57 audit); here they say what they are. Runs in `pnpm lint` and so in CI.
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { build } from 'esbuild';
@@ -134,25 +135,75 @@ check('renderer: no hard-coded white or black text, fills or borders that ignore
   }
 });
 
-// --- Lint configuration --------------------------------------------------------------------------------------------
+// --- Lint configuration and repository hygiene -------------------------------------------------------------------
 
-check('lint: every oxlint-disable comment says why, after " -- "', () => {
-  const code = ['src', 'app', 'tests', 'evals', 'scripts'].flatMap((folder) => filesUnder(folder, (name) => /\.(ts|tsx|mjs)$/.test(name) && !name.includes('out/')))
-    .filter((file) => file !== 'scripts/lint-repo.ts');
-  const bare = code.flatMap((file) => read(file).split('\n').flatMap((line, index) =>
-    /oxlint-disable/.test(line) && !/oxlint-disable\S*\s+[\w/@-]+(?:,\s*[\w/@-]+)*\s+--\s+\S/.test(line) ? [`${file}:${index + 1}`] : []));
-  assert.deepEqual(bare, [], 'name the rule and give a reason: // oxlint-disable-next-line <rule> -- <why>');
+/** Tracked files, so build output, node_modules and git-ignored folders are never read. */
+const tracked = (): string[] => execFileSync('git', ['ls-files', '-z'], { cwd: codeRoot, encoding: 'utf8' }).split('\0').filter(Boolean);
+const code = (): string[] => tracked().filter((file) => /\.(ts|tsx|mjs|cjs)$/.test(file) && !file.startsWith('scripts/qa/'));
+
+check('lint: every suppression names its rule and says why, after " -- "', () => {
+  const bad = code().filter((file) => file !== 'scripts/lint-repo.ts').flatMap((file) => read(file).split('\n').flatMap((line, index) =>
+    /(?:ox|es)lint-disable/.test(line) && !/oxlint-disable(?:-next-line|-line)?\s+[\w/@-]+(?:,\s*[\w/@-]+)*\s+--\s+\S/.test(line) ? [`${file}:${index + 1}`] : []));
+  assert.deepEqual(bad, [], 'write // oxlint-disable-next-line <rule> -- <why> (not eslint-disable, not a bare disable)');
 });
 
-// The files that had unsafe casts when the rule was turned on. The list may only shrink: lower this number when you
-// clean a file and take it off the list.
-const LEGACY_CAST_FILES = 49;
-check(`lint: the unsafe-cast exception list in .oxlintrc.json only shrinks (at most ${LEGACY_CAST_FILES} files)`, () => {
-  const config = read('.oxlintrc.json');
-  const block = config.slice(config.indexOf('"files": [', config.indexOf('Casts that existed')));
-  const files = block.slice(0, block.indexOf(']')).match(/"[^"]+\.tsx?"/g) ?? [];
-  assert.ok(files.length > 0, 'the exception list is found');
-  assert.ok(files.length <= LEGACY_CAST_FILES, `${files.length} files; add none, fix the cast instead`);
+check('imports: a relative import names the .ts file, never a .js one', () => {
+  // Node runs the TypeScript as is, so `./x.js` fails at run time although tsc and oxlint accept it.
+  const bad = code().flatMap((file) => [...read(file).matchAll(/(?:from|import)\s*\(?\s*'(\.{1,2}\/[^']+\.js)'/g)].map((match) => `${file}: ${match[1]}`));
+  assert.deepEqual(bad, []);
+});
+
+/** The string entries of the JSON array that follows `marker` in a config file (comments allowed). */
+const listAfter = (text: string, marker: string): string[] | null => {
+  const at = text.indexOf(marker);
+  if (at === -1) return null;
+  const open = text.indexOf('[', at);
+  // Globs (scripts/qa/**) are folders, not files to clean up, so only file entries count.
+  return [...text.slice(open, text.indexOf(']', open)).matchAll(/^\s*"([^"*]+)"/gm)].map((match) => match[1] ?? '');
+};
+const onMain = (path: string): string | null => {
+  try { return execFileSync('git', ['show', `main:${path}`], { cwd: codeRoot, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }); } catch { return null; }
+};
+
+// Two exception lists only shrink: each entry must be on main's list too, and still exist.
+for (const [file, marker, what] of [
+  ['.oxlintrc.json', 'Casts that existed', 'unsafe-cast exceptions'],
+  ['knip.jsonc', '"ignore":', 'knip ignores'],
+] as const) {
+  check(`lint: the ${what} in ${file} only shrink`, () => {
+    const now = listAfter(read(file), marker);
+    assert.ok(now && now.length > 0, `the list after "${marker}" is found`);
+    const missing = now.filter((entry) => !tracked().includes(entry));
+    assert.deepEqual(missing, [], 'take files that no longer exist off the list');
+    const base = onMain(file);
+    const before = base === null ? null : listAfter(base, marker);
+    if (before === null) return; // the list is new on this branch
+    assert.deepEqual(now.filter((entry) => !before.includes(entry)), [], 'fix the code instead of adding a file to the list');
+  });
+}
+
+check('repository: raw eval results stay off main (they live on the pr-assets/evals branch)', () => {
+  assert.deepEqual(tracked().filter((file) => file.startsWith('evals/results/')), []);
+});
+
+check('repository: no real home folder in tracked files; use /Users/you', () => {
+  const text = tracked().filter((file) => /\.(ts|tsx|mjs|cjs|md|json|ya?ml|sh|html|css)$/.test(file) && !file.startsWith('evals/fixture'));
+  const bad = text.flatMap((file) => [...read(file).matchAll(/\/Users\/(?!(?:you|me|younger)\b)[A-Za-z0-9_.-]+/g)].map((match) => `${file}: ${match[0]}`));
+  assert.deepEqual(bad, []);
+});
+
+check('renderer bundle: no Node or Electron module is reached, directly or through src/', async () => {
+  // The import rules in .oxlintrc.json see one file at a time; this follows every value import from the entry point.
+  const result = await build({
+    entryPoints: [join(codeRoot, 'app/renderer/main.tsx')], absWorkingDir: codeRoot, bundle: true, write: false, metafile: true,
+    platform: 'browser', format: 'esm', packages: 'external', logLevel: 'silent',
+    loader: { '.css': 'empty', '.svg': 'empty', '.png': 'empty' },
+  });
+  const node = Object.entries(result.metafile.inputs).flatMap(([input, { imports }]) => imports
+    .filter((entry) => /^(node:|electron$)/.test(entry.path) || /^(fs|path|os|child_process|crypto|url|util|net|http|https|stream|events)$/.test(entry.path))
+    .map((entry) => `${input} imports ${entry.path}`));
+  assert.deepEqual(node, []);
+  assert.ok(Object.keys(result.metafile.inputs).length > 20, 'the renderer was bundled');
 });
 
 // --- Run -----------------------------------------------------------------------------------------------------------

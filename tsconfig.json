@@ -18,5 +18,6 @@
     "verbatimModuleSyntax": true,
     "skipLibCheck": true
   },
-  "include": ["src", "tests", "evals", "scripts/release.ts"]
+  "include": ["src", "tests", "evals", "scripts"],
+  "exclude": ["scripts/qa"]
 }

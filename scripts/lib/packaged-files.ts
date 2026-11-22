@@ -22,8 +22,8 @@ const filePatterns = (config: string): { include: string[]; exclude: string[] } 
 // `**/` and `**` are swapped for private-use placeholders while single `*` is translated, then put back.
 const glob = (pattern: string): RegExp => new RegExp(`^${pattern
   .replace(/[.+^${}()|[\]\\]/g, '\\$&')
-  .replace(/\*\*\//g, '').replace(/\*\*/g, '').replace(/\*/g, '[^/]*')
-  .replace(//g, '(?:.*/)?').replace(//g, '.*')}$`);
+  .replace(/\*\*\//g, '\uE001').replace(/\*\*/g, '\uE000').replace(/\*/g, '[^/]*')
+  .replace(/\uE001/g, '(?:.*/)?').replace(/\uE000/g, '.*')}$`);
 
 /** True when electron-builder.yml's `files:` list puts `path` in the packaged app. */
 export const packaged = (path: string, config = builderConfig()): boolean => {

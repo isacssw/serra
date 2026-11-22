@@ -1,7 +1,7 @@
 # AGENTS.md
 
 Serra turns chat requests into T3 Code threads. `src/` is the daemon, CLI and services; `app/` is the Electron app.
-Every rule a tool can check is checked; this file holds the rest. Humans: [CONTRIBUTING.md](CONTRIBUTING.md).
+Rules a tool checks are left out here; `pnpm check` and CI tell you. Humans: [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Commands
 
@@ -9,7 +9,7 @@ Every rule a tool can check is checked; this file holds the rest. Humans: [CONTR
 - `pnpm check`: types for the three projects, then `pnpm lint` (oxlint type-aware, `scripts/lint-repo.ts`, knip). About 5 s.
 - `pnpm test`: `node --test tests/*.test.ts`, about 35 s; no Slack, T3 or network.
 - `pnpm app:dev` runs the app; `pnpm app:package`, then `release/mac-arm64/Serra.app/Contents/MacOS/Serra --smoke`.
-- Before a PR: `pnpm check && pnpm test`. CI adds a gitleaks scan and the packaged-app smoke test.
+- Before a PR: `pnpm check && pnpm test`. CI adds a gitleaks scan, the packaged-app smoke test and the `title` check.
 
 ## Layers (enforced by `.oxlintrc.json`)
 
@@ -26,9 +26,7 @@ Every rule a tool can check is checked; this file holds the rest. Humans: [CONTR
 - Test what a user or caller sees, not the source text. A rule about the repo itself goes in `scripts/lint-repo.ts`.
 - Use only the placeholders the tests already use: `U0123456789`, `xoxb-1111-2222-fixturevalue`, `/Users/you/…`,
   `acme/project`. Gitleaks catches tokens; Slack IDs, names and paths are on you.
-- A change a user would notice updates `README.md` or `docs/`, and adds a line under `## Unreleased` in `CHANGELOG.md`.
-- A lint suppression names the rule and the reason (`// oxlint-disable-next-line <rule> -- <why>`). Fix casts instead
-  of adding files to the cast exception list; it can only shrink.
+- A change a user would notice updates `README.md` or `docs/` (the `title` check enforces the `CHANGELOG.md` line).
 
 ## PRs
 
@@ -40,4 +38,3 @@ Every rule a tool can check is checked; this file holds the rest. Humans: [CONTR
 - Never push to `main`, merge, force-push, tag, publish a release or change repository settings.
 - Never commit tokens, `.env`, `secrets.json`, a profile, or screenshots of a real workspace.
 - Never add a dependency, or weaken a lint rule, check or test to get green, without the maintainer asking.
-- Never commit `evals/results/`: raw eval results live on the `pr-assets/evals` branch (`evals/README.md`).

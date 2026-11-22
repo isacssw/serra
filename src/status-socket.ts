@@ -52,9 +52,7 @@ const MAX_NAME_LENGTH = 200;
 /** macOS limits a socket path to 104 bytes including the terminator. */
 const MAX_PATH_BYTES = 103;
 
-// Event fields are strings, numbers or booleans; anything else (an object, null) reads as empty, never `[object Object]`.
-const str = (value: unknown): string =>
-  typeof value === 'string' ? value : typeof value === 'number' || typeof value === 'boolean' ? String(value) : '';
+const str = (value: unknown): string => (typeof value === 'string' ? value : String(value ?? ''));
 
 /**
  * The daemon's event as the app sees it, or null for events the app doesn't show (progress lines, question

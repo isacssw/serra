@@ -149,7 +149,7 @@ For an Intel Mac: `pnpm app:build && pnpm exec electron-builder --mac --x64`. Re
 
 1. Fork the repository and branch off `main`, with a branch name that follows [Naming](#naming).
 2. Open a PR with a [valid title](#naming) and fill in the template.
-3. Three required checks run: `check` (`pnpm check`, a secret scan, `pnpm test`, `pnpm knowledge`, the installer's `--help`), `app` (packages the app and smoke-tests it) and `title`. A first-time contributor's run waits for the maintainer to approve it.
+3. Three checks must pass: `check` (`pnpm check`, a secret scan, `pnpm test`, `pnpm knowledge`, the installer's `--help`), `app` (packages the app and smoke-tests it) and `title`. A first-time contributor's run waits for the maintainer to approve it.
 4. The PR needs the code owner's approval, every review conversation resolved, and a branch that is up to date with `main` (use **Update branch**). A new push dismisses earlier approvals.
 5. It lands as one squash commit whose message is the PR title and description, and the branch is deleted.
 
@@ -159,7 +159,7 @@ Squash merging makes the PR title the commit on `main`, so the title is what mat
 
 ### PR titles
 
-A [Conventional Commit](https://www.conventionalcommits.org) header, `type(scope): subject`, for example `fix(palette): ignore late close events`. The `title` check enforces the types and the subject rules and says what to fix; edit the title, no push needed. Scope is optional: the part it touches (`daemon`, `app`, `setup`, `knowledge`, `ci`, `deps`, `release`, …).
+A [Conventional Commit](https://www.conventionalcommits.org) header, `type(scope): subject`, for example `fix(palette): ignore late close events`. The `title` check enforces the types and the subject rules, and that a `feat` or `fix` adds a `CHANGELOG.md` line (`fix(deps)` excepted). It says what to fix; a title fix needs no push. Scope is optional: the part it touches (`daemon`, `app`, `setup`, `knowledge`, `ci`, `deps`, `release`, …).
 
 ### Branch names and commits
 

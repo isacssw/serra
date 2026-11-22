@@ -8,7 +8,7 @@
   "scripts": {
     "start": "node src/index.ts",
     "check": "tsc -p . && tsc -p app && tsc -p app/renderer && node --run lint",
-    "lint": "oxlint --type-aware --deny-warnings && node scripts/lint-repo.ts && knip --no-config-hints",
+    "lint": "oxlint --type-aware --deny-warnings --report-unused-disable-directives-severity=error && node scripts/lint-repo.ts && knip --no-config-hints",
     "lint:repo": "node scripts/lint-repo.ts",
     "knowledge": "node src/check-knowledge.ts",
     "evals:fetch": "git fetch --depth=1 origin pr-assets/evals && git archive FETCH_HEAD evals/results | tar -x",

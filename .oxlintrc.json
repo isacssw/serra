@@ -21,6 +21,10 @@
     // Node runs the TypeScript as is, so a relative import names its file, extension included.
     "import/extensions": ["error", "always", { "ignorePackages": true }],
     "no-unused-vars": "error",
+    // A suppression goes through oxlint-disable with a reason (pnpm lint:repo checks), never @ts-ignore.
+    "typescript/ban-ts-comment": "error",
+    // `node:fs`, never bare `fs`, so the import rules below see every Node module.
+    "unicorn/prefer-node-protocol": "error",
     // Off, with the reason. Interfaces here declare methods that are implemented as closures, so no `this` is lost.
     "typescript/unbound-method": "off",
     // React Compiler rules; the app doesn't use the compiler, and the latest-value ref is a deliberate pattern here.
@@ -55,7 +59,7 @@
           { "regex": "^node:|^(fs|path|os|child_process|crypto|url|util)$", "allowTypeImports": true, "message": "The renderer has no Node. Ask the main process through the bridge." },
           { "regex": "^electron($|/)", "allowTypeImports": true, "message": "The renderer has no Electron. Use the bridge." },
           { "regex": "(^|/)main/", "allowTypeImports": true, "message": "The renderer reaches app/main only through import type and the bridge." },
-          { "group": ["**/src/*", "!**/src/contracts.ts", "!**/src/owner-model.ts", "!**/src/knowledge-rules.ts", "!**/src/tool-catalog.ts", "!**/src/token-errors.ts", "!**/src/setup-incomplete.ts"], "allowTypeImports": true, "message": "The renderer imports values only from pure src modules (no Node). Add one to this list only if it and its imports are pure." }
+          { "group": ["**/src/**", "!**/src/contracts.ts", "!**/src/owner-model.ts", "!**/src/knowledge-rules.ts", "!**/src/tool-catalog.ts", "!**/src/token-errors.ts", "!**/src/setup-incomplete.ts"], "allowTypeImports": true, "message": "The renderer imports values only from pure src modules (no Node). Add one to this list only if it and its imports are pure." }
         ] }] }
     },
     {
@@ -78,7 +82,7 @@
           { "regex": "^node:|^(fs|path|os|child_process|crypto|url|util)$", "allowTypeImports": true, "message": "The renderer has no Node. Ask the main process through the bridge." },
           { "regex": "^electron($|/)", "allowTypeImports": true, "message": "The renderer has no Electron. Use the bridge." },
           { "regex": "(^|/)main/", "allowTypeImports": true, "message": "The renderer reaches app/main only through import type and the bridge." },
-          { "group": ["**/src/*", "!**/src/contracts.ts", "!**/src/owner-model.ts", "!**/src/knowledge-rules.ts", "!**/src/tool-catalog.ts", "!**/src/token-errors.ts", "!**/src/setup-incomplete.ts"], "allowTypeImports": true, "message": "The renderer imports values only from pure src modules (no Node). Add one to this list only if it and its imports are pure." },
+          { "group": ["**/src/**", "!**/src/contracts.ts", "!**/src/owner-model.ts", "!**/src/knowledge-rules.ts", "!**/src/tool-catalog.ts", "!**/src/token-errors.ts", "!**/src/setup-incomplete.ts"], "allowTypeImports": true, "message": "The renderer imports values only from pure src modules (no Node). Add one to this list only if it and its imports are pure." },
           { "regex": "^(node:|react|react-dom|react-router|electron)", "allowTypeImports": true, "message": "A .logic.ts file is pure: move this import to the screen or handler that calls it." }
         ] }] }
     },
@@ -99,6 +103,16 @@
         "typescript/restrict-template-expressions": "off",
         "typescript/require-array-sort-compare": "off"
       }
+    },
+    {
+      // New folders start strict: no `!` assertions either. Old code moves here as it is reworked.
+      "files": ["src/lib/**", "src/chat/**", "src/slack/**"],
+      "rules": { "typescript/no-non-null-assertion": "error" }
+    },
+    {
+      // TODO(SERRA-61): that branch rewrites str() here with field guards (isac/validate-file-socket-reads).
+      "files": ["src/status-socket.ts"],
+      "rules": { "typescript/no-base-to-string": "off" }
     },
     {
       // Casts that existed when the rule was turned on: mostly JSON and file reads, which move 7 replaces with guards.

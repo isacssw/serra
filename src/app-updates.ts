@@ -9,7 +9,7 @@ import { pipeline } from 'node:stream/promises';
 import { Readable, Transform } from 'node:stream';
 
 /** The repository the packaged app updates from. Releases are cut by `.github/workflows/release-publish.yml`. */
-const UPDATE_REPOSITORY = 'isacssw/serra';
+export const UPDATE_REPOSITORY = 'isacssw/serra';
 /**
  * The releases list. `/releases/latest` is not enough: alphas are published as prereleases with `--latest=false`,
  * so while every release is an alpha it returns 404. `SERRA_UPDATES_FEED` points at another list (QA's fake feed).
@@ -169,7 +169,7 @@ export const parseSums = (text: string): Map<string, string> => {
   return sums;
 };
 
-const sha256File = async (path: string): Promise<string> => {
+export const sha256File = async (path: string): Promise<string> => {
   const hash = createHash('sha256');
   await pipeline(createReadStream(path), hash);
   return hash.digest('hex');

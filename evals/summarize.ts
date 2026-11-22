@@ -4,8 +4,9 @@
 //   node evals/summarize.ts         # rewrites evals/RESULTS.md from what is there
 import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const root = new URL('..', import.meta.url).pathname;
+const root = fileURLToPath(new URL('..', import.meta.url));
 const dir = join(root, 'evals/results');
 const files = readdirSync(dir).filter((name) => name.endsWith('.md')).sort();
 if (files.length === 0) throw new Error('evals/results is empty. Run pnpm evals:fetch first, or run an eval.');

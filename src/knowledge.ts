@@ -10,10 +10,6 @@ import {
   isOfflimits, offlimitsBudgetProblem, pageBody, saveProblems, saveRefusal, setHeaderField, STALE_DAYS,
 } from './knowledge-rules.ts';
 
-// The page rules live in knowledge-rules.ts (no Node imports, so the app's editor can use them); re-exported here so
-// callers keep one import.
-;
-
 /** A repository checkout that pages may name paths in, like `apps/api/…` or `webapp/docs/…`. */
 export interface KnowledgeRoot {
   name: string;

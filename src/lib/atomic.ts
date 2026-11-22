@@ -1,18 +1,6 @@
-/**
- * Leaf file helpers with no Serra imports, so config.ts and secrets.ts can both use them without importing each other.
- */
-import { closeSync, existsSync, fsyncSync, openSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { closeSync, fsyncSync, openSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
 import { basename, dirname, join } from 'node:path';
-import { parseEnv } from 'node:util';
-
-/** A `.env` file's variables, or none when the file is missing. */
-export const readEnv = (path: string): Record<string, string> => {
-  if (!existsSync(path)) return {};
-  const env: Record<string, string> = {};
-  for (const [key, value] of Object.entries(parseEnv(readFileSync(path, 'utf8')))) if (typeof value === 'string') env[key] = value;
-  return env;
-};
 
 /** The file operations an atomic write uses. Tests swap them to simulate a crash part way through. */
 export interface AtomicWriteIo {
@@ -45,3 +33,4 @@ export const writeFileAtomic = (path: string, data: string, { mode = 0o600, io =
     try { fsyncSync(dir); } finally { closeSync(dir); }
   } catch { /* best effort */ }
 };
+

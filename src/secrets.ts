@@ -13,7 +13,8 @@ import { execFile, spawnSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import type { Profile, SecretName, SecretSource, SecretStatus } from './contracts.ts';
-import { readEnv, writeFileAtomic } from './files.ts';
+import { writeFileAtomic } from './lib/atomic.ts';
+import { readEnv } from './lib/env.ts';
 
 export const SECRETS_FILE = 'secrets.json';
 export const SECRET_NAMES: readonly SecretName[] = ['SLACK_BOT_TOKEN', 'SLACK_APP_TOKEN'];
