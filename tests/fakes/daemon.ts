@@ -22,11 +22,12 @@ export class TestReceiver implements Receiver {
   init(app: App): void { this.app = app; }
   async start(): Promise<void> {}
   async stop(): Promise<void> {}
-  async deliver(body: Record<string, unknown>): Promise<{ acked: boolean }> {
+  /** `gaveUp`: stop waiting for the listeners when it resolves (a call they made hangs: the process died there). */
+  async deliver(body: Record<string, unknown>, gaveUp: Promise<void> = new Promise(() => {})): Promise<{ acked: boolean }> {
     if (!this.app) throw new Error('The app is not started');
     let acked = false;
     const event: ReceiverEvent = { body, ack: async () => { acked = true; } };
-    await this.app.processEvent(event);
+    await Promise.race([this.app.processEvent(event), gaveUp]);
     return { acked };
   }
 }
@@ -130,7 +131,7 @@ export const startTestDaemon = async (t: TestContext, options: DaemonHarnessOpti
     config, clock, slack, t3, logs,
     deliver: async (body) => {
       if (!current) throw new Error('The daemon is not running');
-      const result = await current.receiver.deliver(body);
+      const result = await current.receiver.deliver(body, Promise.race([slack.whenHung(), t3.whenHung()]).then(() => { hung = true; }));
       await clock.settle();
       return result;
     },

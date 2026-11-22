@@ -49,7 +49,7 @@ interface Scenario {
   /** `failStart`: every `t3 thread start` fails with this error text (as `t3` stderr would read). */
   t3?: { failStart?: string };
   /** `returnsMetadata: false`: Slack leaves message metadata out of thread reads. */
-  slack?: { returnsMetadata?: boolean };
+  slack?: { returnsMetadata?: boolean; rewritesText?: boolean };
 }
 
 const folder = new URL('./scenarios/', import.meta.url);

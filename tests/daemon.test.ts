@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict';
-import { chmodSync, existsSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import test from 'node:test';
 import { App, LogLevel } from '@slack/bolt';
 import { startDaemon } from '../src/daemon.ts';
 import { createKnowledge } from '../src/knowledge.ts';
-import { holdRequest, pauseIntake, readHeld, resumeIntake } from '../src/intake.ts';
+import { HELD_REQUESTS, holdRequest, pauseIntake, readHeld, resumeIntake } from '../src/intake.ts';
 import { fakeClock } from './fakes/clock.ts';
 import { startTestDaemon, TestReceiver } from './fakes/daemon.ts';
 import { BOT, SAM, testProfile } from './fakes/profile.ts';
@@ -96,4 +96,15 @@ test('[REPLY-008] a review request posted just before a crash is recorded at onc
   await h.advance(15_000);
   assert.equal(h.slack.callsTo('chat.postMessage').filter((args) => args.channel === 'CREVIEW').length, 1, 'one review request');
   assert.equal(h.slack.callsTo('chat.postMessage').filter((args) => args.channel === 'C1').length, 1, 'one reply');
+});
+
+test('[INTAKE-008] a request that can\'t be held for an update is handled at once and logged, never lost', async (t) => {
+  const h = await startTestDaemon(t);
+  pauseIntake(h.config.profileDir, 'app-update', { now: h.clock.now() });
+  // The held-requests file can't be written: something else is in its place.
+  mkdirSync(join(h.config.profileDir, HELD_REQUESTS));
+  await h.deliver(mention('1700000100.000100', 'rename the pricing page'));
+  assert.ok(h.logs.some((line) => /Couldn't hold a request in C1 for after the update, so handling it now/.test(line)), 'the failure is logged');
+  assert.equal(h.t3.started.length, 1, 'the request started instead of being lost');
+  assert.deepEqual(h.slack.reactionsOn('C1', '1700000100.000100'), ['eyes'], 'and shows 👀, not the hourglass');
 });

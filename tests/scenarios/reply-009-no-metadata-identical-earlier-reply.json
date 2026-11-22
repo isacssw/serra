@@ -1,0 +1,138 @@
+{
+  "id": "reply-009-no-metadata-identical-earlier-reply",
+  "specs": [
+    "REPLY-009"
+  ],
+  "title": "without metadata, an identical reply to an earlier run is not taken for this run's: the reply cut off by a crash is still posted",
+  "slack": {
+    "returnsMetadata": false
+  },
+  "steps": [
+    {
+      "do": "slack",
+      "envelope": {
+        "type": "event_callback",
+        "team_id": "THOME",
+        "api_app_id": "A1",
+        "event_id": "Ev1",
+        "event_time": 1700000100,
+        "authorizations": [
+          {
+            "team_id": "THOME",
+            "user_id": "UBOT",
+            "is_bot": true
+          }
+        ],
+        "event": {
+          "type": "app_mention",
+          "user": "USAM",
+          "text": "<@UBOT> run the tests",
+          "ts": "1700000100.000100",
+          "channel": "C1",
+          "event_ts": "1700000100.000100",
+          "team": "THOME"
+        }
+      }
+    },
+    {
+      "do": "worker.reply",
+      "text": "Done."
+    },
+    {
+      "do": "advance",
+      "ms": 15000,
+      "expect": {
+        "slack": [
+          {
+            "method": "chat.postMessage",
+            "count": 1,
+            "args": {
+              "text": "Done."
+            }
+          }
+        ]
+      }
+    },
+    {
+      "do": "slack",
+      "envelope": {
+        "type": "event_callback",
+        "team_id": "THOME",
+        "api_app_id": "A1",
+        "event_id": "Ev2",
+        "event_time": 1700000100,
+        "authorizations": [
+          {
+            "team_id": "THOME",
+            "user_id": "UBOT",
+            "is_bot": true
+          }
+        ],
+        "event": {
+          "type": "app_mention",
+          "user": "USAM",
+          "text": "<@UBOT> run them again",
+          "ts": "1700000200.000100",
+          "thread_ts": "1700000100.000100",
+          "channel": "C1",
+          "event_ts": "1700000200.000100",
+          "team": "THOME"
+        }
+      }
+    },
+    {
+      "do": "advance",
+      "ms": 5000,
+      "expect": {
+        "t3": {
+          "sends": 1
+        }
+      }
+    },
+    {
+      "do": "worker.reply",
+      "text": "Done."
+    },
+    {
+      "do": "slack.hang",
+      "method": "chat.postMessage"
+    },
+    {
+      "do": "advance",
+      "ms": 15000,
+      "expect": {
+        "state": {
+          "C1:1700000100.000100": {
+            "delivering": {
+              "runId": "run-2"
+            }
+          }
+        }
+      }
+    },
+    {
+      "do": "crash"
+    },
+    {
+      "do": "advance",
+      "ms": 15000,
+      "expect": {
+        "slack": [
+          {
+            "method": "chat.postMessage",
+            "count": 3,
+            "args": {
+              "text": "Done."
+            }
+          }
+        ],
+        "state": {
+          "C1:1700000100.000100": {
+            "lastPostedRunId": "run-2",
+            "delivering": "$absent"
+          }
+        }
+      }
+    }
+  ]
+}

@@ -44,7 +44,14 @@ export interface FakeSlackOptions {
   files?: Record<string, Record<string, unknown>>;
   /** Whether `conversations.replies` returns message metadata when asked. Default true; false for a workspace that leaves it out. */
   returnsMetadata?: boolean;
+  /** Store posted text as Slack does: `&`, `<`, `>` escaped outside link markup, and bare links wrapped as `<url>`. */
+  rewritesText?: boolean;
 }
+
+/** What Slack stores for posted text: link markup kept, other `&<>` escaped, bare URLs wrapped. */
+export const slackStoredText = (text: string): string => text.split(/(<[^<>]+>)/).map((part, index) => index % 2 === 1
+  ? part
+  : part.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replace(/https?:\/\/[^\s&]+/g, (url) => `<${url}>`)).join('');
 
 type Rule = { times: number; act: (args: Record<string, unknown>) => unknown };
 
@@ -110,7 +117,8 @@ export const createFakeSlack = (options: FakeSlackOptions = {}) => {
     const ts = nextTs();
     const threadTs = typeof args.thread_ts === 'string' ? args.thread_ts : ts;
     const message: SlackMessage = {
-      ts, user: botUserId, bot_id: options.botId ?? 'BBOT', text: typeof args.text === 'string' ? args.text : '',
+      ts, user: botUserId, bot_id: options.botId ?? 'BBOT',
+      text: typeof args.text !== 'string' ? '' : options.rewritesText ? slackStoredText(args.text) : args.text,
       ...(threadTs !== ts ? { thread_ts: threadTs } : {}),
       ...(Array.isArray(args.blocks) ? { blocks: args.blocks as unknown[] } : {}),
       ...(args.metadata ? { metadata: args.metadata as SlackMessage['metadata'] } : {}),

@@ -22,7 +22,7 @@ import { answeredMessage, closedMessage, canShowQuestion, choiceAnswer, question
 import type { IncomingFile, IncomingMessage, Job, T3Message, T3Thread } from './types.ts';
 import { createTracker, systemClock, type Clock } from './clock.ts';
 import { errorMessage } from './lib/errors.ts';
-import { slackErrorCode, type SlackApi } from './slack-api.ts';
+import { comparableSlackText, slackErrorCode, type SlackApi } from './slack-api.ts';
 
 type SlackClient = SlackApi;
 type PostMessage = Parameters<SlackClient['chat']['postMessage']>[0];
@@ -52,7 +52,8 @@ const PING_THREAD_MS = 30 * 60_000;
 /** Posted instead of a reply written with knowledge the owner has since taken back. */
 const WITHHELD = 'Some of what I knew for this answer has since been made private, so I won\'t post it. Ask again and I\'ll answer with what I may share now.';
 /** Posted instead of a reply when Slack refuses, for good, to say who can see the thread: a setup problem. */
-const setupNotice = (code: string): string => `I can't check who can see this thread: my Slack app is missing a permission (${code}). I've told my owner how to fix it, and I'll answer here once it's done.`;
+const SETUP_NOTICE_START = 'I can\'t check who can see this thread';
+const setupNotice = (code: string): string => `${SETUP_NOTICE_START}: my Slack app is missing a permission (${code}). I've told my owner how to fix it, and I'll answer here once it's done.`;
 /** Posted instead of a reply when Slack can't confirm who can see the thread right before posting. */
 const UNCONFIRMED = 'I couldn\'t confirm who can see this thread just now, so I haven\'t posted my answer here. Ask again in a minute and I\'ll try again.';
 /** Replies to "I'm here" that aren't a request. */
@@ -109,16 +110,12 @@ const someoneWaits = (job: Job, runId: string, messages: T3Message[]): boolean =
 /** Marks a reply Serra posts with the run it answers, so a restart can find it in the thread instead of posting it again. */
 const REPLY_EVENT = 'serra_reply';
 /**
- * Text as Slack may store it, made comparable: links unwrapped (`<url|label>`, `<url>`), entities unescaped, white
- * space collapsed, and cut to a prefix. Slack rewrites a posted message's text this way, so a match is by meaning.
+ * How far before the saved intent a reply found by its text may be: room for Slack's clock and this machine's to
+ * differ, and too little for the previous run's reply (a poll at least 15 s earlier) to be taken for this one.
  */
-const plainText = (text: string): string => text
-  .replace(/<([^<>|]+)(?:\|[^<>]*)?>/g, '$1').replaceAll('&lt;', '<').replaceAll('&gt;', '>').replaceAll('&amp;', '&')
-  .replace(/\s+/g, ' ').trim().slice(0, 500);
-/** How far before the saved intent a reply found by its text may be: Slack's clock and this machine's can differ. */
-const TEXT_MATCH_SKEW_S = 30;
+const TEXT_MATCH_SKEW_S = 5;
 /** Serra's fixed notices, posted the same way many times: never recognised by text. */
-const isNotice = (text: string): boolean => text === WITHHELD || text === UNCONFIRMED || text.startsWith('I can\'t check who can see this thread');
+export const isNotice = (text: string): boolean => text === WITHHELD || text === UNCONFIRMED || text.startsWith(SETUP_NOTICE_START);
 /** How much of a reply's text its saved intent keeps. A reply's fallback text is at most 3,000 characters. */
 const INTENT_TEXT = 3_000;
 const replyMetadata = (runId: string) => ({ event_type: REPLY_EVENT, event_payload: { run_id: runId } });
@@ -569,7 +566,7 @@ export const createBot = ({
    * unconfirmed when Slack can't say who that is.
    */
   const stillMayPost = async (job: Job, text: string): Promise<string> => {
-    if (text === WITHHELD || text === UNCONFIRMED || text.startsWith('I can\'t check who can see this thread') || !loadKnowledge) return text;
+    if (isNotice(text) || !loadKnowledge) return text;
     const { revoked, unknown } = await revocation(job);
     return unknown ? UNCONFIRMED : revoked.length > 0 ? WITHHELD : text;
   };
@@ -607,11 +604,11 @@ export const createBot = ({
     const text = job.delivering?.text;
     // By the run ID Serra put in the message's metadata. When Slack leaves metadata out, by the reply's text: only a
     // message posted around the intent (not an identical earlier reply), and never Serra's fixed notices, which repeat.
-    const byText = text && !isNotice(text) ? plainText(text) : null;
+    const byText = text && !isNotice(text) ? comparableSlackText(text) : null;
     const intentAt = job.delivering ? Date.parse(job.delivering.at) / 1000 : 0;
     const mine = replies?.messages?.find((message) => message.user === botUserId() && (message.metadata
       ? message.metadata.event_type === REPLY_EVENT && (message.metadata.event_payload as { run_id?: unknown } | undefined)?.run_id === runId
-      : byText !== null && Number(message.ts) >= intentAt - TEXT_MATCH_SKEW_S && plainText(message.text ?? '') === byText));
+      : byText !== null && Number(message.ts) >= intentAt - TEXT_MATCH_SKEW_S && comparableSlackText(message.text ?? '') === byText));
     return mine?.ts ?? null;
   };
 

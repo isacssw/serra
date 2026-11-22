@@ -18,6 +18,17 @@ export interface SlackApi {
   filesUploadV2: WebClient['filesUploadV2'];
 }
 
+/**
+ * Text made comparable with what Slack stores for it. Slack wraps bare links (`<url>`), keeps `<url|label>`, escapes
+ * `&`, `<` and `>`, and may change white space: so both sides lose link brackets and labels' wrappers, entities are
+ * unescaped and any bracket left is dropped, white space is collapsed, and only a prefix is kept.
+ */
+export const comparableSlackText = (text: string): string => text
+  .replace(/<([^<>|]+)(?:\|[^<>]*)?>/g, '$1')
+  .replaceAll('&lt;', '<').replaceAll('&gt;', '>').replaceAll('&amp;', '&')
+  .replace(/[<>]/g, ' ')
+  .replace(/\s+/g, ' ').trim().slice(0, 500);
+
 /** Slack's error code from a failed Web API call (`missing_scope`, `message_not_found`), else the error's message. */
 export const slackErrorCode = (error: unknown): string => {
   const code = (error as { data?: { error?: unknown } } | null)?.data?.error;
