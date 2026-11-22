@@ -12,19 +12,7 @@
   "project": ["src/**/*.ts", "app/**/*.{ts,tsx}", "scripts/**/*.ts", "tests/**/*.ts", "evals/**/*.ts"],
   "ignore": [
     // A manual Playwright driver with its own dependencies (scripts/qa/README.md).
-    "scripts/qa/**",
-    // TODO(SERRA-61): these files change on that branch; their unused exports are removed once it lands, then these
-    // lines go. pnpm lint:repo keeps this list from growing.
-    "app/main/app-updater.ts",
-    "src/app-updates.ts",
-    "src/config.ts",
-    "src/deploy.ts",
-    "src/intake.ts",
-    "src/jobs.ts",
-    "src/proposals.ts",
-    "src/releases.ts",
-    "src/status-socket.ts",
-    "src/tasks.ts"
+    "scripts/qa/**"
   ],
   // Loaded by @tailwindcss/vite from styles.css, which knip doesn't read.
   "ignoreDependencies": ["tailwindcss"]

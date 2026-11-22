@@ -23,7 +23,7 @@ export const HELD_REQUESTS = 'held-requests.jsonl';
 /** How long a pause lasts unless lifted or renewed: long enough for running jobs to finish, short enough to recover. */
 export const PAUSE_MS = 30 * 60_000;
 /** An acknowledgment older than this is stale (the daemon refreshes it on every poll, every 15 seconds). */
-export const ACK_FRESH_MS = 60_000;
+const ACK_FRESH_MS = 60_000;
 
 export interface IntakePause {
   /** Why, for logs: `app-update` (Serra restarting for its own update) or `bot-update` (the bot moving to a new version). */
@@ -53,7 +53,7 @@ const isAck = (value: unknown): value is IntakeAck =>
   isRecord(value) && Number.isSafeInteger(value.pid) && isTime(value.at) && Number.isSafeInteger(value.starting) && (value.starting as number) >= 0;
 
 /** A held request as the daemon wrote it. Anything else on a line is skipped, never handed to the bot. */
-export const isHeldRequest = (value: unknown): value is IncomingMessage =>
+const isHeldRequest = (value: unknown): value is IncomingMessage =>
   isRecord(value) && typeof value.channel === 'string' && typeof value.threadTs === 'string' && typeof value.messageTs === 'string'
   && typeof value.user === 'string' && typeof value.text === 'string' && typeof value.direct === 'boolean'
   && (value.files === undefined || (Array.isArray(value.files) && value.files.every(isRecord)))

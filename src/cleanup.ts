@@ -2,7 +2,8 @@ import { execFile } from 'node:child_process';
 import { existsSync, realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join, resolve, sep } from 'node:path';
-import { readEnv, readProfileFile } from './config.ts';
+import { readProfileFile } from './config.ts';
+import { readEnv } from './lib/env.ts';
 import { readState } from './state.ts';
 import { readTasks } from './tasks.ts';
 

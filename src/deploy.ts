@@ -26,7 +26,7 @@ const digest = (root: string, names: string[]): string => {
   return hash.digest('hex');
 };
 
-export const xmlEscape = (value: string): string => value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&apos;');
+const xmlEscape = (value: string): string => value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&apos;');
 const shellQuote = (value: string): string => `'${value.split("'").join("'\"'\"'")}'`;
 
 /**
@@ -114,7 +114,7 @@ const warnIfBehind = async (root: string, commit: string, ref: string, log: Depl
     if (target && target !== commit) log(`Note: ${root} is at ${commit.slice(0, 12)}, not ${ref} (${target.slice(0, 12)}). Run git pull there to release ${ref}.`);
   } catch { /* no such ref: status reports it */ }
 };
-export const releasedPaths = ['src', 'templates', 'docs', 'examples', 'README.md', 'package.json', 'pnpm-lock.yaml', 'tsconfig.json', RELEASE_INFO];
+const releasedPaths = ['src', 'templates', 'docs', 'examples', 'README.md', 'package.json', 'pnpm-lock.yaml', 'tsconfig.json', RELEASE_INFO];
 /** What the daemon can't run without. The rest of `releasedPaths` is copied when it is there. */
 const requiredPaths = ['src', 'templates', 'examples', 'package.json', 'pnpm-lock.yaml', 'tsconfig.json'];
 
@@ -197,7 +197,7 @@ interface Activation {
 }
 
 /** A `prepared.json` or `active.json` with every field the release code reads. Older files without the optional ones pass. */
-export const isPrepared = (value: unknown): value is Prepared =>
+const isPrepared = (value: unknown): value is Prepared =>
   isRecord(value) && value.version === 1 && isNonEmptyString(value.release) && isString(value.releaseHash)
   && isArrayOf(isString)(value.releaseFiles) && isString(value.label) && isString(value.node)
   && isOptional(isString)(value.preparedAt) && isOptional(isString)(value.commit) && isOptional(isBoolean)(value.dirty)

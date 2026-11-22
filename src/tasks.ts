@@ -25,7 +25,7 @@ export const APP_TASK_CHANNEL = 'app';
  * What the brief's `{{PERMALINK}}` gets for a task: nothing, since there is no Slack message to link to.
  * `renderBrief` then leaves the brief's ` ({{PERMALINK}})` out, so the request reads "Alex asked:".
  */
-export const APP_TASK_PERMALINK = '';
+const APP_TASK_PERMALINK = '';
 
 /** What the brief's `{{THREAD_CONTEXT}}` says for a task, so the worker knows there is no Slack thread to read. */
 export const appTaskThread = (ownerName: string): string =>
@@ -95,11 +95,11 @@ export const taskBriefInput = (config: Pick<Config, 'ownerName'>, request: strin
   ({ request, requester: `${config.ownerName} (your owner)`, permalink: APP_TASK_PERMALINK, thread: appTaskThread(config.ownerName), proposalsFolder: APP_PROPOSALS_FOLDER });
 
 /** The brief a task's worker gets: the daemon's `fillBrief` with the profile's brief and knowledge index. */
-export const taskBrief = (config: Config, request: string): string =>
+const taskBrief = (config: Config, request: string): string =>
   fillBrief(config, createKnowledge(config.knowledgeDir).briefKnowledge('owner'), taskBriefInput(config, request));
 
 /** The thread `startTask` would start, without starting it. */
-export const taskThreadInput = (config: Config, request: string, now: Date = new Date()): StartThreadInput =>
+const taskThreadInput = (config: Config, request: string, now: Date = new Date()): StartThreadInput =>
   jobThreadInput(config, { summary: request, brief: taskBrief(config, request), now });
 
 export interface TaskDeps {
@@ -250,7 +250,7 @@ export const interviewBrief = (
 };
 
 /** The thread `startInterview` would start: a task's thread with the interview's title and brief. */
-export const interviewThreadInput = (config: Config, now: Date = new Date()): StartThreadInput =>
+const interviewThreadInput = (config: Config, now: Date = new Date()): StartThreadInput =>
   jobThreadInput(config, { summary: INTERVIEW_TITLE, brief: interviewBrief(config, now), now });
 
 /** The brief `startInterview` would send, and whether it carries on from an earlier interview. */

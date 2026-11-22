@@ -72,7 +72,7 @@ const helperAlive = (pid: number): boolean => {
 };
 
 /** The bundle identifier the update must carry (electron-builder.yml `appId`). */
-export const BUNDLE_ID = 'dev.serra.app';
+const BUNDLE_ID = 'dev.serra.app';
 
 const message = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
@@ -96,7 +96,7 @@ const canWrite = (path: string): boolean => {
 };
 
 /** Mounts the disk image read-only, checks the app inside (bundle ID, version, intact signature) and copies it out. */
-export const stageFromDmg = async (dmg: string, expected: { version: string; bundleId: string }, into: string): Promise<string> => {
+const stageFromDmg = async (dmg: string, expected: { version: string; bundleId: string }, into: string): Promise<string> => {
   // Mounted outside the updates folder, so clearing that folder at launch never meets a disk image left mounted.
   const mount = mkdtempSync(join(tmpdir(), 'serra-update-mount-'));
   await run('hdiutil', ['attach', '-nobrowse', '-readonly', '-noautoopen', '-mountpoint', mount, dmg], { timeoutMs: 120_000 });

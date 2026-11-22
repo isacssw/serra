@@ -110,11 +110,6 @@
       "rules": { "typescript/no-non-null-assertion": "error" }
     },
     {
-      // TODO(SERRA-61): that branch rewrites str() here with field guards (isac/validate-file-socket-reads).
-      "files": ["src/status-socket.ts"],
-      "rules": { "typescript/no-base-to-string": "off" }
-    },
-    {
       // Casts that existed when the rule was turned on: mostly JSON and file reads, which move 7 replaces with guards.
       // Every other file, and every new one, is held to the rule. Remove a file from this list once it's clean;
       // never add one.

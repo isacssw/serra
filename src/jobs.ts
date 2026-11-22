@@ -8,7 +8,7 @@ import { readState } from './state.ts';
 import { APP_TASK_CHANNEL, readTasks, type TaskState, type TaskStateLookup } from './tasks.ts';
 
 /** One row of `listJobs`. */
-export type JobRow = JobListing['jobs'][number];
+type JobRow = JobListing['jobs'][number];
 
 /**
  * The Jobs screen and `pnpm bot jobs`, built from the profile's files. `state.json` and `logs/events.jsonl` are only
@@ -131,7 +131,7 @@ const classify = (job: Record<string, unknown>, last: { event: string; error?: s
  * How long a request may wait for its first run. A message the bot just received sits a few seconds before it reaches
  * T3 (the follow-up batcher's quiet time), so until then an idle thread with 👀 or loading is still about to run.
  */
-export const REQUEST_GRACE_MS = 2 * 60_000;
+const REQUEST_GRACE_MS = 2 * 60_000;
 
 /**
  * A job the file lists as running that T3 shows idle, with nothing waiting and its newest run already posted. A 👀 or

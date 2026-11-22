@@ -21,7 +21,7 @@ import type { BotEvent, BotStatus, Job } from './contracts.ts';
 import { isBoolean, isNonEmptyString, isNumber, isOneOf, isOptional, isRecord, isRecordOf, isString, parseJson } from './lib/guards.ts';
 import { isSlackBotId, isSlackChannelId, isSlackUserId } from './slack-names.ts';
 
-export const STATUS_SOCKET = 'status.sock';
+const STATUS_SOCKET = 'status.sock';
 
 export const statusSocketPath = (profileDir: string): string => join(profileDir, STATUS_SOCKET);
 
@@ -311,7 +311,7 @@ export const isBotEvent = (value: unknown): value is BotEvent => {
 };
 
 /** One line from the daemon the subscriber may deliver: a well-formed status or a known, well-formed event. */
-export const isStatusMessage = (value: unknown): value is StatusMessage => {
+const isStatusMessage = (value: unknown): value is StatusMessage => {
   if (!isRecord(value)) return false;
   if (value.type === 'status') return isBotStatus(value.status);
   if (value.type === 'event') return isBotEvent(value.event);

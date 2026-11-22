@@ -1,10 +1,10 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { writeFileAtomic, type AtomicWriteIo } from './lib/atomic.ts';
 import { homedir } from 'node:os';
 import { isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { parseEnv } from 'node:util';
 import { resolveConfiguredSecretSync } from './secrets.ts';
+import { readEnv } from './lib/env.ts';
 
 export const codeRoot = fileURLToPath(new URL('..', import.meta.url));
 export const defaultProfileRoot = join(homedir(), '.local/share/serra');
@@ -50,7 +50,7 @@ export interface Profile {
   updates?: { source: string; ref?: string };
 }
 
-export const DEFAULT_BRANCH_PATTERN = '{id}/{slug}-{stamp}';
+const DEFAULT_BRANCH_PATTERN = '{id}/{slug}-{stamp}';
 const BRANCH_PLACEHOLDER = /\{(id|slug|stamp|DDMM|MMDD)\}/g;
 
 /** Why a branch pattern can't name a valid, unique Git branch, or null when it can. */
@@ -62,8 +62,6 @@ export const branchPatternProblem = (pattern: string): string | null => {
   return null;
 };
 
-export const readEnv = (path: string): Record<string, string> =>
-  existsSync(path) ? parseEnv(readFileSync(path, 'utf8')) as Record<string, string> : {};
 
 export const profileArgument = (args = process.argv.slice(2)): string | undefined => {
   const index = args.indexOf('--profile');
