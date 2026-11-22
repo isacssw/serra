@@ -448,6 +448,8 @@ test('setup logic: the first screen welcomes, summarises what was found, or asks
   assert.equal(foundLine(legacy), '2 of 4 steps already done.');
   assert.equal(summaryRows(summaryWith(['profile'], { service: 'installed' }))[3]!.value, 'Installed, hasn’t answered yet');
   assert.equal(summaryRows(summaryWith(['profile'], { service: 'disconnected' }))[3]!.value, 'Running, not connected to Slack');
+  assert.equal(foundLine(summaryWith(['profile', 'slack', 'owner', 'service'], { service: 'disconnected' })), 'Set up, but not connected to Slack.');
+  assert.equal(isTokenVerdict("1Password (op) failed: \"Serra\" isn't an item in the \"Private\" vault"), true);
   assert.equal(shortPath('/Users/you/.local/share/serra/friday', '/Users/you'), '~/.local/share/serra/friday');
   assert.equal(shortPath('/Volumes/x/friday', '/Users/you'), '/Volumes/x/friday');
   assert.deepEqual(summaryRows(legacy).map((row) => [row.label, row.value, row.done]), [
@@ -730,7 +732,7 @@ test('a deleted Keychain item isn\'t connected, even with a passing check on rec
 test('an uncertain Keychain answer isn\'t a deleted token, and a bot that reached Slack before counts as answered', async (t) => {
   const f = fixture(t);
   const statuses: SecretStatus[] = [
-    { name: 'SLACK_BOT_TOKEN', source: { kind: 'keychain', service: 's', account: 'a' }, set: false, verifiedAt: null, error: 'security timed out' },
+    { name: 'SLACK_BOT_TOKEN', source: { kind: 'keychain', service: 's', account: 'a' }, set: false, verifiedAt: null, error: 'security timed out', lookupFailed: true },
     { name: 'SLACK_APP_TOKEN', source: { kind: 'keychain', service: 's', account: 'b' }, set: false, verifiedAt: null, error: null },
   ];
   assert.deepEqual(certainPresence(statuses), { SLACK_APP_TOKEN: false });
@@ -786,4 +788,35 @@ test('a check that only failed to run keeps an earlier pass; a verdict against t
   // Slack refusing the token is a verdict: Slack isn't connected any more.
   await checkSecret(dir, 'SLACK_BOT_TOKEN', { verify: async () => { throw Object.assign(new Error('An API error occurred'), { data: { error: 'invalid_auth' } }); } });
   assert.equal(setupProgress(dir, { launchAgentsDir: agents, running: false }).next, 'slack');
+});
+
+test('a Keychain item gone for sure is missing even after an offline recheck; ready.json is recorded before a restart clears it', async (t) => {
+  const f = fixture(t);
+  const dir = join(f.root, 'friday');
+  cliProfile(f, dir);
+  const agents = join(f.root, 'agents');
+  const at = '2026-11-22T00:00:00.000Z';
+  const keychain = (name: string) => ({ kind: 'keychain', service: 'dev.serra.friday', account: name });
+  writeFileSync(join(dir, 'secrets.json'), JSON.stringify({
+    version: 1, sources: { SLACK_BOT_TOKEN: keychain('SLACK_BOT_TOKEN'), SLACK_APP_TOKEN: keychain('SLACK_APP_TOKEN') },
+    // A pass, then a recheck that couldn't reach Slack: the pass stands while the item is there.
+    checks: { SLACK_BOT_TOKEN: { verifiedAt: at, error: "Couldn't reach Slack: getaddrinfo ENOTFOUND slack.com" }, SLACK_APP_TOKEN: { verifiedAt: at, error: null } },
+  }));
+  writeFileSync(join(f.root, 'keychain.json'), JSON.stringify({ 'dev.serra.friday/SLACK_BOT_TOKEN': BOT, 'dev.serra.friday/SLACK_APP_TOKEN': APP }));
+  writeFileSync(join(dir, 'setup.json'), JSON.stringify({ version: 1, owner: { slackUserId: OWNER, slackName: 'Alex', checkedAt: at } }));
+  writeFileSync(join(dir, 'active.json'), '{}');
+  writeFileSync(join(dir, 'ready.json'), '{}');
+  const handlers = setupHandlers(context(dir), { launchAgentsDir: agents, answerWaitMs: 0, presenceCacheMs: 0 });
+  assert.equal((await handlers.progress()).next, null);
+
+  // ready.json alone made the service step done; it is recorded, so a restart that clears it doesn't reopen setup.
+  assert.match(readFileSync(join(dir, 'setup.json'), 'utf8'), /serviceAnsweredAt/);
+  rmSync(join(dir, 'ready.json'));
+  assert.equal((await handlers.progress()).next, null);
+
+  // The bot token's item is deleted: gone for sure, so Slack reopens and the row asks for a new token.
+  writeFileSync(join(f.root, 'keychain.json'), JSON.stringify({ 'dev.serra.friday/SLACK_APP_TOKEN': APP }));
+  assert.equal((await handlers.progress()).next, 'slack');
+  const summary = await summarizeProfile(dir, { launchAgentsDir: agents });
+  assert.equal(summary.tokens.find((token) => token.name === 'SLACK_BOT_TOKEN')!.state, 'missing');
 });

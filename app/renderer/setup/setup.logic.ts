@@ -104,6 +104,10 @@ export interface SummaryRow { id: SetupStepId; label: string; value: string; don
 
 const TOKEN_LABELS: Record<SecretName, string> = { SLACK_BOT_TOKEN: 'bot token', SLACK_APP_TOKEN: 'app token' };
 
+/** Whether a summary's Slack row has a problem to show: a token Slack refused. */
+export const slackRefused = (tokens: readonly TokenSummary[]): boolean =>
+  tokens.some((token) => token.state === 'rejected' && isTokenVerdict(token.error));
+
 /** One line for both tokens: connected, found and still to check, or what is missing. */
 export const slackLine = (tokens: readonly TokenSummary[], workspace: string | null): string => {
   if (tokens.length && tokens.every((token) => token.state === 'verified')) return workspace ? `Connected to ${workspace}` : 'Connected';
@@ -141,6 +145,7 @@ export const summaryRows = (summary: ProfileSummary): SummaryRow[] => {
 
 /** The card's headline: how much of setup the profile already has. */
 export const foundLine = (summary: ProfileSummary): string => {
+  if (summary.service === 'disconnected') return 'Set up, but not connected to Slack.';
   const done = summaryRows(summary).filter((row) => row.done).length;
   return done === FLOW.length ? 'Everything is set up.' : `${done} of ${FLOW.length} steps already done.`;
 };
@@ -284,7 +289,8 @@ const WHERE: Record<SecretStatus['source']['kind'], TokenSummary['where']> = { k
 /** A Secrets status as setup reads it (the same rule as `tokenState` in src/setup.ts). */
 export const toToken = (status: SecretStatus): TokenSummary => ({
   name: status.name,
-  state: !status.set ? (status.error ? 'rejected' : 'missing')
+  // A Keychain lookup that failed just now says nothing new: an earlier pass stands, as in setup's progress.
+  state: !status.set ? (status.lookupFailed ? (status.verifiedAt ? 'verified' : 'rejected') : 'missing')
     : status.verifiedAt && (!status.error || !isTokenVerdict(status.error)) ? 'verified' : status.error ? 'rejected' : 'found',
   where: WHERE[status.source.kind],
   error: status.error,

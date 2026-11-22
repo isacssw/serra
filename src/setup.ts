@@ -364,7 +364,7 @@ export interface ServiceLookup {
  * and the files' view stands, rather than calling a working token deleted.
  */
 export const certainPresence = (statuses: readonly SecretStatus[]): Partial<Record<SecretName, boolean>> =>
-  Object.fromEntries(statuses.filter((status) => status.set || status.source.kind !== 'keychain' || !status.error).map((status) => [status.name, status.set]));
+  Object.fromEntries(statuses.filter((status) => !status.lookupFailed).map((status) => [status.name, status.set]));
 
 /** Records that the installed bot answered, connected to Slack, so setup's last step stays done (see `SetupFile`). */
 export const recordServiceAnswered = (profileDir: string, now = new Date()): void => {
@@ -480,7 +480,8 @@ export interface ProfileSummary extends SetupProgress {
 }
 
 export const tokenState = (status: SecretStatus): TokenState => {
-  if (!status.set) return status.error ? 'rejected' : 'missing';
+  // Gone for sure is missing, whatever the last check said; a lookup that failed is a problem to retry.
+  if (!status.set) return status.lookupFailed ? (status.verifiedAt ? 'verified' : 'rejected') : 'missing';
   if (status.verifiedAt && (!status.error || !isTokenVerdict(status.error))) return 'verified';
   if (status.error) return 'rejected';
   return status.set ? 'found' : 'missing';

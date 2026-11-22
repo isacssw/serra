@@ -136,6 +136,9 @@ export const setupHandlers = (context: HandlerContext, deps: SetupDeps = {}): Ha
     const base = { ...lookup, ...(present ? { present } : {}) };
     const stopped = setupProgress(directory, { ...base, running: false });
     const serviceDone = stopped.steps.find((step) => step.id === 'service')?.done === true;
+    // Done from the daemon's ready.json alone (a bot set up before answers were recorded): record it now, since a
+    // restart clears that file and setup would otherwise reopen. recordServiceAnswered writes only once.
+    if (serviceDone && stopped.installed) recordServiceAnswered(directory);
     if (serviceDone || !stopped.installed || !(await running())) return stopped;
     recordServiceAnswered(directory);
     return setupProgress(directory, { ...base, running: true });

@@ -1,7 +1,7 @@
 // Setup's first screen. A first-time owner gets a short welcome and what they'll need. When a profile already exists
 // (made by the CLI, an older app, or a setup left halfway) it shows what was found and resumes at the first missing
 // step; with several profiles and none chosen, it asks which one.
-import { useCallback, useEffect, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { ArrowRight, FolderOpen, SquareTerminal } from 'lucide-react';
 import { useNavigate } from 'react-router';
 import type { SetupDetection } from '../../main/bridge.ts';
@@ -11,7 +11,7 @@ import { defaultPath } from '../routes.ts';
 import { BrandMark, Button, cx } from '../ui/index.ts';
 import serraIcon from '../../../assets/brand/serra-icon.png';
 import { Alert, Card, errorText, StateIcon } from './parts.tsx';
-import { FLOW, foundLine, hasProfile, pickable, resumePath, shortPath, startView, summaryRows, type StartView } from './setup.logic.ts';
+import { FLOW, foundLine, hasProfile, pickable, resumePath, shortPath, slackRefused, startView, summaryRows, type StartView } from './setup.logic.ts';
 import { setupChanged, useSetup } from './SetupState.tsx';
 
 const Need = ({ icon, title, detail }: { icon: ReactNode; title: string; detail: string }) => (
@@ -24,7 +24,10 @@ const Need = ({ icon, title, detail }: { icon: ReactNode; title: string; detail:
   </li>
 );
 
-const Found = ({ summary, home }: { summary: ProfileSummary; home: string }) => (
+const Found = ({ summary, home }: { summary: ProfileSummary; home: string }) => {
+  // A row with something to fix (a refused token, a bot not connected to Slack) says so, done or not.
+  const problem = (id: string): boolean => (id === 'slack' && slackRefused(summary.tokens)) || (id === 'service' && summary.service === 'disconnected');
+  return (
   <Card>
     <div className="flex items-baseline justify-between gap-3 border-b border-line-subtle px-4 py-3.5">
       <p className="min-w-0 truncate text-[14px]">Found <span className="font-semibold">{summary.bot?.name}</span></p>
@@ -34,16 +37,17 @@ const Found = ({ summary, home }: { summary: ProfileSummary; home: string }) => 
       {summaryRows(summary).map((row) => (
         <li key={row.id} className="flex items-center gap-3 px-4 py-2" data-found={row.id}>
           {/* Running but not connected to Slack: the step stays done, but the row says something needs a look. */}
-          <StateIcon tone={row.id === 'service' && summary.service === 'disconnected' ? 'problem' : row.done ? 'done' : 'todo'} />
+          <StateIcon tone={problem(row.id) ? 'problem' : row.done ? 'done' : 'todo'} />
           <span className="w-16 shrink-0 text-[13px] text-muted">{row.label}</span>
           <span className="min-w-0 flex-1 truncate text-[13px]" title={row.value}>{row.value}</span>
-          <span className="sr-only">{row.id === 'service' && summary.service === 'disconnected' ? 'needs a look' : row.done ? 'done' : 'to do'}</span>
+          <span className="sr-only">{problem(row.id) ? 'needs a look' : row.done ? 'done' : 'to do'}</span>
         </li>
       ))}
     </ul>
     <p className="truncate border-t border-line-subtle px-4 py-2.5 font-mono text-[11px] text-muted" title={summary.profileDir}>{shortPath(summary.profileDir, home)}</p>
   </Card>
-);
+  );
+};
 
 const Picker = ({ profiles, chosen, onChoose }: { profiles: ProfileSummary[]; chosen: string | null; onChoose: (dir: string) => void }) => (
   <fieldset className="flex flex-col gap-2">
@@ -95,6 +99,13 @@ export const Start = () => {
     } catch (failure) { setError(errorText(failure)); }
   }, []);
   useEffect(() => { void load(); }, [load]);
+  // The heading waits for detection; if focus had nowhere to go meanwhile (Back from step 1), it lands there now.
+  const heading = useRef<HTMLHeadingElement>(null);
+  useEffect(() => {
+    if (!view || document.activeElement !== document.body || !heading.current) return;
+    heading.current.tabIndex = -1;
+    heading.current.focus({ preventScroll: true });
+  }, [view]);
 
   /** Makes `directory` the app's profile, then goes on from its first missing step. */
   const use = async (directory: string) => {
@@ -130,7 +141,7 @@ export const Start = () => {
       <div className="flex flex-col items-center gap-3 text-center">
         <img src={serraIcon} alt="" className="size-14 rounded-[14px] shadow-[0_8px_24px_-8px_rgb(0_0_0/0.35)] motion-safe:animate-[serra-pop_420ms_ease-out]" />
         {/* Until detection answers (several profiles, none chosen), the heading waits rather than change under the reader. */}
-        <h1 className={cx('text-[28px] font-semibold tracking-tight', !view && !returning && 'invisible')}>{returning ? 'Welcome back' : 'Welcome to Serra'}</h1>
+        <h1 ref={heading} className={cx('text-[28px] font-semibold tracking-tight', !view && !returning && 'invisible')}>{returning ? 'Welcome back' : 'Welcome to Serra'}</h1>
         <p className="max-w-sm text-[15px] text-muted">Your coding agents, one message away.</p>
       </div>
 
