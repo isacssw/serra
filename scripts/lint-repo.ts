@@ -3,7 +3,8 @@
 // running behaviour (SERRA-57 audit); here they say what they are. Runs in `pnpm lint` and so in CI.
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { readdirSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { builtinModules } from 'node:module';
 import { join } from 'node:path';
 import { build } from 'esbuild';
 import { missingRuntimeFiles, runtimeFiles } from '../app/main/runtime-files.ts';
@@ -137,8 +138,9 @@ check('renderer: no hard-coded white or black text, fills or borders that ignore
 
 // --- Lint configuration and repository hygiene -------------------------------------------------------------------
 
-/** Tracked files, so build output, node_modules and git-ignored folders are never read. */
-const tracked = (): string[] => execFileSync('git', ['ls-files', '-z'], { cwd: codeRoot, encoding: 'utf8' }).split('\0').filter(Boolean);
+/** Files git tracks or would add (not ignored), so build output and node_modules are never read. */
+const tracked = (): string[] => execFileSync('git', ['ls-files', '-z', '--cached', '--others', '--exclude-standard'], { cwd: codeRoot, encoding: 'utf8' })
+  .split('\0').filter((file) => file && existsSync(join(codeRoot, file)));
 const code = (): string[] => tracked().filter((file) => /\.(ts|tsx|mjs|cjs)$/.test(file) && !file.startsWith('scripts/qa/'));
 
 check('lint: every suppression names its rule and says why, after " -- "', () => {
@@ -149,38 +151,73 @@ check('lint: every suppression names its rule and says why, after " -- "', () =>
 
 check('imports: a relative import names the .ts file, never a .js one', () => {
   // Node runs the TypeScript as is, so `./x.js` fails at run time although tsc and oxlint accept it.
-  const bad = code().flatMap((file) => [...read(file).matchAll(/(?:from|import)\s*\(?\s*'(\.{1,2}\/[^']+\.js)'/g)].map((match) => `${file}: ${match[1]}`));
+  const bad = code().flatMap((file) => [...read(file).matchAll(/(?:from|import)\s*\(?\s*(['"])(\.{1,2}\/[^'"]+\.js)\1/g)].map((match) => `${file}: ${match[2]}`));
   assert.deepEqual(bad, []);
 });
 
-/** The string entries of the JSON array that follows `marker` in a config file (comments allowed). */
-const listAfter = (text: string, marker: string): string[] | null => {
-  const at = text.indexOf(marker);
-  if (at === -1) return null;
-  const open = text.indexOf('[', at);
-  // Globs (scripts/qa/**) are folders, not files to clean up, so only file entries count.
-  return [...text.slice(open, text.indexOf(']', open)).matchAll(/^\s*"([^"*]+)"/gm)].map((match) => match[1] ?? '');
-};
+/** A JSON file with whole-line // comments, as .oxlintrc.json and knip.jsonc are written. */
+const parseJsonc = (text: string): unknown => JSON.parse(text.split('\n').filter((line) => !line.trimStart().startsWith('//')).join('\n'));
 const onMain = (path: string): string | null => {
-  try { return execFileSync('git', ['show', `main:${path}`], { cwd: codeRoot, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }); } catch { return null; }
+  try { return execFileSync('git', ['show', `main:${path}`], { cwd: codeRoot, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }); } catch {
+    // CI makes a local main (ci.yml), so a missing one there is a broken setup, not a pass.
+    if (process.env.CI && execFileSync('git', ['branch', '--list', 'main'], { cwd: codeRoot, encoding: 'utf8' }).trim() === '') throw new Error('no local main branch to compare with');
+    return null;
+  }
 };
 
-// Two exception lists only shrink: each entry must be on main's list too, and still exist.
-for (const [file, marker, what] of [
-  ['.oxlintrc.json', 'Casts that existed', 'unsafe-cast exceptions'],
-  ['knip.jsonc', '"ignore":', 'knip ignores'],
-] as const) {
-  check(`lint: the ${what} in ${file} only shrink`, () => {
-    const now = listAfter(read(file), marker);
-    assert.ok(now && now.length > 0, `the list after "${marker}" is found`);
-    const missing = now.filter((entry) => !tracked().includes(entry));
-    assert.deepEqual(missing, [], 'take files that no longer exist off the list');
-    const base = onMain(file);
-    const before = base === null ? null : listAfter(base, marker);
-    if (before === null) return; // the list is new on this branch
-    assert.deepEqual(now.filter((entry) => !before.includes(entry)), [], 'fix the code instead of adding a file to the list');
-  });
-}
+type Severity = { level: string; options: string };
+/** Every (file glob, rule) setting in an oxlint config: top-level rules under "*", each override per glob. */
+const ruleSettings = (config: unknown): Map<string, Severity> => {
+  const settings = new Map<string, Severity>();
+  const add = (glob: string, rules: Record<string, unknown>): void => {
+    for (const [rule, value] of Object.entries(rules)) {
+      const [level, ...options] = Array.isArray(value) ? value : [value];
+      settings.set(`${glob} ${rule}`, { level: String(level), options: JSON.stringify(options) });
+    }
+  };
+  const { rules = {}, overrides = [], categories = {} } = config as { rules?: Record<string, unknown>; overrides?: { files: string[]; rules: Record<string, unknown> }[]; categories?: Record<string, unknown> };
+  add('*', rules);
+  for (const [category, level] of Object.entries(categories)) settings.set(`* category:${category}`, { level: String(level), options: '[]' });
+  for (const override of overrides) for (const glob of override.files) add(glob, override.rules);
+  return settings;
+};
+
+// A deliberate loosening of the lint config, reviewed in its PR: add its "<glob> <rule>" key here, with the reason.
+const ALLOWED_LOOSENING: string[] = [];
+
+check('lint config: nothing is loosened against main (a rule turned off, an exception added, options changed)', () => {
+  const base = onMain('.oxlintrc.json');
+  if (base === null) return; // the config is new on this branch
+  const before = ruleSettings(parseJsonc(base));
+  const now = ruleSettings(parseJsonc(read('.oxlintrc.json')));
+  const loosened: string[] = [];
+  for (const [key, was] of before) {
+    const is = now.get(key);
+    if (was.level === 'off') continue;
+    if (!is || is.level === 'off') loosened.push(`${key}: ${was.level} → ${is?.level ?? 'removed'}`);
+    else if (is.options !== was.options) loosened.push(`${key}: options changed`);
+  }
+  for (const [key, is] of now) if (is.level === 'off' && before.get(key)?.level !== 'off') loosened.push(`${key}: turned off`);
+  assert.deepEqual(loosened.filter((entry) => !ALLOWED_LOOSENING.some((key) => entry.startsWith(`${key}:`))), [],
+    'fix the code instead; if the change is deliberate, add its key to ALLOWED_LOOSENING in scripts/lint-repo.ts');
+});
+
+check('knip config: nothing new is ignored against main', () => {
+  const ignored = (text: string): string[] => Object.entries(parseJsonc(text) as Record<string, unknown>)
+    .filter(([key]) => key.startsWith('ignore')).flatMap(([key, value]) => (Array.isArray(value) ? value : [value]).map((entry) => `${key}: ${JSON.stringify(entry)}`));
+  const now = ignored(read('knip.jsonc'));
+  const base = onMain('knip.jsonc');
+  if (base === null) return; // the config is new on this branch
+  const before = ignored(base);
+  assert.deepEqual(now.filter((entry) => !before.includes(entry)), [], 'remove the unused code instead of ignoring it');
+});
+
+check('lint config: every file an exception names still exists', () => {
+  const files = new Set(tracked());
+  const named = [...ruleSettings(parseJsonc(read('.oxlintrc.json'))).keys()].map((key) => key.split(' ')[0] ?? '')
+    .concat((parseJsonc(read('knip.jsonc')) as { ignore?: string[] }).ignore ?? []);
+  assert.deepEqual([...new Set(named)].filter((glob) => !/[*]/.test(glob) && !files.has(glob)), [], 'take files that no longer exist off the list');
+});
 
 check('repository: raw eval results stay off main (they live on the pr-assets/evals branch)', () => {
   assert.deepEqual(tracked().filter((file) => file.startsWith('evals/results/')), []);
@@ -200,7 +237,7 @@ check('renderer bundle: no Node or Electron module is reached, directly or throu
     loader: { '.css': 'empty', '.svg': 'empty', '.png': 'empty' },
   });
   const node = Object.entries(result.metafile.inputs).flatMap(([input, { imports }]) => imports
-    .filter((entry) => /^(node:|electron$)/.test(entry.path) || /^(fs|path|os|child_process|crypto|url|util|net|http|https|stream|events)$/.test(entry.path))
+    .filter((entry) => /^(node:|electron($|\/))/.test(entry.path) || builtinModules.includes(entry.path.split('/')[0] ?? ''))
     .map((entry) => `${input} imports ${entry.path}`));
   assert.deepEqual(node, []);
   assert.ok(Object.keys(result.metafile.inputs).length > 20, 'the renderer was bundled');

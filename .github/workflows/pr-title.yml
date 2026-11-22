@@ -1,7 +1,7 @@
 name: PR title
 
 # The PR title becomes the squash commit on main, so it must be a Conventional Commit (CONTRIBUTING.md › Naming).
-# A `feat` or `fix` PR changes what users get, so it must also add a CHANGELOG.md line (dependency fixes excepted).
+# A `feat` or `fix` PR changes what users get, so it must also add a CHANGELOG.md line (Dependabot's deps fixes excepted).
 # It reads the PR through the API only, so a fork PR's read-only token is enough, and `edited` reruns it when only the
 # title changes. GitHub starts no pull_request run for a PR the workflow token opens (the release PR), so
 # release-prepare.yml dispatches this workflow on the release branch, and the job checks that branch's open PR.
@@ -15,6 +15,11 @@ permissions:
   contents: read
   pull-requests: read
 
+# A quick run of title edits keeps only the last result.
+concurrency:
+  group: title-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   title:
     runs-on: ubuntu-latest
@@ -25,8 +30,10 @@ jobs:
           # The PR number on a pull_request run; on a dispatch, the branch, whose open PR gh finds.
           PR: ${{ github.event.pull_request.number || github.ref_name }}
         run: |
-          title=$(gh pr view "$PR" --repo "$GITHUB_REPOSITORY" --json title --jq .title)
-          echo "PR title: $title"
+          # A failed lookup stops the step (bash -e), rather than reading as a bad title.
+          pr=$(gh pr view "$PR" --repo "$GITHUB_REPOSITORY" --json number,title --jq '"\(.number) \(.title)"')
+          number=${pr%% *} title=${pr#* }
+          echo "PR #$number title: $title"
           pattern='^(feat|fix|perf|refactor|docs|test|build|ci|chore|revert)(\(([^)]+)\))?!?: (.+)$'
           if [[ ! "$title" =~ $pattern ]]; then
             echo "::error::The title must be type(scope): subject, with type one of feat, fix, perf, refactor, docs, test, build, ci, chore, revert. Example: fix(palette): ignore late close events"
@@ -34,11 +41,14 @@ jobs:
           fi
           type=${BASH_REMATCH[1]} scope=${BASH_REMATCH[3]} subject=${BASH_REMATCH[4]}
           if [[ "$subject" =~ ^[A-Z] || "$subject" =~ \.$ || ${#subject} -gt 72 ]]; then
-            echo "::error::The subject \"$subject\" must start with a lowercase letter, not end with a period, and stay under 72 characters."
+            echo "::error::The subject \"$subject\" must start with a lowercase letter, not end with a period, and be at most 72 characters."
             exit 1
           fi
-          if [[ ( "$type" == feat || "$type" == fix ) && "$scope" != deps ]]; then
-            if ! gh pr diff "$PR" --repo "$GITHUB_REPOSITORY" --name-only | grep -qx CHANGELOG.md; then
+          # Dependabot titles its security fixes fix(deps) and fix(deps-dev); they need no changelog line.
+          if [[ ( "$type" == feat || "$type" == fix ) && "$scope" != deps && "$scope" != deps-dev ]]; then
+            # The files API pages through any size of PR (gh pr diff refuses large ones), and a failure stops here.
+            files=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$number/files" --paginate --jq '.[].filename')
+            if ! grep -qx CHANGELOG.md <<<"$files"; then
               echo "::error::A $type PR changes what users get: add a line under ## Unreleased in CHANGELOG.md."
               exit 1
             fi

@@ -159,7 +159,7 @@ Squash merging makes the PR title the commit on `main`, so the title is what mat
 
 ### PR titles
 
-A [Conventional Commit](https://www.conventionalcommits.org) header, `type(scope): subject`, for example `fix(palette): ignore late close events`. The `title` check enforces the types and the subject rules, and that a `feat` or `fix` adds a `CHANGELOG.md` line (`fix(deps)` excepted). It says what to fix; a title fix needs no push. Scope is optional: the part it touches (`daemon`, `app`, `setup`, `knowledge`, `ci`, `deps`, `release`, …).
+A [Conventional Commit](https://www.conventionalcommits.org) header, `type(scope): subject`, for example `fix(palette): ignore late close events`. The `title` check enforces the types and the subject rules, and that a `feat` or `fix` adds a `CHANGELOG.md` line (Dependabot's `fix(deps)` and `fix(deps-dev)` excepted). It says what to fix; a title fix needs no push. Scope is optional: the part it touches (`daemon`, `app`, `setup`, `knowledge`, `ci`, `deps`, `release`, …).
 
 ### Branch names and commits
 

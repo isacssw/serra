@@ -25,7 +25,7 @@ Rules a tool checks are left out here; `pnpm check` and CI tell you. Humans: [CO
 
 - Test what a user or caller sees, not the source text. A rule about the repo itself goes in `scripts/lint-repo.ts`.
 - Use only the placeholders the tests already use: `U0123456789`, `xoxb-1111-2222-fixturevalue`, `/Users/you/…`,
-  `acme/project`. Gitleaks catches tokens; Slack IDs, names and paths are on you.
+  `acme/project`. Tokens and home folders are checked; Slack IDs and names are on you.
 - A change a user would notice updates `README.md` or `docs/` (the `title` check enforces the `CHANGELOG.md` line).
 
 ## PRs
