@@ -10,7 +10,7 @@ import { Button, cx } from '../ui/index.ts';
 import { DoneStep } from './DoneStep.tsx';
 import { OwnerStep } from './OwnerStep.tsx';
 import { ServiceStep } from './ServiceStep.tsx';
-import { announcement, DONE_PATH, FLOW, hasProfile, lockedReason, resumePath, stepDone, stepOpen, SETUP_PATH } from './setup.logic.ts';
+import { announcement, capitalize, DONE_PATH, FLOW, hasProfile, lockedReason, resumePath, stepDone, stepOpen, SETUP_PATH } from './setup.logic.ts';
 import type { SetupStepId } from '../../../src/setup.ts';
 import type { ReactElement } from 'react';
 import { useSetup } from './SetupState.tsx';
@@ -38,7 +38,7 @@ const Rail = ({ pathname }: { pathname: string }) => {
                 aria-disabled={open ? undefined : true}
                 onClick={() => { if (open) void navigate(step.path); }}
                 data-setup-step={step.id}
-                title={open ? undefined : lockedReason(progress, step.id)}
+                title={open ? undefined : capitalize(lockedReason(progress, step.id))}
                 className={cx(
                   'flex h-7 items-center gap-1.5 rounded-full px-2 text-xs transition-colors duration-150',
                   'focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-focus',
@@ -56,7 +56,7 @@ const Rail = ({ pathname }: { pathname: string }) => {
                 </span>
                 {/* Narrow windows show the numbers only; the name stays for screen readers. */}
                 <span className="max-md:sr-only">{step.short}</span>
-                {(done || !open) && <span className="sr-only">{done ? ', done' : `, ${lockedReason(progress, step.id).replace(/^A/, 'a')}`}</span>}
+                {(done || !open) && <span className="sr-only">{done ? ', done' : `, ${lockedReason(progress, step.id)}`}</span>}
               </button>
             </li>
           );

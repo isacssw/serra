@@ -23,6 +23,7 @@ import { diagnose, type DiagnoseOptions } from './doctor.ts';
 import { updateProfileSection } from './profile-settings.ts';
 import { activateRelease, prepareNextRelease, type ActivationOutcome } from './releases.ts';
 import type { SecretName, SecretStatus } from './contracts.ts';
+import { isTokenVerdict } from './token-errors.ts';
 import { readSecretsFile, scrub, SECRET_NAMES, secretStatus, slackWorkspace, sourceLabel, type SecretOptions } from './secrets.ts';
 import { run } from './t3.ts';
 
@@ -416,7 +417,9 @@ export const setupProgress = (profileDir: string | null, lookup: ServiceLookup =
     ?? (sources[name] ? true : Boolean(env[name]?.trim()) && !/replace-me|\.\.\./.test(env[name] ?? ''));
   const bot = present('SLACK_BOT_TOKEN') ? checks.SLACK_BOT_TOKEN : undefined;
   const app = present('SLACK_APP_TOKEN') ? checks.SLACK_APP_TOKEN : undefined;
-  const verified = (check: typeof bot): boolean => Boolean(check?.verifiedAt && !check.error);
+  // A pass stands until Slack gives a verdict against the token: a later check that only failed to run (offline,
+  // Slack busy, a locked Keychain) doesn't undo it.
+  const verified = (check: typeof bot): boolean => Boolean(check?.verifiedAt && (!check.error || !isTokenVerdict(check.error)));
   const slackDone = verified(bot) && verified(app);
   add('slack', slackDone, secretsProblem ?? (slackDone ? 'Both tokens checked with Slack'
     : bot?.error || app?.error || `${[!verified(bot) && 'Bot token', !verified(app) && 'app token'].filter(Boolean).join(' and ')} not checked yet`));
@@ -478,7 +481,7 @@ export interface ProfileSummary extends SetupProgress {
 
 export const tokenState = (status: SecretStatus): TokenState => {
   if (!status.set) return status.error ? 'rejected' : 'missing';
-  if (status.verifiedAt && !status.error) return 'verified';
+  if (status.verifiedAt && (!status.error || !isTokenVerdict(status.error))) return 'verified';
   if (status.error) return 'rejected';
   return status.set ? 'found' : 'missing';
 };

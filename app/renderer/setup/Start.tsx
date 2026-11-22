@@ -33,10 +33,11 @@ const Found = ({ summary, home }: { summary: ProfileSummary; home: string }) => 
     <ul className="flex flex-col py-1.5" aria-label={`What ${summary.bot?.name ?? 'this profile'} has`}>
       {summaryRows(summary).map((row) => (
         <li key={row.id} className="flex items-center gap-3 px-4 py-2" data-found={row.id}>
-          <StateIcon tone={row.done ? 'done' : 'todo'} />
+          {/* Running but not connected to Slack: the step stays done, but the row says something needs a look. */}
+          <StateIcon tone={row.id === 'service' && summary.service === 'disconnected' ? 'problem' : row.done ? 'done' : 'todo'} />
           <span className="w-16 shrink-0 text-[13px] text-muted">{row.label}</span>
           <span className="min-w-0 flex-1 truncate text-[13px]" title={row.value}>{row.value}</span>
-          <span className="sr-only">{row.done ? 'done' : 'to do'}</span>
+          <span className="sr-only">{row.id === 'service' && summary.service === 'disconnected' ? 'needs a look' : row.done ? 'done' : 'to do'}</span>
         </li>
       ))}
     </ul>

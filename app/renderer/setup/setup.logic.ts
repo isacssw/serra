@@ -3,6 +3,7 @@
 // as well as the renderer.
 import type { SetupDetection } from '../../main/bridge.ts';
 import type { SecretName, SecretStatus } from '../../../src/contracts.ts';
+import { isKeychainLocked, isTokenVerdict } from '../../../src/token-errors.ts';
 import type { ActivationOutcome } from '../../../src/releases.ts';
 import type { ProfileDraft, ProfileSummary, SetupProgress, SetupStepId, TokenSummary } from '../../../src/setup.ts';
 
@@ -54,9 +55,11 @@ export const stepOpen = (progress: SetupProgress | null, id: SetupStepId): boole
   return progress.next !== null && indexOf(id) <= indexOf(progress.next);
 };
 
-/** Why a step can't be opened yet, for screen readers and the tooltip: the step just before it. */
+/** Why a step can't be opened yet, mid-sentence for screen readers ("…, available after Slack"); `capitalize` for a tooltip. */
 export const lockedReason = (_progress: SetupProgress | null, id: SetupStepId): string =>
-  `Available after ${FLOW[indexOf(id) - 1]?.short ?? 'the step before'}`;
+  `available after ${FLOW[indexOf(id) - 1]?.short ?? 'the step before'}`;
+
+export const capitalize = (text: string): string => text.charAt(0).toUpperCase() + text.slice(1);
 
 export const stepDone = (progress: SetupProgress | null, id: SetupStepId): boolean =>
   progress?.steps.find((step) => step.id === id)?.done === true;
@@ -104,7 +107,9 @@ const TOKEN_LABELS: Record<SecretName, string> = { SLACK_BOT_TOKEN: 'bot token',
 /** One line for both tokens: connected, found and still to check, or what is missing. */
 export const slackLine = (tokens: readonly TokenSummary[], workspace: string | null): string => {
   if (tokens.length && tokens.every((token) => token.state === 'verified')) return workspace ? `Connected to ${workspace}` : 'Connected';
-  if (tokens.some((token) => token.state === 'rejected')) return 'A token needs attention';
+  if (tokens.some((token) => token.state === 'rejected')) {
+    return tokens.some((token) => token.state === 'rejected' && isTokenVerdict(token.error)) ? 'Slack didn’t accept a token' : 'Couldn’t check a token';
+  }
   const found = tokens.filter((token) => token.state !== 'missing');
   if (found.length === tokens.length && found.length) {
     const where = [...new Set(found.map((token) => token.where))].join(' and ');
@@ -241,23 +246,15 @@ export const outcomeText = (outcome: ActivationOutcome): { tone: 'up' | 'down'; 
   return { tone: 'down', text: `The bot didn’t start: ${outcome.error}. Open Updates and roll back.` };
 };
 
-/** Failures a retry can fix: the network, Slack being busy, or a source that couldn't be read just now. */
-const RETRYABLE = /Couldn't reach Slack|ECONN|ENOTFOUND|EAI_AGAIN|ETIMEDOUT|timed? ?out|fetch failed|socket hang up|network|rate.?limit|ratelimited|Keychain|security|1Password|\bop\b/i;
-
-/**
- * True when the token itself is wrong and needs a new value (Slack refused it, it lacks a scope, it isn't the right
- * kind of token); false when only the check failed and a retry may pass. Unknown failures count as the token's.
- */
-export const tokenRefused = (error: string | null): boolean =>
-  error !== null && (REFUSED.test(error) || !RETRYABLE.test(error));
-
-/** Slack refusing the token, or the token not being the right kind: these win over a source named in the message. */
-const REFUSED = /isn't a real x(?:oxb|app)- token|missing_scope|invalid_auth|not_authed|token_revoked|token_expired|account_inactive|not_allowed_token_type|invalid_token/;
+/** True when the token itself is wrong and needs a new value; false when only the check failed (see src/token-errors.ts). */
+export const tokenRefused = (error: string | null): boolean => isTokenVerdict(error);
 
 /** A check error without the token's variable name, its file path or a repeated "Couldn't reach Slack". */
-export const plainError = (error: string | null): string => (error ?? 'unknown error')
-  .replace(/^Couldn't reach Slack: (A request error occurred: )?/, 'Slack is unreachable (')
-  .replace(/^(Slack is unreachable \(.*)$/, '$1)')
+export const plainError = (error: string | null): string => isKeychainLocked(error) ? 'your Keychain is locked. Unlock it, then Check again' : (error ?? 'unknown error')
+  .replace(/^Slack rejected SLACK_(BOT|APP)_TOKEN: (ratelimited|rate_limited)$/, 'Slack is busy. Try again in a minute')
+  .replace(/^Slack rejected SLACK_(BOT|APP)_TOKEN: (fatal_error|internal_error|service_unavailable|request_timeout)$/, 'Slack had a problem. Try again in a minute')
+  .replace(/^Couldn't reach Slack: A rate limit was exceeded.*$/, 'Slack is busy. Try again in a minute')
+  .replace(/^Couldn't reach Slack: (A request error occurred: )?(.*)$/, 'Slack is unreachable ($2)')
   .replace(/SLACK_(BOT|APP)_TOKEN from \/\S*\/\.env/, '.env')
   .replace(/^SLACK_(BOT|APP)_TOKEN (from )?/, '');
 
@@ -287,7 +284,8 @@ const WHERE: Record<SecretStatus['source']['kind'], TokenSummary['where']> = { k
 /** A Secrets status as setup reads it (the same rule as `tokenState` in src/setup.ts). */
 export const toToken = (status: SecretStatus): TokenSummary => ({
   name: status.name,
-  state: !status.set ? (status.error ? 'rejected' : 'missing') : status.verifiedAt && !status.error ? 'verified' : status.error ? 'rejected' : 'found',
+  state: !status.set ? (status.error ? 'rejected' : 'missing')
+    : status.verifiedAt && (!status.error || !isTokenVerdict(status.error)) ? 'verified' : status.error ? 'rejected' : 'found',
   where: WHERE[status.source.kind],
   error: status.error,
 });

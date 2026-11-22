@@ -1,4 +1,4 @@
-import { useId, type InputHTMLAttributes } from 'react';
+import { useId, type InputHTMLAttributes, type Ref } from 'react';
 import { cx } from './cx.ts';
 
 export interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
@@ -10,6 +10,8 @@ export interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
   hint?: string;
   /** Classes for the field itself, like `font-mono`. `className` lays out the wrapper with the label and note. */
   inputClassName?: string;
+  /** React 19 passes `ref` as a prop; it reaches the <input>. */
+  ref?: Ref<HTMLInputElement>;
 }
 
 export const Input = ({ label, error, hint, className, inputClassName, id, ...rest }: InputProps) => {

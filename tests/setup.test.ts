@@ -14,6 +14,7 @@ import { menuTemplate } from '../app/main/menu.ts';
 import { memoryPrefs, mergePrefs, readPrefs } from '../app/main/prefs.ts';
 import { routes } from '../app/renderer/routes.ts';
 import { isSetupIncomplete, SETUP_INCOMPLETE, SETUP_INCOMPLETE_MESSAGE, SetupIncomplete } from '../src/setup-incomplete.ts';
+import { isTokenVerdict } from '../src/token-errors.ts';
 import { stoppedStatusSource } from '../app/main/status.ts';
 import {
   announcement, DONE_PATH, draftErrors, lockedReason, draftRequest, draftToSave, emptyDraft, foundLine, nextPath, outcomeText, pickable, previousPath,
@@ -411,8 +412,8 @@ test('setup logic: where to resume, and which step comes next', () => {
   assert.equal(stepOpen(made, 'slack'), true);
   assert.equal(stepOpen(made, 'owner'), false);
   assert.equal(stepOpen(made, 'service'), false);
-  assert.equal(lockedReason(made, 'service'), 'Available after Confirm you');
-  assert.equal(lockedReason(made, 'owner'), 'Available after Slack');
+  assert.equal(lockedReason(made, 'service'), 'available after Confirm you');
+  assert.equal(lockedReason(made, 'owner'), 'available after Slack');
   // A step done out of order (an install from the CLI) stays open.
   assert.equal(stepOpen(progressWith(['profile', 'service']), 'service'), true);
   assert.equal(stepOpen(progressWith(['profile', 'slack', 'owner']), 'service'), true);
@@ -487,6 +488,7 @@ test('setup logic: found tokens are checked on their own, except 1Password ones,
   const offline = toToken(status('SLACK_BOT_TOKEN', { kind: 'env' }, { error: "Couldn't reach Slack: A request error occurred: getaddrinfo ENOTFOUND slack.com" }));
   assert.equal(tokenRefused(offline.error), false);
   assert.equal(tokenText(offline, null), 'Couldn’t check it: Slack is unreachable (getaddrinfo ENOTFOUND slack.com)');
+  assert.equal(tokenText(toToken(status('SLACK_APP_TOKEN', { kind: 'env' }, { error: 'Slack rejected SLACK_APP_TOKEN: ratelimited' })), null), 'Couldn’t check it: Slack is busy. Try again in a minute');
   assert.equal(plainError("SLACK_APP_TOKEN from /Users/you/.local/share/serra/friday/.env is empty"), '.env is empty');
   // Something unknown counts as the token's problem: the owner can always paste a new one.
   assert.equal(tokenRefused('Slack rejected SLACK_BOT_TOKEN: something_new'), true);
@@ -752,4 +754,36 @@ test('a check that never reached Slack says so, instead of "Slack rejected"', as
   assert.equal(offline.error, "Couldn't reach Slack: A request error occurred: getaddrinfo ENOTFOUND slack.com");
   const refused = await checkSecret(dir, 'SLACK_BOT_TOKEN', { verify: async () => { throw Object.assign(new Error('An API error occurred'), { data: { error: 'invalid_auth' } }); } });
   assert.equal(refused.error, 'Slack rejected SLACK_BOT_TOKEN: invalid_auth');
+});
+
+test('a check that only failed to run keeps an earlier pass; a verdict against the token undoes it', async (t) => {
+  const f = fixture(t);
+  const dir = join(f.root, 'friday');
+  cliProfile(f, dir);
+  writeFileSync(join(dir, '.env'), `SLACK_BOT_TOKEN=${BOT}\nSLACK_APP_TOKEN=${APP}\n`);
+  const agents = join(f.root, 'agents');
+  const at = '2026-11-22T00:00:00.000Z';
+  writeFileSync(join(dir, 'setup.json'), JSON.stringify({ version: 1, owner: { slackUserId: OWNER, slackName: 'Alex', checkedAt: at }, serviceAnsweredAt: at }));
+  writeFileSync(join(dir, 'active.json'), '{}');
+  for (const name of ['SLACK_BOT_TOKEN', 'SLACK_APP_TOKEN'] as const) await checkSecret(dir, name, { verify: async () => ({}) });
+  assert.equal(setupProgress(dir, { launchAgentsDir: agents, running: false }).next, null);
+
+  // Offline, Slack down, rate-limited, a locked Keychain: the pass stands, so setup doesn't reopen.
+  for (const failure of [
+    () => { throw new Error('A request error occurred: getaddrinfo ENOTFOUND slack.com'); },
+    () => { throw Object.assign(new Error('An API error occurred'), { data: { error: 'service_unavailable' } }); },
+    () => { throw Object.assign(new Error('An API error occurred'), { data: { error: 'ratelimited' } }); },
+  ]) {
+    const status = await checkSecret(dir, 'SLACK_BOT_TOKEN', { verify: async () => failure() });
+    assert.ok(status.error);
+    assert.equal(setupProgress(dir, { launchAgentsDir: agents, running: false }).next, null, status.error!);
+    assert.equal(toToken(status).state, 'verified');
+  }
+  assert.equal(isTokenVerdict('Keychain (security) failed: security: SecKeychainSearchCopyNext: User interaction is not allowed.'), false);
+  assert.equal(plainError('Keychain (security) failed: security: SecKeychainSearchCopyNext: User interaction is not allowed.'), 'your Keychain is locked. Unlock it, then Check again');
+  assert.equal(plainError("Couldn't reach Slack: A rate limit was exceeded (url: auth.test, retry-after: 30)"), 'Slack is busy. Try again in a minute');
+
+  // Slack refusing the token is a verdict: Slack isn't connected any more.
+  await checkSecret(dir, 'SLACK_BOT_TOKEN', { verify: async () => { throw Object.assign(new Error('An API error occurred'), { data: { error: 'invalid_auth' } }); } });
+  assert.equal(setupProgress(dir, { launchAgentsDir: agents, running: false }).next, 'slack');
 });

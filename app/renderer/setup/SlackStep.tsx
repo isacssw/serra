@@ -21,6 +21,11 @@ const TokenRow = ({ status, checking, workspace, onChange }: { status: SecretSta
   const token = toToken(status);
   const [value, setValue] = useState('');
   const [replacing, setReplacing] = useState(false);
+  const field = useRef<HTMLInputElement>(null);
+  const replaceButton = useRef<HTMLButtonElement>(null);
+  // Opening the field puts focus in it; Cancel gives it back to Replace, so a screen reader never loses its place.
+  const startReplacing = (): void => { setReplacing(true); requestAnimationFrame(() => field.current?.focus()); };
+  const stopReplacing = (): void => { setReplacing(false); setValue(''); setError(null); requestAnimationFrame(() => replaceButton.current?.focus()); };
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const label = LABELS[status.name];
@@ -72,16 +77,16 @@ const TokenRow = ({ status, checking, workspace, onChange }: { status: SecretSta
           <Button size="sm" onClick={() => void check()} disabled={busy}>{token.state === 'found' ? 'Check' : 'Check again'}</Button>
         )}
         {(token.state === 'verified' || (token.state === 'rejected' && !refused)) && !replacing && (
-          <Button size="sm" variant="ghost" onClick={() => setReplacing(true)}>Replace</Button>
+          <Button ref={replaceButton} size="sm" variant="ghost" onClick={startReplacing}>Replace</Button>
         )}
       </div>
       {showField && (
         <form className="flex items-start gap-2 pl-8" onSubmit={(event) => { event.preventDefault(); void save(); }}>
-          <Input id={fieldId} aria-label={`${label} value`} type="password" autoComplete="off" spellCheck={false} className="min-w-0 flex-1"
+          <Input ref={field} id={fieldId} aria-label={`${label} value`} type="password" autoComplete="off" spellCheck={false} className="min-w-0 flex-1"
             placeholder={`Paste the ${SECRET_PREFIXES[status.name]} token`} value={value} disabled={busy}
             onChange={(event) => { setValue(event.target.value); setError(null); }} error={error} hint={status.source.kind !== 'keychain' && status.set ? `Saving moves it from ${token.where} to your Keychain.` : 'Stored in your Keychain. It never comes back to this window.'} />
           <Button type="submit" disabled={busy || !value.trim()}>Save</Button>
-          {replacing && <Button variant="ghost" onClick={() => { setReplacing(false); setValue(''); setError(null); }}>Cancel</Button>}
+          {replacing && <Button variant="ghost" onClick={stopReplacing}>Cancel</Button>}
         </form>
       )}
       {!showField && error && <p role="alert" className="pl-8 text-[13px] text-down">{error}</p>}
@@ -139,7 +144,8 @@ export const SlackStep = () => {
 
   const tokens = statuses?.map(toToken) ?? [];
   const connected = tokens.length > 0 && tokens.every((token) => token.state === 'verified');
-  const haveTokens = tokens.length > 0 && tokens.every((token) => token.state === 'verified' || token.state === 'found');
+  // Any token there means the app was made; whether each one works is the rows' business.
+  const haveTokens = tokens.length > 0 && tokens.every((token) => token.state !== 'missing');
   const proceed = async () => {
     if (!connected) return;
     const latest = await refresh();

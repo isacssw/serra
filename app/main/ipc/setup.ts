@@ -2,7 +2,7 @@
 // return plain data. `detect` summarises the profile in use and any others found, so the window can resume a setup
 // made by the CLI or an older app instead of starting over. Tokens are set through the `secrets` namespace (APP-15), so no value passes through here; the
 // owner check resolves the bot token in this process and only Slack's answer, scrubbed, goes back to the window.
-import { existsSync } from 'node:fs';
+import { existsSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { delimiter, dirname, isAbsolute, join, resolve } from 'node:path';
 import { defaultProfileRoot } from '../../../src/config.ts';
@@ -109,12 +109,15 @@ export const setupHandlers = (context: HandlerContext, deps: SetupDeps = {}): Ha
    * Which tokens are still where their source says, cached for a few seconds: progress is read on every window focus
    * and status change, and each read would run `security` once per token.
    */
-  let cached: { directory: string; at: number; present: Partial<Record<SecretName, boolean>> | undefined } | null = null;
+  let cached: { key: string; at: number; present: Partial<Record<SecretName, boolean>> | undefined } | null = null;
+  /** Saving or checking a token rewrites secrets.json (or .env), so the cache follows those files' change times. */
+  const stamp = (file: string): number => { try { return statSync(file).mtimeMs; } catch { return 0; } };
   const presence = async (directory: string): Promise<Partial<Record<SecretName, boolean>> | undefined> => {
-    if (cached && cached.directory === directory && Date.now() - cached.at < (deps.presenceCacheMs ?? 3_000)) return cached.present;
+    const key = `${directory}:${stamp(join(directory, 'secrets.json'))}:${stamp(join(directory, '.env'))}`;
+    if (cached && cached.key === key && Date.now() - cached.at < (deps.presenceCacheMs ?? 3_000)) return cached.present;
     let present: Partial<Record<SecretName, boolean>> | undefined;
     try { present = certainPresence(await secretStatus(directory, deps.secrets)); } catch { /* the files' view stands */ }
-    cached = { directory, at: Date.now(), present };
+    cached = { key, at: Date.now(), present };
     return present;
   };
 
