@@ -5,7 +5,7 @@ import type { AppPrefs, StarPromptState } from '../app/main/bridge.ts';
 import { combineStarPrompt, defaultPrefs, mergePrefs, readPrefs } from '../app/main/prefs.ts';
 import { builtinActions } from '../app/renderer/commands/builtin.ts';
 import {
-  answer, countFinished, finishedBetween, MAX_ASKS, markShown, MIN_DAYS, MIN_FINISHED, openRepo, REPO_URL, shouldAsk,
+  answer, countFinished, finishedWell, MAX_ASKS, markShown, MIN_DAYS, MIN_FINISHED, openRepo, REPO_URL, shouldAsk,
   SNOOZE_DAYS, startClock, updateStarPrompt, type AskContext,
 } from '../app/renderer/star.logic.ts';
 import type { BotStatus, JobSummary } from '../src/contracts.ts';
@@ -24,18 +24,18 @@ const reason = (state: StarPromptState, context: AskContext): string | null => {
   return verdict.ask ? null : verdict.reason;
 };
 
-const job = (key: string, group: JobSummary['group']): JobSummary =>
-  ({ key, group, requester: 'U1', channel: 'C1', title: key, createdAt: start.toISOString(), lastActivityAt: start.toISOString(), links: {} });
+const job = (key: string, group: JobSummary['group'], channel = 'app'): JobSummary =>
+  ({ key, group, requester: 'U1', channel, title: key, createdAt: start.toISOString(), lastActivityAt: start.toISOString(), links: {} });
 
-test('finishes come from status pushes: running fell, minus what moved to Needs you, from the same daemon', () => {
-  const up = (running: number, needsYou = 0, pid = 1): BotStatus => ({ ...idle, pid, counts: { running, needsYou } });
-  assert.equal(finishedBetween(null, up(0)), 0, 'the first push is the baseline');
-  assert.equal(finishedBetween(up(2), up(0)), 2);
-  assert.equal(finishedBetween(up(2), up(1, 1)), 0, 'one failed or asked; one still runs');
-  assert.equal(finishedBetween(up(3), up(0, 1)), 2);
-  assert.equal(finishedBetween(up(0), up(1)), 0, 'a start is not a finish');
-  assert.equal(finishedBetween(up(2, 0, 1), up(0, 0, 2)), 0, 'a restarted daemon resets its counts');
-  assert.equal(finishedBetween(up(2), { state: 'stopped' }), 0, 'a stop is not a finish');
+test('a finish is a reply the daemon posted that does not need the owner; failures and blockers never count', () => {
+  const at = start.toISOString();
+  assert.equal(finishedWell({ at, event: 'reply', key: 'k', kind: 'reply' }), true);
+  assert.equal(finishedWell({ at, event: 'reply', key: 'k', kind: 'status_posted' }), true);
+  assert.equal(finishedWell({ at, event: 'reply', key: 'k', kind: 'reply', needsOwner: true }), false);
+  assert.equal(finishedWell({ at, event: 'reply', key: 'k', kind: 'quiet' }), false, 'nothing was said');
+  assert.equal(finishedWell({ at, event: 'failure', key: 'k', error: 'boom' }), false);
+  assert.equal(finishedWell({ at, event: 'needs_owner', key: 'k' }), false);
+  assert.equal(finishedWell({ at, event: 'job_started', key: 'k', t3ThreadId: 't', requester: 'U1' }), false);
 });
 
 test('the clock starts once and finished jobs stop counting at the threshold', () => {
@@ -68,6 +68,9 @@ test('never during setup, while the bot is down, or while a job runs or waits on
   assert.equal(reason(ready, at(now, { jobs: [job('t', 'running')] })), 'a job is running');
   assert.equal(reason(ready, at(now, { jobs: [job('t', 'needs you'), job('u', 'done')] })), 'a job needs the owner');
   assert.equal(shouldAsk(ready, at(now, { jobs: [job('u', 'done')] })).ask, true);
+  assert.equal(reason(ready, at(now, { jobs: null })), 'app tasks unknown', 'an unloaded list is not a calm one');
+  // Slack rows can sit in Needs you for days (a failure, a question to the requester); the daemon's counts decide.
+  assert.equal(shouldAsk(ready, at(now, { jobs: [job('s', 'needs you', 'C1'), job('r', 'running', 'C1')] })).ask, true);
 });
 
 test('showing it snoozes it: at most once per version, and not again for a long while', () => {
@@ -149,6 +152,7 @@ test('main only moves the saved state forward, so a stale or out-of-order write 
   assert.equal(merged.done, true);
   assert.equal(merged.asks, 1);
   assert.equal(merged.since, ready.since, 'the clock keeps its first start');
+  assert.equal(combineStarPrompt(ready, { ...ready, since: later(-3).toISOString() }).since, later(-3).toISOString(), 'and an earlier one wins');
   assert.equal(merged.snoozedUntil, answered.snoozedUntil, 'the snooze keeps its latest end');
 });
 
@@ -183,8 +187,9 @@ test('the permanent link and ⌘K open the repo and stop the request; no network
   assert.equal(other.saved().done, true);
 });
 
-test('the repo link opens even when the answer cannot be saved', async () => {
+test('the repo link opens even when the answer cannot be saved, and says so', async () => {
   const { app, opened } = prefsBridge(true);
-  await openRepo(app, start);
+  assert.equal(await openRepo(app, start), false);
   assert.deepEqual(opened, [REPO_URL]);
+  assert.equal(await openRepo(prefsBridge().app, start), true);
 });

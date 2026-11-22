@@ -8,6 +8,7 @@ import type { StartedTask } from '../../../src/tasks.ts';
 import { serra } from '../bridge.ts';
 import { Button, cx, useToast } from '../ui/index.ts';
 import { ariaMod, mod } from '../shell/keys.ts';
+import { REFRESH_COUNTS } from '../shell/events.ts';
 import { canStart, requestProblem, startedText, taskLink } from './newTask.logic.ts';
 
 const message = (error: unknown): string => (error instanceof Error ? error.message : String(error));
@@ -38,6 +39,8 @@ export const NewTask = () => {
       (task) => {
         setStarted(task);
         setRequest('');
+        // The sidebar's list picks the task up now: its badge, and the star request's "nothing running" check.
+        window.dispatchEvent(new Event(REFRESH_COUNTS));
         setPreview({ state: 'closed' });
         const link = taskLink(task);
         toast({

@@ -1,11 +1,11 @@
 // When Serra asks for a GitHub star (SERRA-53). Borrowed from T3 Code's GitHubStarPrompt: ask only after real use,
 // at most once per session, wait until the window is idle, and treat a failed save as "never ask". Serra asks right
 // after a job finishes, with nothing running or waiting on the owner, and only after a few days and a few jobs.
-// Everything is local (app prefs): no network, no GitHub sign-in, no telemetry. Finishes are read from the daemon's
-// live status pushes, never from extra job-list loads (those can look up Slack names).
+// Everything is local (app prefs): no network, no GitHub sign-in, no telemetry. Finishes are the daemon's own reply
+// events over its local socket, never extra job-list loads (those can look up Slack names).
 // Pure data and functions: imported by `node --test` as well as the renderer.
 import type { StarPromptState } from '../main/bridge.ts';
-import type { BotStatus, JobSummary } from '../../src/contracts.ts';
+import type { BotEvent, BotStatus, JobSummary } from '../../src/contracts.ts';
 
 export const REPO_URL = 'https://github.com/isacssw/serra';
 
@@ -27,15 +27,12 @@ const addDays = (now: Date, days: number): string => new Date(now.getTime() + da
 export const MAX_WAIT_MS = 15 * 60 * 1000;
 
 /**
- * How many jobs finished well between two status pushes from the same daemon: the running count fell, minus any
- * that moved to Needs you (a failure or a question lands there). The daemon pushes every change, so none is missed.
+ * Whether a daemon event is a job finishing well: its reply was posted (or its status message updated) and it
+ * doesn't need the owner. A failure is its own `failure` event and a blocker sets `needsOwner`, so neither counts.
+ * Events come over the local status socket: nothing is fetched.
  */
-export const finishedBetween = (before: BotStatus | null, after: BotStatus | null): number => {
-  if (before?.state !== 'up' || after?.state !== 'up' || before.pid !== after.pid) return 0;
-  const left = before.counts.running - after.counts.running;
-  const waiting = Math.max(0, after.counts.needsYou - before.counts.needsYou);
-  return Math.max(0, left - waiting);
-};
+export const finishedWell = (event: BotEvent): boolean =>
+  event.event === 'reply' && event.kind !== 'quiet' && event.needsOwner !== true;
 
 /** Starts the "days of use" clock the first time the bot is seen up. */
 export const startClock = (state: StarPromptState, now: Date): StarPromptState =>
@@ -50,7 +47,7 @@ export interface AskContext {
   /** The installed app version. */
   version: string;
   status: BotStatus | null;
-  /** The jobs list the sidebar loaded, which also has tasks started in the app (the daemon doesn't count those). */
+  /** The jobs list the sidebar loaded. Only its app tasks are read: the daemon doesn't count those. Null: unknown. */
   jobs: readonly JobSummary[] | null;
   /** The route on screen. */
   path: string;
@@ -73,16 +70,23 @@ export const dueToAsk = (state: StarPromptState, context: Pick<AskContext, 'now'
   return { ask: true };
 };
 
+/** Tasks started in the app: T3 reports them live, the daemon doesn't count them (src/jobs.ts). */
+const APP_TASKS = 'app';
+
 /**
- * Whether this is a calm moment: not setting up, the bot up, and nothing running or waiting on the owner, by the
- * daemon's counts or the jobs list. Checked again when the card would show and while it is open.
+ * Whether this is a calm moment: not setting up, the bot up, nothing running or waiting on the owner by the daemon's
+ * own counts, and no app task running or waiting in T3. Slack rows in the jobs list are left out: a failed job or a
+ * question to the requester stays in Needs you there for days, and the daemon's counts already cover Slack jobs.
+ * Checked when the card would show and while it is open.
  */
 export const calmMoment = (context: Omit<AskContext, 'now' | 'version'>): AskVerdict => {
   if (context.path === context.welcomePath) return no('setting up');
   const { status, jobs } = context;
   if (status?.state !== 'up') return no('bot not up');
-  if (status.counts.running > 0 || jobs?.some((job) => job.group === 'running')) return no('a job is running');
-  if (status.counts.needsYou > 0 || jobs?.some((job) => job.group === 'needs you')) return no('a job needs the owner');
+  if (!jobs) return no('app tasks unknown');
+  const appTasks = jobs.filter((job) => job.channel === APP_TASKS);
+  if (status.counts.running > 0 || appTasks.some((job) => job.group === 'running')) return no('a job is running');
+  if (status.counts.needsYou > 0 || appTasks.some((job) => job.group === 'needs you')) return no('a job needs the owner');
   return { ask: true };
 };
 
@@ -128,8 +132,11 @@ export const updateStarPrompt = (app: StarPrefs, change: (state: StarPromptState
   return result;
 };
 
-/** Opens the repository and, once the browser has it, stops asking. Used by the card, Updates and ⌘K. */
-export const openRepo = async (app: StarPrefs & { openExternal(url: string): Promise<void> }, now = new Date()): Promise<void> => {
+/**
+ * Opens the repository and, once the browser has it, stops asking. Used by the card, Updates and ⌘K. Rejects when
+ * the browser can't open it; resolves false when it opened but the answer couldn't be saved.
+ */
+export const openRepo = async (app: StarPrefs & { openExternal(url: string): Promise<void> }, now = new Date()): Promise<boolean> => {
   await app.openExternal(REPO_URL);
-  await updateStarPrompt(app, (state) => (state.done ? state : answer(state, 'star', now))).catch(() => {});
+  return updateStarPrompt(app, (state) => (state.done ? state : answer(state, 'star', now))).then(() => true, () => false);
 };

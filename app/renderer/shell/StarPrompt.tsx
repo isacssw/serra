@@ -1,6 +1,6 @@
 // The GitHub star request (SERRA-53): a small card in the toast corner, shown right after a job finishes, once the
 // owner has used Serra for a few days. The rules are in star.logic.ts. The card never takes focus or blocks anything.
-// It loads nothing of its own: finishes come from status pushes, app tasks from the sidebar's jobs list.
+// It loads nothing of its own: finishes are the daemon's reply events, app tasks come from the sidebar's jobs list.
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { useLocation } from 'react-router';
@@ -9,7 +9,7 @@ import type { BotStatus, JobSummary } from '../../../src/contracts.ts';
 import { serra } from '../bridge.ts';
 import { WELCOME_PATH } from '../screens/Welcome/welcome.logic.ts';
 import {
-  answer, calmMoment, countFinished, dueToAsk, finishedBetween, IDLE_MS, MAX_WAIT_MS, markShown, openRepo, shouldAsk,
+  answer, calmMoment, countFinished, dueToAsk, finishedWell, IDLE_MS, MAX_WAIT_MS, markShown, openRepo, shouldAsk,
   startClock, updateStarPrompt, type StarChoice,
 } from '../star.logic.ts';
 import { Button, GitHubMark, useToast, useToastStack } from '../ui/index.ts';
@@ -82,7 +82,6 @@ export const StarPrompt = ({ status, jobs }: { status: BotStatus | null; jobs: J
   // Once per session, like T3 Code: a run of finished jobs asks at most once until the app restarts.
   const asked = useRef(false);
   const cancelWait = useRef((): void => {});
-  const lastStatus = useRef<BotStatus | null>(null);
   // What the idle wait reads when it ends: the moment may have passed (a job started, setup opened).
   const moment = { status, jobs, path: pathname, welcomePath: WELCOME_PATH };
   const live = useRef(moment);
@@ -100,16 +99,14 @@ export const StarPrompt = ({ status, jobs }: { status: BotStatus | null; jobs: J
     void updateStarPrompt(bridge.app, (state) => startClock(state, new Date())).catch(() => {});
   }, [status?.state]);
 
-  // Each status push: count jobs that finished well, then wait for the owner to be idle here before asking.
+  // Each job that finishes well: count it, then wait for the owner to be idle here before asking.
   useEffect(() => {
     const bridge = serra();
-    const finished = finishedBetween(lastStatus.current, status);
-    lastStatus.current = status;
-    if (!bridge || finished === 0) return;
-    const finishedAt = Date.now();
-    void (async () => {
+    if (!bridge) return;
+    const onFinish = async (): Promise<void> => {
+      const finishedAt = Date.now();
       let state;
-      try { state = await updateStarPrompt(bridge.app, (current) => countFinished(current, finished)); } catch { return; }
+      try { state = await updateStarPrompt(bridge.app, (current) => countFinished(current, 1)); } catch { return; }
       // Only what's saved decides here; whether the moment is calm is checked when the card would show.
       if (asked.current || !version.current || !dueToAsk(state, { now: new Date(), version: version.current }).ask) return;
       asked.current = true;
@@ -124,12 +121,15 @@ export const StarPrompt = ({ status, jobs }: { status: BotStatus | null; jobs: J
           // Saved before it shows: a card whose answer can't be kept would come back every time, so it never shows.
           return markShown(current, context.version, context.now);
         }).then(() => {
+          // Not calm any more: the session's next finish can try again. If it was saved as shown in the instant
+          // between, that ask is spent; a rare cost that keeps "shown" honest about what was saved.
           if (shown && calmMoment(live.current).ask) setOpen(true);
           else asked.current = shown;
         }, () => { asked.current = false; });
       });
-    })();
-  }, [status]);
+    };
+    return bridge.on.event((event) => { if (finishedWell(event)) void onFinish(); });
+  }, []);
 
   // The moment passed while the card was up (a job started, setup opened): close it. It was saved as shown.
   const calm = calmMoment(moment).ask;
@@ -139,9 +139,15 @@ export const StarPrompt = ({ status, jobs }: { status: BotStatus | null; jobs: J
     setOpen(false);
     const bridge = serra();
     if (!bridge) return;
-    const failed = (error: unknown): void => toast({ message: error instanceof Error ? error.message : String(error), tone: 'error' });
+    const failed = (error: unknown): void =>
+      toast({ message: `Couldn’t save your answer: ${error instanceof Error ? error.message : String(error)}`, tone: 'error' });
     if (choice === 'star') {
-      openRepo(bridge.app).then(() => toast({ message: 'Opened Serra on GitHub. Thanks for the support!', tone: 'success' }), failed);
+      openRepo(bridge.app).then(
+        (saved) => toast(saved
+          ? { message: 'Opened Serra on GitHub. Thanks for the support!', tone: 'success' }
+          : { message: 'Opened Serra on GitHub. Couldn’t save your answer, so it may ask again.', tone: 'info' }),
+        (error: unknown) => toast({ message: error instanceof Error ? error.message : String(error), tone: 'error' }),
+      );
       return;
     }
     updateStarPrompt(bridge.app, (state) => answer(state, choice, new Date())).catch(failed);

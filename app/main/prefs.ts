@@ -39,18 +39,19 @@ const parseStarPrompt = (value: unknown): StarPromptState => {
   return { since, finished, asks, shownIn, snoozedUntil, done };
 };
 
-const later = (a: string | null, b: string | null): string | null => (a && b ? (Date.parse(a) >= Date.parse(b) ? a : b) : a ?? b);
+const pick = (a: string | null, b: string | null, first: boolean): string | null =>
+  a && b ? ((Date.parse(a) <= Date.parse(b)) === first ? a : b) : a ?? b;
 
 /**
  * A save of the star request's memory only moves it forward: an answer stays given, counts never drop, the clock
- * keeps its first start and the snooze its latest end. So a write from a stale copy can't undo "Don't ask again".
+ * keeps its earliest start and the snooze its latest end. So a write from a stale copy can't undo "Don't ask again".
  */
 export const combineStarPrompt = (saved: StarPromptState, incoming: StarPromptState): StarPromptState => ({
-  since: saved.since ?? incoming.since,
+  since: pick(saved.since, incoming.since, true),
   finished: Math.max(saved.finished, incoming.finished),
   asks: Math.max(saved.asks, incoming.asks),
   shownIn: incoming.shownIn ?? saved.shownIn,
-  snoozedUntil: later(saved.snoozedUntil, incoming.snoozedUntil),
+  snoozedUntil: pick(saved.snoozedUntil, incoming.snoozedUntil, false),
   done: saved.done || incoming.done,
 });
 
