@@ -245,7 +245,7 @@ export const workerForm: SectionForm<'worker'> = {
   section: 'worker',
   description: 'The T3 provider instance and model that run jobs. Leave both empty to use the project default in T3.',
   fields: [
-    { key: 'provider', label: 'Provider instance', hint: 'Optional.' },
+    { key: 'provider', label: 'Provider instance', hint: 'Optional. T3’s id, like claudeAgent or codex.' },
     { key: 'model', label: 'Model' },
   ],
   toForm: (profile) => ({ provider: optional(profile.worker?.provider), model: optional(profile.worker?.model) }),

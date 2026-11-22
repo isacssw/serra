@@ -9,7 +9,7 @@ import { codeRoot } from '../src/config.ts';
 import { createKnowledge } from '../src/knowledge.ts';
 import { COPY, createMeetingCapture, meetingsFirst, type MeetingChat } from '../src/meeting-capture.ts';
 import { createMeetingRuns, meetingRunner, type MeetingRunOptions } from '../src/meeting-runs.ts';
-import { writeMeetingSettings } from '../src/meeting-settings.ts';
+import { MEETING_NOTICE, readMeetingSettings, writeMeetingSettings } from '../src/meeting-settings.ts';
 import { meetingRequest, transcriptFromResult } from '../src/meeting-sources.ts';
 import { t3Providers } from '../src/t3-providers.ts';
 import type { FolderThreadInput, IncomingMessage, T3ThreadDetail } from '../src/types.ts';
@@ -289,6 +289,41 @@ test('a link is read by a T3 run allowed one read tool; the answer is unwrapped,
   }
 });
 
+test('meetings work again and again: the second capture and a Test reuse the "Serra meetings" project T3 already has', async (t) => {
+  // A fake `t3` that answers like the real CLI: a second `project add` of the same folder exits 1 with
+  // ProjectAlreadyExistsError on stdout (stderr stays empty), and `thread show` gives the run's final answer.
+  const root = mkdtempSync(join(tmpdir(), 'serra-meeting-t3-'));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const workspace = join(root, 'runs');
+  const bin = join(root, 't3');
+  const projects = join(root, 'projects.txt');
+  const answer = join(root, 'answer.txt');
+  writeFileSync(answer, DIGEST);
+  writeFileSync(bin, `#!${process.execPath}
+const fs = require('fs'); const args = process.argv.slice(2); let input = '';
+process.stdin.on('data', (x) => { input += x; });
+process.stdin.on('end', () => {
+  if (args[0] === 'project' && args[1] === 'add') {
+    const known = fs.existsSync(${JSON.stringify(projects)}) ? fs.readFileSync(${JSON.stringify(projects)}, 'utf8').split('\\n') : [];
+    if (known.includes(args.at(-1))) { console.log('ProjectAlreadyExistsError: An active project already exists for ' + args.at(-1)); process.exit(1); }
+    fs.appendFileSync(${JSON.stringify(projects)}, args.at(-1) + '\\n'); console.log('Added project'); return;
+  }
+  if (args[0] === 'thread' && args[1] === 'start') { console.log(JSON.stringify({ threadId: 'run-thread' })); return; }
+  if (args[0] === 'thread' && args[1] === 'show') {
+    console.log(JSON.stringify({ thread: { threadId: 'run-thread', link: 'https://app.t3.codes/threads/run-thread', status: 'idle', latestRunId: 'run-1', activeRunId: null, pendingRequestCount: 0 },
+      messages: [{ role: 'assistant', runId: 'run-1', text: fs.readFileSync(${JSON.stringify(answer)}, 'utf8') }] }));
+    return;
+  }
+  console.log('Unknown command'); process.exit(2);
+});`, { mode: 0o700 });
+  const runs = createMeetingRuns({ t3Bin: bin, workspace, pollMs: 0, sleep: async () => {} });
+  assert.equal(await runs.extract('first meeting'), DIGEST);
+  assert.equal(await runs.extract('second meeting'), DIGEST, 'the second capture reuses the project');
+  writeFileSync(answer, '<meeting-source>ready</meeting-source>');
+  assert.equal((await runs.checkSource('granola')).state, 'ready', 'and so does Test');
+  assert.equal(readFileSync(projects, 'utf8').trim().split('\n').length, 1, 'the folder is added to T3 once');
+});
+
 test('a run that writes in the meetings folder is thrown away, and a folder with files in it gets no run', async (t) => {
   const writer = fakeT3(t, () => DIGEST, { write: true });
   await assert.rejects(writer.runs().extract('x'), /wrote files .* thrown away/);
@@ -426,4 +461,17 @@ test('with capture off, the owner\'s channel message about a meeting is still tu
   const h = harness(t, { enabled: false });
   const result = h.capture.intercept(message({ channel: 'C0TEAM001', im: false, text: 'remember this meeting: Ana: TRANSCRIPT' }));
   assert.notEqual(result, null);
+});
+
+test('capture is off by default, and an owner who turned it on under an older notice is off until they read the new one', (t) => {
+  const profileDir = mkdtempSync(join(tmpdir(), 'serra-meeting-settings-'));
+  t.after(() => rmSync(profileDir, { recursive: true, force: true }));
+  assert.equal(readMeetingSettings(profileDir).enabled, false, 'a new owner starts with capture off');
+  // Turned on under notice 2, which called meeting runs read-only.
+  writeFileSync(join(profileDir, 'meeting-capture.json'), JSON.stringify({ enabled: true, acknowledged: { at: '2026-11-21T10:00:00.000Z', version: 2 } }));
+  assert.equal(readMeetingSettings(profileDir).enabled, false);
+  assert.equal(writeMeetingSettings(profileDir, true).enabled, true);
+  assert.equal(readMeetingSettings(profileDir).enabled, true, 'on again once acknowledged');
+  assert.doesNotMatch(MEETING_NOTICE, /read-only|no tools/i, 'the notice claims no isolation T3 doesn\'t enforce');
+  assert.match(MEETING_NOTICE, /aren’t sandboxed/);
 });

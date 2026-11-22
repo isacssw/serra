@@ -12,6 +12,7 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { writeFileAtomic } from './config.ts';
 import { isRecord, parseJson } from './json-guards.ts';
+import { shortError } from './lib/errors.ts';
 import { createJournal } from './knowledge-journal.ts';
 import { frontmatter, NOT_PAGES, PROPOSALS_DIR } from './knowledge-rules.ts';
 import { checkDigest, extractionPrompt, meetingStamp, parseDigestOutput, type Digest, type TeamPage } from './meeting-digest.ts';
@@ -41,9 +42,9 @@ export interface MeetingCaptureDeps {
   chat: MeetingChat;
   /** Read an uploaded file's text, refusing anything over `maxChars`. Never written to disk. */
   readFile: (file: IncomingFile, maxChars: number) => Promise<{ name: string; text: string }>;
-  /** Reads a linked meeting in a read-only T3 run (src/meeting-runs.ts). */
+  /** Reads a linked meeting in a T3 run (src/meeting-runs.ts). */
   sources: Pick<MeetingRuns, 'fetchTranscript'>;
-  /** Picks the decisions out in a read-only T3 run with no tools. */
+  /** Picks the decisions out in a T3 run, briefed to use no tools. */
   extractor: Pick<MeetingRuns, 'extract'>;
   /** Whether an update has paused new work. */
   paused: () => boolean;
@@ -192,7 +193,8 @@ export const createMeetingCapture = (deps: MeetingCaptureDeps) => {
     } catch (error) {
       const reason = error instanceof Error ? error.message : String(error);
       log(`Meeting capture failed: ${reason}`);
-      await say(msg.channel, reason === COPY.nothing || reason === COPY.oneFile ? reason : COPY.failed(reason), thread);
+      // The DM gets a short reason: never a command's raw output or a local path. The log keeps the detail.
+      await say(msg.channel, reason === COPY.nothing || reason === COPY.oneFile ? reason : COPY.failed(shortError(error)), thread);
     }
   };
 

@@ -1,7 +1,8 @@
 // QA driver helpers: launch the real Electron app with throwaway userData and profile, take screenshots.
 import { createRequire } from 'node:module';
 import { spawn } from 'node:child_process';
-import { mkdirSync } from 'node:fs';
+import { existsSync, mkdirSync } from 'node:fs';
+import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -13,13 +14,24 @@ const require = createRequire(process.env.PLAYWRIGHT_CORE_FROM ?? join(QA, 'pw/p
 const { _electron } = require('playwright-core');
 export const SHOTS = process.env.QA_SHOTS ?? join(QA, 'shots');
 mkdirSync(SHOTS, { recursive: true });
+/**
+ * The app's HOME: a scratch folder, so it never finds or opens a real profile under ~/.local/share/serra, real T3
+ * settings or real app prefs. setup.sh links only ~/Library/Keychains into it, for the fake Keychain items in 03.
+ */
+export const HOME = join(QA, 'home');
+if (!existsSync(join(HOME, 'Library/Keychains'))) throw new Error(`No scratch HOME at ${HOME}: run scripts/qa/setup.sh first.`);
 
 export const launch = async ({ userData = join(QA, 'ud'), profile, env = {} } = {}) => {
   const exe = process.env.QA_EXE; const args = [...(exe ? [] : [REPO]), `--user-data-dir=${userData}`, ...(profile ? ['--profile', profile] : [])];
   const app = await _electron.launch({
     executablePath: exe ?? join(REPO, 'node_modules/electron/dist/Electron.app/Contents/MacOS/Electron'),
     args, cwd: REPO,
-    env: { ...process.env, BOT_PROFILE: '', PATH: `${QA}/bin:${process.env.PATH}`, ...env },
+    env: {
+      ...process.env, HOME, BOT_PROFILE: '', T3CODE_HOME: join(HOME, '.t3'), PATH: `${QA}/bin:${process.env.PATH}`,
+      // corepack's cache stays the real one (read only here), so 21 doesn't download pnpm again.
+      COREPACK_HOME: process.env.COREPACK_HOME ?? join(homedir(), '.cache/node/corepack'),
+      ...env,
+    },
     timeout: 60_000,
   });
   const logs = [];

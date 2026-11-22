@@ -2,7 +2,7 @@
 
 Drives the real Electron app with Playwright's `_electron` against a throwaway profile. Each numbered script covers one area of the app (first run, wizard, Jobs, Knowledge, Settings, Updates, Diagnostics, the packaged build).
 
-Everything lives in `/tmp/serra-qa` (short on purpose: the status socket path must fit in 104 bytes). The app runs with its own `--user-data-dir` there, so your real app prefs and profile are never read or changed.
+Everything lives in `/tmp/serra-qa` (short on purpose: the status socket path must fit in 104 bytes). The app runs with its own `--user-data-dir` and a scratch `HOME` there (`/tmp/serra-qa/home`, with only `~/Library/Keychains` linked in), so it never finds, reads or changes your real profiles, T3 settings or app prefs.
 
 ```sh
 scripts/qa/setup.sh                 # playwright-core, the fake t3, a clone of this repo as the bot's project

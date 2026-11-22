@@ -62,7 +62,7 @@ export interface DaemonDeps {
   watchProfile?: boolean;
   pid?: number;
   pollMs?: number;
-  /** Meeting capture's model and provider seams (SERRA-62). Production runs Claude Code through the owner's PATH. */
+  /** Meeting capture's model and provider seams (SERRA-62). Production starts T3 runs (src/meeting-runs.ts). */
   meetings?: Partial<Pick<MeetingCaptureDeps, 'extractor' | 'sources' | 'readFile'>>;
 }
 
@@ -148,7 +148,7 @@ export const startDaemon = async (deps: DaemonDeps): Promise<Daemon> => {
 
     // "Remember this meeting" in the owner's DM (SERRA-62): caught before the pause hold and before any job, so a
     // transcript never reaches a job's worker. Off until the owner turns it on in the app. Reading a link and picking
-    // out decisions are read-only T3 runs in Serra's own empty folder, on the worker's provider and model
+    // out decisions are T3 runs with a read-only brief in Serra's own empty folder, on the worker's provider and model
     // (src/meeting-runs.ts): T3 is Serra's only agent layer.
     const runs = createMeetingRuns({ t3Bin: config.t3Bin, ...(config.workerProvider ? { provider: config.workerProvider } : {}), ...(config.workerModel ? { model: config.workerModel } : {}) });
     const extractor = deps.meetings?.extractor ?? { extract: runs.extract };

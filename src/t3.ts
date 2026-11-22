@@ -1,7 +1,9 @@
 import { spawn } from 'node:child_process';
 import { homedir } from 'node:os';
+import { basename } from 'node:path';
 import { branchName } from './branch.ts';
 import type { Config } from './config.ts';
+import { CommandError } from './lib/errors.ts';
 import type { FolderThreadInput, StartThreadInput, T3Message, T3Thread, T3ThreadDetail } from './types.ts';
 
 const T3_BIN = process.env.T3_BIN ?? `${homedir()}/.t3/bin/t3`;
@@ -11,13 +13,20 @@ interface RunOptions {
   timeoutMs?: number;
 }
 
-/** Runs a command, piping `input` to stdin. Rejects with stderr on a non-zero exit. */
+/**
+ * Runs a command, piping `input` to stdin. Rejects with a `CommandError` on a non-zero exit, carrying what the command
+ * printed: stderr, else stdout (T3 prints its errors, like `ProjectAlreadyExistsError`, to stdout).
+ */
 export const run = (cmd: string, args: string[], { input, timeoutMs = 60_000 }: RunOptions = {}): Promise<string> =>
   new Promise((resolve, reject) => {
+    const command = [basename(cmd), ...args.slice(0, 2)].join(' ');
     const child = spawn(cmd, args, { stdio: ['pipe', 'pipe', 'pipe'] });
     let stdout = '';
     let stderr = '';
-    const timer = setTimeout(() => { child.kill('SIGKILL'); reject(new Error(`${cmd} timed out after ${timeoutMs}ms`)); }, timeoutMs);
+    const timer = setTimeout(() => {
+      child.kill('SIGKILL');
+      reject(new CommandError(`${command} timed out after ${timeoutMs}ms`, command, '', 'timeout'));
+    }, timeoutMs);
     child.once('close', () => clearTimeout(timer));
     child.once('error', () => clearTimeout(timer));
     child.stdin.on('error', reject);
@@ -27,10 +36,13 @@ export const run = (cmd: string, args: string[], { input, timeoutMs = 60_000 }: 
     child.stderr.on('data', (chunk: Buffer) => {
       stderr += chunk.toString();
     });
-    child.on('error', reject);
+    child.on('error', (error: NodeJS.ErrnoException) => {
+      reject(new CommandError(`${command} could not start: ${error.message}`, command, error.message, error.code === 'ENOENT' ? 'missing' : 'spawn'));
+    });
     child.on('close', (code) => {
       if (code === 0) return resolve(stdout);
-      reject(new Error(`${cmd} ${args.slice(0, 2).join(' ')} exited ${code}: ${stderr.trim()}`));
+      const detail = (stderr.trim() || stdout.trim()).slice(-2000);
+      reject(new CommandError(`${command} exited ${code}: ${detail || '(no output)'}`, command, detail, 'exit'));
     });
     child.stdin.end(input);
   });
@@ -125,14 +137,15 @@ export const findThreads = async (project: string, title: string, since: string,
 };
 
 /**
- * Makes `path` a T3 project of its own, if it isn't one yet. T3 resolves a path to the deepest project containing it,
+ * Makes `path` a T3 project of its own, if it isn't one yet, and reuses it when it is. T3 resolves a path to the deepest project containing it,
  * so a thread started at `path` then runs there, never in a project that happens to contain the folder.
  */
 export const ensureProject = async (path: string, title: string, bin = T3_BIN): Promise<void> => {
   try {
     await run(bin, ['project', 'add', '--title', title, path]);
   } catch (error) {
-    if (!/ProjectAlreadyExists|already exists/i.test(error instanceof Error ? error.message : String(error))) throw error;
+    // Real T3 prints `ProjectAlreadyExistsError: An active project already exists…` to stdout, which `run` keeps.
+    if (!/ProjectAlreadyExists|already exists/i.test(error instanceof CommandError ? error.detail : String(error))) throw error;
   }
 };
 

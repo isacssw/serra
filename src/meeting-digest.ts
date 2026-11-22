@@ -1,7 +1,7 @@
 // What a meeting is turned into (SERRA-62): the extractor's prompt, its JSON contract, and the checks Serra runs on
 // every item before the owner sees it. Pure functions with no Node imports.
 //
-// The extractor is a read-only T3 run told to use no tools (meeting-runs.ts). Its output is untrusted: an injected line in a
+// The extractor is a T3 run told to use no tools (meeting-runs.ts); T3 doesn't enforce that. Its output is untrusted: an injected line in a
 // transcript can make it propose anything. These checks narrow what reaches review, they don't prove an item true.
 // The owner's approval is the endorsement; the transcript is only evidence.
 import {

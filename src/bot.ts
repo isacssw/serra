@@ -23,7 +23,7 @@ import { FOLLOW_UP_MS, follow, followed, forgetRun, looksRunning, replied, RECEN
 import { canShowQuestion, choiceAnswer, typedAnswer, type QuestionAnswer, type QuestionCard, type QuestionInteraction } from './questions.ts';
 import type { IncomingFile, IncomingMessage, Job, T3Message, T3Thread } from './types.ts';
 import { createTracker, systemClock, type Clock } from './clock.ts';
-import { errorMessage } from './lib/errors.ts';
+import { errorMessage, shortError } from './lib/errors.ts';
 
 /** A job nobody is waiting on is still checked this often, so runs the worker starts itself (a PR watch) get posted. */
 const IDLE_POLL_MS = 2 * 60_000;
@@ -259,8 +259,8 @@ export const createBot = ({
 
   /**
    * The error itself goes to the log and the app (the `failure` event). It can be raw `t3` or `git` output, so the
-   * thread gets its first line only through `deliver`, when the chat confirms that the owner alone can see it: their
-   * own DM. Anywhere else the owner gets a fixed sentence pointing at the app, and teammates a plain one.
+   * thread gets a short reason (`shortError`: no command output, no local paths) only through `deliver`, when the chat
+   * confirms that the owner alone can see it: their own DM. Anywhere else the owner gets a fixed sentence pointing at the app, and teammates a plain one.
    */
   const reportFailure = async (channel: string, threadTs: string, key: string, error: unknown, user?: string): Promise<void> => {
     await setLoading(channel, threadTs, false, getJob(key)?.loadingRequested === true);
@@ -271,7 +271,7 @@ export const createBot = ({
     const post = async (): Promise<void> => {
       if (user === config.owner) {
         const detail = await deliver({ target: { conversation: channel, thread: threadTs }, requester: user, hearing: { kind: 'owner-only' } },
-          { op: 'send', out: { kind: 'failure-detail', line: message.split('\n')[0]!.slice(0, 300) } });
+          { op: 'send', out: { kind: 'failure-detail', line: shortError(error) } });
         if (detail.ok) return;
       }
       await notify(channel, threadTs, { kind: 'failed', owner: user === config.owner });

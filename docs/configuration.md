@@ -52,7 +52,7 @@ Optional fields:
   "repositories": [
     { "name": "Service", "path": "/absolute/path/to/service", "baseRef": "origin/main", "githubRepo": "acme/service" }
   ],
-  "worker": { "provider": "claude", "model": "opus" },
+  "worker": { "provider": "claudeAgent", "model": "claude-opus-5-5" },
   "t3Bin": "/absolute/path/to/t3",
   "serviceLabel": "dev.serra.friday",
   "branchPattern": "{id}/{slug}-{stamp}",
@@ -64,7 +64,7 @@ Optional fields:
 
 `branchPattern` names the task branch each job's worktree starts on. Placeholders: `{id}` the bot ID, `{slug}` from the request, `{stamp}` a short unique suffix, `{DDMM}` and `{MMDD}` today's date. It must contain `{slug}` and `{stamp}` so two jobs never share a branch, and setup rejects patterns that can't make a valid Git branch. The default is `{id}/{slug}-{stamp}`. Example for a team that names branches after a placeholder ticket: `TEAM-{DDMM}/{slug}-{stamp}`. The worker can still rename the branch before its first push.
 
-`worker` chooses which T3 provider instance and model run the bot's jobs. `model` is required and `provider` is optional; T3 needs a model whenever a provider is given. Without `worker`, jobs use the T3 project's default model, which may differ from the one you pick when you work in T3 yourself. The names are the ones `t3 thread start --provider` and `--model` accept.
+`worker` chooses which T3 provider instance and model run the bot's jobs. `model` is required and `provider` is optional; T3 needs a model whenever a provider is given. Without `worker`, jobs use the T3 project's default model, which may differ from the one you pick when you work in T3 yourself. The names are the ones `t3 thread start --provider` and `--model` accept: `provider` is T3's instance id, such as `claudeAgent` or `codex` (not `claude`).
 
 Omit review to disable posting to a review channel. Review messages require an open, ready PR in the configured allowlist, authored by the configured GitHub account, with gh currently using that account. The daemon strips channel and group broadcasts from review messages. Worker instructions determine whether a PR should be made ready; the generic default is draft.
 

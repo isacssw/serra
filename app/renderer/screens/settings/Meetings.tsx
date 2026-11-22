@@ -1,6 +1,6 @@
 // Settings › Meetings (SERRA-62, SERRA-69): turn meeting capture on (acknowledging what's sent and kept), see which T3
 // provider and model meeting runs use, test a transcript source on demand, and forget a meeting. Opening this screen
-// never makes a model call: only the Test button does, one read-only T3 run per press.
+// never makes a model call: only the Test button does, one short T3 run per press.
 import { useCallback, useEffect, useState, type ComponentProps, type ReactNode } from 'react';
 import { FileText, LoaderCircle, RefreshCw } from 'lucide-react';
 import type { MeetingRunner } from '../../../../src/meeting-runs.ts';
@@ -95,7 +95,7 @@ export const Meetings = () => {
     } catch (failure) { toast({ message: message(failure), tone: 'error' }); } finally { setChecking(false); }
   }, [toast]);
 
-  /** One read-only T3 run, only on the owner's press. */
+  /** One short T3 run, only on the owner's press. */
   const test = async (provider: MeetingProvider): Promise<void> => {
     const bridge = serra();
     if (!bridge) return;
@@ -155,7 +155,7 @@ export const Meetings = () => {
       {settings?.enabled && (
         <Card
           title="Sources"
-          description="Serra reads Granola and Meet links in a read-only T3 run, through the connections your AI provider in T3 already has. It never holds their keys. Test runs one short T3 run."
+          description="Serra reads Granola and Meet links in a T3 run, through the connections your AI provider in T3 already has. It never holds their keys. Test runs one short T3 run."
           actions={<Button size="sm" disabled={checking} icon={checking ? <LoaderCircle size={14} className="animate-spin" /> : <RefreshCw size={14} />} onClick={() => void check()}>Refresh</Button>}
         >
           {runner && (

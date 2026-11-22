@@ -3,7 +3,7 @@
   "specs": [
     "REPLY-005"
   ],
-  "title": "a failed start in the owner's own DM shows the owner the first line of the error",
+  "title": "a failed start in the owner's own DM shows the owner a short reason, without local paths",
   "t3": {
     "failStart": "t3 thread start exited 1: could not read /Users/you/secret-project/.t3/config"
   },
@@ -41,7 +41,7 @@
             "count": 1,
             "args": {
               "channel": "DOWNER",
-              "text": "Something went wrong on my side.\n`t3 thread start exited 1: could not read /Users/you/secret-project/.t3/config`"
+              "text": "Something went wrong on my side.\nt3 thread start exited 1: could not read config"
             }
           }
         ]

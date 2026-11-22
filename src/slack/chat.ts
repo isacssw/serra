@@ -212,7 +212,7 @@ export const createSlackChat = ({ client, owner, botUserId, botToken, profileDir
         { type: 'markdown', text: out.markdown },
         { type: 'context', elements: [{ type: 'mrkdwn', text: `Prepared by ${out.from} for ${mention(owner)} · <${out.link}|request thread>` }] },
       ], unfurl_links: false };
-      case 'failure-detail': return { text: `Something went wrong on my side.\n\`${out.line}\``, unfurl_links: false };
+      case 'failure-detail': return { text: `Something went wrong on my side.\n${out.line}`, unfurl_links: false };
     }
   };
 

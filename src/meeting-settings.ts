@@ -10,10 +10,11 @@ const MEETING_SETTINGS_FILE = 'meeting-capture.json';
 
 /** What the owner acknowledges by turning capture on. A new version asks again. */
 // 2: meeting runs moved from Claude Code to T3 (SERRA-69), so what is sent where changed.
-const MEETING_NOTICE_VERSION = 2;
+// 3: the notice no longer calls those runs read-only: T3 runs them with full access (SERRA-71).
+const MEETING_NOTICE_VERSION = 3;
 export const MEETING_NOTICE = [
   'Add only meetings you were in, recorded with everyone’s knowledge, that your team may hear about. Your teammates can see what you keep.',
-  'The AI provider you use in T3 reads the transcript in a read-only T3 run, told to use no tools, after Serra redacts secrets. For a Granola or Meet link, a T3 run first reads it through that provider’s own connection with one read tool. These runs start in Serra’s own empty folder, never your repository. Serra never stores the transcript; T3 keeps those runs in its history like any thread. Serra keeps the decisions you approve, short quotes for review until you approve or discard them (up to 30 days), and a digest message in your DM.',
+  'Serra redacts secrets, then the AI provider you use in T3 reads the transcript in a T3 run. For a Granola or Meet link, a T3 run first reads it through that provider’s own connection. These runs aren’t sandboxed: they have the same access as any T3 thread, and only Serra’s instructions ask them to change nothing. They start in Serra’s own empty folder, never your repository. Serra never stores the transcript; T3 keeps those runs in its history like any thread. Serra keeps the decisions you approve, short quotes for review until you approve or discard them (up to 30 days), and a digest message in your DM.',
   'Until workers are isolated from the profile folder, Serra’s own workers could read those pending quotes on this Mac.',
   'Forget meeting removes all of these, except your upload in Slack, the T3 runs that read the meeting (delete them in T3), the provider’s copy, and app tasks that already read them.',
 ].join('\n\n');

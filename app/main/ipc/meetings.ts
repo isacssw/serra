@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { profileT3Bin } from '../../../src/cleanup.ts';
 import { readProfileFile } from '../../../src/config.ts';
 import { isRecord } from '../../../src/json-guards.ts';
+import { errorMessage, shortError } from '../../../src/lib/errors.ts';
 import { createMeetingStore, type MeetingReviewed } from '../../../src/meeting-store.ts';
 import { MEETING_NOTICE, readMeetingSettings, writeMeetingSettings } from '../../../src/meeting-settings.ts';
 import { createMeetingRuns, meetingRunner } from '../../../src/meeting-runs.ts';
@@ -64,7 +65,11 @@ export const meetingsHandlers = (context: HandlerContext, options: MeetingsHandl
       return makeRuns({
         t3Bin: profileT3Bin(context.profileDir()),
         ...(chosen?.provider ? { provider: chosen.provider } : {}), ...(chosen?.model ? { model: chosen.model } : {}),
-      }).checkSource(source(provider));
+      }).checkSource(source(provider)).catch((error: unknown) => {
+        // The screen gets a short reason; the full one (a command's output, paths) stays in the app's log.
+        console.error(`[serra] meetings test failed: ${errorMessage(error)}`);
+        throw new Error(shortError(error));
+      });
     },
     list: () => store().listMeetings(),
     history: () => store().history(),

@@ -14,6 +14,7 @@ await shot(page, 'A2-wizard-validation');
 await page.getByLabel('Name', { exact: true }).fill('QA Bot');
 await page.getByLabel('Your name', { exact: true }).fill('QA Owner');
 await page.getByLabel('Slack member ID', { exact: true }).fill('U0123456789');
+await page.getByLabel('GitHub login', { exact: true }).fill('acme');
 await page.getByLabel('Folder', { exact: true }).fill('/tmp/serra-qa/project');
 await page.getByLabel('Folder', { exact: true }).blur();
 await page.waitForTimeout(1500);

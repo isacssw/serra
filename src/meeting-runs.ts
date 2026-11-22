@@ -3,10 +3,11 @@
 // T3 runs it with the provider and model the owner picked (the profile's worker, else T3's default), so it works
 // with any provider T3 has: Claude, Codex, Cursor, Antigravity, …. Serra never spawns a provider CLI.
 //
-// Isolation, as far as a brief and a folder can give it:
+// Isolation, as far as a brief and a folder can give it. Not a sandbox: T3 runs these threads with the same full
+// access as any thread, and `t3 thread start` can't take tools away, so the consent notice says so (SERRA-71).
 // - Every run starts in Serra's own empty meetings folder, a T3 project of its own: never the team's repository,
 //   never a worktree, never the profile folder. T3 resolves the deepest project, so a parent project can't claim it.
-// - Every brief is read-only: no files, no commands, no web, no changes anywhere, and the transcript is untrusted.
+// - Every brief asks for read-only work: no files, no commands, no web, no changes anywhere, and the transcript is untrusted.
 //   A fetch may use exactly one read tool of the meeting source's connection; an extraction and a test use none.
 // - The folder must be empty before a run and still empty after it. A run that wrote anything is thrown away.
 // - A run that stops to ask for approval, or asks a question, is not waited on: meeting runs never need either.
@@ -143,7 +144,7 @@ export const createMeetingRuns = ({
 
   /** One T3 run in the empty meetings folder: its final answer, after checking it wrote nothing. */
   const runOnce = async (title: string, brief: string): Promise<string> => {
-    if (contents().length) throw new Error(`Serra's meetings folder (${workspace}) has files in it, so Serra won't start a run there. Empty it, then try again.`);
+    if (contents().length) throw new Error(`Serra's meetings folder (${workspace.replace(homedir(), '~')}) has files in it, so Serra won't start a run there. Empty it, then try again.`);
     await t3.ensureProject(workspace, PROJECT_TITLE, t3Bin);
     const input: FolderThreadInput = { project: workspace, title, brief, ...(provider ? { provider } : {}), ...(model ? { model } : {}) };
     const threadId = await t3.startFolderThread(input, t3Bin);
@@ -166,10 +167,10 @@ export const createMeetingRuns = ({
   };
 
   return {
-    /** Read a linked meeting's transcript through the provider's own connection, in a read-only T3 run. */
+    /** Read a linked meeting's transcript through the provider's own connection, in a T3 run. */
     fetchTranscript: async (link: MeetingLink): Promise<Fetched> =>
       parseFetchAnswer(await runOnce(`Serra meeting: read a ${PROVIDERS[link.provider].label} transcript`, fetchBrief(link)), link.provider),
-    /** Pick the decisions out of a (redacted) transcript, in a read-only T3 run with no tools. */
+    /** Pick the decisions out of a (redacted) transcript, in a T3 run briefed to use no tools. */
     extract: (prompt: string): Promise<string> => runOnce('Serra meeting: pick out decisions', extractBrief(prompt)),
     /** The owner's Test button: ask a T3 run whether it could read this source. Only ever on that button. */
     checkSource: async (source: MeetingProvider): Promise<ProviderStatus> =>
