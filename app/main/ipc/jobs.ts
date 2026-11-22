@@ -1,8 +1,10 @@
 // Jobs screen (APP-12), on APP-7's read service and worktree cleanup. Only parses input and calls `src/`.
 import { applyWorktreeCleanup, planWorktreeCleanup, profileT3Bin, runCommand, type Runner } from '../../../src/cleanup.ts';
 import { listJobs, t3ThreadLookup, type ThreadInfo, type ThreadLookup } from '../../../src/jobs.ts';
-import { readSecret, slackWorkspace } from '../../../src/secrets.ts';
-import { createSlackNames, slackMentions, slackPlainText, type SlackNameLookup, type SlackNames } from '../../../src/slack-names.ts';
+import { slackWorkspace } from '../../../src/secrets.ts';
+import { slackMentions, slackPlainText, type SlackNames } from '../../../src/slack-names.ts';
+import { createStoredSlackNames, type NamesAsk } from '../../../src/slack-names-store.ts';
+import { requestNames } from '../../../src/status-socket.ts';
 import { t3TaskState } from '../../../src/tasks.ts';
 import type { Handlers } from '../bridge.ts';
 import type { HandlerContext } from './context.ts';
@@ -13,8 +15,14 @@ export interface JobsDeps {
   now?: () => Date;
   /** Only worktrees inside this folder are removed (default: `~/.t3/worktrees`). */
   worktreesRoot?: string;
-  /** Slack name lookups (APP-29). Tests pass a fake token and lookup; the default reads the bot token's source. */
-  slackNames?: { token?: (profileDir: string) => Promise<string | undefined>; lookup?: (token: string) => Promise<SlackNameLookup>; ttlMs?: number; log?: (message: string) => void };
+  /**
+   * Slack names (APP-29). The running bot names the IDs over the status socket, so the app never reads the bot token
+   * (SERRA-55); names are kept in the profile's `slack-names.json`. Tests pass a fake `ask` or a timeout.
+   */
+  slackNames?: {
+    ask?: (profileDir: string) => NamesAsk; timeoutMs?: number; ttlMs?: number; retryMs?: number; backoffMs?: number;
+    log?: (message: string) => void;
+  };
 }
 
 /** How long a thread without a PR is remembered before T3 is asked again: its worker may open one any minute. */
@@ -81,10 +89,12 @@ export const jobsHandlers = (context: HandlerContext, { run = runCommand, now = 
   const namesFor = (profileDir: string): SlackNames => {
     let names = namesByProfile.get(profileDir);
     if (!names) {
-      names = createSlackNames({
-        token: () => (slackNames.token ?? ((dir) => readSecret(dir, 'SLACK_BOT_TOKEN')))(profileDir),
-        ...(slackNames.lookup ? { lookup: slackNames.lookup } : {}),
+      names = createStoredSlackNames({
+        profileDir,
+        ask: slackNames.ask?.(profileDir) ?? ((ids) => requestNames(profileDir, ids, slackNames.timeoutMs ? { timeoutMs: slackNames.timeoutMs } : {})),
         ...(slackNames.ttlMs ? { ttlMs: slackNames.ttlMs } : {}),
+        ...(slackNames.retryMs ? { retryMs: slackNames.retryMs } : {}),
+        ...(slackNames.backoffMs ? { backoffMs: slackNames.backoffMs } : {}),
         // Only the newest profile's names refresh the screen; a switch away makes the old cache quiet.
         onResolved: () => { if (context.profileDirOrNull() === profileDir) context.push?.('jobs', null); },
         log: slackNames.log ?? console.error,

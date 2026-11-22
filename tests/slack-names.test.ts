@@ -13,10 +13,10 @@ import { APP_TASK_CHANNEL_LABEL, channelChoices, rowParts, type JobRow } from '.
 import { fillBriefText, NO_THREAD, renderBrief } from '../src/brief.ts';
 import { codeRoot, loadConfig } from '../src/config.ts';
 import type { JobSummary } from '../src/contracts.ts';
-import { readSecret } from '../src/secrets.ts';
 import {
-  channelLabel, createSlackNames, DM_LABEL, GROUP_DM_LABEL, slackMentions, slackPlainText, userLabel, type SlackNameLookup,
+  answerNameRequests, channelLabel, createSlackNames, DM_LABEL, GROUP_DM_LABEL, slackMentions, slackPlainText, userLabel, type SlackNameLookup,
 } from '../src/slack-names.ts';
+import type { NamesAsk } from '../src/slack-names-store.ts';
 import { taskBriefInput } from '../src/tasks.ts';
 
 const TOKEN = 'xoxb-fixture-names-123';
@@ -148,14 +148,6 @@ test('concurrent requests for the same IDs look each up once', async () => {
   assert.deepEqual(slack.calls.sort(), ['U0EXAMPLE01', 'U0OTHER0001']);
 });
 
-test('readSecret gives main the bot token from its source (here .env), for Slack calls only', async (t) => {
-  const dir = mkdtempSync(join(tmpdir(), 'serra-names-secret-'));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
-  writeFileSync(join(dir, '.env'), `SLACK_BOT_TOKEN=${TOKEN}\n`);
-  assert.equal(await readSecret(dir, 'SLACK_BOT_TOKEN'), TOKEN);
-  await assert.rejects(readSecret(dir, 'SLACK_APP_TOKEN'), (error: Error) => !error.message.includes('xoxb'));
-});
-
 // ---------------------------------------------------------------------------------------------------------------
 // The Jobs list (app/main/ipc/jobs.ts) and screen logic
 // ---------------------------------------------------------------------------------------------------------------
@@ -187,14 +179,20 @@ const context = (profileDir: string, pushes: string[]): HandlerContext => ({
   push: (channel) => { pushes.push(channel); },
 });
 
+/** The bot's side in process: the daemon's resolver (`answerNameRequests`) on a fake Slack, as `jobsHandlers`' `ask`. */
+const daemon = (slack: ReturnType<typeof fakeSlack>, asked: string[] = []) => (profileDir: string): NamesAsk => {
+  const answer = answerNameRequests(createSlackNames({ token: async () => TOKEN, lookup: slack.lookup }));
+  return async (ids) => { asked.push(profileDir); return { type: 'names', ...(await answer(ids)) }; };
+};
+
 test('jobs.list never waits for Slack: raw IDs first, then a push, then names', async (t) => {
   const dir = jobsProfile(t);
   const slack = fakeSlack();
   const pushes: string[] = [];
-  const tokenDirs: string[] = [];
+  const askedDirs: string[] = [];
   const handlers = jobsHandlers(context(dir, pushes), {
     run: async () => { throw new Error('no t3'); }, now: () => NOW,
-    slackNames: { token: async (profileDir) => { tokenDirs.push(profileDir); return TOKEN; }, lookup: slack.lookup, log: () => {} },
+    slackNames: { ask: daemon(slack, askedDirs), log: () => {} },
   });
   const release = slack.hold();
   const first = await handlers.list();
@@ -206,7 +204,7 @@ test('jobs.list never waits for Slack: raw IDs first, then a push, then names', 
   release();
   await new Promise((resolve) => setTimeout(resolve, 10));
   assert.deepEqual(pushes, ['jobs'], 'the screen is told to list again');
-  assert.deepEqual(tokenDirs, [dir]);
+  assert.deepEqual(askedDirs, [dir], 'the bot of this profile was asked, once');
 
   const second = await handlers.list();
   assert.deepEqual(second.map((row) => [row.requesterName, row.channelName]), [['Sam Rivera', '#billing-alerts'], ['Ada', DM_LABEL]]);
@@ -222,7 +220,7 @@ test('jobs.list with Slack refusing still lists every job, with raw IDs', async 
   const pushes: string[] = [];
   const handlers = jobsHandlers(context(dir, pushes), {
     run: async () => { throw new Error('no t3'); }, now: () => NOW,
-    slackNames: { token: async () => TOKEN, lookup: slack.lookup, log: () => {} },
+    slackNames: { ask: daemon(slack), log: () => {} },
   });
   await handlers.list();
   await new Promise((resolve) => setTimeout(resolve, 10));
@@ -371,7 +369,7 @@ test('jobs.list shows an alert as the bot\'s name with a readable title, and lin
     linkedPullRequest: null,
     pullRequests: [{ host: 'github.com', repository: 'acme/billing', number: 1, url: 'https://github.com/acme/billing/pull/1', source: 'created', state: 'open' }],
   } });
-  const handlers = jobsHandlers(context(dir, pushes), { run: t3, now: () => NOW, slackNames: { token: async () => TOKEN, lookup: slack.lookup, log: () => {} } });
+  const handlers = jobsHandlers(context(dir, pushes), { run: t3, now: () => NOW, slackNames: { ask: daemon(slack), log: () => {} } });
   await handlers.list();
   await new Promise((resolve) => setTimeout(resolve, 10));
   const [hero] = await handlers.list();

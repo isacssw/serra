@@ -4,6 +4,7 @@ Serra follows [Semantic Versioning](https://semver.org) once it reaches 1.0. Unt
 
 ## Unreleased
 
+- Fixed: opening Serra with the bot token in 1Password asked for 1Password approval on every launch. The app no longer reads the bot token to show Slack names in Jobs: the running bot names the IDs and the app keeps the names in the profile (`slack-names.json`, names only). New names need the bot running on this version; the bot's own 1Password prompt when it starts is unchanged.
 - Docs: the README now starts from the released app (download, checksum, install, first run), says how updates work and what a reinstall keeps, and how to migrate from a checkout-run Serra or another self-hosted bot. Running from source moved to CONTRIBUTING.
 
 ## 0.1.0-alpha.3 (2026-11-21)

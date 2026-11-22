@@ -5,14 +5,20 @@
  * happens and a new snapshot whenever the status changes. The app runs the client, `subscribeStatus()`, which reports
  * `stopped` while the socket is missing or after it closes, and reconnects when the daemon comes back.
  *
- * Wire format: one JSON `StatusMessage` per line. Clients only read; anything they send is ignored.
+ * Wire format: one JSON `StatusMessage` per line. A client may send one kind of request, a `NamesRequest` line: the
+ * daemon answers that client only with a `NamesReply`, the Slack names it knows for those IDs (APP-29, SERRA-55), so
+ * the app shows names without reading the bot token. Only names cross the socket, never the token. Anything else a
+ * client sends is ignored, and a daemon started without a resolver ignores name requests too.
  *
- * This file must stay free of Slack/Bolt imports: the Electron main process bundles `subscribeStatus()`.
+ * This file must stay free of Slack/Bolt imports: the Electron main process bundles `subscribeStatus()` and
+ * `requestNames()`. The daemon passes its resolver in (`StatusServerOptions.names`). `slack-names.ts` only lends
+ * its ID checks; it loads Bolt lazily, inside `slackApiLookup`, which this file never calls.
  */
 import { chmodSync, lstatSync, rmSync } from 'node:fs';
 import { createConnection, createServer, type Server, type Socket } from 'node:net';
 import { join } from 'node:path';
 import type { BotEvent, BotStatus, Job } from './contracts.ts';
+import { isSlackBotId, isSlackChannelId, isSlackUserId } from './slack-names.ts';
 
 export const STATUS_SOCKET = 'status.sock';
 
@@ -23,11 +29,26 @@ export type StatusMessage =
   | { type: 'status'; status: BotStatus }
   | { type: 'event'; event: BotEvent };
 
+/** What a client sends to have Slack IDs named: member and bot IDs in `users`, channel IDs in `channels`. */
+export interface NamesRequest { type: 'names'; users: string[]; channels: string[] }
+
+/** The daemon's answer to one `NamesRequest`: `id → name` for the IDs it could name. Others are left out. */
+export interface NamesReply { type: 'names'; users: Record<string, string>; channels: Record<string, string> }
+
+/** Names what it can; never throws on purpose (a throw is caught and answered with no names). */
+export type NamesResolver = (ids: { users: string[]; channels: string[] }) => Promise<{ users: Record<string, string>; channels: Record<string, string> }>;
+
 /** The status the daemon reports about itself while it runs. */
 export type UpStatus = Extract<BotStatus, { state: 'up' }>;
 
 /** A client that reads slower than the daemon writes is dropped past this much unsent data, so it can't grow memory. */
 const MAX_BUFFERED = 1024 * 1024;
+/** A client line longer than this (a request without its newline, or garbage) drops the client. */
+export const MAX_REQUEST_BYTES = 16 * 1024;
+/** At most this many IDs per `NamesRequest`; the rest are left out and can be asked again. */
+export const MAX_NAME_IDS = 200;
+/** A name longer than this isn't a Slack name: it's left out of the reply. */
+const MAX_NAME_LENGTH = 200;
 /** macOS limits a socket path to 104 bytes including the terminator. */
 const MAX_PATH_BYTES = 103;
 
@@ -103,7 +124,38 @@ export interface StatusServerOptions {
   /** The daemon's current status. Called for each new client and after each event. */
   status: () => UpStatus;
   now?: () => Date;
+  /** Answers `NamesRequest`s. Without it, clients only read, as before. */
+  names?: NamesResolver;
 }
+
+const unique = (value: unknown, valid: (id: string) => boolean): string[] =>
+  Array.isArray(value) ? [...new Set(value.filter((id): id is string => typeof id === 'string' && id.length <= 32 && valid(id)))] : [];
+
+/**
+ * A valid `NamesRequest` from one client line, or null. IDs that aren't Slack member, bot or channel IDs are dropped,
+ * and at most `MAX_NAME_IDS` are kept.
+ */
+export const parseNamesRequest = (text: string): Omit<NamesRequest, 'type'> | null => {
+  let value: unknown;
+  try { value = JSON.parse(text); } catch { return null; }
+  if (typeof value !== 'object' || value === null || (value as { type?: unknown }).type !== 'names') return null;
+  const { users: rawUsers, channels: rawChannels } = value as { users?: unknown; channels?: unknown };
+  const users = unique(rawUsers, (id) => isSlackUserId(id) || isSlackBotId(id)).slice(0, MAX_NAME_IDS);
+  const channels = unique(rawChannels, isSlackChannelId).slice(0, MAX_NAME_IDS - users.length);
+  if (users.length + channels.length === 0) return null;
+  return { users, channels };
+};
+
+/** Only the names asked for, and only strings that look like names: whatever the resolver returned, nothing else goes out. */
+const pick = (asked: string[], names: unknown): Record<string, string> => {
+  const out: Record<string, string> = {};
+  if (typeof names !== 'object' || names === null) return out;
+  for (const id of asked) {
+    const name = (names as Record<string, unknown>)[id];
+    if (typeof name === 'string' && name.trim() && name.length <= MAX_NAME_LENGTH) out[id] = name;
+  }
+  return out;
+};
 
 export interface StatusServer {
   path: string;
@@ -121,7 +173,7 @@ export interface StatusServer {
  * Starts the daemon's status socket. Only the owner can connect: the file is created with mode 600.
  * Status and events are best effort and never throw into the bot's work.
  */
-export const startStatusServer = async ({ profileDir, status, now = () => new Date() }: StatusServerOptions): Promise<StatusServer> => {
+export const startStatusServer = async ({ profileDir, status, now = () => new Date(), names }: StatusServerOptions): Promise<StatusServer> => {
   const path = statusSocketPath(profileDir);
   if (Buffer.byteLength(path) > MAX_PATH_BYTES) throw new Error(`The status socket path is too long for a Unix socket: ${path}`);
   await clearStale(path);
@@ -137,11 +189,43 @@ export const startStatusServer = async ({ profileDir, status, now = () => new Da
   const broadcast = (text: string): void => { for (const socket of clients) send(socket, text); };
   const snapshot = (): string => line({ type: 'status', status: status() });
 
+  /**
+   * Reads one client's lines and answers its name requests, one at a time: a request sent while the last one is
+   * still being looked up is dropped. A failing lookup answers with no names; nothing here throws into the bot.
+   */
+  const listenForRequests = (socket: Socket, resolve: NamesResolver): void => {
+    let buffer = '';
+    let busy = false;
+    socket.setEncoding('utf8');
+    socket.on('data', (chunk: string) => {
+      buffer += chunk;
+      let end = buffer.indexOf('\n');
+      while (end !== -1) {
+        const text = buffer.slice(0, end);
+        buffer = buffer.slice(end + 1);
+        end = buffer.indexOf('\n');
+        if (busy || text.length > MAX_REQUEST_BYTES) continue;
+        const request = parseNamesRequest(text);
+        if (!request) continue;
+        busy = true;
+        void (async () => {
+          let found: Awaited<ReturnType<NamesResolver>> | null = null;
+          try { found = await resolve(request); } catch { /* Answered with no names. */ }
+          const reply: NamesReply = { type: 'names', users: pick(request.users, found?.users), channels: pick(request.channels, found?.channels) };
+          send(socket, `${JSON.stringify(reply)}\n`);
+        })().catch(() => {}).finally(() => { busy = false; });
+      }
+      // An unfinished line past the cap is not a request: the client goes, so it can't grow the daemon's memory.
+      if (Buffer.byteLength(buffer) > MAX_REQUEST_BYTES) { buffer = ''; socket.destroy(); }
+    });
+  };
+
   const server: Server = createServer((socket) => {
     clients.add(socket);
     socket.on('close', () => clients.delete(socket));
     socket.on('error', () => socket.destroy());
-    socket.on('data', () => {}); // Clients only read.
+    if (names) listenForRequests(socket, names);
+    else socket.on('data', () => {}); // Clients only read.
     try {
       // A change since the last snapshot goes to everyone, so earlier clients don't fall behind the new one.
       const next = snapshot();
@@ -279,3 +363,59 @@ export const subscribeStatus = (
     },
   };
 };
+
+export interface RequestNamesOptions {
+  /** How long to wait for the daemon's answer. A daemon that never answers (stopped, or older than SERRA-55) gives null. */
+  timeoutMs?: number;
+}
+
+const isNamesReply = (value: unknown): value is NamesReply => {
+  if (typeof value !== 'object' || value === null) return false;
+  const reply = value as { type?: unknown; users?: unknown; channels?: unknown };
+  return reply.type === 'names' && typeof reply.users === 'object' && reply.users !== null
+    && typeof reply.channels === 'object' && reply.channels !== null;
+};
+
+/**
+ * Asks the daemon in `profileDir` to name these Slack IDs, on a connection of its own that closes after the answer.
+ * Resolves the daemon's `NamesReply`, or null when there is no daemon, it doesn't answer name requests (an older
+ * bot), or it doesn't answer in time. Never rejects. The status lines the daemon sends first are skipped.
+ */
+export const requestNames = (
+  profileDir: string,
+  ids: { users?: string[]; channels?: string[] },
+  { timeoutMs = 15_000 }: RequestNamesOptions = {},
+): Promise<NamesReply | null> => new Promise((resolve) => {
+  let done = false;
+  let buffer = '';
+  const socket = createConnection(statusSocketPath(profileDir));
+  const finish = (reply: NamesReply | null): void => {
+    if (done) return;
+    done = true;
+    clearTimeout(timer);
+    socket.destroy();
+    resolve(reply);
+  };
+  const timer = setTimeout(() => finish(null), timeoutMs);
+  socket.setEncoding('utf8');
+  socket.on('connect', () => {
+    const request: NamesRequest = { type: 'names', users: ids.users ?? [], channels: ids.channels ?? [] };
+    socket.write(`${JSON.stringify(request)}\n`);
+  });
+  socket.on('data', (chunk: string) => {
+    buffer += chunk;
+    let end = buffer.indexOf('\n');
+    while (end !== -1 && !done) {
+      const text = buffer.slice(0, end);
+      buffer = buffer.slice(end + 1);
+      end = buffer.indexOf('\n');
+      let parsed: unknown;
+      try { parsed = JSON.parse(text); } catch { continue; }
+      if (isNamesReply(parsed)) finish(parsed);
+    }
+    // Status lines are small; a daemon that sends something this large without a newline isn't one we talk to.
+    if (buffer.length > MAX_BUFFERED) finish(null);
+  });
+  socket.on('error', () => finish(null));
+  socket.on('close', () => finish(null));
+});
