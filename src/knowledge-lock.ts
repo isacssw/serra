@@ -16,7 +16,7 @@ const STALE_MS = 10 * 60_000;
 const sleeper = new Int32Array(new SharedArrayBuffer(4));
 
 /** The lock file for the knowledge folder `knowledgeDir`: next to it, in the profile. */
-export const knowledgeLockPath = (knowledgeDir: string): string => join(dirname(resolve(knowledgeDir)), 'knowledge.lock');
+const knowledgeLockPath = (knowledgeDir: string): string => join(dirname(resolve(knowledgeDir)), 'knowledge.lock');
 
 const held = new Map<string, number>();
 

@@ -26,11 +26,11 @@ import { applyEdit, audienceLine, decisionBullets, indexRow, MEETING_ID, mention
 import { hasSecret } from './meeting-transcript.ts';
 import { isRecord, parseJson } from './json-guards.ts';
 
-export const MEETING_PROPOSALS = 'from-meeting';
-export const REGISTRY_FILE = 'meeting-registry.json';
-export const EVIDENCE_DIR = 'meeting-evidence';
+const MEETING_PROPOSALS = 'from-meeting';
+const REGISTRY_FILE = 'meeting-registry.json';
+const EVIDENCE_DIR = 'meeting-evidence';
 /** Unapproved meeting proposals and their evidence expire: the evidence holds verbatim quotes. */
-export const PENDING_DAYS = 30;
+const PENDING_DAYS = 30;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 export type MeetingSourceKind = 'upload' | 'paste' | 'granola' | 'google-meet';

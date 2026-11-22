@@ -6,10 +6,10 @@ import { join } from 'node:path';
 import { writeFileAtomic } from './config.ts';
 import { isRecord, parseJson } from './json-guards.ts';
 
-export const MEETING_SETTINGS_FILE = 'meeting-capture.json';
+const MEETING_SETTINGS_FILE = 'meeting-capture.json';
 
 /** What the owner acknowledges by turning capture on. A new version asks again. */
-export const MEETING_NOTICE_VERSION = 1;
+const MEETING_NOTICE_VERSION = 1;
 export const MEETING_NOTICE = [
   'Add only meetings you were in, recorded with everyone’s knowledge, that your team may hear about. Your teammates can see what you keep.',
   'Claude reads the transcript once, with no tools, after Serra redacts secrets. For a Granola or Meet link, Claude Code first fetches it through your own connection with one read tool, and stops before any model sees it. Serra never stores the transcript. It keeps the decisions you approve, short quotes for review until you approve or discard them (up to 30 days), and a digest message in your DM.',

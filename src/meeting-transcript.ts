@@ -8,7 +8,7 @@
 /** A transcript larger than this is refused: "split it, or send the summary". About 2–3 hours of talk. */
 export const MAX_TRANSCRIPT_CHARS = 200_000;
 
-export interface Turn {
+interface Turn {
   /** 1-based, in order. The extractor cites turns by this number. */
   n: number;
   /** The speaker as the transcript names them, or null when it doesn't. Unverified: a label, not an identity. */
@@ -211,7 +211,7 @@ const dateOf = (text: string): string | null => {
 };
 
 /** A turn as the extractor reads it and quotes are checked against. */
-export const turnLine = (turn: Turn): string => `${turn.n}. ${turn.speaker ? `${turn.speaker}: ` : ''}${turn.text}`;
+const turnLine = (turn: Turn): string => `${turn.n}. ${turn.speaker ? `${turn.speaker}: ` : ''}${turn.text}`;
 
 /**
  * A transcript from any supported format, normalised, with secrets redacted first. `name` is the file's name, when

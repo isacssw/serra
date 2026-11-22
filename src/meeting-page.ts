@@ -7,11 +7,11 @@
 import { frontmatter } from './knowledge-rules.ts';
 
 /** A page's `## Decisions` takes at most this many bullets from all sources. A full page takes no more. */
-export const DECISIONS_MAX_BULLETS = 15;
+const DECISIONS_MAX_BULLETS = 15;
 /** `## Replaced` keeps the last this-many meeting bullets. Older ones go. */
-export const REPLACED_KEEP = 5;
+const REPLACED_KEEP = 5;
 /** Both sections together, provenance included. */
-export const MEETING_SECTION_MAX_CHARS = 3000;
+const MEETING_SECTION_MAX_CHARS = 3000;
 /** One bullet's own text, before provenance. */
 export const ITEM_MAX_CHARS = 200;
 /** Where a meeting's one new page goes. */
@@ -48,7 +48,7 @@ export interface Bullet {
 export const MEETING_ID = /^[0-9a-f]{6}$/;
 const TAG = /\s*<!--\s*m:([0-9a-f]{6})\s*-->\s*$/;
 
-export const meetingTag = (id: string): string => `<!-- m:${id} -->`;
+const meetingTag = (id: string): string => `<!-- m:${id} -->`;
 
 /** The lines of the page's body section `heading` (`Decisions`, `Replaced`): where it starts and ends, and its bullets. */
 const section = (page: string, heading: string): { start: number; end: number; lines: string[] } | null => {
@@ -91,17 +91,17 @@ export const sameDecision = (a: string, b: string): boolean => {
 };
 
 /** The bullet a meeting writes: the decision, then when, where and (only when shown) who, then its tag. */
-export const renderBullet = (edit: Pick<PageEdit, 'text' | 'who' | 'links'>, meeting: MeetingStamp): string => {
+const renderBullet = (edit: Pick<PageEdit, 'text' | 'who' | 'links'>, meeting: MeetingStamp): string => {
   const who = edit.who?.length ? `: ${edit.who.join(', ')}` : '';
   const links = edit.links?.length ? `; ${edit.links.join(', ')}` : '';
   return `- ${edit.text.trim()} (${meeting.date}, ${meeting.title}${who}${links}) ${meetingTag(meeting.id)}`;
 };
 
 /** The `sources:` entry a meeting adds. Forget finds it by its start, `meeting ID `. */
-export const sourceEntry = (meeting: MeetingStamp): string => `meeting ${meeting.id} ${meeting.date} "${meeting.title.replace(/"/g, "'")}", transcript not kept`;
+const sourceEntry = (meeting: MeetingStamp): string => `meeting ${meeting.id} ${meeting.date} "${meeting.title.replace(/"/g, "'")}", transcript not kept`;
 
 /** The page with `entry` added to its header's `sources:` list (made a list if it was one line). */
-export const addSource = (page: string, entry: string): string => {
+const addSource = (page: string, entry: string): string => {
   const match = /^---\n([\s\S]*?)\n---\n/.exec(page);
   if (!match?.[1]) return page;
   const lines = match[1].split('\n');
@@ -153,7 +153,7 @@ const trimReplaced = (page: string): string => {
 };
 
 /** Why `page` can't take one more meeting bullet `line`, or null when it can. */
-export const roomProblem = (page: string, line: string, replacing: boolean): string | null => {
+const roomProblem = (page: string, line: string, replacing: boolean): string | null => {
   const decisions = decisionBullets(page);
   if (!replacing && decisions.length >= DECISIONS_MAX_BULLETS) return `its Decisions section is full (${DECISIONS_MAX_BULLETS} bullets). Tidy it in Pages`;
   const chars = [...decisions, ...replacedBullets(page)].reduce((sum, bullet) => sum + bullet.line.length + 1, 0) + line.length + 1;
@@ -190,7 +190,7 @@ export const applyEdit = (page: string, edit: PageEdit, meeting: MeetingStamp): 
 export const topicSlug = (topic: string): string => topic.toLowerCase().normalize('NFKD').replace(/[^\p{L}\p{N}]+/gu, '-').replace(/^-+|-+$/g, '').slice(0, 48) || 'meeting-decisions';
 
 /** The description and index row a meeting's new page gets. Recorded, so Forget can scrub them from backups. */
-export const newPageDescription = (topic: string): string => `Decisions about ${topic.trim()}, from team meetings.`;
+const newPageDescription = (topic: string): string => `Decisions about ${topic.trim()}, from team meetings.`;
 
 /** A meeting's one new page: team audience, verified today (the owner approves its whole content), one bullet. */
 export const newDecisionPage = (topic: string, edit: PageEdit, meeting: MeetingStamp, today: string): string => [

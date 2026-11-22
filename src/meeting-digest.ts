@@ -12,15 +12,15 @@ import { fold, hasSecret, isSensitive, locateQuote, type Transcript } from './me
 /** Decisions and constraints kept for memory, per meeting. Action items never push these out. */
 export const MAX_MEMORY_ITEMS = 8;
 /** Action items, open questions and dated constraints listed in the reply. */
-export const MAX_REPLY_ITEMS = 10;
+const MAX_REPLY_ITEMS = 10;
 /** Page text the extractor sees at most, across every excerpt. */
-export const PAGE_CONTEXT_MAX_CHARS = 6000;
+const PAGE_CONTEXT_MAX_CHARS = 6000;
 /** Pages whose Decisions the extractor sees, picked by word overlap with the transcript. */
-export const PAGE_EXCERPTS = 5;
+const PAGE_EXCERPTS = 5;
 /** A context turn in review is cut to this. */
-export const TURN_MAX_CHARS = 300;
+const TURN_MAX_CHARS = 300;
 /** The extractor's output is refused above this. */
-export const DIGEST_MAX_CHARS = 64_000;
+const DIGEST_MAX_CHARS = 64_000;
 
 /** A page the extractor may target: audience exactly `team`, from the approved copy. */
 export interface TeamPage {
@@ -29,8 +29,8 @@ export interface TeamPage {
   text: string;
 }
 
-export type MemoryKind = 'decision' | 'constraint';
-export type ReplyKind = 'action' | 'question' | 'dated';
+type MemoryKind = 'decision' | 'constraint';
+type ReplyKind = 'action' | 'question' | 'dated';
 
 /** One item as the extractor returns it, before any check. Every field is untrusted. */
 interface RawItem {
@@ -106,7 +106,7 @@ const words = (text: string): Set<string> => new Set(text.toLowerCase().match(/[
  * The pages the extractor sees in full (description and Decisions): up to PAGE_EXCERPTS, the ones sharing the most
  * words with the transcript, within PAGE_CONTEXT_MAX_CHARS. Every team page is listed by path and description.
  */
-export const pickPages = (transcript: Transcript, pages: TeamPage[]): { listed: TeamPage[]; excerpts: { page: TeamPage; decisions: Bullet[] }[] } => {
+const pickPages = (transcript: Transcript, pages: TeamPage[]): { listed: TeamPage[]; excerpts: { page: TeamPage; decisions: Bullet[] }[] } => {
   const spoken = words(transcript.text);
   const scored = pages.map((page) => {
     const own = words(`${page.path} ${page.description} ${decisionBullets(page.text).map((bullet) => bullet.text).join(' ')}`);

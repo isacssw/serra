@@ -1,12 +1,12 @@
 // Settings › Meetings (SERRA-62): turn meeting capture on (acknowledging what's sent and kept), see which transcript
 // sources Claude Code can read now and what to do when one can't, and forget a meeting.
-import { useCallback, useEffect, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useState, type ComponentProps, type ReactNode } from 'react';
 import { FileText, LoaderCircle, RefreshCw } from 'lucide-react';
 import type { MeetingSettings } from '../../../../src/meeting-settings.ts';
 import type { MeetingProvider, ProviderStatus } from '../../../../src/meeting-sources.ts';
 import type { MeetingView } from '../../../../src/meeting-store.ts';
 import { serra } from '../../bridge.ts';
-import { Badge, Button, Dialog, Page, useToast, type BadgeTone } from '../../ui/index.ts';
+import { Badge, Button, Dialog, Page, useToast } from '../../ui/index.ts';
 import { ToolIcon } from '../../ui/ToolIcon.tsx';
 import { SourceIcon } from '../proposals/MeetingReview.tsx';
 
@@ -26,6 +26,8 @@ const Card = ({ title, description, children, actions }: { title: string; descri
     {children}
   </section>
 );
+
+type BadgeTone = NonNullable<ComponentProps<typeof Badge>['tone']>;
 
 const STATE: Record<ProviderStatus['state'], { label: string; tone: BadgeTone }> = {
   ready: { label: 'Ready', tone: 'up' },

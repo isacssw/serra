@@ -22,7 +22,7 @@ import { createMeetingStore, replyLines, type MeetingSourceKind, type MeetingSto
 import { MAX_TRANSCRIPT_CHARS, parseTranscript } from './meeting-transcript.ts';
 import type { IncomingFile, IncomingMessage } from './types.ts';
 
-export const CLOSED_THREADS_FILE = 'meeting-threads.json';
+const CLOSED_THREADS_FILE = 'meeting-threads.json';
 
 /** How Serra talks in Slack while capturing. Posting failures are logged, never thrown. */
 export interface MeetingChat {
@@ -264,7 +264,6 @@ export const createMeetingCapture = (deps: MeetingCaptureDeps) => {
   return { intercept, closed, closeHeld, upkeep, store };
 };
 
-export type MeetingCapture = ReturnType<typeof createMeetingCapture>;
 
 /**
  * Meetings first: the routing `receive()` and the held-request release path both use. A message `intercept` claims

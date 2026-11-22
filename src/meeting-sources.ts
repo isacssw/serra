@@ -97,11 +97,11 @@ export const PROVIDERS: Record<MeetingProvider, {
 
 /** Claude Code's name for an MCP tool: `mcp__<server>__<tool>`, the server name with anything but letters, digits, `_` and `-` made `_`. */
 /** Every provider, in display order. */
-export const PROVIDER_IDS: readonly MeetingProvider[] = ['granola', 'google-meet'];
+const PROVIDER_IDS: readonly MeetingProvider[] = ['granola', 'google-meet'];
 
-export const mcpToolName = (server: string, tool: string): string => `mcp__${server.replace(/[^A-Za-z0-9_-]/g, '_')}__${tool}`;
+const mcpToolName = (server: string, tool: string): string => `mcp__${server.replace(/[^A-Za-z0-9_-]/g, '_')}__${tool}`;
 
-export type ProviderState = 'ready' | 'needs-sign-in' | 'missing' | 'unknown';
+type ProviderState = 'ready' | 'needs-sign-in' | 'missing' | 'unknown';
 
 export interface ProviderStatus { provider: MeetingProvider; state: ProviderState; server: string | null; detail: string }
 
