@@ -11,6 +11,7 @@ import type { Config, MessageTrigger } from './config.ts';
 import { audienceOf, createBatcher, followUpMessage, isPing, mentionedUsers, NO_MENTION_HINT, ownerNotice, readable, speakerName, type Audience, type ThreadLine } from './conversation.ts';
 import { shareImages } from './images.ts';
 import { MAX_ATTACHMENTS, receiveAttachments } from './attachments.ts';
+import { meetingRequest } from './meeting-sources.ts';
 import { incomingFiles } from './incoming.ts';
 import { matchMessageTrigger } from './message-triggers.ts';
 import { localLinksToText } from './links.ts';
@@ -252,6 +253,8 @@ export const createBot = ({
       if (!m.ts || Number(m.ts) >= Number(msg.messageTs)) continue;
       // The earlier worker's replies, cards and files may carry what was taken back: a fresh session doesn't get them.
       if (withoutBot && (m.user === botUserId() || (m.bot_id && !m.user))) continue;
+      // A meeting sent in a thread (SERRA-62) was turned away, not read: its text and files never reach a worker.
+      if (meetingRequest(m.text ?? '').trigger) continue;
       const text = await toReadable(m.text ?? '');
       const files = incomingFiles(m.files);
       if (!text && !files.length) continue;

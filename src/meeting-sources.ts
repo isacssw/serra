@@ -16,7 +16,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawn } from 'node:child_process';
 import { findExecutable, toolEnv } from './exec.ts';
-import { MANAGED_SETTINGS_DIR, managedSettings, SUPPORTED_CLAUDE_VERSIONS, type SpawnClaude } from './meeting-extractor.ts';
+import { identity, MANAGED_SETTINGS_DIR, managedSettings, SUPPORTED_CLAUDE_VERSIONS, type SpawnClaude } from './meeting-extractor.ts';
 import { isRecord, parseJson, stringField } from './json-guards.ts';
 
 export type MeetingProvider = 'granola' | 'google-meet';
@@ -253,7 +253,9 @@ export const createSourceReader = ({
     }
     return PROVIDER_IDS.map((provider) => {
       const spec = PROVIDERS[provider];
-      const server = loaded.find((entry) => spec.server.test(entry.name));
+      // Of several matching servers (a connector and one added by hand), a connected one.
+      const matching = loaded.filter((entry) => spec.server.test(entry.name));
+      const server = matching.find((entry) => entry.status === 'connected') ?? matching[0];
       if (!server) return { provider, state: 'missing', server: null, detail: spec.setup };
       if (server.status !== 'connected') return { provider, state: 'needs-sign-in', server: server.name, detail: `${server.name} needs you to sign in again: run /mcp in Claude Code.` };
       if (!server.tools.includes(mcpToolName(server.name, spec.tool))) return { provider, state: 'missing', server: server.name, detail: `${server.name} doesn't offer ${spec.tool}. ${spec.plan}` };
@@ -268,6 +270,8 @@ export const createSourceReader = ({
    */
   const fetchTranscript = async (link: MeetingLink): Promise<Fetched> => {
     const spec = PROVIDERS[link.provider];
+    // The binary the probe checked is the one the fetch runs: replaced in between, the fetch is refused.
+    const checked = identity(binary());
     const state = (await status()).find((entry) => entry.provider === link.provider)!;
     if (state.state !== 'ready' || !state.server) throw new Error(state.detail);
     const tool = mcpToolName(state.server, spec.tool);
@@ -278,7 +282,9 @@ export const createSourceReader = ({
     let callId: string | null = null;
     let fetched: Fetched | null = null;
     let failure: string | null = null;
-    await stream(spawnClaude, binary(), [...FETCH_FLAGS, '--model', model, '--allowedTools', tool], prompt, path, timeoutMs, (event) => {
+    const runBinary = binary();
+    if (identity(runBinary) !== checked) throw new Error('Claude Code changed while Serra was checking it. Send the meeting again.');
+    await stream(spawnClaude, runBinary, [...FETCH_FLAGS, '--model', model, '--allowedTools', tool], prompt, path, timeoutMs, (event) => {
       const content = blocks(event);
       if (event.type === 'system' && event.subtype === 'init') {
         const problem = initProblem(event);
@@ -300,6 +306,9 @@ export const createSourceReader = ({
           failure = /sign in|re-?authenticate|unauthori[sz]ed|401/i.test(text.slice(0, 300))
             ? `${spec.label} needs you to sign in again: run /mcp in Claude Code.`
             : `${spec.label} couldn't give Serra that meeting. Check the link, and that your plan includes transcripts.`;
+        } else if (/^\s*(?:Output too large|<persisted-output>)|saved to .*tool-results|\[(?:truncated|output truncated)\]|\(truncated\)\s*$/i.test(text)) {
+          // Claude Code cut the result or saved it to a file: never read half a meeting as the whole one.
+          failure = `That ${spec.label} transcript is too long to read through Claude Code. Export it and send the file instead.`;
         } else fetched = transcriptFromResult(text);
         return true;
       }

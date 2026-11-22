@@ -138,12 +138,16 @@ const appendTo = (page: string, heading: string, line: string): string => {
   return `${lines.join('\n')}\n\n## ${heading}\n\n${line}\n`;
 };
 
-/** `## Replaced` keeps every owner bullet and the last REPLACED_KEEP meeting bullets. */
+/**
+ * `## Replaced` keeps every owner bullet and the last REPLACED_KEEP meeting bullets, plus any bullet a current
+ * Decisions bullet replaced: forgetting that meeting must be able to bring it back.
+ */
 const trimReplaced = (page: string): string => {
   const found = section(page, 'Replaced');
   if (!found) return page;
+  const live = new Set(decisionBullets(page).flatMap((bullet) => (bullet.meeting ? [bullet.meeting] : [])));
   const bullets = found.lines.slice(found.start + 1, found.end).map((line, offset) => ({ line, at: found.start + 1 + offset, bullet: bulletOf(line) }));
-  const meetingLines = bullets.filter((entry) => entry.bullet?.meeting);
+  const meetingLines = bullets.filter((entry) => entry.bullet?.meeting && !live.has(/replaced by m:([0-9a-f]{6})\)/.exec(entry.line)?.[1] ?? ''));
   const drop = new Set(meetingLines.slice(0, Math.max(0, meetingLines.length - REPLACED_KEEP)).map((entry) => entry.at));
   return found.lines.filter((_, at) => !drop.has(at)).join('\n');
 };
@@ -228,11 +232,18 @@ export const scrubMeeting = (text: string, id: string, rows: string[] = []): str
   const note = new RegExp(` \\(stopped applying \\d{4}-\\d{2}-\\d{2}, replaced by m:${id}\\)`);
   const source = new RegExp(`^\\s+-\\s+meeting ${id} `);
   const drop = new Set(rows.map((line) => line.trim()).filter(Boolean));
+  // When the meeting's own bullet was itself replaced later (by m:NEXT), what it replaced was replaced by NEXT in
+  // effect: that bullet stays under Replaced, its note pointing at NEXT. Otherwise it's current again.
+  const successor = text.split('\n').filter((line) => tag.test(line)).map((line) => /replaced by m:([0-9a-f]{6})\)/.exec(line)?.[1]).find(Boolean);
   const restored: string[] = [];
-  const lines = text.split('\n').filter((line) => {
-    if (tag.test(line) || source.test(line) || drop.has(line.trim())) return false;
-    if (note.test(line) && /^[-*]\s/.test(line)) { restored.push(line.replace(note, '')); return false; }
-    return true;
+  const lines = text.split('\n').flatMap((line) => {
+    if (tag.test(line) || source.test(line) || drop.has(line.trim())) return [];
+    if (note.test(line) && /^[-*]\s/.test(line)) {
+      if (successor) return [line.replace(note, (match) => match.replace(`m:${id}`, `m:${successor}`))];
+      restored.push(line.replace(note, ''));
+      return [];
+    }
+    return [line];
   });
   let out = lines.join('\n');
   // A Decisions or Replaced heading left with nothing under it goes too.

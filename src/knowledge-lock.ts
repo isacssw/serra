@@ -55,7 +55,8 @@ export const withKnowledgeLock = <T>(knowledgeDir: string, work: () => T, { time
       const owner = holder(path);
       const age = (() => { try { return Date.now() - statSync(path).mtimeMs; } catch { return 0; } })();
       // Gone, too old to be live (a reused PID), or unreadable for long enough that it isn't a write in progress.
-      if (!owner ? Date.now() + timeoutMs - deadline > 1000 : !processAlive(owner.pid) || age > STALE_MS) {
+      // Unreadable: judged on the file's own age, so a lock opened a moment ago and not yet written is never taken.
+      if (!owner ? age > 1000 : !processAlive(owner.pid) || age > STALE_MS) {
         // Taken over by renaming it away. If what was renamed isn't the lock judged abandoned (another waiter took it
         // over and a new holder made its own in between), it's put back: link fails rather than overwrite a lock.
         const stale = `${path}.stale-${randomBytes(4).toString('hex')}`;

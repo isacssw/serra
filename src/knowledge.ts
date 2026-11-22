@@ -204,7 +204,8 @@ export const createKnowledge = (knowledgeDir: string, { backupDir }: KnowledgeOp
    */
   const briefKnowledge = (visibility: Visibility, now: Date = new Date()): BriefKnowledge => {
     // A meeting approval a crash left half done is rolled back before any brief reads knowledge.
-    createMeetingStore({ knowledgeDir: root }).recover();
+    // A damaged registry never stops a job: it's logged, and Proposals shows the error.
+    try { createMeetingStore({ knowledgeDir: root }).recover(); } catch (error) { console.warn(`Meeting recovery: ${error instanceof Error ? error.message : String(error)}`); }
     const { changed, removed } = journal.drift();
     const drifted = changed.length > 0 || removed.length > 0;
     // Once the approved copy exists, briefs read only from it: whatever is on disk, even a save landing a moment after

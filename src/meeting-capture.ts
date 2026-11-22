@@ -56,6 +56,7 @@ export const COPY = {
   closed: 'This thread holds a meeting transcript, so Serra won’t use it. Ask in a new message.',
   inThread: 'To add a meeting, send it as a new message in our DM, starting with “remember this meeting”.',
   notOwner: (owner: string) => `Only <@${owner}> can add meetings, as a new message in their DM with me.`,
+  ownerElsewhere: 'Add meetings as a new message in our DM, not here.',
   off: 'Meeting capture is off. Turn it on in Serra › Settings › Meetings, then send the meeting again.',
   paused: 'Serra is updating. Send the meeting again in a minute.',
   earlier: 'To add a meeting, start a new conversation with me and send it there first.',
@@ -95,7 +96,9 @@ export const meetingPages = (knowledgeDir: string): { team: TeamPage[]; existing
 };
 
 /** Model text as plain Slack text: `&`, `<` and `>` escaped, so an injected line can't become a link or a mention. */
-const plain = (text: string): string => text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+const plain = (text: string): string => text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  // A bare URL would still turn into a link: code formatting keeps it plain text.
+  .replace(/\bhttps?:\/\/[^\s`]+/gi, (url) => `\`${url}\``);
 
 /** The digest message: what's waiting for review, what's already known, action items and questions, what was left out. */
 export const digestText = (digest: Digest, from: string): string => {
@@ -194,11 +197,16 @@ export const createMeetingCapture = (deps: MeetingCaptureDeps) => {
    * Otherwise the message is Serra's: the caller tracks `work` and never passes the message to a job.
    */
   const intercept = (msg: IncomingMessage): { work: Promise<void> } | null => {
+    if (msg.botId) return null;
     if (closed(msg.channel, msg.threadTs)) return { work: say(msg.channel, COPY.closed, msg.threadTs).then(() => {}) };
     const request = meetingRequest(msg.text);
-    if (!request.trigger || msg.botId) return null;
+    if (!request.trigger) return null;
+    const enabled = readMeetingSettings(deps.profileDir).enabled;
     const topLevel = msg.threadTs === msg.messageTs;
     const dm = msg.im === true && msg.channel.startsWith('D');
+    const fromOwner = msg.user === deps.owner && dm && !msg.automaticTrigger;
+    // With capture off, only the owner's own DM is about meetings: anyone else's message is an ordinary request.
+    if (!enabled && !fromOwner) return null;
     if (!topLevel) {
       // A trigger in a thread Serra is working in is never passed to that job, and doesn't close it.
       if (!dm || deps.busy(msg.channel, msg.threadTs)) return { work: say(msg.channel, COPY.inThread, msg.threadTs).then(() => {}) };
@@ -206,8 +214,8 @@ export const createMeetingCapture = (deps: MeetingCaptureDeps) => {
     // From here on the thread holds a transcript (or is about to): closed before any await.
     close(msg.channel, msg.threadTs);
     const refuse = (text: string): { work: Promise<void> } => ({ work: say(msg.channel, text, msg.threadTs).then(() => {}) });
-    if (msg.user !== deps.owner || !dm || msg.automaticTrigger) return refuse(COPY.notOwner(deps.owner));
-    if (!readMeetingSettings(deps.profileDir).enabled) return refuse(COPY.off);
+    if (!fromOwner) return refuse(msg.user === deps.owner && !msg.automaticTrigger ? COPY.ownerElsewhere : COPY.notOwner(deps.owner));
+    if (!enabled) return refuse(COPY.off);
     if (deps.paused()) return refuse(COPY.paused);
     return {
       work: (async () => {

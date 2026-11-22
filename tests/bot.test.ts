@@ -344,6 +344,16 @@ test('joining a thread includes file-only history and bounds downloads across al
   assert.ok(f.brief().indexOf('F0.png') < f.brief().indexOf('F7.png'), 'history remains oldest first');
 });
 
+test('a meeting sent in a thread and turned away never reaches a worker through the thread history (SERRA-62)', async (t) => {
+  const f = fixture(t);
+  f.history.push({ ts: '99.1', user: OWNER, text: 'remember this meeting: Ana: TRANSCRIPT-LINE-77', files: [upload('MEETING')] });
+  f.history.push({ ts: '99.2', user: SAM, text: 'unrelated earlier note' });
+  await f.bot.handle({ channel: 'C1', threadTs: '99.0', messageTs: '100.0', user: SAM, text: `<@${BOT}> summarise this thread`, direct: true });
+  assert.doesNotMatch(f.brief(), /TRANSCRIPT-LINE-77|MEETING/);
+  assert.match(f.brief(), /unrelated earlier note/);
+  assert.equal(f.downloads.length, 0);
+});
+
 test('attachment failure keeps text and file metadata so the worker can explain it', async (t) => {
   const f = fixture(t);
   await f.say(SAM, `<@${BOT}> check this log`, true, [{ name: 'logs.txt', url_private: 'https://external.test/logs' }]);

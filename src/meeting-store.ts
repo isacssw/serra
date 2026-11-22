@@ -357,7 +357,7 @@ export const createMeetingStore = ({ knowledgeDir, now = () => new Date(), backu
     const registry = readRegistry();
     // Meetings that left something: an approved line, an edit still waiting, or a Forget still finishing.
     return Object.values(registry.meetings).filter((record) => record.state === 'forgetting'
-      || (record.state === 'open' && (record.pages.length > 0 || Object.values(record.items).some((item) => item.status === 'pending'))))
+      || (record.state === 'open' && (record.pages.length > 0 || record.digest !== undefined || Object.values(record.items).some((item) => item.status === 'pending'))))
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
       .map(({ id, title, date, source, createdAt, pages, state }) => ({ id, title, date, source, createdAt, pages, state }));
   };
@@ -531,15 +531,17 @@ export const createMeetingStore = ({ knowledgeDir, now = () => new Date(), backu
       const diskAfter = disk === null ? null : scrubMeeting(disk, id);
       const approvedAfter = approved === null ? null : scrubMeeting(approved, id);
       // A page the meeting created goes, with its index row, when nothing else is left on it.
-      const remove = created.has(path) && (diskAfter === null || emptyAfter(diskAfter)) && (approvedAfter === null || emptyAfter(approvedAfter));
+      // Also a page an earlier, forgotten meeting created that is now empty: `type: decisions` under decisions/.
+      const meetingPage = created.has(path) || (path.startsWith('decisions/') && frontmatter(diskAfter ?? approvedAfter ?? '')?.get('type')?.trim() === 'decisions');
+      const remove = meetingPage && (diskAfter === null || emptyAfter(diskAfter)) && (approvedAfter === null || emptyAfter(approvedAfter));
       if (remove) removedPages.push(path); else scrubbedPages.push(path);
       if (disk !== null && disk !== diskAfter) writeOne(path, remove ? null : diskAfter);
       if (approved !== null && approved !== approvedAfter) journal.record([{ path, text: remove ? null : approvedAfter }]);
     }
     // Index rows of removed pages, on disk and in the approved copy.
-    const rows = record.derived.filter((row) => removedPages.some((path) => row.includes(`\`${path}\``)));
+    const index = read('index.md');
+    const rows = [...new Set([...record.derived, ...(index ?? '').split('\n')])].filter((row) => row.trim().startsWith('|') && removedPages.some((path) => row.includes(`\`${path}\``)));
     if (rows.length) {
-      const index = read('index.md');
       if (index !== null) writeOne('index.md', scrubMeeting(index, id, rows));
       const approvedIndex = journal.approvedText('index.md');
       if (approvedIndex !== null) journal.record([{ path: 'index.md', text: scrubMeeting(approvedIndex, id, rows) }]);
@@ -564,6 +566,10 @@ export const createMeetingStore = ({ knowledgeDir, now = () => new Date(), backu
     for (const entry of Object.values(record.items)) if (entry.status === 'pending') entry.status = 'discarded';
     if (!record.digest) record.state = 'forgotten';
     const pages = [...removedPages, ...scrubbedPages];
+    // What the record said about the meeting goes too: only its ID stays, so it's never reused.
+    record.title = 'Forgotten meeting';
+    record.speakers = [];
+    record.dropped = {};
     record.pages = [];
     record.derived = [];
     record.created = [];
@@ -605,6 +611,13 @@ export const createMeetingStore = ({ knowledgeDir, now = () => new Date(), backu
     }
     if (expired.length) writeRegistry(registry);
     for (const id of expired) rmSync(evidencePath(id), { force: true });
+    // Quotes of items no longer pending (a crash between an approval's commit and dropping them) go now.
+    for (const record of Object.values(registry.meetings)) {
+      const evidence = readEvidence(record.id);
+      if (!evidence) continue;
+      const stale = Object.keys(evidence.items).filter((itemId) => record.items[itemId]?.status !== 'pending');
+      if (stale.length) { for (const itemId of stale) delete evidence.items[itemId]; writeEvidence(evidence); }
+    }
     // Evidence the registry doesn't know (a crash between writing it and the registry) goes after the same 30 days.
     if (existsSync(evidenceDir)) {
       for (const name of readdirSync(evidenceDir)) {

@@ -376,8 +376,8 @@ test('Forget after a replace puts the replaced rule back under Decisions', () =>
 });
 
 test('the sensitive screen drops HR and health talk, not payments and engineering talk', () => {
-  for (const text of ["Bo's salary review is overdue", 'Ana is off sick this week', 'he got fired', 'the hiring freeze', 'her surgery on Monday', 'a performance review']) assert.ok(isSensitive(text), text);
-  for (const text of ['fire the webhook again', 'pay the invoice in EUR', 'the health check endpoint', 'promote the build to production', 'the node is unhealthy', 'Bonus: also fixes retries', 'hire a contractor for the SDK']) assert.ok(!isSensitive(text), text);
+  for (const text of ["Bo's salary review is overdue", 'Ana is off sick this week', 'he got fired', 'the hiring freeze', 'her surgery on Monday', "Bo's performance review"]) assert.ok(isSensitive(text), text);
+  for (const text of ['fire the webhook again', 'pay the invoice in EUR', 'the health check endpoint', 'promote the build to production', 'the node is unhealthy', 'Bonus: also fixes retries', 'hire a contractor for the SDK', 'pip install the SDK', 'a performance review of the query planner', 'diagnosis of the outage', 'redundancy in the queue']) assert.ok(!isSensitive(text), text);
 });
 
 test('a new page gets a team audience, today as verified and one index row; Forget removes both', (t) => {

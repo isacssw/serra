@@ -62,7 +62,7 @@ export interface Preflight {
 }
 
 /** A file's identity: where it really is, its size, inode and change time. A replaced or edited file changes it. */
-const identity = (path: string): string => {
+export const identity = (path: string): string => {
   const real = realpathSync(path);
   const stat = statSync(real);
   return `${real}:${stat.size}:${stat.ino}:${stat.mtimeMs}:${stat.ctimeMs}`;

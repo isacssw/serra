@@ -106,8 +106,8 @@ test('the owner\'s upload in a DM becomes a digest and review items; the transcr
 test('none of these reach the extractor: a teammate, a channel, a mention, an alert trigger, capture off, a pause', async (t) => {
   const cases: [string, Partial<IncomingMessage>, (h: Harness) => void, RegExp][] = [
     ['teammate', { user: 'UPRIYA0001' }, () => {}, /Only <@UROBIN0001> can add meetings/],
-    ['channel', { channel: 'C0TEAM001', im: false }, () => {}, /Only <@UROBIN0001>/],
-    ['mention', { im: false }, () => {}, /Only <@UROBIN0001>/],
+    ['channel', { channel: 'C0TEAM001', im: false }, () => {}, /as a new message in our DM, not here/],
+    ['mention', { im: false }, () => {}, /as a new message in our DM, not here/],
     ['trigger', { automaticTrigger: true }, () => {}, /Only <@UROBIN0001>/],
     ['pause', {}, (h) => { h.state.paused = true; }, /updating/],
   ];
@@ -389,5 +389,32 @@ test('the digest escapes Slack markup from model text, so an injected line is ne
   await run(h, message());
   const digest = h.posts.at(-1)!.text;
   assert.doesNotMatch(digest, /<https|<!channel>/);
-  assert.match(digest, /&lt;https:\/\/evil\.example\|the doc&gt;/);
+  assert.match(digest, /&lt;`https:\/\/evil\.example\|the` doc&gt;/, 'escaped, and the URL in code so it never links');
+});
+
+test('a meeting that kept nothing can still be forgotten: its digest is deleted and its record keeps no names', async (t) => {
+  const h = harness(t);
+  h.state.extract = async () => `<meeting-digest>${JSON.stringify({ items: [], reply: [{ kind: 'action', text: 'Ana sends the notes' }] })}</meeting-digest>`;
+  await run(h, message());
+  const [listed] = h.capture.store.history();
+  assert.ok(listed, 'listed for Forget because its digest is in the DM');
+  h.capture.store.forget(listed.id);
+  await h.capture.upkeep();
+  const record = h.capture.store.readRegistry().meetings[listed.id]!;
+  assert.equal(record.state, 'forgotten');
+  assert.deepEqual([record.title, record.speakers, record.dropped], ['Forgotten meeting', [], {}]);
+});
+
+test('with capture off, a teammate or a channel message that starts with the phrase is an ordinary request', (t) => {
+  const h = harness(t, { enabled: false });
+  assert.equal(h.capture.intercept(message({ user: 'UPRIYA0001' })), null);
+  assert.equal(h.capture.intercept(message({ channel: 'C0TEAM001', im: false, text: '<@UBOT> remember this meeting is at 3, fix the build' })), null);
+  assert.equal(h.capture.closed('C0TEAM001', '1.0'), false);
+});
+
+test('a damaged meeting registry never stops a brief', (t) => {
+  const h = harness(t);
+  writeFileSync(join(h.profileDir, 'meeting-registry.json'), '{ not json');
+  const knowledge = createKnowledge(join(h.profileDir, 'knowledge'));
+  assert.ok(knowledge.briefKnowledge('team').index.length > 0);
 });

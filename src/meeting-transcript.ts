@@ -100,11 +100,11 @@ export const hasSecret = (text: string): boolean => redactSecrets(text).count > 
 // build", "health check", "a sick node") are matched only in their HR sense.
 const SENSITIVE = new RegExp([
   'salar(?:y|ies)', 'pay ?(?:rise|raise|band|cut|review)s?', 'payroll', '(?:annual|performance|signing) bonus(?:es)?', 'compensation (?:review|package|band)',
-  'equity grant', '(?:got|been|be|was|were|is) promoted', 'promotion (?:case|cycle|packet|review)', 'demot(?:e|ed|ion)',
-  'hiring (?:freeze|plan|manager|pipeline|decision|budget)', 'new hires?', '(?:got|been|be|was|were|is|being) (?:fired|let go|laid off)', 'firing (?:him|her|them)', 'layoffs?', 'redundanc(?:y|ies)',
-  'performance (?:review|plan|improvement|issues?)', 'PIP', 'disciplinary', 'resign(?:ed|ing|ation)',
+  'equity grant', '(?:got|been|be|was|were|is) promoted to', 'promotion (?:case|cycle|packet|review)', 'demot(?:e|ed|ion)',
+  'hiring (?:freeze|plan|manager|pipeline|decision|budget)', 'new hires?', '(?:got|been|be|was|were|is|being) (?:fired|let go|laid off)', 'firing (?:him|her|them)', 'layoffs?', 'made redundant', 'redundancies at',
+  'performance improvement plan', "(?:his|her|their|\\w+['’]s) performance (?:review|plan)", 'disciplinary', 'resigned from', 'resignation',
   '(?:off|out|called in) sick', 'sick (?:leave|days?|note)', 'illness', 'health (?:issue|problem|condition|reasons|scare)', 'mental health', 'medical (?:leave|condition|appointment)',
-  'diagnos(?:is|ed)', 'therap(?:y|ist)', 'surgery', 'hospital(?:ised|ized)?', 'pregnan(?:t|cy)', 'maternity', 'paternity', 'parental leave',
+  'diagnosed with', 'therap(?:y|ist)', 'surgery', 'hospital(?:ised|ized)?', 'pregnan(?:t|cy)', 'maternity', 'paternity', 'parental leave',
   'divorce', 'bereavement', 'funeral', 'burn(?:ed|t)? ?out', 'visa status', 'immigration',
 ].map((word) => `\\b${word}\\b`).join('|'), 'i');
 
