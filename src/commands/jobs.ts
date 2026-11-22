@@ -17,7 +17,7 @@ const command: Command = {
       doneTodayOnly,
       ...(channel ? { channel } : {}),
       ...(slackUrl ? { slackUrl } : {}),
-      ...(t3Bin ? { threads: t3ThreadLookup(t3Bin), tasks: t3TaskState(t3Bin) } : {}),
+      ...(t3Bin ? { threads: t3ThreadLookup(t3Bin), tasks: t3TaskState(t3Bin), runs: t3TaskState(t3Bin) } : {}),
     });
     log(flag('--json') ? JSON.stringify(listing, null, 2) : formatJobs(listing, { doneTodayOnly }));
   },

@@ -76,6 +76,8 @@ export const createBatcher = <T>({ quietMs, retryMs, busy, flush, onError }: {
   const items = new Map<string, T[]>();
   const timers = new Map<string, NodeJS.Timeout>();
   const running = new Set<Promise<void>>();
+  /** Threads whose turn is being checked or handed over right now. */
+  const attempting = new Set<string>();
 
   const send = async (key: string): Promise<void> => {
     const batch = items.get(key) ?? [];
@@ -85,6 +87,11 @@ export const createBatcher = <T>({ quietMs, retryMs, busy, flush, onError }: {
   };
 
   const attempt = async (key: string): Promise<void> => {
+    attempting.add(key);
+    try { await attemptOnce(key); } finally { attempting.delete(key); }
+  };
+
+  const attemptOnce = async (key: string): Promise<void> => {
     timers.delete(key);
     // An unreadable thread state must not hold messages back forever.
     const isBusy = await busy(key).catch(() => false);
@@ -109,6 +116,10 @@ export const createBatcher = <T>({ quietMs, retryMs, busy, flush, onError }: {
       const batch = [...(items.get(key) ?? []), item];
       items.set(key, batch.slice(-keep));
       if (wake) schedule(key, quietMs);
+    },
+    /** A turn is waiting to be handed over in this thread. Context kept with `wake: false` alone starts none. */
+    holds(key: string): boolean {
+      return timers.has(key) || attempting.has(key);
     },
     /** Sends what is waiting for a turn, without waiting for quiet. For shutdown. */
     async drain(): Promise<void> {

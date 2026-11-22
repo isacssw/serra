@@ -135,6 +135,14 @@ const withoutReactions = (job: Job, cleared: string[]): Partial<Job> => ({
   pendingReactions: pendingReactions(job).filter((ts) => !cleared.includes(ts)),
 });
 
+/**
+ * Forgets the run the bot saw going once a reply is posted, unless it is the run going now. Left behind, a seen run
+ * that never matches the last posted one keeps the job listed as running forever: a run that started and ended
+ * between two polls is posted without ever being seen (SERRA-54).
+ */
+const seenOver = (job: Job, thread: Pick<T3Thread, 'activeRunId'>): Partial<Job> =>
+  job.runSeen && job.runSeen.runId !== thread.activeRunId ? { runSeen: undefined } : {};
+
 /** A thread message waiting for the worker, with the Slack message it came from. */
 type Heard = ThreadLine & { ts: string };
 
@@ -529,7 +537,7 @@ export const createBot = ({
     if (QUIET.test(text)) {
       // Nothing to say: the 👀 goes away, which tells the thread the message was seen.
       const cleared = await clearEyes(job);
-      updateJob(key, (latest) => ({ lastPostedRunId: runId, ...withoutReactions(latest, cleared) }));
+      updateJob(key, (latest) => ({ lastPostedRunId: runId, ...seenOver(latest, thread), ...withoutReactions(latest, cleared) }));
       await finishLoading(key, job);
       events('reply', { ...measured, kind: 'quiet' });
       return;
@@ -596,8 +604,9 @@ export const createBot = ({
         : false;
       // A new post in place of a failed edit is checked again first: time has passed.
       const statusTs = edited ? job.statusTs : (await client.chat.postMessage({ ...message, ...(await withheldIfRevoked(job, body)), thread_ts: job.threadTs })).ts;
-      updateJob(key, () => ({
+      updateJob(key, (latest) => ({
         lastPostedRunId: runId,
+        ...seenOver(latest, thread),
         ...(statusTs ? { statusTs } : {}),
         watching: true,
         waitingInT3: false,
@@ -625,6 +634,7 @@ export const createBot = ({
     const cleared = await clearEyes(job);
     updateJob(key, (latest) => ({
       lastPostedRunId: runId,
+      ...seenOver(latest, thread),
       ...withoutReactions(latest, cleared),
       ownerFollows: ownerFollows || notice !== 'none' || latest.ownerFollows === true,
       // The owner may have answered while this reply was being posted.
@@ -862,8 +872,10 @@ export const createBot = ({
       await postRunResult(key, latest, thread, silent ? '(quiet)' : replyText(thread, last), byWorker, runId);
       return;
     }
+    // Nothing runs and every run is posted: a progress line or a seen run left from earlier is over too.
+    await clearProgress(key, latest);
     await finishLoading(key, latest);
-    updateJob(key, () => ({ watching: false, waitingInT3: false }));
+    updateJob(key, () => ({ watching: false, waitingInT3: false, runSeen: undefined }));
   };
 
   /**
@@ -928,7 +940,7 @@ export const createBot = ({
       now: new Date(now()),
     });
     const t3ThreadId = await t3.startThread({ ...input, ...(job.branch ? { baseRef: job.branch } : {}) }, config.t3Bin);
-    updateJob(key, () => ({ t3ThreadId, visibility, knowledgeRead: knowledge.read, knowledgeDir: knowledge.readDir, branch: input.branch, lastPostedRunId: null, watching: true, question: undefined, waitingInT3: false }));
+    updateJob(key, () => ({ t3ThreadId, visibility, knowledgeRead: knowledge.read, knowledgeDir: knowledge.readDir, branch: input.branch, lastPostedRunId: null, runSeen: undefined, watching: true, question: undefined, waitingInT3: false }));
     await reply(job.channel, job.threadTs, 'Some knowledge this thread used has changed, so I\'m carrying on in a fresh session.');
     logger.info(`${folderGone ? 'The knowledge folder this thread read was cleaned up' : `Knowledge this thread used was taken back (${revoked.length} page(s))`}; continued ${key} in a fresh T3 thread ${t3ThreadId}`);
     events('knowledge_revoked', { key, t3ThreadId });
@@ -1095,6 +1107,53 @@ export const createBot = ({
     }
   };
 
+  /** What the Jobs screen reads as running (`classify` in jobs.ts), from the saved job alone. */
+  const looksRunning = (job: Job): boolean => job.loadingRequested === true || pendingReactions(job).length > 0
+    || job.progress !== undefined || (job.runSeen !== undefined && job.runSeen.runId !== job.lastPostedRunId);
+
+  const reconcileJob = async (key: string): Promise<void> => {
+    const job = getJob(key);
+    // A message waiting to reach the worker keeps its 👀 and loading: it is about to start a run.
+    if (!job || followUps.holds(key)) return;
+    // A seen run that was posted tells nothing more.
+    if (job.runSeen && job.runSeen.runId === job.lastPostedRunId) updateJob(key, () => ({ runSeen: undefined }));
+    const saved = getJob(key) ?? job;
+    if (!looksRunning(saved)) return;
+    const { thread } = await t3.showThread(saved.t3ThreadId, config.t3Bin);
+    // Going or waiting in T3: the poll follows it from here.
+    if (thread.activeRunId || (thread.pendingRequestCount ?? 0) > 0) {
+      if (!saved.watching) updateJob(key, () => ({ watching: true }));
+      return;
+    }
+    // A finished run that was never posted is posted by the next poll, which clears the rest: always for a job the bot
+    // was following, and for one it wasn't unless the thread went quiet so long ago that a reply would come from nowhere.
+    const unposted = thread.latestRunId !== null && thread.latestRunId !== saved.lastPostedRunId;
+    if (unposted && (saved.watching || now() - Date.parse(saved.lastActivityAt ?? saved.createdAt) <= FOLLOW_UP_MS)) {
+      if (!saved.watching) updateJob(key, () => ({ watching: true }));
+      return;
+    }
+    // Nothing runs in T3 for this thread: the flags are left from a run nobody followed to its end.
+    await clearProgress(key, saved);
+    const cleared = await clearEyes(saved);
+    await finishLoading(key, saved);
+    updateJob(key, (latest) => ({ ...withoutReactions(latest, cleared), runSeen: undefined, watching: false, waitingInT3: false }));
+    logger.info(`${key} was saved as running, but T3 thread ${saved.t3ThreadId} isn't: cleared it.`);
+    events('job_reconciled', { key, t3ThreadId: saved.t3ThreadId, unposted });
+  };
+
+  /**
+   * Checks every job saved as running against T3, however old, and clears what nothing runs any more: the 👀, Slack's
+   * loading status, the progress line and the seen run. Run at start, it cleans up after runs that ended while the bot
+   * was stopped and state carried over from an older install. A thread T3 can't read is left as it is.
+   */
+  const reconcile = async (): Promise<void> => {
+    for (const [key] of allJobs()) {
+      await exclusive(key, () => reconcileJob(key)).catch((error: unknown) => {
+        logger.warn(`Checking whether ${key} still runs in T3 failed: ${errorMessage(error)}`);
+      });
+    }
+  };
+
   /** Whether a plain channel message belongs to a thread the bot owns. */
   const ownsThread = (channel: string, threadTs: string): boolean =>
     getJob(slackKey(channel, threadTs)) !== undefined || pingedBy(slackKey(channel, threadTs)) !== undefined;
@@ -1123,5 +1182,5 @@ export const createBot = ({
   /** A job in this thread is running now (its worker is being followed). Its messages still reach it while new work is paused. */
   const runningIn = (channel: string, threadTs: string): boolean => getJob(slackKey(channel, threadTs))?.watching === true;
 
-  return { handle, poll, handleQuestionAction, ownsThread, runningIn, reloadProfile, drain: () => followUps.drain() };
+  return { handle, poll, reconcile, handleQuestionAction, ownsThread, runningIn, reloadProfile, drain: () => followUps.drain() };
 };
