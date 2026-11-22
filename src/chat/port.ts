@@ -136,7 +136,10 @@ export interface WorkerFile { path: string; label: string; altText?: string }
 /** What the reply to a run that a restart may have cut off looks like, to find it in the thread. */
 interface ReplyIntent { runId: string; at: string; text?: string }
 
-/** Everything the core may call freely: none of it can post the worker's words. */
+/**
+ * Everything the core may call freely: none of it can post the worker's words. An adapter may need to learn from inbound
+ * events too (Slack's learns whose each DM is, `sawDm`): that stays between the adapter and the wiring that feeds it.
+ */
 export interface ChatPort {
   /** The bot's own ID. Known only after the chat connects. */
   self(): PersonId;
