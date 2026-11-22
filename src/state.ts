@@ -7,13 +7,10 @@
 import { copyFileSync, existsSync, readFileSync } from 'node:fs';
 import { writeFileAtomic } from './lib/atomic.ts';
 import type { Job } from './types.ts';
+import { isArrayOf, isBoolean, isOneOf, isRecord, isString, isStringOrNull } from './lib/guards.ts';
 
-const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
-const isString = (value: unknown): value is string => typeof value === 'string';
-const isBoolean = (value: unknown): value is boolean => typeof value === 'boolean';
-const isStringOrNull = (value: unknown): value is string | null => value === null || typeof value === 'string';
-const isStrings = (value: unknown): value is string[] => Array.isArray(value) && value.every(isString);
-const isAudience = (value: unknown): boolean => value === 'owner' || value === 'team' || value === 'external';
+const isStrings = isArrayOf(isString);
+const isAudience = isOneOf('owner', 'team', 'external');
 
 /** Each optional field and the shape it must have. A field of the wrong shape is dropped, not the job. */
 const OPTIONAL: { [K in keyof Job]?: (value: unknown) => boolean } = {

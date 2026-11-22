@@ -595,7 +595,7 @@ export const createBot = ({
         ...(byWorker ? { statusTs: recovered } : { statusTs: undefined }), watching: true, waitingInT3: false, lastActivityAt: new Date(now()).toISOString() }));
       await finishLoading(key, job);
       logger.info(`The reply to ${runId} in ${key} was posted before a restart; not posting it again.`);
-      events('reply', { ...measured, kind: 'recovered' });
+      events('reply', { ...measured, kind: byWorker ? 'status_posted' : 'reply', recovered: true });
       return;
     }
     if (QUIET.test(text)) {

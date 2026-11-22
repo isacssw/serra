@@ -1,6 +1,6 @@
-import { createTracker, systemClock, type Clock, type Timer } from './clock.ts';
-
 /** How the bot takes part in a Slack thread: who a message is for, what the worker is told, and when the owner is pinged. */
+
+import { createTracker, systemClock, type Clock, type Timer } from './clock.ts';
 
 const MENTION = /<@([UW][A-Z0-9]+)(?:\|[^>]*)?>/g;
 const escapeRegExp = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
