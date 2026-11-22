@@ -39,6 +39,21 @@ const parseStarPrompt = (value: unknown): StarPromptState => {
   return { since, finished, asks, shownIn, snoozedUntil, done };
 };
 
+const later = (a: string | null, b: string | null): string | null => (a && b ? (Date.parse(a) >= Date.parse(b) ? a : b) : a ?? b);
+
+/**
+ * A save of the star request's memory only moves it forward: an answer stays given, counts never drop, the clock
+ * keeps its first start and the snooze its latest end. So a write from a stale copy can't undo "Don't ask again".
+ */
+export const combineStarPrompt = (saved: StarPromptState, incoming: StarPromptState): StarPromptState => ({
+  since: saved.since ?? incoming.since,
+  finished: Math.max(saved.finished, incoming.finished),
+  asks: Math.max(saved.asks, incoming.asks),
+  shownIn: incoming.shownIn ?? saved.shownIn,
+  snoozedUntil: later(saved.snoozedUntil, incoming.snoozedUntil),
+  done: saved.done || incoming.done,
+});
+
 const parseField = (key: string, value: unknown): Partial<AppPrefs> => {
   switch (key) {
     case 'theme':
@@ -73,7 +88,10 @@ const parseField = (key: string, value: unknown): Partial<AppPrefs> => {
 export const mergePrefs = (current: AppPrefs, patch: unknown): AppPrefs => {
   if (!isRecord(patch)) throw new Error('Preferences must be an object.');
   let next = { ...current };
-  for (const [key, value] of Object.entries(patch)) next = { ...next, ...parseField(key, value) };
+  for (const [key, value] of Object.entries(patch)) {
+    const field = parseField(key, value);
+    next = { ...next, ...field, ...(field.starPrompt ? { starPrompt: combineStarPrompt(next.starPrompt, field.starPrompt) } : {}) };
+  }
   return next;
 };
 

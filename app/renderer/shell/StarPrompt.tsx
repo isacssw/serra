@@ -1,5 +1,6 @@
 // The GitHub star request (SERRA-53): a small card in the toast corner, shown right after a job finishes, once the
 // owner has used Serra for a few days. The rules are in star.logic.ts. The card never takes focus or blocks anything.
+// It loads nothing of its own: finishes come from status pushes, app tasks from the sidebar's jobs list.
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { useLocation } from 'react-router';
@@ -8,8 +9,8 @@ import type { BotStatus, JobSummary } from '../../../src/contracts.ts';
 import { serra } from '../bridge.ts';
 import { WELCOME_PATH } from '../screens/Welcome/welcome.logic.ts';
 import {
-  answer, countFinished, IDLE_MS, markShown, newlyFinished, openRepo, shouldAsk, startClock, updateStarPrompt,
-  type StarChoice,
+  answer, calmMoment, countFinished, dueToAsk, finishedBetween, IDLE_MS, MAX_WAIT_MS, markShown, openRepo, shouldAsk,
+  startClock, updateStarPrompt, type StarChoice,
 } from '../star.logic.ts';
 import { Button, GitHubMark, useToast, useToastStack } from '../ui/index.ts';
 
@@ -72,7 +73,7 @@ export const StarCard = ({ onChoose }: { onChoose: (choice: StarChoice) => void 
   );
 };
 
-export const StarPrompt = ({ status }: { status: BotStatus | null }) => {
+export const StarPrompt = ({ status, jobs }: { status: BotStatus | null; jobs: JobSummary[] | null }) => {
   const { pathname } = useLocation();
   const stack = useToastStack();
   const toast = useToast();
@@ -80,12 +81,16 @@ export const StarPrompt = ({ status }: { status: BotStatus | null }) => {
   const version = useRef<string | null>(null);
   // Once per session, like T3 Code: a run of finished jobs asks at most once until the app restarts.
   const asked = useRef(false);
+  const cancelWait = useRef((): void => {});
+  const lastStatus = useRef<BotStatus | null>(null);
   // What the idle wait reads when it ends: the moment may have passed (a job started, setup opened).
-  const live = useRef({ status, pathname });
-  useEffect(() => { live.current = { status, pathname }; }, [status, pathname]);
+  const moment = { status, jobs, path: pathname, welcomePath: WELCOME_PATH };
+  const live = useRef(moment);
+  live.current = moment;
 
   useEffect(() => {
     void serra()?.app.info().then((info) => { version.current = info.version; }, () => {});
+    return () => cancelWait.current();
   }, []);
 
   // The days-of-use clock starts the first time the bot is up, so setup time doesn't count.
@@ -95,57 +100,51 @@ export const StarPrompt = ({ status }: { status: BotStatus | null }) => {
     void updateStarPrompt(bridge.app, (state) => startClock(state, new Date())).catch(() => {});
   }, [status?.state]);
 
+  // Each status push: count jobs that finished well, then wait for the owner to be idle here before asking.
   useEffect(() => {
     const bridge = serra();
-    if (!bridge) return;
-    let alive = true;
-    let before: JobSummary[] | null = null;
-    let cancelWait = (): void => {};
-    const context = () => ({
-      now: new Date(), version: version.current ?? '', status: live.current.status, path: live.current.pathname, welcomePath: WELCOME_PATH,
-    });
-    const showIfStillRight = async (): Promise<void> => {
-      try {
-        const state = (await bridge.app.getPrefs()).starPrompt;
-        if (!alive || !shouldAsk(state, context()).ask) { asked.current = false; return; }
-        // Saved before it shows: a card whose answer can't be kept would come back every time, so it never shows.
-        await bridge.app.setPrefs({ starPrompt: markShown(state, context().version, new Date()) });
-        if (alive) setOpen(true);
-      } catch {
-        asked.current = false;
-      }
-    };
-    const reload = async (): Promise<void> => {
-      let after: JobSummary[];
-      try { after = await bridge.jobs.list(); } catch { return; }
-      if (!alive) return;
-      const finished = newlyFinished(before, after);
-      before = after;
-      if (finished === 0 || asked.current || !version.current) return;
+    const finished = finishedBetween(lastStatus.current, status);
+    lastStatus.current = status;
+    if (!bridge || finished === 0) return;
+    const finishedAt = Date.now();
+    void (async () => {
       let state;
       try { state = await updateStarPrompt(bridge.app, (current) => countFinished(current, finished)); } catch { return; }
-      if (!alive || asked.current || !shouldAsk(state, context()).ask) return;
+      // Only what's saved decides here; whether the moment is calm is checked when the card would show.
+      if (asked.current || !version.current || !dueToAsk(state, { now: new Date(), version: version.current }).ask) return;
       asked.current = true;
-      cancelWait = whenIdle(() => void showIfStillRight());
-    };
-    void reload();
-    const offEvent = bridge.on.event(() => void reload());
-    const offStatus = bridge.on.status(() => void reload());
-    return () => { alive = false; cancelWait(); offEvent(); offStatus(); };
-  }, []);
+      cancelWait.current = whenIdle(() => {
+        // Came back too late: this finish is old news. The next one can ask.
+        if (Date.now() - finishedAt > MAX_WAIT_MS) { asked.current = false; return; }
+        let shown = false;
+        updateStarPrompt(bridge.app, (current) => {
+          const context = { ...live.current, now: new Date(), version: version.current ?? '' };
+          if (!shouldAsk(current, context).ask) return current;
+          shown = true;
+          // Saved before it shows: a card whose answer can't be kept would come back every time, so it never shows.
+          return markShown(current, context.version, context.now);
+        }).then(() => {
+          if (shown && calmMoment(live.current).ask) setOpen(true);
+          else asked.current = shown;
+        }, () => { asked.current = false; });
+      });
+    })();
+  }, [status]);
+
+  // The moment passed while the card was up (a job started, setup opened): close it. It was saved as shown.
+  const calm = calmMoment(moment).ask;
+  useEffect(() => { if (open && !calm) setOpen(false); }, [open, calm]);
 
   const choose = (choice: StarChoice): void => {
     setOpen(false);
     const bridge = serra();
     if (!bridge) return;
+    const failed = (error: unknown): void => toast({ message: error instanceof Error ? error.message : String(error), tone: 'error' });
     if (choice === 'star') {
-      openRepo(bridge.app).then(
-        () => toast({ message: 'Opened Serra on GitHub. Thank you!', tone: 'success' }),
-        (error: unknown) => toast({ message: error instanceof Error ? error.message : String(error), tone: 'error' }),
-      );
+      openRepo(bridge.app).then(() => toast({ message: 'Opened Serra on GitHub. Thanks for the support!', tone: 'success' }), failed);
       return;
     }
-    void updateStarPrompt(bridge.app, (state) => answer(state, choice, new Date())).catch(() => {});
+    updateStarPrompt(bridge.app, (state) => answer(state, choice, new Date())).catch(failed);
   };
 
   if (!open || !stack) return null;

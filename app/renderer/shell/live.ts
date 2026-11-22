@@ -25,8 +25,11 @@ const loadOrNull = async <T,>(load: () => Promise<T>): Promise<T | null> => {
   catch { return null; }
 };
 
-/** Badge counts from live status plus the jobs and proposals lists, reloaded on daemon events and window focus. */
-export const useBadgeCounts = (status: BotStatus | null): BadgeCounts => {
+/**
+ * Badge counts from live status plus the jobs and proposals lists, reloaded on daemon events and window focus.
+ * The jobs list comes back too, so the star request (StarPrompt) can see app tasks without loading it again.
+ */
+export const useBadgeCounts = (status: BotStatus | null): { counts: BadgeCounts; jobs: JobSummary[] | null } => {
   const [jobs, setJobs] = useState<JobSummary[] | null>(null);
   const [proposals, setProposals] = useState<Proposal[] | null>(null);
   const [untagged, setUntagged] = useState<unknown[] | null>(null);
@@ -47,5 +50,5 @@ export const useBadgeCounts = (status: BotStatus | null): BadgeCounts => {
     window.addEventListener(REFRESH_COUNTS, reload);
     return () => { live = false; off(); window.removeEventListener('focus', reload); window.removeEventListener(REFRESH_COUNTS, reload); };
   }, [status?.state]);
-  return badgeCounts({ status, jobs, proposals, untagged, drift });
+  return { counts: badgeCounts({ status, jobs, proposals, untagged, drift }), jobs };
 };

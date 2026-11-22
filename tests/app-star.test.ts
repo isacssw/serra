@@ -2,10 +2,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { AppPrefs, StarPromptState } from '../app/main/bridge.ts';
-import { defaultPrefs, mergePrefs, readPrefs } from '../app/main/prefs.ts';
+import { combineStarPrompt, defaultPrefs, mergePrefs, readPrefs } from '../app/main/prefs.ts';
 import { builtinActions } from '../app/renderer/commands/builtin.ts';
 import {
-  answer, countFinished, MAX_ASKS, markShown, MIN_DAYS, MIN_FINISHED, newlyFinished, openRepo, REPO_URL, shouldAsk,
+  answer, countFinished, finishedBetween, MAX_ASKS, markShown, MIN_DAYS, MIN_FINISHED, openRepo, REPO_URL, shouldAsk,
   SNOOZE_DAYS, startClock, updateStarPrompt, type AskContext,
 } from '../app/renderer/star.logic.ts';
 import type { BotStatus, JobSummary } from '../src/contracts.ts';
@@ -18,7 +18,7 @@ const idle: BotStatus = { state: 'up', pid: 1, startedAt: start.toISOString(), s
 /** A user who has had enough jobs finish and enough days pass. */
 const ready: StarPromptState = { ...fresh, since: start.toISOString(), finished: MIN_FINISHED };
 const at = (now: Date, extra: Partial<AskContext> = {}): AskContext =>
-  ({ now, version: '0.1.0', status: idle, path: '/jobs/done', welcomePath: '/welcome', ...extra });
+  ({ now, version: '0.1.0', status: idle, jobs: [], path: '/jobs/done', welcomePath: '/welcome', ...extra });
 const reason = (state: StarPromptState, context: AskContext): string | null => {
   const verdict = shouldAsk(state, context);
   return verdict.ask ? null : verdict.reason;
@@ -27,11 +27,15 @@ const reason = (state: StarPromptState, context: AskContext): string | null => {
 const job = (key: string, group: JobSummary['group']): JobSummary =>
   ({ key, group, requester: 'U1', channel: 'C1', title: key, createdAt: start.toISOString(), lastActivityAt: start.toISOString(), links: {} });
 
-test('a job counts as finished only when the window saw it running, then done (a failure is Needs you)', () => {
-  assert.equal(newlyFinished(null, [job('a', 'done')]), 0, 'the first load is the baseline');
-  const before = [job('a', 'running'), job('b', 'running'), job('c', 'done'), job('d', 'running')];
-  const after = [job('a', 'done'), job('b', 'needs you'), job('c', 'done'), job('d', 'running'), job('e', 'done')];
-  assert.equal(newlyFinished(before, after), 1);
+test('finishes come from status pushes: running fell, minus what moved to Needs you, from the same daemon', () => {
+  const up = (running: number, needsYou = 0, pid = 1): BotStatus => ({ ...idle, pid, counts: { running, needsYou } });
+  assert.equal(finishedBetween(null, up(0)), 0, 'the first push is the baseline');
+  assert.equal(finishedBetween(up(2), up(0)), 2);
+  assert.equal(finishedBetween(up(2), up(1, 1)), 0, 'one failed or asked; one still runs');
+  assert.equal(finishedBetween(up(3), up(0, 1)), 2);
+  assert.equal(finishedBetween(up(0), up(1)), 0, 'a start is not a finish');
+  assert.equal(finishedBetween(up(2, 0, 1), up(0, 0, 2)), 0, 'a restarted daemon resets its counts');
+  assert.equal(finishedBetween(up(2), { state: 'stopped' }), 0, 'a stop is not a finish');
 });
 
 test('the clock starts once and finished jobs stop counting at the threshold', () => {
@@ -60,6 +64,10 @@ test('never during setup, while the bot is down, or while a job runs or waits on
   assert.equal(reason(ready, at(now, { status: { state: 'stopped' } })), 'bot not up');
   assert.equal(reason(ready, at(now, { status: { ...idle, counts: { needsYou: 0, running: 1 } } })), 'a job is running');
   assert.equal(reason(ready, at(now, { status: { ...idle, counts: { needsYou: 2, running: 0 } } })), 'a job needs the owner');
+  // Tasks started in the app aren't in the daemon's counts; the jobs list has them.
+  assert.equal(reason(ready, at(now, { jobs: [job('t', 'running')] })), 'a job is running');
+  assert.equal(reason(ready, at(now, { jobs: [job('t', 'needs you'), job('u', 'done')] })), 'a job needs the owner');
+  assert.equal(shouldAsk(ready, at(now, { jobs: [job('u', 'done')] })).ask, true);
 });
 
 test('showing it snoozes it: at most once per version, and not again for a long while', () => {
@@ -131,6 +139,28 @@ test('a change is made to what is saved now, so a stale copy cannot undo a never
   await updateStarPrompt(app, (state) => answer(state, 'never', start));
   await updateStarPrompt(app, (state) => countFinished(state, 1));
   assert.equal(saved().done, true);
+});
+
+test('main only moves the saved state forward, so a stale or out-of-order write cannot undo an answer', () => {
+  const answered = answer(markShown(ready, '0.1.0', later(5)), 'never', later(5));
+  const stale = { ...ready, finished: 1 };
+  assert.deepEqual(combineStarPrompt(answered, stale), { ...answered, finished: MIN_FINISHED });
+  const merged = mergePrefs({ ...defaultPrefs, starPrompt: answered }, { starPrompt: stale }).starPrompt;
+  assert.equal(merged.done, true);
+  assert.equal(merged.asks, 1);
+  assert.equal(merged.since, ready.since, 'the clock keeps its first start');
+  assert.equal(merged.snoozedUntil, answered.snoozedUntil, 'the snooze keeps its latest end');
+});
+
+test('changes from the window run one after another, so concurrent ones never lose a write', async () => {
+  const { app, saved } = prefsBridge();
+  const slow = { ...app, getPrefs: async () => { await new Promise((resolve) => setTimeout(resolve, 5)); return app.getPrefs(); } };
+  await Promise.all([
+    updateStarPrompt(slow, (state) => startClock(state, start)),
+    updateStarPrompt(slow, (state) => countFinished(state, 2)),
+    updateStarPrompt(slow, (state) => answer(state, 'never', start)),
+  ]);
+  assert.deepEqual(saved(), { ...fresh, since: start.toISOString(), finished: 2, done: true });
 });
 
 test('a save that fails rejects, so the card is never shown with an answer it could not keep', async () => {
