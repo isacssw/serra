@@ -75,7 +75,10 @@ export const changelogSection = (changelog: string, version: string): string => 
   return changelogSectionAt(lines, at);
 };
 
-/** Ends every release's notes: owners still on a manual install need one last one (README › Updating). */
+/**
+ * Ends every release's notes: owners still on a manual install need one last one (README › Updating). The app leaves
+ * it out of the notes it shows (`UPGRADE_NOTE_START` in updates.logic.ts). Drop it once alpha.2 is long gone (the beta).
+ */
 export const UPGRADE_NOTE = 'On alpha.2 or older? Install this version by hand once; from then on Serra updates itself. '
   + 'See [Updating](https://github.com/isacssw/serra#updating).';
 

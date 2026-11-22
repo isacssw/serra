@@ -344,7 +344,7 @@ export const Updates = () => {
   const card = app ? appCard(app) : null;
   const bot = botLine(status.bot);
   const syncTarget = ('to' in status.bot ? status.bot.to : null) ?? status.appVersion;
-  const dialog = confirm?.action === 'follow' ? followDialog()
+  const dialog = confirm?.action === 'follow' ? followDialog(status.appVersion)
     : confirm?.action === 'activate'
     ? activateDialog(releases?.prepared ?? null, confirm.jobs)
     : confirm?.action === 'rollback' ? rollbackDialog(confirm.jobs, developer ? 'build' : 'version')

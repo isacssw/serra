@@ -79,7 +79,7 @@ export const updatesService = (context: HandlerContext, deps: UpdatesDeps = {}) 
   const migrate = (profileDir: string | null): void => {
     if (!profileDir || looked.has(profileDir)) return;
     looked.add(profileDir);
-    const done = migrateStaleUpdateSource(profileDir, { packaged: context.botFollowsApp === true, now: new Date(now()) });
+    const done = migrateStaleUpdateSource(profileDir, { packaged: context.botFollowsApp === true, now: new Date(now()), log: echo });
     if (done) {
       cleared.set(profileDir, done);
       echo(`Cleared the update source ${done.source} (${done.reason}); the bot follows the app again. profile.json was copied to ${done.backup}.`);
@@ -141,10 +141,11 @@ export const updatesService = (context: HandlerContext, deps: UpdatesDeps = {}) 
   /** A bot from before alpha.3 (no version in active.json) doesn't hold requests while paused, unless its acknowledgment says so. */
   const honorsPause = (profileDir: string, active: { appVersion?: string } | null | undefined): boolean =>
     active?.appVersion !== undefined || readAck(profileDir, now()) !== null;
-  const pause = (profileDir: string): void => {
+  /** `active`: the bot's active.json as the caller read it; read here when not given. */
+  const pause = (profileDir: string, active?: { appVersion?: string } | null): void => {
     if (!readPause(profileDir, now())) {
       let holds = true;
-      try { holds = honorsPause(profileDir, JSON.parse(readFileSync(join(profileDir, 'active.json'), 'utf8')) as { appVersion?: string }); } catch { /* no bot yet */ }
+      try { holds = honorsPause(profileDir, active !== undefined ? active : JSON.parse(readFileSync(join(profileDir, 'active.json'), 'utf8')) as { appVersion?: string }); } catch { /* no bot yet */ }
       line(holds ? 'New requests wait until the bot has restarted; running jobs finish first.' : 'The bot restarts once the running jobs finish.');
     }
     pauseIntake(profileDir, 'bot-update', { now: now() });
@@ -230,9 +231,10 @@ export const updatesService = (context: HandlerContext, deps: UpdatesDeps = {}) 
     if (!profileDir || running || context.appUpdater?.view().state === 'installing') return;
     try {
       migrate(profileDir);
-      const decision = await decide(profileDir, await releaseStatus(profileDir));
+      const status = await releaseStatus(profileDir);
+      const decision = await decide(profileDir, status);
       if (!decision) return;
-      if (decision.action === 'pause') { pause(profileDir); return; }
+      if (decision.action === 'pause') { pause(profileDir, status.active); return; }
       if (decision.action !== 'none') { await syncBot(false, profileDir); return; }
       // A pause nothing is waiting on any more (the app update was called off, the bot is in step or stopped): lift it.
       const draining = decision.sync.state === 'waiting' || decision.sync.state === 'updating';

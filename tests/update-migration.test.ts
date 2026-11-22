@@ -10,7 +10,7 @@ import type { HandlerContext } from '../app/main/ipc/context.ts';
 import { updatesHandlers, updatesService } from '../app/main/ipc/updates.ts';
 import { memoryPrefs } from '../app/main/prefs.ts';
 import { stoppedStatusSource } from '../app/main/status.ts';
-import { botLine, clearedLine, followDialog, noteLines } from '../app/renderer/screens/updates.logic.ts';
+import { botLine, clearedLine, followDialog, noteLines, UPGRADE_NOTE_START } from '../app/renderer/screens/updates.logic.ts';
 import { releaseNotes, UPGRADE_NOTE } from '../scripts/release.ts';
 import { createProfile } from '../src/setup.ts';
 import { classifySource, clearUpdateSource, migrateStaleUpdateSource } from '../src/update-migration.ts';
@@ -73,6 +73,13 @@ test('an update source is Serra’s code, clearly unusable, or unknown, and only
   assert.equal(classifySource(dir('rebasing', { '.git': '', 'package.json': '<<<<<<< HEAD\n' })), 'unknown', 'a package.json mid-conflict');
   symlinkSync(join(f.root, 'unplugged/serra'), join(f.root, 'link'));
   assert.equal(classifySource(join(f.root, 'link')), 'unknown', 'a link to something absent');
+  // A folder above it that is a link to something absent (an unplugged disk), or a repository above it (a monorepo).
+  symlinkSync(join(f.root, 'unplugged/work'), join(f.root, 'work'));
+  assert.equal(classifySource(join(f.root, 'work/serra')), 'unknown');
+  symlinkSync(join(f.root, 'acme'), join(f.root, 'linked-acme'));
+  assert.equal(classifySource(join(f.root, 'linked-acme/gone')), 'missing', 'a link that resolves is just a folder');
+  dir('mono/.git');
+  assert.equal(classifySource(dir('mono/packages/tool', { 'package.json': '{"name":"tool"}' })), 'unknown');
   const locked = dir('locked/serra', { '.git': '', 'package.json': '{"name":"serra"}' });
   chmodSync(join(f.root, 'locked'), 0o000);
   try { if (process.getuid?.() !== 0) assert.equal(classifySource(locked), 'unknown', 'unreadable (permissions, macOS privacy)'); }
@@ -97,6 +104,14 @@ test('a packaged app clears an update source that can never work, after a backup
   assert.equal(migrateStaleUpdateSource(f.directory, { packaged: true }), null, 'nothing left to clear');
 });
 
+test('a source changed after it was looked at is not cleared', (t) => {
+  const f = fixture(t);
+  f.setSource(f.checkout);
+  assert.equal(clearUpdateSource(f.directory, 'stale', new Date(), '/somewhere/else'), null);
+  assert.deepEqual(f.profile().updates, { source: f.checkout });
+  assert.ok(!existsSync(join(f.directory, 'backups')), 'no backup either');
+});
+
 test('a real checkout, or one on a disk that is not connected, is the owner’s choice and stays', (t) => {
   const f = fixture(t);
   f.setSource(f.checkout);
@@ -109,13 +124,15 @@ test('a real checkout, or one on a disk that is not connected, is the owner’s 
   assert.match(migrateStaleUpdateSource(f.directory, { packaged: true })?.reason ?? '', /the folder is gone/);
 });
 
-test('a profile that does not validate is left exactly as it is', (t) => {
+test('a profile that does not validate is left exactly as it is, and the failure is logged', (t) => {
   const f = fixture(t);
+  const logged: string[] = [];
   const path = join(f.directory, 'profile.json');
   const broken = JSON.stringify({ ...JSON.parse(readFileSync(path, 'utf8')), version: 2, updates: { source: '/nowhere' } });
   writeFileSync(path, broken);
-  assert.equal(migrateStaleUpdateSource(f.directory, { packaged: true }), null);
+  assert.equal(migrateStaleUpdateSource(f.directory, { packaged: true, log: (line) => logged.push(line) }), null);
   assert.equal(readFileSync(path, 'utf8'), broken);
+  assert.match(logged.join('\n'), /^Couldn't clear the update source \/nowhere: .*version/);
   assert.throws(() => clearUpdateSource(f.directory), /version/);
   assert.equal(readFileSync(path, 'utf8'), broken);
   assert.ok(!existsSync(join(f.directory, 'backups')) || readdirSync(join(f.directory, 'backups')).length === 0, 'no backup without a change');
@@ -132,7 +149,7 @@ const contextFor = (profileDir: string, packaged: boolean): HandlerContext => ({
   botFollowsApp: packaged,
 });
 
-test('the Updates screen: a stale source is cleared at launch and said once; Follow app updates leaves developer mode', async (t) => {
+test('the Updates screen: a stale source is cleared once per launch and said in one line; Follow app updates leaves developer mode', async (t) => {
   const f = fixture(t);
   f.setSource(join(f.root, 'deleted-clone'));
   const handlers = updatesHandlers(contextFor(f.directory, true), { echo: () => {} });
@@ -166,8 +183,10 @@ test('the Updates screen: a stale source is cleared at launch and said once; Fol
   assert.equal(source.sourceCleared, null);
 });
 
-test('the follow dialog says the checkout folder itself is not touched', () => {
-  assert.match(followDialog().body, /removes the checkout path .* backing up profile\.json; the folder itself isn't touched/);
+test('the follow dialog says what is removed, that the folder stays, and when the bot restarts', () => {
+  const body = followDialog('0.1.0-alpha.4').body;
+  assert.match(body, /removes the checkout path and branch .* backing up profile\.json; the folder itself isn't touched/);
+  assert.match(body, /Once no job is running, the bot restarts on version 0\.1\.0-alpha\.4 \(a bot you stopped stays stopped\)/);
 });
 
 const input = (patch: Partial<BotSyncInput> = {}): BotSyncInput => ({
@@ -189,6 +208,8 @@ test('release notes end with how to upgrade by hand, which the app leaves out', 
   assert.equal(notes, `- Smoother upgrades.\n\n---\n\n${UPGRADE_NOTE}`);
   assert.match(UPGRADE_NOTE, /github\.com\/isacssw\/serra#updating/);
   assert.deepEqual(noteLines(notes).map((line) => line.text), ['Smoother upgrades.'], 'the app updates itself: the manual-install line is left out');
+  assert.ok(UPGRADE_NOTE.startsWith(UPGRADE_NOTE_START), 'the app recognises the footer');
+  assert.deepEqual(noteLines('- One.\n\n---\n\n- Two.\n').map((line) => line.text), ['One.', 'Two.'], 'any other rule keeps what follows');
 });
 
 test('with a bot from before alpha.3 running a job, Updates and its log make no promise about new requests', async (t) => {
