@@ -37,4 +37,5 @@ Rules a tool checks are left out here; `pnpm check` and CI tell you. Humans: [CO
 
 - Never push to `main`, merge, force-push, tag, publish a release or change repository settings.
 - Never commit tokens, `.env`, `secrets.json`, a profile, or screenshots of a real workspace.
-- Never add a dependency, or weaken a lint rule, check or test to get green, without the maintainer asking.
+- Never add a dependency, or weaken a lint rule, check or test to get green, without the maintainer asking. `pnpm lint`
+  fails on any gate change but removing an exception; a change the maintainer asked for sets the fingerprint it prints.

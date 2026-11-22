@@ -3,6 +3,7 @@
 // running behaviour (SERRA-57 audit); here they say what they are. Runs in `pnpm lint` and so in CI.
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { builtinModules } from 'node:module';
 import { join } from 'node:path';
@@ -143,10 +144,11 @@ const tracked = (): string[] => execFileSync('git', ['ls-files', '-z', '--cached
   .split('\0').filter((file) => file && existsSync(join(codeRoot, file)));
 const code = (): string[] => tracked().filter((file) => /\.(ts|tsx|mjs|cjs)$/.test(file) && !file.startsWith('scripts/qa/'));
 
-check('lint: every suppression names its rule and says why, after " -- "', () => {
+check('lint: every suppression covers one line, names its rule and says why, after " -- "', () => {
   const bad = code().filter((file) => file !== 'scripts/lint-repo.ts').flatMap((file) => read(file).split('\n').flatMap((line, index) =>
-    /(?:ox|es)lint-disable/.test(line) && !/oxlint-disable(?:-next-line|-line)?\s+[\w/@-]+(?:,\s*[\w/@-]+)*\s+--\s+\S/.test(line) ? [`${file}:${index + 1}`] : []));
-  assert.deepEqual(bad, [], 'write // oxlint-disable-next-line <rule> -- <why> (not eslint-disable, not a bare disable)');
+    /(?:ox|es)lint-(?:disable|enable)/.test(line) && !/oxlint-disable-(?:next-)?line\s+[\w/@-]+(?:,\s*[\w/@-]+)*\s+--\s+\S/.test(line) ? [`${file}:${index + 1}`] : []));
+  // A whole-file disable is an exception list of its own, so only the one-line forms are allowed.
+  assert.deepEqual(bad, [], 'write // oxlint-disable-next-line <rule> -- <why> (not eslint-disable, a bare disable or a whole-file one)');
 });
 
 check('imports: a relative import names the .ts file, never a .js one', () => {
@@ -157,64 +159,69 @@ check('imports: a relative import names the .ts file, never a .js one', () => {
 
 /** A JSON file with whole-line // comments, as .oxlintrc.json and knip.jsonc are written. */
 const parseJsonc = (text: string): unknown => JSON.parse(text.split('\n').filter((line) => !line.trimStart().startsWith('//')).join('\n'));
-const onMain = (path: string): string | null => {
-  try { return execFileSync('git', ['show', `main:${path}`], { cwd: codeRoot, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }); } catch {
+/** The commit this branch forked from main (in CI's PR checkout, main itself), or null without a local main. */
+const base = (): string | null => {
+  try { return execFileSync('git', ['merge-base', 'HEAD', 'main'], { cwd: codeRoot, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim(); } catch {
     // CI makes a local main (ci.yml), so a missing one there is a broken setup, not a pass.
-    if (process.env.CI && execFileSync('git', ['branch', '--list', 'main'], { cwd: codeRoot, encoding: 'utf8' }).trim() === '') throw new Error('no local main branch to compare with');
+    if (process.env.CI) throw new Error('no local main branch to compare with');
     return null;
   }
 };
-
-type Severity = { level: string; options: string };
-/** Every (file glob, rule) setting in an oxlint config: top-level rules under "*", each override per glob. */
-const ruleSettings = (config: unknown): Map<string, Severity> => {
-  const settings = new Map<string, Severity>();
-  const add = (glob: string, rules: Record<string, unknown>): void => {
-    for (const [rule, value] of Object.entries(rules)) {
-      const [level, ...options] = Array.isArray(value) ? value : [value];
-      settings.set(`${glob} ${rule}`, { level: String(level), options: JSON.stringify(options) });
-    }
-  };
-  const { rules = {}, overrides = [], categories = {} } = config as { rules?: Record<string, unknown>; overrides?: { files: string[]; rules: Record<string, unknown> }[]; categories?: Record<string, unknown> };
-  add('*', rules);
-  for (const [category, level] of Object.entries(categories)) settings.set(`* category:${category}`, { level: String(level), options: '[]' });
-  for (const override of overrides) for (const glob of override.files) add(glob, override.rules);
-  return settings;
+const atBase = (commit: string, path: string): string | null => {
+  try { return execFileSync('git', ['show', `${commit}:${path}`], { cwd: codeRoot, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }); } catch { return null; }
 };
 
-// A deliberate loosening of the lint config, reviewed in its PR: add its "<glob> <rule>" key here, with the reason.
-const ALLOWED_LOOSENING: string[] = [];
+type Override = { files: string[]; rules: Record<string, unknown> };
+const isOff = (value: unknown): boolean => ['off', 'allow', '0'].includes(String(Array.isArray(value) ? value[0] : value).toLowerCase());
 
-check('lint config: nothing is loosened against main (a rule turned off, an exception added, options changed)', () => {
-  const base = onMain('.oxlintrc.json');
-  if (base === null) return; // the config is new on this branch
-  const before = ruleSettings(parseJsonc(base));
-  const now = ruleSettings(parseJsonc(read('.oxlintrc.json')));
-  const loosened: string[] = [];
-  for (const [key, was] of before) {
-    const is = now.get(key);
-    if (was.level === 'off') continue;
-    if (!is || is.level === 'off') loosened.push(`${key}: ${was.level} → ${is?.level ?? 'removed'}`);
-    else if (is.options !== was.options) loosened.push(`${key}: options changed`);
+/**
+ * What the gates enforce, as one value: the oxlint and knip configs, the scripts that run them, the compiler flags
+ * and the secret-scan config. `shrink` drops the entries a branch may remove without review (files in an override
+ * that only turns rules off, knip ignores), so that removing them is not a change.
+ */
+const gates = (read: (path: string) => string | null, shrink: { exceptions: Set<string>; ignores: Set<string> } | null) => {
+  const oxlint = parseJsonc(read('.oxlintrc.json') ?? 'null') as { overrides?: Override[] } | null;
+  const knip = parseJsonc(read('knip.jsonc') ?? 'null') as { ignore?: string[] } | null;
+  const pkg = JSON.parse(read('package.json') ?? '{}') as { scripts?: Record<string, string> };
+  const tsconfig = parseJsonc(read('tsconfig.json') ?? 'null') as { compilerOptions?: unknown } | null;
+  if (oxlint && shrink) {
+    oxlint.overrides = (oxlint.overrides ?? []).map((override) => Object.values(override.rules).every(isOff)
+      ? { ...override, files: override.files.filter((file) => shrink.exceptions.has(file)) } : override)
+      .filter((override) => override.files.length > 0);
   }
-  for (const [key, is] of now) if (is.level === 'off' && before.get(key)?.level !== 'off') loosened.push(`${key}: turned off`);
-  assert.deepEqual(loosened.filter((entry) => !ALLOWED_LOOSENING.some((key) => entry.startsWith(`${key}:`))), [],
-    'fix the code instead; if the change is deliberate, add its key to ALLOWED_LOOSENING in scripts/lint-repo.ts');
-});
+  if (knip && shrink) knip.ignore = (knip.ignore ?? []).filter((entry) => shrink.ignores.has(entry));
+  const scripts = Object.fromEntries(['check', 'lint', 'lint:repo', 'test'].map((name) => [name, pkg.scripts?.[name]]));
+  return JSON.stringify({ oxlint, knip, scripts, compilerOptions: tsconfig?.compilerOptions, gitleaks: read('.gitleaks.toml') });
+};
+/** The files and ignores a branch may only remove: those in the current config. */
+const removable = (): { exceptions: Set<string>; ignores: Set<string> } => {
+  const oxlint = parseJsonc(read('.oxlintrc.json')) as { overrides?: Override[] };
+  const knip = parseJsonc(read('knip.jsonc')) as { ignore?: string[] };
+  return {
+    exceptions: new Set((oxlint.overrides ?? []).filter((o) => Object.values(o.rules).every(isOff)).flatMap((o) => o.files)),
+    ignores: new Set(knip.ignore ?? []),
+  };
+};
 
-check('knip config: nothing new is ignored against main', () => {
-  const ignored = (text: string): string[] => Object.entries(parseJsonc(text) as Record<string, unknown>)
-    .filter(([key]) => key.startsWith('ignore')).flatMap(([key, value]) => (Array.isArray(value) ? value : [value]).map((entry) => `${key}: ${JSON.stringify(entry)}`));
-  const now = ignored(read('knip.jsonc'));
-  const base = onMain('knip.jsonc');
-  if (base === null) return; // the config is new on this branch
-  const before = ignored(base);
-  assert.deepEqual(now.filter((entry) => !before.includes(entry)), [], 'remove the unused code instead of ignoring it');
+// A reviewed change to the gates (any change but removing exceptions): the fingerprint the check below prints for it.
+// Changing this line is how a PR says "this changes what the gates enforce, on purpose"; the reviewer sees both.
+const ACKNOWLEDGED_GATE_CHANGE = '';
+
+check('gates: unchanged against main, except exceptions removed (lint, knip, tsc flags, the scripts, gitleaks)', () => {
+  const commit = base();
+  if (commit === null) return;
+  const before = atBase(commit, '.oxlintrc.json') === null ? null : gates((path) => atBase(commit, path), removable());
+  if (before === null) return; // the gates are new on this branch
+  const now = gates((path) => { try { return read(path); } catch { return null; } }, null);
+  if (now === before) return;
+  const fingerprint = createHash('sha256').update(now).digest('hex').slice(0, 16);
+  assert.equal(ACKNOWLEDGED_GATE_CHANGE, fingerprint,
+    `the gates changed against main (beyond removing exceptions). If that is the point of this PR, set ACKNOWLEDGED_GATE_CHANGE in scripts/lint-repo.ts to '${fingerprint}'; otherwise fix the code instead.`);
 });
 
 check('lint config: every file an exception names still exists', () => {
   const files = new Set(tracked());
-  const named = [...ruleSettings(parseJsonc(read('.oxlintrc.json'))).keys()].map((key) => key.split(' ')[0] ?? '')
+  const named = ((parseJsonc(read('.oxlintrc.json')) as { overrides?: Override[] }).overrides ?? []).flatMap((override) => override.files)
     .concat((parseJsonc(read('knip.jsonc')) as { ignore?: string[] }).ignore ?? []);
   assert.deepEqual([...new Set(named)].filter((glob) => !/[*]/.test(glob) && !files.has(glob)), [], 'take files that no longer exist off the list');
 });
