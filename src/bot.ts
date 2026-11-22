@@ -1125,10 +1125,10 @@ export const createBot = ({
       if (!saved.watching) updateJob(key, () => ({ watching: true }));
       return;
     }
-    // A finished run that was never posted is posted by the next poll, which clears the rest, unless the thread went
-    // quiet so long ago that a reply now would come out of nowhere.
+    // A finished run that was never posted is posted by the next poll, which clears the rest: always for a job the bot
+    // was following, and for one it wasn't unless the thread went quiet so long ago that a reply would come from nowhere.
     const unposted = thread.latestRunId !== null && thread.latestRunId !== saved.lastPostedRunId;
-    if (unposted && now() - Date.parse(saved.lastActivityAt ?? saved.createdAt) <= FOLLOW_UP_MS) {
+    if (unposted && (saved.watching || now() - Date.parse(saved.lastActivityAt ?? saved.createdAt) <= FOLLOW_UP_MS)) {
       if (!saved.watching) updateJob(key, () => ({ watching: true }));
       return;
     }

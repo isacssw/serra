@@ -1288,3 +1288,17 @@ test('at start, a job T3 is still running, or whose finished run is unposted, is
   assert.equal(f.eyes.size, 0);
   assert.equal(await listedGroup(f), 'done');
 });
+
+test('at start, a followed job whose run finished while the bot was stopped is posted, however old the thread', async (t) => {
+  const f = fixture(t);
+  await f.say(SAM, `<@${BOT}> how does scoring work?`, true);
+  f.workerRepliesUnwatched('Scoring works like this.');
+  const [key, job] = savedJob(f);
+  const longAgo = new Date(Date.parse('2026-11-18T10:00:00Z') - 60 * 24 * 60 * 60_000).toISOString();
+  createStore(f.config.statePath).putJob(key, { ...job, createdAt: longAgo, lastActivityAt: longAgo });
+  const bot = f.restart();
+  await bot.reconcile();
+  assert.equal(savedJob(f)[1].watching, true, 'a reply the bot was following is still owed');
+  await bot.poll();
+  assert.deepEqual(f.posts.map((post) => post.text), ['Scoring works like this.']);
+});

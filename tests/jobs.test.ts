@@ -303,6 +303,8 @@ test('SERRA-54: a Slack job the file lists as running is done when T3 runs nothi
     job('C1', '1700000000.000004', { ...ghost, lastActivityAt: minutesAgo(30) }),
     // Carried over from an older install, quiet since yesterday: done, and so out of today's list.
     job('C1', '1700000000.000005', { pendingReactionTs: '1700000000.000005', loadingRequested: true, createdAt: yesterday, lastActivityAt: yesterday }),
+    // A follow-up that came in a moment ago and hasn't reached T3 yet: T3 is idle, but a run is about to start.
+    job('C1', '1700000000.000006', { lastPostedRunId: 'run-2', pendingReactions: ['1700000000.000106'], loadingRequested: true, lastActivityAt: minutesAgo(1) }),
   ]);
   const asked: string[] = [];
   const runs = async (threadId: string) => {
@@ -313,10 +315,13 @@ test('SERRA-54: a Slack job the file lists as running is done when T3 runs nothi
   };
 
   const fileOnly = await listJobs(dir, { now: NOW });
-  assert.deepEqual(fileOnly.jobs.map((row) => [row.key.slice(-1), row.group]), [['4', 'running'], ['3', 'running'], ['2', 'running'], ['1', 'running'], ['5', 'running']]);
+  assert.deepEqual(fileOnly.jobs.map((row) => [row.key.slice(-1), row.group]), [['6', 'running'], ['4', 'running'], ['3', 'running'], ['2', 'running'], ['1', 'running'], ['5', 'running']]);
 
   const { jobs } = await listJobs(dir, { now: NOW, runs });
-  assert.deepEqual(jobs.map((row) => [row.key.slice(-1), row.group]), [['4', 'running'], ['3', 'running'], ['2', 'running'], ['1', 'done']]);
+  assert.deepEqual(jobs.map((row) => [row.key.slice(-1), row.group]), [['6', 'running'], ['4', 'running'], ['3', 'running'], ['2', 'running'], ['1', 'done']]);
+  // Once it had time to reach T3 and still no run started, its 👀 is stale too.
+  const later = await listJobs(dir, { now: new Date(NOW.getTime() + 3 * 60_000), runs });
+  assert.equal(later.jobs.find((row) => row.key.endsWith('6'))?.group, 'done');
   const all = await listJobs(dir, { now: NOW, runs, doneTodayOnly: false });
   assert.deepEqual(all.jobs.filter((row) => row.group === 'done').map((row) => row.key.slice(-1)), ['1', '5']);
   assert.ok(asked.every((id) => id.startsWith('thread-')), 'only jobs saved as running are looked up');

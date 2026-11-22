@@ -126,9 +126,21 @@ const classify = (job: Record<string, unknown>, last: { event: string; error?: s
   return { group: 'done' };
 };
 
-/** A job the file lists as running that T3 shows idle, with nothing waiting and its newest run already posted. */
-const idleInT3 = (live: TaskState | null, lastPostedRunId: unknown): boolean =>
-  live !== null && !live.running && !live.waiting && (live.latestRunId ?? null) === (text(lastPostedRunId) ?? null);
+/**
+ * How long a request may wait for its first run. A message the bot just received sits a few seconds before it reaches
+ * T3 (the follow-up batcher's quiet time), so until then an idle thread with 👀 or loading is still about to run.
+ */
+export const REQUEST_GRACE_MS = 2 * 60_000;
+
+/**
+ * A job the file lists as running that T3 shows idle, with nothing waiting and its newest run already posted. A 👀 or
+ * loading status counts as stale only once its request had time to reach T3.
+ */
+const idleInT3 = (live: TaskState | null, job: Record<string, unknown>, lastActivityAt: string, now: Date): boolean => {
+  if (live === null || live.running || live.waiting || (live.latestRunId ?? null) !== (text(job.lastPostedRunId) ?? null)) return false;
+  const requested = job.loadingRequested === true || texts(job.pendingReactions).length > 0 || text(job.pendingReactionTs) !== undefined;
+  return !requested || now.getTime() - Date.parse(lastActivityAt) > REQUEST_GRACE_MS;
+};
 
 /** A task's group, from what T3 says now. Nothing to read means nothing is known to run: it counts as done. */
 const taskGroup = (live: TaskState | null): Pick<JobRow, 'group' | 'needsYouReason'> => {
@@ -163,7 +175,8 @@ export const listJobs = async (profileDir: string, {
     const saved = classify(job, last);
     const t3ThreadId = text(job.t3ThreadId);
     const live = saved.group === 'running' && runs && t3ThreadId ? await runs(t3ThreadId).catch(() => null) : null;
-    const { group, reason, ownerQuestion, error } = idleInT3(live, job.lastPostedRunId) ? { group: 'done' as const } : saved;
+    const lastActivityAt = later(later(createdAt, text(job.lastActivityAt)), last?.at);
+    const { group, reason, ownerQuestion, error } = idleInT3(live, job, lastActivityAt, now) ? { group: 'done' as const } : saved;
     const threadTs = text(job.threadTs);
     const slack = slackUrl && threadTs ? slackThreadLink(slackUrl, jobChannel, threadTs) : undefined;
     const pr = prLink(job);
@@ -174,7 +187,7 @@ export const listJobs = async (profileDir: string, {
       channel: jobChannel,
       title: '',
       createdAt,
-      lastActivityAt: later(later(createdAt, text(job.lastActivityAt)), last?.at),
+      lastActivityAt,
       ...(ownerQuestion ? { ownerQuestion } : {}),
       ...(reason ? { needsYouReason: reason } : {}),
       ...(error ? { error } : {}),
