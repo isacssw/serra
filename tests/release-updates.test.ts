@@ -336,3 +336,29 @@ test('the installer plan opens the verified disk image instead of swapping', asy
   await f.updater.openInstaller();
   assert.deepEqual(f.calls, ['stage 0.1.0-alpha.3 dev.serra.app', 'open Serra-0.1.0-alpha.3-arm64.dmg']);
 });
+
+// SERRA-61: the updater's markers are read through a guard.
+test('a broken pending.json or failed-start.json is dropped at launch, never shown or compared', async (t) => {
+  const dir = temp(t);
+  const target = join(dir, 'Serra.app');
+  mkdirSync(join(dir, 'updates'), { recursive: true });
+  const logged: string[] = [];
+  const launch = () => createAppUpdater({
+    current: '0.1.0-alpha.2', arch: 'arm64', unavailable: null, dir: join(dir, 'updates'), fetch: async () => new Response(JSON.stringify([gh('v0.1.0-alpha.3')])), feedUrl: 'feed',
+    bundlePath: target, getChoice: () => null, setChoice: () => {}, quit: () => {}, openPath: async () => {}, log: (line) => logged.push(line),
+  });
+  const release = { version: '0.1.0-alpha.3', prerelease: true, notes: '', publishedAt: null, url: 'u', dmg: { name: 'Serra.dmg', url: 'u', size: 1 }, sums: { url: 'u' } };
+  for (const pending of ['{', JSON.stringify({ from: '0.1.0-alpha.1', to: 3, target }), JSON.stringify({ from: '0.1.0-alpha.1', to: '0.1.0-alpha.3', target, release: { ...release, dmg: null } })]) {
+    writeFileSync(join(dir, 'updates/pending.json'), pending);
+    logged.length = 0;
+    assert.equal(launch().view().state, 'idle');
+    assert.equal(existsSync(join(dir, 'updates/pending.json')), false, 'the broken marker is removed');
+    assert.deepEqual(logged, ['dropped an unreadable pending.json']);
+  }
+  // A failed-start marker that isn't a version would make every check throw when it compares versions.
+  writeFileSync(join(dir, 'updates/failed-start.json'), JSON.stringify({ version: { major: 0 }, from: '0.1.0-alpha.2' }));
+  const updater = launch();
+  assert.equal(updater.view().state, 'idle');
+  const checked = await updater.check();
+  assert.ok(checked.state === 'available' && checked.release.version === '0.1.0-alpha.3', 'the check works and offers the release');
+});

@@ -7,6 +7,7 @@ import { createHash } from 'node:crypto';
 import { createReadStream, createWriteStream, existsSync, rmSync } from 'node:fs';
 import { pipeline } from 'node:stream/promises';
 import { Readable, Transform } from 'node:stream';
+import { isBoolean, isNumber, isRecord, isString, isStringOrNull } from './lib/guards.ts';
 
 /** The repository the packaged app updates from. Releases are cut by `.github/workflows/release-publish.yml`. */
 export const UPDATE_REPOSITORY = 'isacssw/serra';
@@ -88,6 +89,13 @@ export interface AppRelease {
   dmg: { name: string; url: string; size: number };
   sums: { url: string };
 }
+
+/** An `AppRelease` as Serra stored it (the updater's `pending.json`), with every field the updater reads. */
+export const isAppRelease = (value: unknown): value is AppRelease =>
+  isRecord(value) && isString(value.version) && parseVersion(value.version) !== null && isBoolean(value.prerelease)
+  && isString(value.notes) && isStringOrNull(value.publishedAt) && isString(value.url)
+  && isRecord(value.dmg) && isString(value.dmg.name) && isString(value.dmg.url) && isNumber(value.dmg.size)
+  && isRecord(value.sums) && isString(value.sums.url);
 
 export type UpdateCheck =
   | { kind: 'available'; release: AppRelease }
