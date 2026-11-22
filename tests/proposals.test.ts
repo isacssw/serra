@@ -241,3 +241,29 @@ test('pnpm bot proposals lists and shows, and refuses to approve: that is the ow
   assert.equal(read('ops/deploys.md'), null);
   assert.notEqual(read('proposals/2026-11-16-deploys.md'), null);
 });
+
+// SERRA-61: backup and stamp files are read through a guard.
+test('undo of a backup whose change.json is broken says so, and changes no file', (t) => {
+  const { dir, service, snapshot } = profile(t);
+  const change = service.discardProposal('notes.md');
+  const file = join(dir, 'backups', 'knowledge', change.id, 'change.json');
+  const before = snapshot();
+  for (const text of ['{"id":', JSON.stringify({ ...change, files: undefined }), JSON.stringify({ ...change, files: [{ path: 'proposals/notes.md', before: 7, after: null }] })]) {
+    writeFileSync(file, text);
+    assert.throws(() => service.undoProposalChange(change.id), new RegExp(`Backup ${change.id} can't be read`));
+    assert.deepEqual(snapshot(), before);
+  }
+});
+
+test('a proposals folder whose .from.json is broken lists its proposals without a source', (t) => {
+  const { write, service } = profile(t);
+  write('proposals/from-app/2026-11-19-tasks.md', page({ description: 'Tasks' }, 'Tasks run in T3.'));
+  write('proposals/from-app/.from.json', JSON.stringify({ who: 'Alex', owner: true, via: 'app' }));
+  assert.deepEqual(service.listProposals().find((p) => p.path === 'from-app/2026-11-19-tasks.md')?.from, { who: 'Alex', owner: true, via: 'app' });
+  for (const text of ['{', 'null', JSON.stringify({ who: 'Alex', owner: 'yes', via: 'app' }), JSON.stringify({ who: 'Alex', owner: true, via: 'email' })]) {
+    write('proposals/from-app/.from.json', text);
+    const listed = service.listProposals().find((p) => p.path === 'from-app/2026-11-19-tasks.md');
+    assert.ok(listed);
+    assert.equal(listed.from, undefined);
+  }
+});

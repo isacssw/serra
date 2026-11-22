@@ -505,3 +505,53 @@ test('nvmNodes lists nvm\'s Node installs newest first, for an app opened from F
   assert.deepEqual(nvmNodes(root), ['v24.10.1', 'v24.2.0', 'v22.18.0'].map((version) => join(root, version, 'bin/node')));
   assert.deepEqual(nvmNodes(join(root, 'missing')), []);
 });
+
+// SERRA-61: release records are read through a guard. A broken file is reported or skipped, never a TypeError.
+test('a broken prepared.json is reported by status and refused by activate, with the service untouched', async (t) => {
+  const f = await fixture(t);
+  for (const text of ['{"release":', JSON.stringify({ version: 1, release: f.plan.release }), '[]']) {
+    writeFileSync(join(f.directory, 'prepared.json'), text);
+    const status = await releaseStatus(f.directory);
+    assert.equal(status.prepared, null);
+    assert.deepEqual(status.activateProblems, ["prepared.json can't be read. Run prepare again."]);
+    assert.deepEqual(activationPreflight(f.directory).problems, ["prepared.json can't be read. Run prepare again."]);
+    assert.deepEqual(await activateRelease(f.directory, f.opts),
+      { ok: false, stage: 'checks', error: "prepared.json can't be read. Run prepare again.", restored: true, rollbackAvailable: false });
+    assert.deepEqual(f.events, []);
+  }
+});
+
+test('a broken active.json reads as no active release, and activate then refuses to take over the running service', async (t) => {
+  const f = await fixture(t);
+  const { next } = await upgrade(f);
+  writeFileSync(join(f.directory, 'active.json'), '{}');
+  const status = await releaseStatus(f.directory);
+  assert.equal(status.active, null);
+  assert.equal(status.prepared?.release, next.release);
+  const outcome = await activateRelease(f.directory, f.opts);
+  assert.ok(!outcome.ok && outcome.stage === 'checks');
+  assert.match(outcome.ok ? '' : outcome.error, /already exists/);
+  assert.deepEqual(f.events, ['preflight'], 'the old bot was never stopped');
+});
+
+test('a broken activation.json blocks activate and rollback with a reason, and pruning removes nothing', async (t) => {
+  const f = await fixture(t);
+  const { previous } = await upgrade(f);
+  await activate(f.directory, f.opts);
+  writeFileSync(join(f.directory, 'activation.json'), JSON.stringify({ version: 1, phase: 'switching' }));
+  const third = await prepareNextRelease(f.directory, { install: false });
+  mkdirSync(join(third.release, 'node_modules/@slack/bolt'), { recursive: true });
+  f.events.length = 0;
+  assert.equal(canRollBack(f.directory), false);
+  const status = await releaseStatus(f.directory);
+  assert.equal(status.activation, null);
+  assert.match(status.activateProblems[0] ?? '', /activation\.json can't be read/);
+  const rolled = await rollbackRelease(f.directory, f.opts);
+  assert.ok(!rolled.ok);
+  assert.match(rolled.ok ? '' : rolled.error, /activation\.json can't be read/);
+  const refused = await activateRelease(f.directory, f.opts);
+  assert.match(refused.ok ? '' : refused.error, /activation\.json can't be read/);
+  assert.deepEqual(f.events, [], 'the bot was never stopped');
+  assert.deepEqual(pruneReleases(f.directory), []);
+  assert.equal(existsSync(previous), true, 'the release rollback may need is kept');
+});

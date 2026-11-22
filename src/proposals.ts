@@ -6,6 +6,7 @@ import type { Proposal, ProposalDiff, ProposalSource } from './contracts.ts';
 import { approvalAudience, type Audience } from './owner-model.ts';
 import { insideKnowledge, knowledgePagePath, offlimitsBudgetAfter } from './knowledge.ts';
 import { createJournal } from './knowledge-journal.ts';
+import { isArrayOf, isBoolean, isOneOf, isOptional, isRecord, isString, isStringOrNull, readJsonFile, readJsonOrNull } from './lib/guards.ts';
 import { alignHeader, DATE, frontmatter, INDEX_MAX_LINES, isOfflimits, lineCount, NOT_PAGES, pageProblems, PROPOSALS_DIR, removeHeaderField, setHeaderField } from './knowledge-rules.ts';
 
 /**
@@ -33,7 +34,6 @@ export interface FileChange {
   after: string | null;
 }
 
-/** What a promote, merge or discard did, and everything `undoProposalChange` needs to reverse it. */
 /** The file Serra writes in a thread's proposals folder to say who started that thread. Not a proposal. */
 export const PROPOSAL_SOURCE_FILE = '.from.json';
 
@@ -48,6 +48,7 @@ export const stampProposalsFolder = (knowledgeDir: string, folder: string, sourc
   writeFileAtomic(join(dir, PROPOSAL_SOURCE_FILE), JSON.stringify(source, null, 2) + '\n', { mode: 0o600 });
 };
 
+/** What a promote, merge or discard did, and everything `undoProposalChange` needs to reverse it. */
 export interface ProposalChange {
   /** Backup ID, the folder name under `backups/knowledge/`. */
   id: string;
@@ -61,6 +62,18 @@ export interface ProposalChange {
   /** Set once the change has been undone; a change is undone at most once. */
   undoneAt?: string;
 }
+
+const isFileChange = (value: unknown): value is FileChange =>
+  isRecord(value) && isString(value.path) && isStringOrNull(value.before) && isStringOrNull(value.after);
+
+/** A backup's `change.json` with everything undo reads. */
+const isProposalChange = (value: unknown): value is ProposalChange =>
+  isRecord(value) && isString(value.id) && isOneOf('promote', 'merge', 'discard')(value.action) && isString(value.at)
+  && isString(value.proposal) && isStringOrNull(value.page) && isArrayOf(isFileChange)(value.files) && isOptional(isString)(value.undoneAt);
+
+/** A folder's `.from.json` stamp. */
+const isProposalSource = (value: unknown): value is ProposalSource =>
+  isRecord(value) && isString(value.who) && isBoolean(value.owner) && isOneOf('slack', 'app')(value.via) && isOptional(isString)(value.link);
 
 /** What the owner was shown when they approved: the proposal's text, and which page it changes and its text then. */
 export interface Reviewed {
@@ -217,11 +230,9 @@ export const createProposals = ({ knowledgeDir, backupDir, now = () => new Date(
   const sourceOf = (id: string): ProposalSource | undefined => {
     const folder = dirname(id);
     if (folder === '.') return undefined;
-    try {
-      const stamp = JSON.parse(readFileSync(join(proposalsRoot, folder, PROPOSAL_SOURCE_FILE), 'utf8')) as Partial<ProposalSource>;
-      if (typeof stamp.who !== 'string' || typeof stamp.owner !== 'boolean' || (stamp.via !== 'slack' && stamp.via !== 'app')) return undefined;
-      return { who: stamp.who, owner: stamp.owner, via: stamp.via, ...(typeof stamp.link === 'string' ? { link: stamp.link } : {}) };
-    } catch { return undefined; }
+    const stamp = readJsonOrNull(join(proposalsRoot, folder, PROPOSAL_SOURCE_FILE), isProposalSource);
+    if (!stamp) return undefined;
+    return { who: stamp.who, owner: stamp.owner, via: stamp.via, ...(stamp.link !== undefined ? { link: stamp.link } : {}) };
   };
 
   const describe = (id: string): Proposal => {
@@ -438,8 +449,10 @@ export const createProposals = ({ knowledgeDir, backupDir, now = () => new Date(
   const readChange = (changeId: string): ProposalChange => {
     if (!/^[\w.-]+$/.test(changeId)) throw new Error(`Not a backup ID: ${changeId}`);
     const file = join(backups, changeId, 'change.json');
-    if (!existsSync(file)) throw new Error(`No backup ${changeId} in ${backups}.`);
-    return JSON.parse(readFileSync(file, 'utf8')) as ProposalChange;
+    const change = readJsonFile(file, isProposalChange);
+    if (change.state === 'absent') throw new Error(`No backup ${changeId} in ${backups}.`);
+    if (change.state === 'invalid') throw new Error(`Backup ${changeId} can't be read: ${file} isn't a change record. Restore by hand from it.`);
+    return change.value;
   };
 
   /**

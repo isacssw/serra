@@ -5,10 +5,12 @@ import { homedir } from 'node:os';
 import { delimiter, dirname, join, relative, resolve } from 'node:path';
 import { codeRoot, loadConfig } from './config.ts';
 import { assertHealthy } from './doctor.ts';
+import {
+  isArrayOf, isBoolean, isNonEmptyString, isOneOf, isOptional, isRecord, isString, readJsonFile, readJsonOrNull,
+} from './lib/guards.ts';
 import { acquireLock, processAlive } from './lock.ts';
 import { run } from './t3.ts';
 
-const readJson = <T>(path: string): T => JSON.parse(readFileSync(path, 'utf8')) as T;
 const writeJson = (path: string, value: unknown): void => {
   writeFileSync(`${path}.tmp`, JSON.stringify(value, null, 2) + '\n', { mode: 0o600 });
   renameSync(`${path}.tmp`, path);
@@ -93,9 +95,7 @@ const codeCommit = async (root: string): Promise<{ commit?: string; dirty?: bool
  */
 export const RELEASE_INFO = 'release.json';
 const shippedBuild = (root: string): { appVersion?: string; commit?: string; fromApp?: boolean } => {
-  const read = (name: string): Record<string, unknown> => {
-    try { return JSON.parse(readFileSync(join(root, name), 'utf8')) as Record<string, unknown>; } catch { return {}; }
-  };
+  const read = (name: string): Record<string, unknown> => readJsonOrNull(join(root, name), isRecord) ?? {};
   const info = read(RELEASE_INFO);
   const version = typeof info.version === 'string' ? info.version : read('package.json').version;
   return {
@@ -195,6 +195,25 @@ interface Activation {
   prepared: Prepared;
   previousActive?: Prepared;
 }
+
+/** A `prepared.json` or `active.json` with every field the release code reads. Older files without the optional ones pass. */
+export const isPrepared = (value: unknown): value is Prepared =>
+  isRecord(value) && value.version === 1 && isNonEmptyString(value.release) && isString(value.releaseHash)
+  && isArrayOf(isString)(value.releaseFiles) && isString(value.label) && isString(value.node)
+  && isOptional(isString)(value.preparedAt) && isOptional(isString)(value.commit) && isOptional(isBoolean)(value.dirty)
+  && isOptional(isString)(value.appVersion) && isOptional(isBoolean)(value.fromApp);
+
+const isActivation = (value: unknown): value is Activation =>
+  isRecord(value) && value.version === 1 && isOneOf('switching', 'active', 'rolled-back')(value.phase)
+  && isString(value.backup) && isString(value.plist) && isBoolean(value.hadPlist) && isBoolean(value.wasLoaded)
+  && isBoolean(value.profileIsAuthoritative) && isPrepared(value.prepared) && isOptional(isPrepared)(value.previousActive);
+
+const isReady = (value: unknown): value is { pid: number } => isRecord(value) && Number.isSafeInteger(value.pid);
+
+/** The release record at `path` (`prepared.json` or `active.json`), or null when it is missing or isn't one. */
+export const readPrepared = (path: string): Prepared | null => readJsonOrNull(path, isPrepared);
+
+const ACTIVATION_UNREADABLE = "activation.json can't be read, so it isn't known whether a cutover was interrupted. Check the bot and restore activation.json from backups/ before activating or rolling back.";
 
 export interface PrepareOptions {
   root?: string;
@@ -300,11 +319,9 @@ export const launchd: ServiceDriver = {
     const started = Date.now();
     const deadline = started + 25_000;
     do {
-      const path = join(directory, 'ready.json');
-      if (existsSync(path)) {
-        try { const ready = readJson<{ pid: number }>(path); if (Number.isSafeInteger(ready.pid) && processAlive(ready.pid)) return; }
-        catch { /* The daemon may still be writing its ready marker. */ }
-      }
+      // A marker that doesn't read yet may still be being written by the daemon.
+      const ready = readJsonOrNull(join(directory, 'ready.json'), isReady);
+      if (ready && processAlive(ready.pid)) return;
       await delay(250);
     } while (Date.now() < deadline);
     const reason = startupError(join(directory, 'logs/bot.log'), started);
@@ -338,22 +355,23 @@ const defaults = (options: DeployOptions) => ({
  */
 export const preparedProblems = (directory: string): string[] => {
   directory = resolve(directory);
-  const transaction = existsSync(join(directory, 'activation.json')) ? readJson<Activation>(join(directory, 'activation.json')) : undefined;
-  if (transaction?.phase === 'switching') return ['An interrupted cutover needs rollback first. Run the rollback command.'];
-  if (!existsSync(join(directory, 'prepared.json'))) return ['No prepared release. Run prepare first.'];
-  const plan = readJson<Prepared>(join(directory, 'prepared.json'));
+  const transaction = readJsonFile(join(directory, 'activation.json'), isActivation);
+  if (transaction.state === 'invalid') return [ACTIVATION_UNREADABLE];
+  if (transaction.state === 'ok' && transaction.value.phase === 'switching') return ['An interrupted cutover needs rollback first. Run the rollback command.'];
+  const prepared = readJsonFile(join(directory, 'prepared.json'), isPrepared);
+  if (prepared.state === 'absent') return ['No prepared release. Run prepare first.'];
+  if (prepared.state === 'invalid') return ["prepared.json can't be read. Run prepare again."];
+  const plan = prepared.value;
   if (loadConfig({ profileDir: directory, env: {} }).serviceLabel !== plan.label) return ['The service label changed. Prepare a new release before activation.'];
   if (!existsSync(plan.release) || digest(plan.release, plan.releaseFiles) !== plan.releaseHash) return ['Prepared release changed. Prepare a new release before activation.'];
   if (!existsSync(join(plan.release, 'node_modules/@slack/bolt'))) return ['Prepared dependencies missing. Run prepare again.'];
-  const activePath = join(directory, 'active.json');
-  if (existsSync(activePath) && readJson<Prepared>(activePath).release === plan.release) return ['This release is already active'];
+  if (readPrepared(join(directory, 'active.json'))?.release === plan.release) return ['This release is already active'];
   return [];
 };
 
 /** Where the last cutover stands, from `activation.json`: none yet, interrupted, done, or undone. */
 export const activationPhase = (directory: string): Activation['phase'] | null => {
-  const path = join(resolve(directory), 'activation.json');
-  return existsSync(path) ? readJson<Activation>(path).phase : null;
+  return readJsonOrNull(join(resolve(directory), 'activation.json'), isActivation)?.phase ?? null;
 };
 
 /**
@@ -361,9 +379,8 @@ export const activationPhase = (directory: string): Activation['phase'] | null =
  * to. Undoing the first activation would leave no bot running, so it doesn't count.
  */
 export const canRollBack = (directory: string): boolean => {
-  const path = join(resolve(directory), 'activation.json');
-  if (!existsSync(path)) return false;
-  const transaction = readJson<Activation>(path);
+  const transaction = readJsonOrNull(join(resolve(directory), 'activation.json'), isActivation);
+  if (!transaction) return false;
   return transaction.phase === 'switching' || (transaction.phase === 'active' && transaction.previousActive !== undefined);
 };
 
@@ -385,10 +402,12 @@ export const activate = async (directory: string, options: DeployOptions = {}): 
     log('Checking the prepared release');
     const problem = preparedProblems(directory)[0];
     if (problem) throw new Error(problem);
-    const plan = readJson<Prepared>(join(directory, 'prepared.json'));
+    const plan = readPrepared(join(directory, 'prepared.json'));
+    if (!plan) throw new Error("prepared.json can't be read. Run prepare again.");
     options.expect?.(plan);
     const activePath = join(directory, 'active.json');
-    const previousActive = existsSync(activePath) ? readJson<Prepared>(activePath) : undefined;
+    // An active.json that can't be read counts as none: the check below then refuses to take over the existing service.
+    const previousActive = readPrepared(activePath) ?? undefined;
     log('Running health checks');
     await preflight(directory);
     mkdirSync(launchAgentsDir, { recursive: true });
@@ -469,15 +488,19 @@ export const pruneReleases = (directory: string): string[] => {
   if (!existsSync(root)) return [];
   const keep = new Set<string>();
   const remember = (release: Prepared | undefined | null): void => { if (release?.release) keep.add(resolve(release.release)); };
-  const read = <T>(name: string): T | null => existsSync(join(directory, name)) ? readJson<T>(join(directory, name)) : null;
-  remember(read<Prepared>('active.json'));
-  remember(read<Prepared>('prepared.json'));
-  const transaction = read<Activation>('activation.json');
-  remember(transaction?.prepared);
-  remember(transaction?.previousActive);
+  const read = (name: string): Prepared | null => readPrepared(join(directory, name));
+  remember(read('active.json'));
+  remember(read('prepared.json'));
+  const transaction = readJsonFile(join(directory, 'activation.json'), isActivation);
+  // Without a readable transaction, the releases it names aren't known, so nothing is removed.
+  if (transaction.state === 'invalid') return [];
+  if (transaction.state === 'ok') {
+    remember(transaction.value.prepared);
+    remember(transaction.value.previousActive);
+  }
   // A folder made after the active release may be a build still in progress (a prepare running in another process
-  // writes prepared.json only when it finishes), so only older ones go.
-  const activeId = read<Prepared>('active.json')?.release.split('/').pop() ?? '';
+  // writes prepared.json only when it finishes), so only older ones go. Without a readable active.json, none go.
+  const activeId = read('active.json')?.release.split('/').pop() ?? '';
   const removed: string[] = [];
   // Markers left by a prepare that crashed (its process is gone) are swept.
   for (const entry of readdirSync(root, { withFileTypes: true })) {
@@ -491,7 +514,7 @@ export const pruneReleases = (directory: string): string[] => {
     // A build still in progress (its prepare's process is alive) stays.
     try { if (processAlive(Number(readFileSync(`${path}${BUILDING}`, 'utf8')))) continue; } catch { /* no marker */ }
     // Prepare names its build in prepared.json before removing its marker, so a fresh read catches one just finished.
-    if (read<Prepared>('prepared.json')?.release === path) continue;
+    if (read('prepared.json')?.release === path) continue;
     rmSync(path, { recursive: true, force: true });
     removed.push(path);
   }
@@ -502,8 +525,10 @@ export const rollback = async (directory: string, options: DeployOptions = {}): 
   directory = resolve(directory);
   const unlock = acquireLock(join(directory, 'deployment.lock'));
   try {
-    if (!existsSync(join(directory, 'activation.json'))) throw new Error('Nothing to roll back: no release was activated for this profile');
-    const transaction = readJson<Activation>(join(directory, 'activation.json'));
+    const file = readJsonFile(join(directory, 'activation.json'), isActivation);
+    if (file.state === 'absent') throw new Error('Nothing to roll back: no release was activated for this profile');
+    if (file.state === 'invalid') throw new Error(ACTIVATION_UNREADABLE);
+    const transaction = file.value;
     if (transaction.phase === 'rolled-back') throw new Error('Already rolled back');
     // Undoing the first activation would stop the bot and remove its service, leaving nothing running.
     if (transaction.phase === 'active' && !transaction.previousActive) throw new Error('Nothing to roll back to: this is the first release installed for this profile');

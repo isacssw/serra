@@ -8,8 +8,9 @@
  * `onResolved`. When the bot is stopped, older, or slow, rows keep the cached name or the raw ID, one line is logged,
  * and the bot is asked again after a backoff. An ID the bot couldn't name waits `retryMs` before it is asked again.
  */
-import { readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { renameSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { isNumber, isRecord, isString, readJsonOrNull } from './lib/guards.ts';
 import { DM_LABEL, isSlackBotId, isSlackChannelId, isSlackUserId, type SlackNames } from './slack-names.ts';
 import { MAX_NAME_IDS, type NamesReply } from './status-socket.ts';
 
@@ -45,13 +46,12 @@ const validId = (id: string): boolean => isSlackUserId(id) || isSlackBotId(id) |
 /** The names in the file. A missing, unreadable or corrupt file is empty; entries that don't look right are dropped. */
 export const readStoredNames = (profileDir: string): Map<string, Stored> => {
   const names = new Map<string, Stored>();
-  let value: unknown;
-  try { value = JSON.parse(readFileSync(join(profileDir, SLACK_NAMES_FILE), 'utf8')); } catch { return names; }
-  const entries = (value as { version?: unknown; names?: unknown } | null);
-  if (typeof entries !== 'object' || entries === null || entries.version !== 1 || typeof entries.names !== 'object' || entries.names === null) return names;
-  for (const [id, entry] of Object.entries(entries.names as Record<string, unknown>)) {
-    const { name, at } = (entry ?? {}) as { name?: unknown; at?: unknown };
-    if (validId(id) && typeof name === 'string' && name.trim() && typeof at === 'number' && Number.isFinite(at)) names.set(id, { name, at });
+  const file = readJsonOrNull(join(profileDir, SLACK_NAMES_FILE), isRecord);
+  if (!file || file.version !== 1 || !isRecord(file.names)) return names;
+  for (const [id, entry] of Object.entries(file.names)) {
+    if (!validId(id) || !isRecord(entry)) continue;
+    const { name, at } = entry;
+    if (isString(name) && name.trim() && isNumber(at)) names.set(id, { name, at });
   }
   return names;
 };
