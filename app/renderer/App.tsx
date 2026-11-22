@@ -81,7 +81,7 @@ const ScrollToTop = () => {
 const Shell = () => {
   const { pathname } = useLocation();
   const status = useBotStatus();
-  const { counts, jobs } = useBadgeCounts(status);
+  const { counts, currentJobs } = useBadgeCounts(status);
   return (
     <div className="flex h-full">
       <button
@@ -110,7 +110,7 @@ const Shell = () => {
       <Shortcuts />
       <ScrollToTop />
       <Rendered />
-      <StarPrompt status={status} jobs={jobs} />
+      <StarPrompt status={status} jobs={currentJobs} />
     </div>
   );
 };

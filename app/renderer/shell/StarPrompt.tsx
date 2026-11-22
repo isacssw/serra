@@ -9,7 +9,7 @@ import type { BotStatus, JobSummary } from '../../../src/contracts.ts';
 import { serra } from '../bridge.ts';
 import { WELCOME_PATH } from '../screens/Welcome/welcome.logic.ts';
 import {
-  answer, calmMoment, countFinished, dueToAsk, finishedWell, IDLE_MS, MAX_WAIT_MS, markShown, openRepo, shouldAsk,
+  answer, calmMoment, countFinished, dueToAsk, finishTracker, IDLE_MS, MAX_WAIT_MS, markShown, openedMessage, openRepo, shouldAsk,
   startClock, updateStarPrompt, type StarChoice,
 } from '../star.logic.ts';
 import { Button, GitHubMark, useToast, useToastStack } from '../ui/index.ts';
@@ -128,11 +128,13 @@ export const StarPrompt = ({ status, jobs }: { status: BotStatus | null; jobs: J
         }, () => { asked.current = false; });
       });
     };
-    return bridge.on.event((event) => { if (finishedWell(event)) void onFinish(); });
+    const isFinish = finishTracker();
+    return bridge.on.event((event) => { if (isFinish(event, Date.now())) void onFinish(); });
   }, []);
 
   // The moment passed while the card was up (a job started, setup opened): close it. It was saved as shown.
-  const calm = calmMoment(moment).ask;
+  // A list mid-reload says nothing new, so it doesn't close the card; the daemon's counts still do.
+  const calm = calmMoment({ ...moment, jobs: jobs ?? [] }).ask;
   useEffect(() => { if (open && !calm) setOpen(false); }, [open, calm]);
 
   const choose = (choice: StarChoice): void => {
@@ -143,10 +145,8 @@ export const StarPrompt = ({ status, jobs }: { status: BotStatus | null; jobs: J
       toast({ message: `Couldn’t save your answer: ${error instanceof Error ? error.message : String(error)}`, tone: 'error' });
     if (choice === 'star') {
       openRepo(bridge.app).then(
-        (saved) => toast(saved
-          ? { message: 'Opened Serra on GitHub. Thanks for the support!', tone: 'success' }
-          : { message: 'Opened Serra on GitHub. Couldn’t save your answer, so it may ask again.', tone: 'info' }),
-        (error: unknown) => toast({ message: error instanceof Error ? error.message : String(error), tone: 'error' }),
+        (saved) => toast(openedMessage(saved)),
+        (error: unknown) => toast({ message: `Couldn’t open GitHub: ${error instanceof Error ? error.message : String(error)}`, tone: 'error' }),
       );
       return;
     }

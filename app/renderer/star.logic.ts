@@ -34,6 +34,29 @@ export const MAX_WAIT_MS = 15 * 60 * 1000;
 export const finishedWell = (event: BotEvent): boolean =>
   event.event === 'reply' && event.kind !== 'quiet' && event.needsOwner !== true;
 
+/** A reply this soon after a failure on the same job is the notice about it (a Slack setup problem), not a result. */
+export const FAILURE_SHADOW_MS = 60_000;
+
+/**
+ * Follows the event stream and says which events are a good finish: `finishedWell`, minus replies that come right
+ * after a failure on the same job. A clarifying question to the requester still counts; the calm check and the
+ * idle wait make that a fine moment anyway.
+ */
+export const finishTracker = (): ((event: BotEvent, now: number) => boolean) => {
+  const failedAt = new Map<string, number>();
+  return (event, now) => {
+    if (event.event === 'failure') { failedAt.set(event.key, now); return false; }
+    if (!finishedWell(event)) return false;
+    const failed = failedAt.get(event.key);
+    return failed === undefined || now - failed > FAILURE_SHADOW_MS;
+  };
+};
+
+/** What the owner is told after opening the repo from anywhere: thanks, or that the answer wasn't kept. */
+export const openedMessage = (saved: boolean): { message: string; tone: 'success' | 'info' } => saved
+  ? { message: 'Opened Serra on GitHub. Thanks for the support!', tone: 'success' }
+  : { message: 'Opened Serra on GitHub. Couldn’t save your answer, so it may ask again.', tone: 'info' };
+
 /** Starts the "days of use" clock the first time the bot is seen up. */
 export const startClock = (state: StarPromptState, now: Date): StarPromptState =>
   state.since ? state : { ...state, since: now.toISOString() };

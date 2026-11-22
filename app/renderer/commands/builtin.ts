@@ -3,7 +3,7 @@
 import type { AppliesWhen } from '../../../src/contracts.ts';
 import type { SerraBridge } from '../../main/bridge.ts';
 import { routes, sections } from '../routes.ts';
-import { openRepo } from '../star.logic.ts';
+import { openedMessage, openRepo } from '../star.logic.ts';
 import type { Action, ActionContext } from './registry.ts';
 
 const PEOPLE_PATH = '/settings/people';
@@ -88,7 +88,10 @@ export const starOnGitHub: Action = {
   group: 'Actions',
   keywords: ['github', 'star', 'repository', 'open source', 'support'],
   button: 'Settings › Updates › Star on GitHub',
-  run: async (context) => { await openRepo(bridgeOf(context).app); },
+  run: async (context) => {
+    // Opening from here is quiet; only an answer that couldn't be kept is worth a word.
+    if (!(await openRepo(bridgeOf(context).app))) context.toast(openedMessage(false));
+  },
 };
 
 /** Everything the palette ships with: the actions first, then navigation. */
