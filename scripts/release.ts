@@ -1,7 +1,7 @@
 // Release helpers for the workflows in .github/workflows/release-*.yml. See docs/releasing.md.
 //
 //   node scripts/release.ts prepare <version>   set package.json's version and date the changelog's Unreleased section
-//   node scripts/release.ts notes <version>     print that version's changelog section (the GitHub Release body)
+//   node scripts/release.ts notes <version>     print the GitHub Release body: that version's changelog section and how to upgrade
 //   node scripts/release.ts should-publish      print `publish=true|false`, `version=…` and `tag=…` for $GITHUB_OUTPUT,
 //                                               from whether HEAD changed package.json's version
 //
@@ -76,6 +76,16 @@ export const changelogSection = (changelog: string, version: string): string => 
 };
 
 /**
+ * Ends every release's notes: owners still on a manual install need one last one (README › Updating). The app leaves
+ * it out of the notes it shows (`UPGRADE_NOTE_START` in updates.logic.ts). Drop it once alpha.2 is long gone (the beta).
+ */
+export const UPGRADE_NOTE = 'On alpha.2 or older? Install this version by hand once; from then on Serra updates itself. '
+  + 'See [Updating](https://github.com/isacssw/serra#updating).';
+
+/** The GitHub Release body: the changelog section, then how to upgrade. */
+export const releaseNotes = (changelog: string, version: string): string => `${changelogSection(changelog, version)}\n\n${UPGRADE_NOTE}`;
+
+/**
  * Whether a push to main should publish a release: only when it changed package.json's version to a newer one,
  * which is what merging a release PR does. A commit that adds the field (or a first commit) never publishes.
  */
@@ -104,7 +114,7 @@ const main = (args: string[]): void => {
     console.log(`Prepared ${version} (was ${current}).`);
   } else if (command === 'notes') {
     if (!version) throw new Error('Usage: release.ts notes <version>');
-    console.log(changelogSection(readFileSync(changelogPath, 'utf8'), version));
+    console.log(releaseNotes(readFileSync(changelogPath, 'utf8'), version));
   } else if (command === 'should-publish') {
     const after = versionAt('HEAD');
     const publish = shouldPublish(versionAt('HEAD^'), after);

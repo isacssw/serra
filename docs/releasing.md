@@ -15,6 +15,10 @@ For the maintainer. Releases are cut in CI from `main`, which is protected, so a
 2. Review the PR. Edit `CHANGELOG.md` on the branch to change the notes. Merge it (squash).
 3. The merge starts **Release: publish**. It sees that the push raised the version, runs the checks and tests again, builds the app on macOS, smoke-tests it, then tags the merge commit `v<version>` and publishes a GitHub Release with the changelog section as notes, the `.dmg` and `SHA256SUMS`.
 
+The release body is the changelog section followed by a fixed line for owners still on a manual install (alpha.2 or older), linking README › Updating (`releaseNotes` in `scripts/release.ts`).
+
+Before tagging an alpha that changes updates, check the self-update end to end: install the previous release's `.dmg`, then use **Restart to update** to move to the release candidate (or to the new release right after publishing) and check the bot follows and the profile is intact.
+
 If publishing fails after the merge, fix the cause and run **Release: publish** by hand on `main`. It publishes the version in `package.json` if that tag doesn't exist yet.
 
 Every PR and every push to `main` also builds the app (CI's `app` job), and keeps the `.dmg` as a run artifact for a week.
