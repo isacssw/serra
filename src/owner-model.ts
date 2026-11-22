@@ -39,10 +39,18 @@ const OUTSIDER_RULES = `People outside the company can see this reply. Don't sha
  */
 const TEAM_RULES = `The owner keeps some topics private from the team. Don't share, guess at or offer help with anything about anyone's pay, promotion, hiring, performance, health or personal life: say the owner will answer it.`;
 
-/** One line for a person card: its title and its first bullet, like "Priya Nair: Product manager. Decides scope." */
-const rosterLine = (text: string): string | null => {
+/** A person card's name from its file name, for a card without a `# Name` heading: `people/priya-nair.md` → "Priya Nair". */
+const nameFromPath = (path: string): string =>
+  (path.split('/').pop() ?? '').replace(/\.md$/i, '').split(/[-_\s]+/).filter(Boolean)
+    .map((word) => word[0]!.toUpperCase() + word.slice(1)).join(' ');
+
+/**
+ * One line for a person card: its title and its first bullet, like "Priya Nair: Product manager. Decides scope." A card
+ * without a `# Name` heading is named after its file, so it isn't silently left out.
+ */
+const rosterLine = (text: string, path: string): string | null => {
   const body = text.replace(/^---\n[\s\S]*?\n---\n/, '');
-  const name = /^#\s+(.+)$/m.exec(body)?.[1]?.trim();
+  const name = /^#\s+(.+)$/m.exec(body)?.[1]?.trim() || nameFromPath(path);
   const first = /^[-*]\s+(.+)$/m.exec(body)?.[1]?.trim();
   if (!name) return null;
   return `- ${name}${first ? `: ${first}` : ''}`;
@@ -126,7 +134,7 @@ export const compileAboutMe = (pages: { path: string; text: string }[], visibili
     const expires = fields?.get('expires')?.trim() ?? '';
     if (!DATE.test(verified) || (DATE.test(expires) && expires < today) || !mayUse(pageAudience(fields), visibility)) return [];
     // Like owner pages: what sits under `## Replaced` isn't current, so the card's line never comes from there.
-    const line = rosterLine(currentBody(page.text));
+    const line = rosterLine(currentBody(page.text), page.path);
     return line ? [{ path: page.path, verified, line }] : [];
   }).sort((a, b) => a.path.localeCompare(b.path));
   let rosterBody = '';

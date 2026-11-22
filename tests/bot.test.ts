@@ -254,7 +254,8 @@ test('the brief tells the worker to use native questions and keep secrets out of
   const f = fixture(t);
   await f.say(SAM, `<@${BOT}> what does the scoring service do?`, true);
   assert.match(f.brief(), /use a question tool/);
-  assert.match(f.brief(), /request_user_input_async/);
+  assert.match(f.brief(), /your built-in tool for asking the user a question with options/);
+  assert.doesNotMatch(f.brief(), /request_user_input/, 'no one provider\'s tool name: any T3 provider runs the job');
   assert.match(f.brief(), /Never ask for a token, password or API key in Slack/);
   assert.match(f.brief(), /request_secret/);
 });

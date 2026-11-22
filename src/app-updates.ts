@@ -197,33 +197,62 @@ export const verifyChecksum = async (path: string, name: string, sumsText: strin
 
 export interface DownloadProgress { received: number; total: number | null }
 
+/** How long a download may go without receiving a byte before it's given up as stalled. */
+const DOWNLOAD_STALL_MS = 60_000;
+
+/** Thrown when a download receives nothing for `stallMs`. */
+export class DownloadStalledError extends Error {
+  constructor(stallMs: number) {
+    const seconds = Math.max(1, Math.round(stallMs / 1000));
+    super(`No data arrived for ${seconds} ${seconds === 1 ? 'second' : 'seconds'}. Check your connection and try again.`);
+    this.name = 'DownloadStalledError';
+  }
+}
+
 /**
  * Downloads `url` to `to`, reporting progress. The file is written by this process, not a browser, so macOS adds
- * no quarantine flag to it. Removes the partial file on failure or abort.
+ * no quarantine flag to it. Gives up when no bytes arrive for `stallMs` (a slow download is fine; a silent one isn't).
+ * Removes the partial file on failure, stall or abort.
  */
-export const download = async (fetch: Fetch, url: string, to: string, { signal, progress }: {
-  signal?: AbortSignal; progress?: (update: DownloadProgress) => void;
+export const download = async (fetch: Fetch, url: string, to: string, { signal, progress, stallMs = DOWNLOAD_STALL_MS }: {
+  signal?: AbortSignal; progress?: (update: DownloadProgress) => void; stallMs?: number;
 } = {}): Promise<void> => {
+  // One controller for both the caller's cancel and the stall timer, so either one stops the fetch and the body.
+  const stop = new AbortController();
+  let stalled = false;
+  let timer: NodeJS.Timeout | undefined;
+  const arm = (): void => {
+    clearTimeout(timer);
+    timer = setTimeout(() => { stalled = true; stop.abort(new DownloadStalledError(stallMs)); }, stallMs);
+  };
+  const cancel = (): void => stop.abort(signal?.reason);
+  if (signal?.aborted) cancel();
+  signal?.addEventListener('abort', cancel, { once: true });
+  arm();
   try {
-    const response = await fetch(url, { headers: { 'user-agent': 'Serra-updater' }, ...(signal ? { signal } : {}) });
+    const response = await fetch(url, { headers: { 'user-agent': 'Serra-updater' }, signal: stop.signal });
     if (!response.ok || !response.body) throw new Error(`The download failed: GitHub answered ${response.status}.`);
     const total = Number(response.headers.get('content-length')) || null;
     let received = 0;
     let last = 0;
     const counter = new Transform({
       transform(chunk: Buffer, _encoding, done) {
+        arm();
         received += chunk.length;
         const now = Date.now();
         if (now - last > 200) { last = now; progress?.({ received, total }); }
         done(null, chunk);
       },
     });
-    // Aborting `signal` aborts the fetch, which errors the body stream and so the pipeline.
-    await pipeline(Readable.fromWeb(response.body as import('node:stream/web').ReadableStream), counter, createWriteStream(to));
+    // Aborting `stop` aborts the fetch, which errors the body stream and so the pipeline.
+    await pipeline(Readable.fromWeb(response.body as import('node:stream/web').ReadableStream), counter, createWriteStream(to), { signal: stop.signal });
     progress?.({ received, total });
   } catch (error) {
     if (existsSync(to)) rmSync(to, { force: true });
-    throw error;
+    throw stalled ? new DownloadStalledError(stallMs) : error;
+  } finally {
+    clearTimeout(timer);
+    signal?.removeEventListener('abort', cancel);
   }
 };
 

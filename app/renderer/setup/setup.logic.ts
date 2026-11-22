@@ -121,6 +121,22 @@ export const slackLine = (tokens: readonly TokenSummary[], workspace: string | n
   return missing.length ? `No ${missing.join(' or ')} yet` : 'Not connected';
 };
 
+/**
+ * What the Slack step's "The Slack app" card says: create the app, the tokens are in, or Slack refused them. A refused
+ * token means the app may need making or reinstalling again, so the card says so instead of "here".
+ */
+export const slackAppCard = (tokens: readonly TokenSummary[]): { tone: 'todo' | 'done' | 'problem'; text: string; create: boolean } => {
+  const refused = tokens.filter((token) => token.state === 'rejected' && isTokenVerdict(token.error));
+  if (refused.length) {
+    const which = refused.length === tokens.length && tokens.length > 1 ? 'either token' : `the ${TOKEN_LABELS[refused[0]!.name]}`;
+    const paste = refused.length > 1 ? 'Paste new ones' : 'Paste a new one';
+    return { tone: 'problem', text: `Slack didn’t accept ${which}. ${paste} below, or create and install the app again.`, create: refused.length === tokens.length };
+  }
+  if (tokens.length && tokens.every((token) => token.state === 'verified')) return { tone: 'done', text: 'Your Slack app is connected.', create: false };
+  if (tokens.length && tokens.every((token) => token.state !== 'missing')) return { tone: 'done', text: 'Your app’s tokens are here.', create: false };
+  return { tone: 'todo', text: 'Create it from Serra’s manifest, then install it to your workspace.', create: true };
+};
+
 /** The rows of the "found" card, in step order. */
 export const summaryRows = (summary: ProfileSummary): SummaryRow[] => {
   const done = (id: SetupStepId): boolean => stepDone(summary, id);

@@ -65,6 +65,8 @@ export interface AppUpdaterDeps {
   openPath: (path: string) => Promise<void>;
   push?: (view: AppUpdateView) => void;
   log?: (line: string) => void;
+  /** How long the download may receive nothing before it fails as stalled. Defaults to a minute. */
+  stallMs?: number;
 }
 
 const helperAlive = (pid: number): boolean => {
@@ -295,6 +297,7 @@ export const createAppUpdater = (deps: AppUpdaterDeps) => {
       const sums = await downloadText(deps.fetch, release.sums.url);
       await download(deps.fetch, release.dmg.url, dmg, {
         signal: aborted.signal,
+        ...(deps.stallMs ? { stallMs: deps.stallMs } : {}),
         progress: ({ received, total }) => set({ state: 'downloading', release, received, total: total ?? (release.dmg.size || null) }),
       });
       set({ state: 'verifying', release });

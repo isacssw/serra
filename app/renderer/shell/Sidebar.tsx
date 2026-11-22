@@ -3,7 +3,7 @@
 import { useEffect, useState, type ComponentType, type KeyboardEvent } from 'react';
 import { Link, NavLink, useLocation } from 'react-router';
 import {
-  Activity, Bell, BookOpen, Box, Cpu, Download, FileText, Inbox, KeyRound, Layers, ScrollText, Search, SquarePen,
+  Activity, AudioLines, Bell, BookOpen, Box, Cpu, Download, FileText, Inbox, KeyRound, Layers, ScrollText, Search, SquarePen,
   SquareTerminal, SunMoon, UserRound, Users, type LucideProps,
 } from 'lucide-react';
 import type { BotStatus } from '../../../src/contracts.ts';
@@ -30,6 +30,7 @@ const icons: Partial<Record<RouteId, ComponentType<LucideProps>>> = {
   'settings-repositories': Layers,
   'settings-alerts': Bell,
   'settings-worker': Cpu,
+  'settings-meetings': AudioLines,
   secrets: KeyRound,
   tools: Box,
   updates: Download,

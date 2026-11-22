@@ -58,9 +58,14 @@ test('fuzzy: a run of letters at the start beats scattered letters', () => {
 // Registry and search
 // ---------------------------------------------------------------------------------------------------------------
 
-test('search: no query lists every action, Actions before Go to, in registration order', () => {
-  const actions = [action('go:a', 'Jobs', { group: 'Go to' }), action('x', 'Restart bot'), action('go:b', 'People', { group: 'Go to' }), action('y', 'Open profile folder')];
-  assert.deepEqual(titles(actions, ''), ['Restart bot', 'Open profile folder', 'Jobs', 'People']);
+test('search: no query lists every action, Go to before Actions, in registration order, destructive ones last', () => {
+  const actions = [action('x', 'Restart bot', { destructive: true }), action('go:a', 'Jobs', { group: 'Go to' }), action('y', 'Open profile folder'), action('go:b', 'People', { group: 'Go to' })];
+  assert.deepEqual(titles(actions, ''), ['Jobs', 'People', 'Open profile folder', 'Restart bot']);
+});
+
+test('search: a destructive action loses a tie, so typing never pre-selects it over a safe one', () => {
+  const actions = [action('r', 'Reset bot', { destructive: true }), action('s', 'Reset filters')];
+  assert.deepEqual(titles(actions, 'reset'), ['Reset filters', 'Reset bot']);
 });
 
 test('search: ranks the best match first and drops non-matches', () => {
@@ -298,7 +303,11 @@ test('the palette lists every screen, and picking one opens that screen and name
     assert.ok(sections.some((section) => section.id === route.section), `${route.label} sits under a sidebar heading`);
   }
   assert.equal(navigationButton(routes.find((route) => route.id === 'jobs-running')!), 'Sidebar › Jobs › Running');
-  assert.deepEqual(titles(registry.list(), '').slice(0, 3), ['Restart bot', 'Open profile folder', 'Add allowed user']);
+  // ⌘K then ↩ opens a screen; it never restarts the bot.
+  const listed = searchActions(registry.list(), '').map((result) => result.action);
+  assert.equal(listed[0]?.group, 'Go to');
+  assert.equal(listed[0]?.title, 'Needs you');
+  assert.equal(listed.at(-1)?.title, 'Restart bot');
 });
 
 test('a screen whose palette actions include a bad one adds none of them, and the palette keeps what it listed', () => {

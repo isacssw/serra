@@ -18,6 +18,9 @@ export default defineConfig({
     rolldownOptions: {
       // lucide-react marks its modules "use client" for server rendering, which a single-page app has no use for.
       onwarn: (warning, warn) => { if (warning.code !== 'MODULE_LEVEL_DIRECTIVE') warn(warning); },
+      // Libraries in their own chunk, so neither half passes Vite's 500 kB warning. Both load at start, as before;
+      // this only splits the file.
+      output: { codeSplitting: { groups: [{ name: 'vendor', test: /node_modules/ }] } },
     },
   },
   server: { port: 5173, strictPort: true },

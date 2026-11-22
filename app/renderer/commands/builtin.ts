@@ -47,6 +47,8 @@ export const restartBot: Action = {
   title: 'Restart bot',
   group: 'Actions',
   keywords: ['daemon', 'service', 'reload', 'launchd'],
+  // Stops any job the bot is running.
+  destructive: true,
   button: 'Menubar menu › Restart bot, and Restart on settings that apply after a restart',
   run: async (context) => {
     await bridgeOf(context).bot.restart();
@@ -94,5 +96,5 @@ const starOnGitHub: Action = {
   },
 };
 
-/** Everything the palette ships with: the actions first, then navigation. */
-export const builtinActions: Action[] = [restartBot, openProfileFolder, addAllowedUser, starOnGitHub, ...navigationActions];
+/** Everything the palette ships with. The palette lists screens first and Restart bot last (`searchActions`). */
+export const builtinActions: Action[] = [openProfileFolder, addAllowedUser, starOnGitHub, restartBot, ...navigationActions];
