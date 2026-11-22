@@ -33,12 +33,3 @@ test('checkProjectAccess gives up on a git that hangs, with the same guidance', 
   await assert.rejects(checkProjectAccess([dir], { git, timeoutMs: 300 }), /timed out after 300ms.*Files and Folders/s);
   assert.ok(Date.now() - started < 5_000);
 });
-
-test('the daemon checks repository access before it connects to Slack', async () => {
-  const { readFileSync } = await import('node:fs');
-  const source = readFileSync(new URL('../src/index.ts', import.meta.url), 'utf8');
-  const check = source.indexOf('await checkProjectAccess(');
-  assert.ok(check > 0, 'index.ts calls checkProjectAccess');
-  assert.ok(check < source.indexOf('await app.start()'), 'before app.start');
-  assert.ok(check < source.indexOf("writeFileSync(readyPath"), 'before the ready marker');
-});

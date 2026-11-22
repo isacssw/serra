@@ -60,8 +60,35 @@ export interface Job {
   statusTs?: string;
   /** The "still working" line shown during a long run someone is waiting on. Deleted when the run's reply is posted. */
   progress?: { ts: string; runId: string; text: string };
-  /** The run the bot last saw running, and when it first saw it: how long a run has been going. */
-  runSeen?: { runId: string; at: string };
+  /**
+   * The run the bot last saw running, and when it first saw it: how long a run has been going. `waits`: someone in
+   * Slack is waiting on it (bound from `nextTurnWaits` the first time a poll sees the run).
+   */
+  runSeen?: { runId: string; at: string; waits?: boolean };
+  /**
+   * The last turn Serra sent answers someone who addressed the bot (a mention, a DM, a request), as opposed to chatter
+   * the worker only hears. Recorded when the turn is sent; `t3 thread send` returns no run ID, so it is bound to the
+   * run when a poll first sees it.
+   */
+  nextTurnWaits?: boolean;
+  /**
+   * The Slack messages this job has taken in, newest last (bounded): a request Slack delivers again, or one replayed
+   * after a crash, isn't handed to the worker twice.
+   */
+  heard?: string[];
+  /**
+   * A reply Serra is posting: written before the post and cleared after it. Found on a restart, it means the post may
+   * have gone out, so Serra looks in the thread for its reply to that run before posting it again (REPLY-009).
+   */
+  delivering?: {
+    runId: string;
+    at: string;
+    /** The start of the reply's text, to recognise it if Slack doesn't return the metadata. */
+    text?: string;
+    /** What posting it means for the owner's follow state, applied if the post turns out to have gone out. */
+    ownerFollows?: boolean;
+    ownerAskOpen?: boolean;
+  };
   /** Who sees this thread's replies, as its brief was built for. Absent on jobs from before audiences. */
   visibility?: 'owner' | 'team' | 'external';
   /**
@@ -99,6 +126,11 @@ export interface IncomingMessage {
   automaticTrigger?: boolean;
   /** An @mention, DM, or configured alert. False for a plain message in a thread the bot already owns. */
   direct: boolean;
+  /**
+   * A held request whose start was cut off (the daemon stopped while starting it): when the earlier attempt began.
+   * Its T3 thread may exist already, so the bot looks for it before starting another.
+   */
+  attemptedAt?: string;
 }
 
 /** File metadata carried by message and app_mention events, sometimes only an ID. */

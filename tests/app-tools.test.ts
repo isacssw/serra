@@ -7,7 +7,6 @@ import type { HandlerContext } from '../app/main/ipc/context.ts';
 import { toolsHandlers } from '../app/main/ipc/tools.ts';
 import { memoryPrefs } from '../app/main/prefs.ts';
 import { stoppedStatusSource } from '../app/main/status.ts';
-import { transportLabel } from '../app/renderer/screens/tools.logic.ts';
 import { writeProfileFile, type Profile } from '../src/config.ts';
 import type { Exec } from '../src/exec.ts';
 import { runCli } from '../src/manage.ts';
@@ -95,11 +94,4 @@ test('pnpm bot tools prints the servers, the warning and the command-line tools'
   assert.equal(await runCli(['tools', '--profile', f.profileDir, '--json'], { log: (line) => out.push(line), error: (line) => out.push(line) }), 0);
   const json = JSON.parse(out.join('\n')) as Record<string, unknown>;
   for (const key of ['worker', 'servers', 'warnings', 'files', 'listing', 'clis']) assert.ok(key in json, `--json keeps ${key} at the top level`);
-});
-
-test('transport labels', () => {
-  assert.equal(transportLabel({ transport: 'stdio', host: null }), 'Local command');
-  assert.equal(transportLabel({ transport: 'http', host: 'mcp.example.com' }), 'HTTP · mcp.example.com');
-  assert.equal(transportLabel({ transport: 'sse', host: null }), 'SSE');
-  assert.equal(transportLabel({ transport: null, host: null }), 'Unknown transport');
 });

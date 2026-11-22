@@ -5,13 +5,13 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'no
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test, { type TestContext } from 'node:test';
-import type { webApi } from '@slack/bolt';
 import type { HandlerContext } from '../app/main/ipc/context.ts';
+import { jobsHandlers } from '../app/main/ipc/jobs.ts';
 import { tasksHandlers } from '../app/main/ipc/tasks.ts';
 import { memoryPrefs } from '../app/main/prefs.ts';
 import { stoppedStatusSource } from '../app/main/status.ts';
-import { APP_TASK_CHANNEL as RENDERER_CHANNEL, linkButtons, rowIcon, type JobRow } from '../app/renderer/screens/jobs.logic.ts';
-import { canStart, MAX_REQUEST, requestProblem, startedText, taskLink } from '../app/renderer/screens/newTask.logic.ts';
+import { linkButtons, rowIcon } from '../app/renderer/screens/jobs.logic.ts';
+import { canStart, MAX_REQUEST, requestProblem, startedText } from '../app/renderer/screens/newTask.logic.ts';
 import { createBot } from '../src/bot.ts';
 import { cleanupWorktrees } from '../src/cleanup.ts';
 import { loadConfig } from '../src/config.ts';
@@ -23,6 +23,8 @@ import {
   APP_TASK_CHANNEL, appTaskThread, MAX_TASK_REQUEST, previewTask, readTasks, startTask, t3TaskState, tasksPath,
 } from '../src/tasks.ts';
 import type { StartThreadInput } from '../src/types.ts';
+import { fakeClock } from './fakes/clock.ts';
+import { createFakeSlack } from './fakes/slack.ts';
 
 const OWNER = 'U0123456789';
 const NOW = new Date('2026-11-18T10:00:00Z');
@@ -46,8 +48,8 @@ const fixture = (t: TestContext, { failStart = false } = {}) => {
 const fs = require('fs');
 const args = process.argv.slice(2);
 let input = '';
-process.stdin.on('data', (chunk) => { input += chunk; });
-process.stdin.on('end', () => {
+// Only start reads the brief from stdin; show answers at once, as T3 does, even when stdin is left open.
+const answer = () => {
   fs.appendFileSync(${JSON.stringify(calls)}, JSON.stringify({ args, input }) + '\\n');
   if (args[1] === 'start') {
     if (${failStart}) { console.error('no worktree'); process.exit(1); }
@@ -56,7 +58,11 @@ process.stdin.on('end', () => {
     console.log(JSON.stringify({ thread: { threadId: args.at(-1), title: 'Friday: task', link: 'https://t3.test/' + args.at(-1), status: 'running',
       latestRunId: 'run-1', activeRunId: 'run-1', pendingRequestCount: 0, updatedAt: '2026-11-18T10:05:00Z' }, messages: [] }));
   }
-});
+};
+if (args[1] === 'start') {
+  process.stdin.on('data', (chunk) => { input += chunk; });
+  process.stdin.on('end', answer);
+} else answer();
 `, { mode: 0o700 });
   const recorded = (): Call[] => (existsSync(calls) ? readFileSync(calls, 'utf8').trim().split('\n').map((line) => JSON.parse(line) as Call) : []);
   return { profileDir, bin, recorded };
@@ -102,13 +108,8 @@ test('the brief a task sends is the one the daemon sends for the same request, b
   // The daemon, for the owner asking the same thing in a new DM thread.
   let daemon: StartThreadInput | undefined;
   const quiet = (): void => {};
-  const client = {
-    users: { info: async () => ({ user: { real_name: 'Alex' } }) },
-    chat: { getPermalink: async () => ({ permalink: 'https://acme.slack.com/archives/D0123456789/p100' }), postMessage: async () => ({ ts: '1' }) },
-    reactions: { add: async () => ({}), remove: async () => ({}) },
-    assistant: { threads: { setStatus: async () => ({ ok: true }) } },
-    conversations: { replies: async () => ({ messages: [] }) },
-  } as unknown as webApi.WebClient;
+  const { client } = createFakeSlack({ names: { [OWNER]: 'Alex' } });
+  client.chat.getPermalink = async () => ({ ok: true, permalink: 'https://acme.slack.com/archives/D0123456789/p100' });
   const bot = createBot({
     config, client, botUserId: () => 'UBOT', store: createStore(config.statePath),
     loadIndex: createKnowledge(config.knowledgeDir).loadIndex,
@@ -118,7 +119,7 @@ test('the brief a task sends is the one the daemon sends for the same request, b
       startThread: async (input) => { daemon = input; return 'slack-thread'; },
       sendToThread: async () => {}, showThread: async () => assert.fail('not polled'),
     },
-    fetchBase: noFetch, now: () => NOW.getTime(),
+    fetchBase: noFetch, clock: fakeClock(NOW.getTime()),
   });
   await bot.handle({ channel: 'D0123456789', threadTs: '100.000', messageTs: '100.000', user: OWNER, text: REQUEST, direct: true });
   assert.ok(daemon, 'the daemon started a thread');
@@ -227,21 +228,52 @@ test('IPC: start returns the task without any token, refuses a double start, and
   assert.ok(!preview.includes('xoxb-fixture'));
 });
 
-test('screen logic: limits match the service, and an app task spins on T3\'s word with the bot stopped', () => {
-  assert.equal(MAX_REQUEST, MAX_TASK_REQUEST);
-  assert.equal(RENDERER_CHANNEL, APP_TASK_CHANNEL);
+test('the New task screen enables Start for exactly the requests the app then starts, and refuses the rest with the same limit', async (t) => {
+  const { profileDir, recorded } = fixture(t);
+  const handlers = tasksHandlers(context(profileDir), { fetchBase: noFetch, now: () => NOW });
+  const cases: [label: string, request: string, starts: boolean][] = [
+    ['empty', '', false],
+    ['only spaces', '   \n ', false],
+    ['a short request', 'fix it', true],
+    ['exactly at the limit', 'x'.repeat(MAX_REQUEST), true],
+    ['one over the limit', 'x'.repeat(MAX_REQUEST + 1), false],
+  ];
+  for (const [label, request, starts] of cases) {
+    assert.equal(canStart(request, false), starts, `${label}: the Start button`);
+    const before = recorded().length;
+    if (starts) {
+      const task = await handlers.start(request);
+      assert.match(startedText(task), /^Started “.+” on friday\//, label);
+      assert.ok(recorded().slice(before).some((call) => call.args[1] === 'start'), `${label}: T3 was asked to start it`);
+    } else {
+      await assert.rejects(Promise.resolve().then(() => handlers.start(request)), /Write what|Keep it under/, label);
+      assert.equal(recorded().length, before, `${label}: T3 was never called`);
+    }
+  }
+  // Over the limit, the screen says why before the owner presses anything, with the number the service enforces.
+  assert.match(requestProblem('x'.repeat(MAX_REQUEST + 1)) ?? '', new RegExp(`Keep it under ${MAX_TASK_REQUEST.toLocaleString('en-US')}`));
   assert.equal(requestProblem('fix it'), null);
-  assert.match(requestProblem('x'.repeat(MAX_REQUEST + 1)) ?? '', /Keep it under 20,000/);
-  assert.equal(canStart('  ', false), false);
-  assert.equal(canStart('fix it', true), false);
-  assert.equal(canStart('fix it', false), true);
-  assert.equal(startedText({ title: 'Fix it', branch: 'friday/fix-it' }), 'Started “Fix it” on friday/fix-it.');
-  assert.equal(taskLink({ link: 'https://t3.test/x' }), 'https://t3.test/x');
-  assert.equal(taskLink({ link: 'javascript:alert(1)' }), undefined);
+});
 
-  const task: JobRow = { key: 'app:x', group: 'running', requester: 'Alex', channel: 'app', title: 'Fix it', createdAt: NOW.toISOString(), lastActivityAt: NOW.toISOString(), links: {} };
-  assert.equal(rowIcon(task, { state: 'stopped' }), 'running');
-  assert.equal(rowIcon({ ...task, channel: 'C0123456789' }, { state: 'stopped' }), 'paused');
+test('with the bot stopped, Jobs shows a task started in the app as running, since T3 runs it, while a Slack job shows as paused', async (t) => {
+  const { profileDir } = fixture(t);
+  writeFileSync(tasksPath(profileDir), JSON.stringify([
+    { t3ThreadId: 'task-thread', title: 'Fix it', branch: 'friday/fix-it', requester: 'Alex', createdAt: '2026-11-18T09:00:00Z' },
+  ]));
+  writeFileSync(join(profileDir, 'state.json'), JSON.stringify({
+    'C0123456789:1700000000.000001': {
+      t3ThreadId: 'slack-thread', channel: 'C0123456789', threadTs: '1700000000.000001', requester: OWNER, loadingRequested: true,
+      createdAt: '2026-11-18T09:00:00Z', lastActivityAt: '2026-11-18T09:30:00Z',
+    },
+  }));
+  const ctx = context(profileDir);
+  const rows = await jobsHandlers(ctx, { now: () => NOW }).list();
+  const icon = (channel: string) => rowIcon(rows.find((row) => row.channel === channel)!, ctx.status.current());
+  assert.equal(ctx.status.current().state, 'stopped');
+  assert.equal(icon(APP_TASK_CHANNEL), 'running');
+  assert.equal(icon('C0123456789'), 'paused');
+  const task = rows.find((row) => row.channel === APP_TASK_CHANNEL)!;
+  assert.equal(task.links.t3, 'https://t3.test/task-thread');
   assert.match(linkButtons(task).find((link) => link.kind === 'slack')!.hint, /Started in the app/);
 });
 
@@ -253,13 +285,8 @@ test('an index pushed over its cap outside the app still lets the daemon and a t
 
   let daemon: StartThreadInput | undefined;
   const quiet = (): void => {};
-  const client = {
-    users: { info: async () => ({ user: { real_name: 'Alex' } }) },
-    chat: { getPermalink: async () => ({ permalink: 'https://acme.slack.com/archives/D0123456789/p100' }), postMessage: async () => ({ ts: '1' }) },
-    reactions: { add: async () => ({}), remove: async () => ({}) },
-    assistant: { threads: { setStatus: async () => ({ ok: true }) } },
-    conversations: { replies: async () => ({ messages: [] }) },
-  } as unknown as webApi.WebClient;
+  const { client } = createFakeSlack({ names: { [OWNER]: 'Alex' } });
+  client.chat.getPermalink = async () => ({ ok: true, permalink: 'https://acme.slack.com/archives/D0123456789/p100' });
   const bot = createBot({
     config, client, botUserId: () => 'UBOT', store: createStore(config.statePath),
     loadIndex: createKnowledge(config.knowledgeDir).loadIndex,
@@ -269,7 +296,7 @@ test('an index pushed over its cap outside the app still lets the daemon and a t
       startThread: async (input) => { daemon = input; return 'slack-thread'; },
       sendToThread: async () => {}, showThread: async () => assert.fail('not polled'),
     },
-    fetchBase: noFetch, now: () => NOW.getTime(),
+    fetchBase: noFetch, clock: fakeClock(NOW.getTime()),
   });
   await bot.handle({ channel: 'D0123456789', threadTs: '100.000', messageTs: '100.000', user: OWNER, text: REQUEST, direct: true });
   assert.ok(daemon, 'the daemon started a thread');

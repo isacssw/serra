@@ -232,7 +232,8 @@ test('release notes end with how to upgrade by hand, which the app leaves out', 
 test('with a bot from before alpha.3 running a job, Updates and its log make no promise about new requests', async (t) => {
   const f = fixture(t);
   // alpha.2's active.json: no appVersion, no fromApp.
-  writeFileSync(join(f.directory, 'active.json'), JSON.stringify({ release: join(f.directory, 'releases/old'), label: 'dev.serra.friday' }));
+  const record = { version: 1, releaseHash: 'sha256-fixture', releaseFiles: ['src/index.ts'], label: 'dev.serra.friday', node: '/opt/homebrew/bin/node' };
+  writeFileSync(join(f.directory, 'active.json'), JSON.stringify({ ...record, release: join(f.directory, 'releases/old') }));
   writeFileSync(join(f.directory, 'state.json'), JSON.stringify({
     'C0123456789:1.000': {
       t3ThreadId: 't3-1', channel: 'C0123456789', threadTs: '1.000', requester: 'U0123456789', pendingReactionTs: null, lastPostedRunId: null,
@@ -253,7 +254,7 @@ test('with a bot from before alpha.3 running a job, Updates and its log make no 
   const release = join(f.directory, 'releases/new');
   mkdirSync(join(release, 'src'), { recursive: true });
   writeFileSync(join(release, 'src/intake.ts'), '');
-  writeFileSync(join(f.directory, 'active.json'), JSON.stringify({ release, label: 'dev.serra.friday', appVersion: '0.1.0-alpha.2', fromApp: true }));
+  writeFileSync(join(f.directory, 'active.json'), JSON.stringify({ ...record, release, appVersion: '0.1.0-alpha.2', fromApp: true }));
   const holding = await updatesService({ ...contextFor(f.directory, true), every: () => {} }, { echo: () => {}, deploy: { driver } }).handlers.status();
   assert.equal(holding.bot.state === 'waiting' && holding.bot.paused, true);
   assert.match(botLine(holding.bot)!.detail, /New requests wait until then/);

@@ -11,7 +11,7 @@ export const PROPOSALS_DIR = 'proposals';
 export const OFFLIMITS_MAX_CHARS = 1500;
 /** Files in `knowledge/` that are not pages. */
 export const NOT_PAGES = new Set(['README.md', 'index.md', 'log.md']);
-export const REQUIRED_KEYS = ['type', 'description', 'written', 'verified', 'sources'];
+const REQUIRED_KEYS = ['type', 'description', 'written', 'verified', 'sources'];
 export const DATE = /^\d{4}-\d{2}-\d{2}$/;
 /** The owner should look at a page again after this long, since the code it describes moves. */
 export const STALE_DAYS = 60;

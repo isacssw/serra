@@ -117,7 +117,7 @@ const SECRET_PATTERNS: RegExp[] = [
 ];
 
 export const redact = (text: string): string => SECRET_PATTERNS.reduce(
-  (out, pattern) => out.replace(pattern, (match, label?: string, separator?: string) => (
+  (out, pattern) => out.replace(pattern, (_match, label?: string, separator?: string) => (
     typeof label === 'string' && typeof separator === 'string' ? `${label}${separator}[hidden]` : '[hidden]'
   )),
   text,

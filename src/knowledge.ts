@@ -10,12 +10,6 @@ import {
   isOfflimits, offlimitsBudgetProblem, pageBody, saveProblems, saveRefusal, setHeaderField, STALE_DAYS,
 } from './knowledge-rules.ts';
 
-// The page rules live in knowledge-rules.ts (no Node imports, so the app's editor can use them); re-exported here so
-// callers keep one import.
-export {
-  DATE, frontmatter, INDEX_MAX_LINES, lineCount, NOT_PAGES, PAGE_MAX_LINES, pageProblems, PROPOSALS_DIR, REQUIRED_KEYS, STALE_DAYS,
-} from './knowledge-rules.ts';
-
 /** A repository checkout that pages may name paths in, like `apps/api/…` or `webapp/docs/…`. */
 export interface KnowledgeRoot {
   name: string;
@@ -77,7 +71,7 @@ export interface BriefKnowledge {
 
 /** Markdown files under `dir`, relative to it, skipping dot folders. */
 /** Where the snapshots workers read are kept, one folder per audience: `.knowledge-owner/`, `.knowledge-team/`, `.knowledge-external/`. */
-export const audienceDir = (knowledgeDir: string, visibility: Visibility): string => {
+const audienceDir = (knowledgeDir: string, visibility: Visibility): string => {
   const root = resolve(knowledgeDir);
   return join(dirname(root), `.${basename(root)}-${visibility}`);
 };

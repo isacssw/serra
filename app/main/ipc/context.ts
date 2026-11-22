@@ -35,8 +35,3 @@ export interface HandlerContext {
   /** Registers what quitting must wait for: a promise while a bot switch is under way, else null. */
   guardQuit?(pending: () => Promise<unknown> | null): void;
 }
-
-/** The error a stub throws until its ticket fills it in. The window shows the message. */
-export const notImplemented = (method: string, ticket: string): never => {
-  throw new Error(`${method} isn't available yet (${ticket}).`);
-};

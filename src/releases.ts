@@ -5,19 +5,20 @@
  * restoring the previous installation when the new one fails to start), rollback switches back. These wrappers add
  * a read-only status, a preflight that lists running jobs, streamed log lines and results the UI can act on.
  */
-import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, delimiter, join, resolve } from 'node:path';
 import { codeRoot, readProfileFile } from './config.ts';
 import type { ReleaseStatus } from './contracts.ts';
 import {
-  activate, activationPhase, canRollBack, CutoverError, DEFAULT_UPDATES_REF, preparedProblems, prepareRelease, rollback,
+  activate, activationPhase, canRollBack, CutoverError, DEFAULT_UPDATES_REF, preparedProblems, prepareRelease, readPrepared, rollback,
   type DeployLog, type DeployOptions, type Prepared, type PrepareOptions,
 } from './deploy.ts';
 import { createStore } from './state.ts';
 import { run } from './t3.ts';
 
-const readRelease = (path: string): Prepared | null => existsSync(path) ? JSON.parse(readFileSync(path, 'utf8')) as Prepared : null;
+/** A release record, or null when the file is missing or isn't one: a broken `active.json` reads as no active release. */
+const readRelease = readPrepared;
 const errorText = (error: unknown): string => error instanceof Error ? error.message : String(error);
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -133,7 +134,8 @@ export const releaseStatus = async (directory: string, options: StatusOptions = 
   const prepared = preparedFile && preparedFile.release !== active?.release ? preparedFile : null;
   const activation = activationPhase(directory);
   let activateProblems: string[];
-  try { activateProblems = prepared ? preparedProblems(directory) : ['No prepared release. Run prepare first.']; }
+  // Only a prepared release that is already the active one is answered here; a missing or broken file is preparedProblems' to name.
+  try { activateProblems = preparedFile && !prepared ? ['No prepared release. Run prepare first.'] : preparedProblems(directory); }
   catch (error) { activateProblems = [errorText(error)]; }
   const mode = updateMode(directory);
   // In release mode nothing is compared with git: the app's own version is what the owner follows.

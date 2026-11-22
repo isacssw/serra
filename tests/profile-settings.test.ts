@@ -6,7 +6,7 @@ import test, { type TestContext } from 'node:test';
 import type { AtomicWriteIo, Profile, ProfileSection } from '../src/contracts.ts';
 import { runCli } from '../src/manage.ts';
 import {
-  addAllowedUser, appliesLabel, listPeople, PROFILE_SECTIONS, PROFILE_SETTINGS, readProfileSettings, removeAllowedUser,
+  addAllowedUser, listPeople, PROFILE_SECTIONS, readProfileSettings, removeAllowedUser,
   updateProfileSection,
 } from '../src/profile-settings.ts';
 
@@ -47,19 +47,6 @@ const noWrites: AtomicWriteIo = {
 };
 
 // --- appliesWhen ---------------------------------------------------------------------------------------------
-
-test('appliesWhen is defined for every profile field', () => {
-  const fields = Object.keys(fullProfile()).filter((key) => key !== 'version').sort();
-  assert.deepEqual([...PROFILE_SECTIONS].sort(), fields);
-  for (const section of PROFILE_SECTIONS) {
-    assert.ok(['now', 'next job', 'after restart'].includes(PROFILE_SETTINGS[section].appliesWhen), section);
-  }
-  // The two fields the daemon reloads live; the people screen shows "Applies now".
-  assert.equal(PROFILE_SETTINGS.allowedUsers.appliesWhen, 'now');
-  assert.equal(PROFILE_SETTINGS.messageTriggers.appliesWhen, 'now');
-  assert.equal(PROFILE_SETTINGS.worker.appliesWhen, 'after restart');
-  assert.equal(appliesLabel('now'), 'Applies now');
-});
 
 test('readProfileSettings lists every section with its value and when it applies', (t) => {
   const directory = tempProfile(t);

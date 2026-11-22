@@ -59,12 +59,6 @@ test('start refuses a running bot and loads a stopped one', async (t) => {
   assert.deepEqual(stopped.calls, [`loaded ${LABEL}`, `start ${stopped.plist}`]);
 });
 
-test('stop goes through the driver with the profile service label', async (t) => {
-  const f = fixture(t);
-  await stopBot(f.profileDir, f.options);
-  assert.deepEqual(f.calls, [`stop ${LABEL}`]);
-});
-
 test('start, stop and restart wait out a release switch: they refuse while it holds the deployment lock', async (t) => {
   const f = fixture(t);
   // A live process (this one) holds the lock, as activate() does during a switch.

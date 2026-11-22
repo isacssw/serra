@@ -1,0 +1,131 @@
+{
+  "id": "jobs-003-run-between-polls",
+  "specs": [
+    "JOBS-003",
+    "REPLY-001"
+  ],
+  "title": "a run that starts and ends between two polls is posted once and leaves the job done, not running (SERRA-54)",
+  "steps": [
+    {
+      "do": "slack",
+      "envelope": {
+        "type": "event_callback",
+        "team_id": "THOME",
+        "api_app_id": "A1",
+        "event_id": "Ev1",
+        "event_time": 1700000100,
+        "authorizations": [
+          {
+            "team_id": "THOME",
+            "user_id": "UBOT",
+            "is_bot": true
+          }
+        ],
+        "event": {
+          "type": "app_mention",
+          "user": "USAM",
+          "text": "<@UBOT> how do teams score?",
+          "ts": "1700000100.000100",
+          "channel": "C1",
+          "event_ts": "1700000100.000100",
+          "team": "THOME"
+        }
+      }
+    },
+    {
+      "do": "advance",
+      "ms": 15000,
+      "expect": {
+        "state": {
+          "C1:1700000100.000100": {
+            "runSeen": {
+              "runId": "run-1"
+            }
+          }
+        },
+        "jobs": {
+          "C1:1700000100.000100": "running"
+        }
+      }
+    },
+    {
+      "do": "mark",
+      "name": "run-1-seen"
+    },
+    {
+      "_": "Run 1 ends with nothing for Slack, the requester follows up inside T3, and run 2 answers, all before the next poll.",
+      "do": "worker.endSilently"
+    },
+    {
+      "do": "worker.userRun",
+      "text": "Sam, in T3: and for teams?"
+    },
+    {
+      "do": "worker.reply",
+      "text": "Teams score the same way."
+    },
+    {
+      "do": "advance",
+      "ms": 15000,
+      "expect": {
+        "slack": [
+          {
+            "method": "chat.postMessage",
+            "since": "run-1-seen",
+            "count": 1,
+            "args": {
+              "channel": "C1",
+              "thread_ts": "1700000100.000100",
+              "text": "Teams score the same way."
+            }
+          },
+          {
+            "method": "reactions.remove",
+            "since": "run-1-seen",
+            "args": {
+              "name": "eyes",
+              "timestamp": "1700000100.000100"
+            }
+          },
+          {
+            "method": "assistant.threads.setStatus",
+            "since": "run-1-seen",
+            "args": {
+              "status": ""
+            }
+          }
+        ],
+        "state": {
+          "C1:1700000100.000100": {
+            "lastPostedRunId": "run-2",
+            "runSeen": "$absent"
+          }
+        },
+        "jobs": {
+          "C1:1700000100.000100": "done"
+        }
+      }
+    },
+    {
+      "do": "advance",
+      "ms": 15000,
+      "expect": {
+        "slack": [
+          {
+            "method": "chat.postMessage",
+            "since": "run-1-seen",
+            "count": 1
+          }
+        ],
+        "state": {
+          "C1:1700000100.000100": {
+            "watching": false
+          }
+        },
+        "jobs": {
+          "C1:1700000100.000100": "done"
+        }
+      }
+    }
+  ]
+}

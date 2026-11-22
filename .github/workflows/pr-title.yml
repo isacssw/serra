@@ -1,40 +1,58 @@
 name: PR title
 
 # The PR title becomes the squash commit on main, so it must be a Conventional Commit (CONTRIBUTING.md › Naming).
-# It only reads the PR's title through the API, so the read-only token of a fork PR is enough, and `edited` reruns it
-# when only the title changes. A PR the workflow token opens (the release PR) gets no run here; its title is fixed in
-# release-prepare.yml.
+# A `feat` or `fix` PR changes what users get, so it must also add a CHANGELOG.md line (Dependabot's deps fixes excepted).
+# It reads the PR through the API only, so a fork PR's read-only token is enough, and `edited` reruns it when only the
+# title changes. GitHub starts no pull_request run for a PR the workflow token opens (the release PR), so
+# release-prepare.yml dispatches this workflow on the release branch, and the job checks that branch's open PR.
 
 on:
   pull_request:
     types: [opened, edited, reopened, synchronize]
+  workflow_dispatch:
 
 permissions:
+  contents: read
   pull-requests: read
+
+# A quick run of title edits keeps only the last result.
+concurrency:
+  group: title-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   title:
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
-      - uses: amannn/action-semantic-pull-request@2252a14e810aa9b85c2d560bd7070c802206ecf6 # v6.1.2
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          types: |
-            feat
-            fix
-            perf
-            refactor
-            docs
-            test
-            build
-            ci
-            chore
-            revert
-          requireScope: false
-          # Lowercase first letter, no trailing period, at most 72 characters.
-          subjectPattern: ^(?![A-Z])(?!.*\.$).{1,72}$
-          subjectPatternError: |
-            The subject "{subject}" in the title "{title}" must start with a lowercase letter, not end with a
-            period, and stay under 72 characters. Example: fix(palette): ignore late close events
+      - env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # The PR number on a pull_request run; on a dispatch, the branch, whose open PR gh finds.
+          PR: ${{ github.event.pull_request.number || github.ref_name }}
+        run: |
+          # A failed lookup stops the step (bash -e), rather than reading as a bad title.
+          pr=$(gh pr view "$PR" --repo "$GITHUB_REPOSITORY" --json number,author,title --jq '"\(.number) \(.author.login) \(.title)"')
+          number=${pr%% *} rest=${pr#* }
+          author=${rest%% *} title=${rest#* }
+          echo "PR #$number title: $title"
+          pattern='^(feat|fix|perf|refactor|docs|test|build|ci|chore|revert)(\(([^)]+)\))?!?: (.+)$'
+          if [[ ! "$title" =~ $pattern ]]; then
+            echo "::error::The title must be type(scope): subject, with type one of feat, fix, perf, refactor, docs, test, build, ci, chore, revert. Example: fix(palette): ignore late close events"
+            exit 1
+          fi
+          type=${BASH_REMATCH[1]} scope=${BASH_REMATCH[3]} subject=${BASH_REMATCH[4]}
+          if [[ "$subject" =~ ^[A-Z] || "$subject" =~ \.$ || ${#subject} -gt 72 ]]; then
+            echo "::error::The subject \"$subject\" must start with a lowercase letter, not end with a period, and be at most 72 characters."
+            exit 1
+          fi
+          # Dependabot's security fixes, titled fix(deps) and fix(deps-dev), need no changelog line; anyone else's do.
+          dependabot=false
+          [[ "$author" == app/dependabot && ( "$scope" == deps || "$scope" == deps-dev ) ]] && dependabot=true
+          if [[ ( "$type" == feat || "$type" == fix ) && $dependabot == false ]]; then
+            # The files API pages through any size of PR (gh pr diff refuses large ones), and a failure stops here.
+            files=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$number/files" --paginate --jq '.[].filename')
+            if ! grep -qx CHANGELOG.md <<<"$files"; then
+              echo "::error::A $type PR changes what users get: add a line under ## Unreleased in CHANGELOG.md."
+              exit 1
+            fi
+          fi

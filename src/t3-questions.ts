@@ -2,6 +2,7 @@ import { readFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
+import { parseJson } from './lib/guards.ts';
 import { run } from './t3.ts';
 
 export interface T3Question {
@@ -28,7 +29,7 @@ const nonempty = (value: unknown): value is string => typeof value === 'string' 
 /** The CLI and MCP endpoint use the same local T3 installation and credential store. */
 const localOrigin = async (): Promise<string> => {
   const home = process.env.T3CODE_HOME ?? join(homedir(), '.t3');
-  const state: unknown = JSON.parse(await readFile(join(home, 'userdata/server-runtime.json'), 'utf8'));
+  const state = parseJson(await readFile(join(home, 'userdata/server-runtime.json'), 'utf8'));
   if (!record(state) || typeof state.origin !== 'string') throw new QuestionBridgeError('T3 server address is unavailable');
   return state.origin;
 };

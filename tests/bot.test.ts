@@ -1,125 +1,77 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import test, { type TestContext } from 'node:test';
-import type { webApi } from '@slack/bolt';
 import { createBot, type BotDeps } from '../src/bot.ts';
-import { loadConfig, type MessageTrigger } from '../src/config.ts';
+import type { MessageTrigger } from '../src/config.ts';
 import { incomingMessage } from '../src/incoming.ts';
-import { createProfile } from '../src/setup.ts';
 import { createStore } from '../src/state.ts';
+import { fakeClock } from './fakes/clock.ts';
+import { BOT, OWNER, SAM, testProfile } from './fakes/profile.ts';
+import { createFakeSlack } from './fakes/slack.ts';
+import { createFakeT3 } from './fakes/t3.ts';
 import { receiveAttachments } from '../src/attachments.ts';
 import type { IncomingFile, IncomingMessage } from '../src/types.ts';
-import type { T3Answers, T3QuestionRequest } from '../src/t3-questions.ts';
+import type { T3QuestionRequest } from '../src/t3-questions.ts';
 import { questionInteraction } from '../src/questions.ts';
 import { addAllowedUser, PROFILE_SETTINGS, updateProfileSection } from '../src/profile-settings.ts';
-import { LIVE_SECTIONS, watchProfile } from '../src/profile-reload.ts';
+import { watchProfile } from '../src/profile-reload.ts';
 import { listJobs } from '../src/jobs.ts';
 
-const OWNER = 'UOWNER'; const SAM = 'USAM'; const BOT = 'UBOT';
-const wait = (ms: number): Promise<void> => new Promise((done) => setTimeout(done, ms));
 
-/** A bot wired to a recording Slack and a T3 worker the test finishes by hand. */
+/** A bot wired to the shared recording Slack and scriptable T3 (tests/fakes), on a fake clock the test moves by hand. */
 const fixture = (t: TestContext, receive?: BotDeps['receive'], { allowErrors = false, failStart, statusError, failAnswer, ...profile }: { branchPattern?: string; allowErrors?: boolean; messageTriggers?: MessageTrigger[]; failStart?: () => boolean; statusError?: () => boolean; failAnswer?: () => boolean } = {}) => {
-  const root = mkdtempSync(join(tmpdir(), 'bots-bot-')); t.after(() => rmSync(root, { recursive: true, force: true }));
-  createProfile(root, {
-    version: 1, bot: { id: 'friday', name: 'Friday' }, owner: { name: 'Alex', slackUserId: OWNER, githubLogin: 'alex' },
-    project: { path: '/tmp/project', remote: 'origin', baseRef: 'origin/main', githubRepo: 'acme/project' }, allowedUsers: [SAM], ...profile,
+  const { config } = testProfile(t, profile);
+  const clock = fakeClock('2026-11-18T10:00:00Z');
+  const slack = createFakeSlack({ botUserId: BOT, names: { [OWNER]: 'Alex Doe', [SAM]: 'Sam' }, now: () => clock.now() });
+  const worker = createFakeT3({
+    failStart: () => (failStart?.() ? new Error('Worker startup unavailable') : null),
+    failAnswer: () => (failAnswer?.() ? new Error('Question service unavailable') : null),
   });
-  writeFileSync(join(root, '.env'), 'SLACK_APP_TOKEN=xapp-a\nSLACK_BOT_TOKEN=xoxb-a');
-  const config = loadConfig({ profileDir: root, env: {} });
 
-  /** Everything Slack and T3 saw, in order. */
+  /** Posts, edits, deletes and turns sent to T3, in order. */
   const log: string[] = [];
-  const posts: { text: string; blocks: string; ts: string; channel: string; thread_ts?: string }[] = [];
-  /** Messages edited in place and deleted, by ts. */
-  const edits: { ts: string; text: string; blocks: string }[] = [];
-  const deleted: string[] = [];
-  let postCount = 0;
-  const eyes = new Set<string>();
-  const names: Record<string, string> = { [OWNER]: 'Alex Doe', [SAM]: 'Sam' };
-  const history: { ts: string; user: string; text?: string; files?: IncomingFile[] }[] = [];
-  const downloads: string[] = [];
   const statuses: { channel_id: string; thread_ts: string; status: string; loading_messages?: string[] }[] = [];
   let loadingVisible = false;
-  const client = {
-    assistant: { threads: { setStatus: async (body: typeof statuses[number]) => {
-      statuses.push(body);
-      if (statusError?.()) throw new Error('method_not_supported_for_channel_type');
-      loadingVisible = body.status !== '';
-      return { ok: true };
-    } } },
-    users: { info: async ({ user }: { user: string }) => ({ user: { real_name: names[user] ?? user } }) },
-    chat: {
-      getPermalink: async () => ({ permalink: 'https://slack.test/p1' }),
-      postMessage: async (body: { text: string; blocks?: unknown; channel: string; thread_ts?: string }) => {
-        loadingVisible = false; // Slack automatically clears native loading when a message is posted.
-        const ts = `200.${String(++postCount).padStart(3, '0')}`;
-        posts.push({ text: body.text, blocks: JSON.stringify(body.blocks ?? []), ts, channel: body.channel, thread_ts: body.thread_ts }); log.push(`post: ${body.text}`); return { ts };
-      },
-      update: async (body: { ts: string; text: string; blocks?: unknown }) => {
-        if (deleted.includes(body.ts)) throw new Error('message_not_found');
-        edits.push({ ts: body.ts, text: body.text, blocks: JSON.stringify(body.blocks ?? []) }); log.push(`edit: ${body.text}`); return { ts: body.ts };
-      },
-      delete: async ({ ts }: { ts: string }) => { deleted.push(ts); log.push(`delete: ${ts}`); return { ts }; },
-    },
-    conversations: { replies: async () => ({ messages: history }) },
-    reactions: {
-      add: async ({ timestamp }: { timestamp: string }) => { eyes.add(timestamp); },
-      remove: async ({ timestamp }: { timestamp: string }) => { eyes.delete(timestamp); },
-    },
-  } as unknown as webApi.WebClient;
-
-  const sends: string[] = [];
-  const started: { branch: string; title: string }[] = [];
+  slack.before('assistant.threads.setStatus', (args) => {
+    statuses.push(args as typeof statuses[number]);
+    if (statusError?.()) throw new Error('method_not_supported_for_channel_type');
+    loadingVisible = args.status !== '';
+  });
+  // Slack clears native loading when a message is posted.
+  slack.before('chat.postMessage', (args) => { loadingVisible = false; log.push(`post: ${String(args.text)}`); });
+  slack.before('chat.update', (args) => { if (!slack.deleted.includes(String(args.ts))) log.push(`edit: ${String(args.text)}`); });
+  slack.before('chat.delete', (args) => { log.push(`delete: ${String(args.ts)}`); });
+  /** What `conversations.replies` shows for any thread: tests add people's earlier messages here. */
+  const history: { ts: string; user?: string; text?: string; files?: IncomingFile[] }[] = [];
+  slack.client.conversations.replies = async () => ({ ok: true, messages: history as NonNullable<Awaited<ReturnType<typeof slack.client.conversations.replies>>['messages']> });
+  const downloads: string[] = [];
   const errors: string[] = [];
   const recordedEvents: { name: string; fields: Record<string, unknown> }[] = [];
-  let brief = ''; let run = 0; let active: string | null = null; let pending = 0;
-  const questionRequests: T3QuestionRequest[] = [];
-  const answered: { threadId: string; requestId: string; answers: T3Answers }[] = [];
-  /** The T3 thread's messages, oldest first: a user message opens each run Slack started, then the worker's notes. */
-  const transcript: { role: string; runId: string; text: string }[] = [];
-  const t3 = {
-    startThread: async (input: { brief: string; branch: string; title: string }) => {
-      brief = input.brief; started.push({ branch: input.branch, title: input.title });
-      if (failStart?.()) throw new Error('Worker startup unavailable');
-      active = `run-${++run}`; transcript.push({ role: 'user', runId: active, text: input.brief }); return 't3-1';
-    },
-    sendToThread: async (_id: string, message: string) => {
-      sends.push(message); log.push('send'); active = `run-${++run}`; transcript.push({ role: 'user', runId: active, text: message });
-    },
-    showThread: async (_id: string, _bin?: string, count = 1) => ({
-      thread: { threadId: 't3-1', link: 'https://t3.test/t3-1', status: 'idle', latestRunId: run ? `run-${run}` : null, activeRunId: active, pendingRequestCount: pending },
-      messages: transcript.slice(-count),
-    }),
+  const t3: NonNullable<BotDeps['t3']> = {
+    ...worker.t3,
+    sendToThread: async (id, message) => { log.push('send'); await worker.t3.sendToThread(id, message); },
   };
-  let clock = Date.parse('2026-11-18T10:00:00Z');
   const quiet = (): void => {};
   const deps: BotDeps = {
-    config, client, botUserId: () => BOT, store: createStore(config.statePath), loadIndex: () => 'index', t3,
+    config, client: slack.client, botUserId: () => BOT, store: createStore(config.statePath), loadIndex: () => 'index', t3,
     logger: { info: quiet, warn: quiet, error: (message) => { if (allowErrors || failStart || failAnswer) errors.push(message); else assert.fail(message); }, debug: quiet },
-    questions: {
-      listQuestions: async () => structuredClone(questionRequests),
-      answerQuestion: async (threadId, requestId, answers) => {
-        if (failAnswer?.()) throw new Error('Question service unavailable');
-        answered.push({ threadId, requestId, answers });
-        const index = questionRequests.findIndex((request) => request.requestId === requestId);
-        if (index !== -1) questionRequests.splice(index, 1);
-        pending = Math.max(0, pending - 1);
-      },
-    },
+    questions: worker.questions,
     fetchBase: async () => {}, share: async (_client, text) => text, reviewRequest: async (_client, text) => ({ reply: text, postedFor: null }),
     receive: receive ?? ((client, files, profileDir, token, options) => receiveAttachments(client, files, profileDir, token, { ...options,
       fetchFile: async (url) => { downloads.push(String(url)); return new Response('fixture file bytes'); },
     })),
     timing: { quietMs: 15, retryMs: 5 },
-    now: () => clock,
+    clock,
     events: (name, fields) => { recordedEvents.push({ name, fields }); },
   };
-  const bot = createBot(deps);
-  const restart = () => createBot({ ...deps, store: createStore(config.statePath) });
+  let bot = createBot(deps);
+  clock.settleWith(() => bot.idle());
+  const restart = () => { bot = createBot({ ...deps, store: createStore(config.statePath) }); return bot; };
   const ingest = async (event: unknown): Promise<void> => {
+    // Slack never gives two messages one ts: later `say` calls follow on from an ingested 100.NNN.
+    const ts = /^100\.(\d{3})$/.exec(String((event as { ts?: unknown }).ts))?.[1];
+    if (ts) msgClock = Math.max(msgClock, Number(ts));
     const msg = incomingMessage(event, 'message', BOT, bot.ownsThread, { messageTriggers: config.messageTriggers, botId: 'BSELF' });
     if (msg) await bot.handle(msg);
   };
@@ -130,32 +82,44 @@ const fixture = (t: TestContext, receive?: BotDeps['receive'], { allowErrors = f
     const msg: IncomingMessage = { channel: 'C1', threadTs: '100.001', messageTs: ts, user, text, direct, files };
     return bot.handle(msg);
   };
+  const poll = (): Promise<void> => bot.poll();
   /** The worker ends its turn with this reply, and the bot polls. */
-  const workerReplies = async (text: string): Promise<void> => {
-    transcript.push({ role: 'assistant', runId: `run-${run}`, text }); active = null; await bot.poll();
-  };
+  const workerReplies = async (text: string): Promise<void> => { worker.reply(text); await poll(); };
   /** A note the worker writes while its run goes on, like "Reproducing the bug first." */
-  const workerNotes = (text: string): void => { transcript.push({ role: 'assistant', runId: `run-${run}`, text }); };
+  const workerNotes = (text: string): void => { worker.note(text); };
   /** The worker ends its turn with `text` while no bot is polling. */
-  const workerRepliesUnwatched = (text: string): void => { transcript.push({ role: 'assistant', runId: `run-${run}`, text }); active = null; };
+  const workerRepliesUnwatched = (text: string): void => { worker.reply(text); };
   /** The worker starts a run of its own, as it does to follow CI, and ends it with `text`. */
   const backgroundRun = async (text: string): Promise<void> => {
-    active = `run-${++run}`; await bot.poll();
-    transcript.push({ role: 'assistant', runId: active, text }); active = null; await bot.poll();
+    worker.startRun(); await poll();
+    worker.reply(text); await poll();
   };
-  const advance = (ms: number): void => { clock += ms; };
+  /** Moves the clock, firing the timers due meanwhile: for tests about how long something has gone on. */
+  const advance = (ms: number): Promise<void> => clock.advance(ms);
   /** The worker answers someone and, before the bot's next poll, starts a run of its own. */
-  const workerRepliesThenStartsRun = async (text: string): Promise<void> => {
-    transcript.push({ role: 'assistant', runId: `run-${run}`, text }); active = `run-${++run}`; await bot.poll();
-  };
-  const backgroundRunWithoutReply = async (): Promise<void> => { active = `run-${++run}`; await bot.poll(); active = null; await bot.poll(); };
-  const ownerPings = (): number => posts.filter((post) => post.blocks.includes(`<@${OWNER}>`)).length;
-  /** The running turn stops on a request in T3's UI (n > 0), or it was answered there (0). */
-  const waitsInT3 = (n: number): void => { pending = n; };
+  const workerRepliesThenStartsRun = async (text: string): Promise<void> => { worker.reply(text); worker.startRun(); await poll(); };
+  const backgroundRunWithoutReply = async (): Promise<void> => { worker.startRun(); await poll(); worker.endSilently(); await poll(); };
+  const posts = (): { text: string; blocks: string; ts: string; channel: string; thread_ts?: string }[] =>
+    slack.posted.map((post) => ({ text: String(post.text), blocks: JSON.stringify(post.blocks ?? []), ts: post.ts, channel: String(post.channel), ...(typeof post.thread_ts === 'string' ? { thread_ts: post.thread_ts } : {}) }));
+  const ownerPings = (): number => posts().filter((post) => post.blocks.includes(`<@${OWNER}>`)).length;
+  /** The running turn stops on n requests in T3's UI (questions pushed to `questionRequests` count among them), or 0. */
+  const waitsInT3 = (n: number): void => { worker.waitOnOther(Math.max(0, n - worker.questionsOf().length)); };
   return {
-    bot, say, workerReplies, workerRepliesThenStartsRun, workerNotes, workerRepliesUnwatched, backgroundRun, backgroundRunWithoutReply, advance, waitsInT3, posts, edits, deleted, sends, started, eyes, log, ownerPings,
-    history, downloads, config, ingest, restart, errors, statuses, questionRequests, answered, recordedEvents, loadingVisible: () => loadingVisible, brief: () => brief, settle: () => wait(60),
+    get bot() { return bot; }, say, workerReplies, workerRepliesThenStartsRun, workerNotes, workerRepliesUnwatched, backgroundRun, backgroundRunWithoutReply, advance, waitsInT3,
+    get posts() { return posts(); },
+    get edits() { return slack.edited.map((edit) => ({ ts: String(edit.ts), text: String(edit.text), blocks: JSON.stringify(edit.blocks ?? []) })); },
+    deleted: slack.deleted,
+    get eyes() { return new Set(slack.withReaction('eyes').map((at) => at.split(':')[1]!)); },
+    get sends() { return worker.sends.map((send) => send.message); },
+    get started() { return worker.started.map((input) => ({ branch: input.branch, title: input.title })); },
+    get questionRequests() { return worker.questionsOf(); },
+    log, ownerPings, history, downloads, config, ingest, restart, errors, statuses, answered: worker.answered, recordedEvents,
+    clock, slack, worker,
+    loadingVisible: () => loadingVisible, brief: () => (worker.threadIds().length ? worker.brief() : ''),
+    /** Lets quiet timers fire and everything they started finish: the batcher's 15 ms quiet time and its retries. */
+    settle: () => clock.advance(60),
   };
+
 };
 
 test('a busy thread: people talking to each other get no reply and the owner is pinged once', async (t) => {
@@ -411,7 +375,7 @@ test('"are you there?" is answered at once without a worker, and the next messag
   await h.say(SAM, 'are you there?');
   assert.equal(h.started.length, 0);
   assert.equal(h.posts.length, 1, 'answered once');
-  h.advance(31 * 60_000);
+  await h.advance(31 * 60_000);
   await h.say(SAM, 'can you check the build?');
   assert.equal(h.started.length, 0, 'after 30 minutes the thread needs an @mention again');
   assert.equal(h.bot.ownsThread('C1', '100.001'), false);
@@ -478,7 +442,7 @@ test('a long run someone waits on shows one progress line, edited as it goes and
   await f.bot.poll();
   assert.equal(f.posts.length, 0, 'nothing in the first minutes: the 👀 is enough');
 
-  f.advance(3 * 60_000);
+  await f.advance(3 * 60_000);
   await f.bot.poll();
   assert.equal(f.posts.length, 1);
   assert.match(f.posts[0]!.text, /Still on it: Reproducing the double count locally first\./);
@@ -505,21 +469,23 @@ test('no progress line for a background run or for a turn nobody @mentioned the 
   await f.say(SAM, 'nice, the team will look tomorrow'); await f.settle();
   await f.bot.poll();
   f.workerNotes('Reading the new message.');
-  f.advance(10 * 60_000);
+  await f.advance(10 * 60_000);
   await f.bot.poll();
   assert.equal(f.posts.length, 1, 'nobody is waiting on an un-mentioned turn');
   await f.workerReplies('(quiet)');
 });
 
-test('a failure shows teammates a plain sentence, and the owner the error', async (t) => {
+test('[REPLY-005] a failure in a channel shows nobody the raw error: teammates get a plain sentence, the owner a pointer to Jobs', async (t) => {
   const f = fixture(t, async () => { throw new Error('t3 thread start exited 1: /Users/you/.t3 something broke\nstack…'); }, { allowErrors: true });
   await f.say(SAM, `<@${BOT}> look at this`, true, [upload('F1')]);
   assert.doesNotMatch(f.posts[0]!.text, /exited|\/Users/);
   assert.match(f.posts[0]!.text, /couldn't pick this up. <@UOWNER> will take a look/);
 
+  // The owner asked, but the channel's other members see the thread too: the detail stays in the log and the app.
   await f.say(OWNER, `<@${BOT}> look at this`, true, [upload('F2')]);
-  assert.match(f.posts[1]!.text, /`t3 thread start exited 1: \/Users\/you\/\.t3 something broke`/);
-  assert.doesNotMatch(f.posts[1]!.text, /stack/);
+  assert.doesNotMatch(f.posts[1]!.text, /exited|\/Users|stack/);
+  assert.match(f.posts[1]!.text, /details are in Serra's Jobs and log/);
+  assert.ok(f.recordedEvents.some((event) => event.name === 'failure' && /something broke/.test(String(event.fields.error))), 'the app gets the detail');
 });
 
 test('a long reply to someone is never mistaken for a background update when its start is out of reach', async (t) => {
@@ -563,7 +529,7 @@ test('a progress line from a finished run goes when the worker starts its own ne
   await f.say(SAM, `<@${BOT}> investigate the outage`, true);
   await f.bot.poll();
   f.workerNotes('Reading the logs.');
-  f.advance(4 * 60_000);
+  await f.advance(4 * 60_000);
   await f.bot.poll();
   assert.equal(f.posts.length, 1);
   await f.workerRepliesThenStartsRun('Root cause: an expired cert.');
@@ -761,10 +727,10 @@ test('native loading refreshes without duplicate poll calls and clears for repli
   await f.say(SAM, `<@${BOT}> investigate the failing build`, true);
   assert.deepEqual(f.statuses, [{ channel_id: 'C1', thread_ts: '100.001', status: 'is looking into it…', loading_messages: ['Looking into it'] }]);
   await f.bot.poll();
-  f.advance(59_999);
+  await f.advance(59_999);
   await f.bot.poll();
   assert.equal(f.statuses.length, 1);
-  f.advance(1);
+  await f.advance(1);
   await f.bot.poll();
   assert.equal(f.statuses.length, 2, 'refreshes before Slack expires it');
   await f.workerReplies('The build is fixed.');
@@ -816,7 +782,7 @@ test('progress posts restore native loading until the actual reply', async (t) =
   await f.say(SAM, `<@${BOT}> investigate the outage`, true);
   await f.bot.poll();
   f.workerNotes('Tracing the failing request.');
-  f.advance(3 * 60_000);
+  await f.advance(3 * 60_000);
   await f.bot.poll();
   assert.equal(f.posts.length, 1);
   assert.equal(f.loadingVisible(), true, 'a progress post must not leave the loading indicator cleared');
@@ -831,7 +797,7 @@ test('loading failures preserve eyes, worker replies, and throttle repeated stat
   await f.bot.poll();
   await f.bot.poll();
   assert.equal(f.statuses.length, 1);
-  f.advance(60_000);
+  await f.advance(60_000);
   await f.bot.poll();
   assert.equal(f.statuses.length, 2);
   await f.workerReplies('Build fixed.');
@@ -1192,9 +1158,18 @@ test('sections that apply after a restart are reported, not applied', async (t) 
   assert.equal(reloads(f, 'profile_reloaded').length, 1, 'the same pending restart is reported once');
 });
 
-test('the sections reloaded live are exactly the ones the settings say apply now', () => {
-  const now = Object.entries(PROFILE_SETTINGS).filter(([, setting]) => setting.appliesWhen === 'now').map(([section]) => section);
-  assert.deepEqual([...LIVE_SECTIONS].sort(), now.sort());
+test('[PROFILE-002] a person added in Settings can ask at once, while a new branch pattern waits for the restart Settings says it needs', async (t) => {
+  const f = fixture(t);
+  assert.equal(PROFILE_SETTINGS.allowedUsers.appliesWhen, 'now');
+  assert.equal(PROFILE_SETTINGS.branchPattern.appliesWhen, 'after restart');
+  addAllowedUser(f.config.profileDir, 'UNEW');
+  updateProfileSection(f.config.profileDir, 'branchPattern', 'TEAM-{DDMM}/{slug}-{stamp}');
+  f.bot.reloadProfile();
+  assert.deepEqual(reloads(f, 'profile_reloaded').map((event) => event.fields), [{ applied: ['allowedUsers'], restartNeeded: ['branchPattern'] }]);
+
+  await f.say('UNEW', `<@${BOT}> rename the pricing page`, true);
+  assert.equal(f.started.length, 1, 'the person added a moment ago starts a job, with no restart');
+  assert.doesNotMatch(f.started[0]!.branch, /^TEAM-/, 'the branch still follows the pattern the bot started with');
 });
 
 // SERRA-54: jobs shown as running in Serra that aren't running in T3.

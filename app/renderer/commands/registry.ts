@@ -32,7 +32,7 @@ export interface Choice {
 }
 
 /** An action that needs a value first: the palette asks for it as a second step, then calls `run` with it. */
-export interface ActionArgument {
+interface ActionArgument {
   /** The field's placeholder, such as "Slack member ID, like U0123456789". */
   placeholder: string;
   /** A line under the field. */
@@ -41,10 +41,10 @@ export interface ActionArgument {
   choices?: (context: ActionContext) => Promise<Choice[]>;
 }
 
-export type ActionGroup = 'Actions' | 'Go to';
+type ActionGroup = 'Actions' | 'Go to';
 
 /** The order groups are listed in before the owner types anything. */
-export const actionGroups: readonly ActionGroup[] = ['Actions', 'Go to'];
+const actionGroups: readonly ActionGroup[] = ['Actions', 'Go to'];
 
 export interface Action {
   /** Unique across the registry, such as `bot:restart` or `go:settings-people`. */

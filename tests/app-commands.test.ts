@@ -8,11 +8,11 @@ import type { HandlerContext } from '../app/main/ipc/context.ts';
 import { createHandlers } from '../app/main/ipc/index.ts';
 import { memoryPrefs } from '../app/main/prefs.ts';
 import { stoppedStatusSource } from '../app/main/status.ts';
-import { addAllowedUser, appliesText, builtinActions, navigationActions, navigationButton, openProfileFolder, restartBot } from '../app/renderer/commands/builtin.ts';
+import { addAllowedUser, builtinActions, navigationActions, navigationButton, openProfileFolder, restartBot } from '../app/renderer/commands/builtin.ts';
 import { fuzzyMatch } from '../app/renderer/commands/fuzzy.logic.ts';
-import { highlightRuns, isPaletteShortcut, moveSelection } from '../app/renderer/commands/palette.logic.ts';
+import { isPaletteShortcut, moveSelection } from '../app/renderer/commands/palette.logic.ts';
 import { createActionRegistry, searchActions, searchChoices, type Action, type ActionContext } from '../app/renderer/commands/registry.ts';
-import { routes } from '../app/renderer/routes.ts';
+import { routeForPath, routes, sections } from '../app/renderer/routes.ts';
 import { CLEANUP_PARAM, cleanupWorktreesAction } from '../app/renderer/screens/jobs.logic.ts';
 import { PROPOSAL_PARAM, promoteProposalAction } from '../app/renderer/screens/proposals.logic.ts';
 import type { Profile } from '../src/contracts.ts';
@@ -57,41 +57,6 @@ test('fuzzy: a run of letters at the start beats scattered letters', () => {
 // ---------------------------------------------------------------------------------------------------------------
 // Registry and search
 // ---------------------------------------------------------------------------------------------------------------
-
-test('registry: registers, lists in order and unregisters exactly what it added', () => {
-  const registry = createActionRegistry();
-  const off = registry.register([action('a', 'Alpha'), action('b', 'Beta')]);
-  const offC = registry.register([action('c', 'Gamma')]);
-  assert.deepEqual(registry.list().map((a) => a.id), ['a', 'b', 'c']);
-  off();
-  assert.deepEqual(registry.list().map((a) => a.id), ['c']);
-  off();
-  offC();
-  assert.deepEqual(registry.list(), []);
-});
-
-test('registry: refuses duplicates and incomplete actions without registering any of the batch', () => {
-  const registry = createActionRegistry();
-  registry.register([action('a', 'Alpha')]);
-  assert.throws(() => registry.register([action('b', 'Beta'), action('a', 'Again')]), /a is already registered/);
-  assert.throws(() => registry.register([action('c', 'One'), action('c', 'Two')]), /c is already registered/);
-  assert.throws(() => registry.register([action('d', 'Delta', { button: ' ' })]), /needs a button/);
-  assert.throws(() => registry.register([action('', 'No id')]), /needs a id/);
-  assert.throws(() => registry.register([action('e', '')]), /needs a title/);
-  assert.throws(() => registry.register([action('f', 'Bad', { group: 'Other' as 'Actions' })]), /unknown group/);
-  assert.deepEqual(registry.list().map((a) => a.id), ['a']);
-});
-
-test('registry: an old unregister does not remove a newer action with the same id', () => {
-  const registry = createActionRegistry();
-  const first = action('a', 'Alpha');
-  const off = registry.register([first]);
-  off();
-  const second = action('a', 'Alpha again');
-  registry.register([second]);
-  off();
-  assert.deepEqual(registry.list(), [second]);
-});
 
 test('search: no query lists every action, Actions before Go to, in registration order', () => {
   const actions = [action('go:a', 'Jobs', { group: 'Go to' }), action('x', 'Restart bot'), action('go:b', 'People', { group: 'Go to' }), action('y', 'Open profile folder')];
@@ -151,25 +116,9 @@ test('selection: arrows wrap and an empty list has no selection', () => {
   assert.equal(moveSelection(0, 1, 0), -1);
 });
 
-test('highlight: splits a label into matched and plain runs', () => {
-  assert.deepEqual(highlightRuns('People', [0, 1, 2]), [{ text: 'Peo', match: true }, { text: 'ple', match: false }]);
-  assert.deepEqual(highlightRuns('Jobs', []), [{ text: 'Jobs', match: false }]);
-});
-
 // ---------------------------------------------------------------------------------------------------------------
 // Built-in actions
 // ---------------------------------------------------------------------------------------------------------------
-
-test('built-ins: register cleanly, every one names its button, and every screen has a Go to action', () => {
-  const registry = createActionRegistry();
-  registry.register(builtinActions);
-  for (const builtin of registry.list()) assert.ok(builtin.button.trim().length > 0, builtin.id);
-  assert.deepEqual(navigationActions.map((a) => a.id), routes.map((route) => `go:${route.id}`));
-  for (const route of routes) assert.equal(navigationActions.find((a) => a.id === `go:${route.id}`)?.button, navigationButton(route));
-  assert.equal(navigationButton(routes.find((route) => route.id === 'jobs-running')!), 'Sidebar › Jobs › Running');
-  assert.equal(navigationButton(routes.find((route) => route.id === 'settings-people')!), 'Sidebar › People');
-  assert.deepEqual(titles(registry.list(), '').slice(0, 3), ['Restart bot', 'Open profile folder', 'Add allowed user']);
-});
 
 test('built-ins: the spike\'s palette examples are found by what the owner would type', () => {
   const all = builtinActions;
@@ -237,12 +186,6 @@ test('built-ins: Add allowed user asks for a member ID and reports when it appli
   ]);
   toasts[0]?.action?.onClick();
   assert.deepEqual(navigated, ['/settings/people']);
-});
-
-test('appliesText: one sentence per AppliesWhen', () => {
-  assert.equal(appliesText('now'), 'Applies now.');
-  assert.equal(appliesText('next job'), 'Applies on the next job.');
-  assert.equal(appliesText('after restart'), 'Applies after a restart.');
 });
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -329,4 +272,59 @@ test('Promote proposal… lists the waiting proposals and opens the picked one o
   assert.deepEqual(navigated, [`/knowledge/proposals?${PROPOSAL_PARAM}=team%2F2026-11-18-reviews.md`]);
   assert.deepEqual(calls, [], 'the palette opens the proposal; the owner promotes it after seeing the diff');
   assert.throws(() => promoteProposalAction.run(context, ''), /Pick a proposal/);
+});
+
+// ---------------------------------------------------------------------------------------------------------------
+// What the palette lists as screens open and close
+// ---------------------------------------------------------------------------------------------------------------
+
+/** A palette as Palette.tsx sets it up: the built-ins registered, then whatever the open screens add. */
+const openPalette = () => {
+  const registry = createActionRegistry();
+  registry.register(builtinActions);
+  return { registry, listed: (query = '') => titles(registry.list(), query) };
+};
+
+test('the palette lists every screen, and picking one opens that screen and names the sidebar item it stands for', async () => {
+  const { registry } = openPalette();
+  for (const route of routes) {
+    const found = searchActions(registry.list(), route.label).map((result) => result.action).find((a) => a.group === 'Go to' && a.title === route.label);
+    assert.ok(found, `typing "${route.label}" finds the screen`);
+    assert.match(found.button, /^Sidebar › /, `${route.label} names its sidebar item`);
+    const { context, navigated } = recordingContext(null);
+    await found.run(context);
+    assert.deepEqual(navigated, [route.path]);
+    assert.equal(routeForPath(navigated[0]!)?.id, route.id, `${route.label} opens its own screen, not another with the same path`);
+    assert.ok(sections.some((section) => section.id === route.section), `${route.label} sits under a sidebar heading`);
+  }
+  assert.equal(navigationButton(routes.find((route) => route.id === 'jobs-running')!), 'Sidebar › Jobs › Running');
+  assert.deepEqual(titles(registry.list(), '').slice(0, 3), ['Restart bot', 'Open profile folder', 'Add allowed user']);
+});
+
+test('a screen whose palette actions include a bad one adds none of them, and the palette keeps what it listed', () => {
+  const { registry, listed } = openPalette();
+  const before = listed();
+  const batches: [batch: Action[], refusal: RegExp][] = [
+    [[cleanupWorktreesAction, { ...restartBot, title: 'Restart again' }], /bot:restart is already registered/],
+    [[cleanupWorktreesAction, action('jobs:x', 'No button', { button: ' ' })], /needs a button/],
+    [[promoteProposalAction, action('', 'No id')], /needs a id/],
+    [[promoteProposalAction, action('p:e', '')], /needs a title/],
+    [[promoteProposalAction, action('p:g', 'Bad group', { group: 'Other' as 'Actions' })], /unknown group/],
+    [[cleanupWorktreesAction, action('c', 'One'), action('c', 'Two')], /c is already registered/],
+  ];
+  for (const [batch, refusal] of batches) assert.throws(() => registry.register(batch), refusal);
+  assert.deepEqual(listed(), before);
+  assert.deepEqual(listed('clean up worktrees'), []);
+  assert.deepEqual(listed('promote proposal'), []);
+});
+
+test('closing a screen late keeps the palette actions a newer copy of that screen added', () => {
+  const { registry, listed } = openPalette();
+  const closeFirst = registry.register([cleanupWorktreesAction]);
+  closeFirst();
+  assert.deepEqual(listed('clean up worktrees'), [], 'closing the screen takes its action away');
+  // The screen opens again; then the first copy's cleanup runs a second time (a hot reload's dispose, a late unmount).
+  registry.register([{ ...cleanupWorktreesAction }]);
+  closeFirst();
+  assert.deepEqual(listed('clean up worktrees'), ['Clean up worktrees']);
 });

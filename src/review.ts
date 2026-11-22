@@ -1,7 +1,7 @@
-import type { webApi } from '@slack/bolt';
+import type { SlackApi } from './slack-api.ts';
 import { run } from './t3.ts';
 
-type SlackClient = webApi.WebClient;
+type SlackClient = Pick<SlackApi, 'chat'>;
 
 const BLOCK = /<review-request>\s*([\s\S]*?)\s*<\/review-request>/i;
 const PR_URL = /https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/pull\/\d+(?![\w/-])/g;

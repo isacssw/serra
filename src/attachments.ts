@@ -1,7 +1,7 @@
 import { chmod, lstat, mkdir, mkdtemp, rename, rm, writeFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { join } from 'node:path';
-import type { webApi } from '@slack/bolt';
+import type { SlackApi } from './slack-api.ts';
 import type { IncomingFile } from './types.ts';
 
 export const MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024;
@@ -53,7 +53,7 @@ const download = async (url: string, token: string, fetchFile: typeof fetch): Pr
 };
 
 /** Returns worker-readable local paths or a clear per-file failure, never credentials or private download URLs. */
-export const receiveAttachments = async (client: webApi.WebClient, files: IncomingFile[], profileDir: string, token: string,
+export const receiveAttachments = async (client: Pick<SlackApi, 'files'>, files: IncomingFile[], profileDir: string, token: string,
   { fetchFile = fetch, limit = MAX_ATTACHMENTS }: { fetchFile?: typeof fetch; limit?: number } = {}): Promise<string> => {
   if (!files.length) return '';
   const lines: string[] = [];

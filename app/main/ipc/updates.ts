@@ -6,7 +6,7 @@
 // Bot actions run one at a time; their log lines go to the window and are kept so the screen shows them again after
 // navigating away. Everything reads and writes the profile's files and launchd directly, so it works while the
 // daemon is stopped.
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import { delimiter, dirname, join } from 'node:path';
 import {
   activateRelease, findNode, prepareNextRelease, releaseStatus, rollbackRelease, runningJobs,
@@ -14,6 +14,7 @@ import {
 } from '../../../src/releases.ts';
 import { launchd, preparedProblems, type DeployOptions, type PrepareOptions } from '../../../src/deploy.ts';
 import { pauseIntake, readAck, readPause, readPauseFile, resumeIntake } from '../../../src/intake.ts';
+import { isRecord, isString, readJsonOrNull } from '../../../src/lib/guards.ts';
 import type { Handlers } from '../bridge.ts';
 import { clearUpdateSource, forgetCleared, lastCleared, sourceProblem, staleSource } from '../../../src/update-migration.ts';
 import { botSyncDecision, type BotSync } from '../bot-sync.ts';
@@ -157,8 +158,11 @@ export const updatesService = (context: HandlerContext, deps: UpdatesDeps = {}) 
   /** `active`: the bot's active.json as the caller read it; read here when not given. */
   const pause = (profileDir: string, active?: { release?: string } | null): void => {
     if (!readPause(profileDir, now())) {
-      let holds = true;
-      try { holds = honorsPause(profileDir, active !== undefined ? active : JSON.parse(readFileSync(join(profileDir, 'active.json'), 'utf8')) as { release?: string }); } catch { /* no bot yet */ }
+      // Read here when not given; no readable active.json means no bot yet, so the usual line is kept.
+      const file = active !== undefined ? active : readJsonOrNull(join(profileDir, 'active.json'), isRecord);
+      const holds = active === undefined && file === null
+        ? true
+        : honorsPause(profileDir, file && isString(file.release) ? { release: file.release } : null);
       line(holds ? 'New requests wait until the bot has restarted; running jobs finish first.' : 'The bot restarts once the running jobs finish.');
     }
     pauseIntake(profileDir, 'bot-update', { now: now() });

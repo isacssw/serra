@@ -20,6 +20,7 @@ import { pathToFileURL } from 'node:url';
 import { codeRoot, defaultProfileRoot, loadConfig, profileArgument, readEnv, readProfileFile, validateProfile, writeFileAtomic, type Profile } from './config.ts';
 import type { DeployLog, DeployOptions, Prepared, PrepareOptions } from './deploy.ts';
 import { diagnose, type DiagnoseOptions } from './doctor.ts';
+import { isRecord, isString, parseJson, readJsonFile, readJsonOrNull } from './lib/guards.ts';
 import { updateProfileSection } from './profile-settings.ts';
 import { activateRelease, prepareNextRelease, type ActivationOutcome } from './releases.ts';
 import type { SecretName, SecretStatus } from './contracts.ts';
@@ -30,6 +31,18 @@ import { run } from './t3.ts';
 /** How to start the knowledge interview (docs/knowledge-interview.md) for a profile. */
 export const onboardingPrompt = (directory: string): string =>
   `Start the knowledge interview from the Serra app: Knowledge, Proposals, then Start interview. Without the app, run pnpm onboard --profile ${JSON.stringify(directory)} and paste what it prints into a new T3 thread in your project.`;
+
+/** The Slack app manifest template that ships with Serra, named for this bot. */
+const manifestFor = (profile: Pick<Profile, 'bot'>): Record<string, unknown> => {
+  const path = join(codeRoot, 'templates/manifest.json');
+  const template = parseJson(readFileSync(path, 'utf8'));
+  if (!isRecord(template) || !isRecord(template.display_information) || !isRecord(template.features) || !isRecord(template.features.bot_user)) {
+    throw new Error(`${path} isn't a Slack app manifest with display_information and features.bot_user.`);
+  }
+  template.display_information.name = profile.bot.name;
+  template.features.bot_user.display_name = profile.bot.id;
+  return template;
+};
 
 export const createProfile = (directory: string, input: Profile): void => {
   const profile = validateProfile(input);
@@ -44,10 +57,7 @@ export const createProfile = (directory: string, input: Profile): void => {
   seed('brief.md', readFileSync(join(codeRoot, 'templates/brief.md'), 'utf8'));
   seed('policy.md', '# Owner policy\n\nAdd your workflow choices here after the knowledge interview.\n');
   if (!existsSync(join(directory, 'knowledge'))) cpSync(join(codeRoot, 'templates/knowledge'), join(directory, 'knowledge'), { recursive: true, errorOnExist: true, force: false });
-  const manifest = JSON.parse(readFileSync(join(codeRoot, 'templates/manifest.json'), 'utf8'));
-  manifest.display_information.name = profile.bot.name;
-  manifest.features.bot_user.display_name = profile.bot.id;
-  seed('manifest.json', JSON.stringify(manifest, null, 2) + '\n');
+  seed('manifest.json', JSON.stringify(manifestFor(profile), null, 2) + '\n');
   seed('onboarding.md', `# Teach your bot how you work\n\n${onboardingPrompt(directory)}\n\nThe interview writes what you confirm to knowledge/proposals/ for you to review. You can stop and resume. Progress belongs in knowledge/proposals/onboarding-progress.md.\n`);
   seed('state.json', '{}\n');
   writeFileSync(join(directory, 'profile.json'), JSON.stringify(profile, null, 2) + '\n', { flag: 'wx', mode: 0o600 });
@@ -169,15 +179,10 @@ export interface SlackManifest {
 export const slackManifest = (profileDir: string): SlackManifest => {
   const directory = resolve(profileDir);
   const path = join(directory, 'manifest.json');
-  let manifest: unknown;
-  if (existsSync(path)) manifest = JSON.parse(readFileSync(path, 'utf8'));
-  else {
-    const profile = readProfileFile(directory);
-    const template = JSON.parse(readFileSync(join(codeRoot, 'templates/manifest.json'), 'utf8'));
-    template.display_information.name = profile.bot.name;
-    template.features.bot_user.display_name = profile.bot.id;
-    manifest = template;
-  }
+  const file = readJsonFile(path, isRecord);
+  // A broken manifest.json is reported, not replaced: it may hold the owner's edits.
+  if (file.state === 'invalid') throw new Error(`${path} isn't a JSON object. Fix it, or remove it to start again from the template.`);
+  const manifest = file.state === 'ok' ? file.value : manifestFor(readProfileFile(directory));
   return {
     json: JSON.stringify(manifest, null, 2) + '\n',
     createUrl: `https://api.slack.com/apps?new_app=1&manifest_json=${encodeURIComponent(JSON.stringify(manifest))}`,
@@ -202,17 +207,17 @@ interface SetupFile {
 
 export const SETUP_FILE = 'setup.json';
 
+/** `setup.json`, keeping each part that reads right. A missing or broken file, or a broken part, is not verified. */
 const readSetupFile = (profileDir: string): SetupFile => {
-  try {
-    const value = JSON.parse(readFileSync(join(resolve(profileDir), SETUP_FILE), 'utf8')) as Partial<SetupFile>;
-    const owner = value.owner;
-    return {
-      version: 1,
-      ...(owner && typeof owner.slackUserId === 'string' && typeof owner.slackName === 'string' && typeof owner.checkedAt === 'string'
-        ? { owner: { slackUserId: owner.slackUserId, slackName: owner.slackName, checkedAt: owner.checkedAt } } : {}),
-      ...(typeof value.serviceAnsweredAt === 'string' ? { serviceAnsweredAt: value.serviceAnsweredAt } : {}),
-    };
-  } catch { return { version: 1 }; }
+  const value = readJsonOrNull(join(resolve(profileDir), SETUP_FILE), isRecord);
+  if (!value) return { version: 1 };
+  const owner = value.owner;
+  return {
+    version: 1,
+    ...(isRecord(owner) && isString(owner.slackUserId) && isString(owner.slackName) && isString(owner.checkedAt)
+      ? { owner: { slackUserId: owner.slackUserId, slackName: owner.slackName, checkedAt: owner.checkedAt } } : {}),
+    ...(isString(value.serviceAnsweredAt) ? { serviceAnsweredAt: value.serviceAnsweredAt } : {}),
+  };
 };
 
 /** A Slack member as the owner check sees them. */

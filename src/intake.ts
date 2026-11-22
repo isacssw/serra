@@ -11,8 +11,10 @@
  * The pause carries a deadline and lapses on its own, so an app that crashed or quit mid-update can't leave the bot
  * ignoring requests. No Slack or Bolt imports: the Electron main process uses this file too.
  */
-import { appendFileSync, existsSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { appendFileSync, readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
+import { writeFileAtomic } from './lib/atomic.ts';
+import { isRecord, isTime } from './lib/guards.ts';
 import type { IncomingMessage } from './types.ts';
 
 export const INTAKE_PAUSED = 'intake-paused.json';
@@ -38,10 +40,26 @@ const pausePath = (profileDir: string): string => join(profileDir, INTAKE_PAUSED
 const ackPath = (profileDir: string): string => join(profileDir, INTAKE_ACK);
 const heldPath = (profileDir: string): string => join(profileDir, HELD_REQUESTS);
 
-const writeAtomic = (path: string, text: string): void => {
-  writeFileSync(`${path}.tmp`, text, { mode: 0o600 });
-  renameSync(`${path}.tmp`, path);
+const writeAtomic = (path: string, text: string): void => writeFileAtomic(path, text, { mode: 0o600 });
+
+const readJson = (path: string): unknown => {
+  try { return JSON.parse(readFileSync(path, 'utf8')); } catch { return null; }
 };
+
+const isPause = (value: unknown): value is IntakePause =>
+  isRecord(value) && (value.reason === 'app-update' || value.reason === 'bot-update') && isTime(value.since) && isTime(value.until);
+
+const isAck = (value: unknown): value is IntakeAck =>
+  isRecord(value) && Number.isSafeInteger(value.pid) && isTime(value.at) && Number.isSafeInteger(value.starting) && (value.starting as number) >= 0;
+
+/** A held request as the daemon wrote it. Anything else on a line is skipped, never handed to the bot. */
+export const isHeldRequest = (value: unknown): value is IncomingMessage =>
+  isRecord(value) && typeof value.channel === 'string' && typeof value.threadTs === 'string' && typeof value.messageTs === 'string'
+  && typeof value.user === 'string' && typeof value.text === 'string' && typeof value.direct === 'boolean'
+  && (value.files === undefined || (Array.isArray(value.files) && value.files.every(isRecord)))
+  && (value.botId === undefined || typeof value.botId === 'string')
+  && (value.automaticTrigger === undefined || typeof value.automaticTrigger === 'boolean')
+  && (value.attemptedAt === undefined || isTime(value.attemptedAt));
 
 /** Starts (or renews) a pause. Returns it. Throws when it can't be written. */
 export const pauseIntake = (profileDir: string, reason: IntakePause['reason'], { now = Date.now(), ms = PAUSE_MS } = {}): IntakePause => {
@@ -57,9 +75,10 @@ export const resumeIntake = (profileDir: string): void => {
   rmSync(ackPath(profileDir), { force: true });
 };
 
-/** The pause file as written, even past its deadline; null when there is none. */
+/** The pause file as written, even past its deadline; null when there is none or it isn't a pause. */
 export const readPauseFile = (profileDir: string): IntakePause | null => {
-  try { return JSON.parse(readFileSync(pausePath(profileDir), 'utf8')) as IntakePause; } catch { return null; }
+  const pause = readJson(pausePath(profileDir));
+  return isPause(pause) ? pause : null;
 };
 
 /** The pause in force now, or null (none, unreadable, or past its deadline). */
@@ -75,10 +94,8 @@ export const acknowledgePause = (profileDir: string, starting: number, { pid = p
 
 /** A fresh acknowledgment, or null (none: a daemon from before pauses, or a stale one). */
 export const readAck = (profileDir: string, now = Date.now()): IntakeAck | null => {
-  try {
-    const ack = JSON.parse(readFileSync(ackPath(profileDir), 'utf8')) as IntakeAck;
-    return now - Date.parse(ack.at) <= ACK_FRESH_MS ? ack : null;
-  } catch { return null; }
+  const ack = readJson(ackPath(profileDir));
+  return isAck(ack) && now - Date.parse(ack.at) <= ACK_FRESH_MS ? ack : null;
 };
 
 /**
@@ -89,14 +106,16 @@ export const admit = (paused: boolean, runningInThread: boolean): 'handle' | 'ho
 
 const key = (msg: Pick<IncomingMessage, 'channel' | 'messageTs'>): string => `${msg.channel}:${msg.messageTs}`;
 
-/** The held requests, oldest first. Broken lines are skipped. */
+/** The held requests, oldest first. Broken lines, and lines that aren't a request, are skipped. */
 export const readHeld = (profileDir: string): IncomingMessage[] => {
   let text: string;
   try { text = readFileSync(heldPath(profileDir), 'utf8'); } catch { return []; }
   const held: IncomingMessage[] = [];
   for (const line of text.split('\n')) {
     if (!line.trim()) continue;
-    try { held.push(JSON.parse(line) as IncomingMessage); } catch { /* skip a broken line */ }
+    let value: unknown;
+    try { value = JSON.parse(line); } catch { continue; }
+    if (isHeldRequest(value)) held.push(value);
   }
   return held;
 };
@@ -108,8 +127,9 @@ export const holdRequest = (profileDir: string, msg: IncomingMessage): void => {
 };
 
 /**
- * Removes one held request, just before it is started: the rest stay on disk, so a crash while starting them loses at
- * most the one being started.
+ * Removes one held request once it has been handed to the bot: started as a job (recorded in `state.json`), refused,
+ * or reported as failed. Until then it stays on disk, so a crash while starting it loses nothing: the next daemon
+ * starts it again, and the job's record of the messages it took in (`Job.heard`) stops a second start (INTAKE-010).
  */
 export const dropHeld = (profileDir: string, msg: IncomingMessage): void => {
   const rest = readHeld(profileDir).filter((held) => key(held) !== key(msg));
@@ -117,6 +137,13 @@ export const dropHeld = (profileDir: string, msg: IncomingMessage): void => {
   else rmSync(heldPath(profileDir), { force: true });
 };
 
-/** A thread with a held request: the bot treats it as its own, so a reply there is held after the request. */
-export const heldThread = (profileDir: string, channel: string, threadTs: string): boolean =>
-  existsSync(heldPath(profileDir)) && readHeld(profileDir).some((held) => held.channel === channel && held.threadTs === threadTs);
+/**
+ * Records, on disk, that starting this held request has begun. If the daemon stops before the request is dropped, the
+ * next one knows a T3 thread may already exist for it (`IncomingMessage.attemptedAt`). Returns the request as marked.
+ */
+export const markAttempt = (profileDir: string, msg: IncomingMessage, at: string): IncomingMessage => {
+  const marked = { ...msg, attemptedAt: msg.attemptedAt ?? at };
+  const held = readHeld(profileDir).map((line) => (key(line) === key(msg) ? marked : line));
+  writeAtomic(heldPath(profileDir), held.map((line) => JSON.stringify(line)).join('\n') + '\n');
+  return marked;
+};

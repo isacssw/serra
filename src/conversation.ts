@@ -1,5 +1,7 @@
 /** How the bot takes part in a Slack thread: who a message is for, what the worker is told, and when the owner is pinged. */
 
+import { createTracker, systemClock, type Clock, type Timer } from './clock.ts';
+
 const MENTION = /<@([UW][A-Z0-9]+)(?:\|[^>]*)?>/g;
 const escapeRegExp = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
@@ -47,7 +49,7 @@ export interface ThreadLine {
 const quoted = (text: string): string => text.split('\n').map((line) => `> ${line}`).join('\n');
 
 /** Ends a turn nobody @mentioned the bot in. The worker may well stay quiet, so no one is waiting on it. */
-export const NO_MENTION_HINT = 'Nobody @mentioned you. If none of this needs you, reply with only `(quiet)`.';
+const NO_MENTION_HINT = 'Nobody @mentioned you. If none of this needs you, reply with only `(quiet)`.';
 
 /**
  * One worker turn for everything said in the thread since the last one, oldest first.
@@ -66,16 +68,17 @@ export const followUpMessage = (lines: ThreadLine[]): string => {
  * Collects what is said in each thread and hands it over in one go: after `quietMs` without a new message,
  * and only once the worker is free, so messages sent during a run become one next turn.
  */
-export const createBatcher = <T>({ quietMs, retryMs, busy, flush, onError }: {
+export const createBatcher = <T>({ quietMs, retryMs, busy, flush, onError, clock = systemClock }: {
   quietMs: number;
   retryMs: number;
   busy: (key: string) => Promise<boolean>;
   flush: (key: string, items: T[]) => Promise<void>;
   onError: (key: string, error: unknown, items: T[]) => void | Promise<void>;
+  clock?: Pick<Clock, 'setTimeout' | 'clearTimeout'>;
 }) => {
   const items = new Map<string, T[]>();
-  const timers = new Map<string, NodeJS.Timeout>();
-  const running = new Set<Promise<void>>();
+  const timers = new Map<string, Timer>();
+  const running = createTracker();
   /** Threads whose turn is being checked or handed over right now. */
   const attempting = new Set<string>();
 
@@ -102,12 +105,8 @@ export const createBatcher = <T>({ quietMs, retryMs, busy, flush, onError }: {
   };
 
   const schedule = (key: string, ms: number): void => {
-    clearTimeout(timers.get(key));
-    timers.set(key, setTimeout(() => {
-      const work = attempt(key);
-      running.add(work);
-      void work.finally(() => running.delete(work));
-    }, ms));
+    clock.clearTimeout(timers.get(key));
+    timers.set(key, clock.setTimeout(() => { void running.track(attempt(key)); }, ms));
   };
 
   return {
@@ -124,8 +123,12 @@ export const createBatcher = <T>({ quietMs, retryMs, busy, flush, onError }: {
     /** Sends what is waiting for a turn, without waiting for quiet. For shutdown. */
     async drain(): Promise<void> {
       const waiting = [...timers.keys()];
-      for (const key of waiting) { clearTimeout(timers.get(key)); timers.delete(key); }
-      await Promise.allSettled([...running, ...waiting.map((key) => send(key))]);
+      for (const key of waiting) { clock.clearTimeout(timers.get(key)); timers.delete(key); }
+      await Promise.allSettled([running.idle(), ...waiting.map((key) => send(key))]);
+    },
+    /** Resolves once no turn is being checked or handed over. Timers still waiting don't count. */
+    idle(): Promise<void> {
+      return running.idle();
     },
   };
 };

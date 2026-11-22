@@ -1,0 +1,72 @@
+{
+  "id": "reply-009-no-metadata-rewritten-text",
+  "specs": [
+    "REPLY-009"
+  ],
+  "title": "without metadata, a reply Slack stored with its links wrapped and & < > escaped is still recognised after a crash",
+  "slack": {
+    "returnsMetadata": false,
+    "rewritesText": true
+  },
+  "steps": [
+    {
+      "do": "slack",
+      "envelope": {
+        "type": "event_callback",
+        "team_id": "THOME",
+        "api_app_id": "A1",
+        "event_id": "Ev1",
+        "event_time": 1700000100,
+        "authorizations": [
+          {
+            "team_id": "THOME",
+            "user_id": "UBOT",
+            "is_bot": true
+          }
+        ],
+        "event": {
+          "type": "app_mention",
+          "user": "USAM",
+          "text": "<@UBOT> open the PR",
+          "ts": "1700000100.000100",
+          "channel": "C1",
+          "event_ts": "1700000100.000100",
+          "team": "THOME"
+        }
+      }
+    },
+    {
+      "do": "worker.reply",
+      "text": "PR is up: https://github.com/acme/project/pull/12 & tests pass (retries < 3 > 0)."
+    },
+    {
+      "do": "slack.hangAfter",
+      "method": "chat.postMessage"
+    },
+    {
+      "do": "advance",
+      "ms": 15000
+    },
+    {
+      "do": "crash"
+    },
+    {
+      "do": "advance",
+      "ms": 15000,
+      "expect": {
+        "slack": [
+          {
+            "method": "chat.postMessage",
+            "count": 1
+          }
+        ],
+        "state": {
+          "C1:1700000100.000100": {
+            "lastPostedRunId": "run-1",
+            "delivering": "$absent"
+          }
+        }
+      }
+    }
+  ]
+}

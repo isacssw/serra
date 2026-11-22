@@ -12,8 +12,9 @@
 import { execFile, spawnSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { readEnv, readProfileFile, writeFileAtomic } from './config.ts';
-import type { SecretName, SecretSource, SecretStatus } from './contracts.ts';
+import type { Profile, SecretName, SecretSource, SecretStatus } from './contracts.ts';
+import { writeFileAtomic } from './lib/atomic.ts';
+import { readEnv } from './lib/env.ts';
 
 export const SECRETS_FILE = 'secrets.json';
 export const SECRET_NAMES: readonly SecretName[] = ['SLACK_BOT_TOKEN', 'SLACK_APP_TOKEN'];
@@ -27,7 +28,7 @@ export interface SecretTools {
   timeoutMs: number;
 }
 // 30 s leaves time for a 1Password unlock prompt.
-export const DEFAULT_SECRET_TOOLS: SecretTools = { security: 'security', op: 'op', timeoutMs: 30_000 };
+const DEFAULT_SECRET_TOOLS: SecretTools = { security: 'security', op: 'op', timeoutMs: 30_000 };
 
 interface CheckRecord { verifiedAt: string | null; error: string | null }
 
@@ -54,7 +55,7 @@ const OP_PART = String.raw`[^/\s"'\\](?:[^/\r\n\0"'\\]*[^/\s"'\\])?`;
 const OP_REFERENCE = new RegExp(`^op://${OP_PART}/${OP_PART}(/${OP_PART}){1,2}$`);
 
 /** Throws when `source` isn't a well-formed source. Returns it typed. */
-export const validateSecretSource = (source: unknown): SecretSource => {
+const validateSecretSource = (source: unknown): SecretSource => {
   if (!record(source)) throw new Error('A secret source needs a kind: keychain, 1password or env');
   if (source.kind === 'env') return { kind: 'env' };
   if (source.kind === 'keychain') {
@@ -116,8 +117,7 @@ export const sourceLabel = (source: SecretSource): string =>
   source.kind === 'keychain' ? 'Keychain' : source.kind === '1password' ? '1Password' : '.env';
 
 /** The Keychain item a token goes in unless the owner picks another: the bot's service label and the token's name. */
-export const defaultKeychainSource = (profileDir: string, name: SecretName): SecretSource & { kind: 'keychain' } => {
-  const profile = readProfileFile(profileDir);
+export const defaultKeychainSource = (profile: Pick<Profile, 'serviceLabel' | 'bot'>, name: SecretName): SecretSource & { kind: 'keychain' } => {
   return { kind: 'keychain', service: profile.serviceLabel ?? `dev.serra.${profile.bot.id}`, account: name };
 };
 
@@ -308,7 +308,7 @@ export type SlackVerify = (name: SecretName, token: string) => Promise<{ url?: s
  * `auth.test`, so it is checked with `apps.connections.open`, which only hands out a Socket Mode URL that is never
  * opened.
  */
-export const slackVerify: SlackVerify = async (name, token) => {
+const slackVerify: SlackVerify = async (name, token) => {
   // Loaded here so `loadConfig`, which imports this file, doesn't pull in Bolt.
   const { webApi } = await import('@slack/bolt');
   const client = new webApi.WebClient(token, { retryConfig: { retries: 0 }, timeout: 15_000 });

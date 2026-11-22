@@ -54,7 +54,9 @@ const useFullScreen = (): boolean => {
 
 const TitleRow = ({ status }: { status: BotStatus | null }) => {
   const view = statusView(status);
-  const insetLights = isMac && !useFullScreen();
+  // Hooks run on every render, in the same order: call it first, then decide.
+  const fullScreen = useFullScreen();
+  const insetLights = isMac && !fullScreen;
   return (
     <div className={cx('drag flex h-[52px] shrink-0 items-center pr-3', insetLights ? 'pl-[84px]' : 'pl-4')}>
       {/* The title row moves the window, which takes its mouse events; the name keeps its tooltip. */}

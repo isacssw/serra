@@ -18,6 +18,7 @@ import { chmodSync, lstatSync, rmSync } from 'node:fs';
 import { createConnection, createServer, type Server, type Socket } from 'node:net';
 import { join } from 'node:path';
 import type { BotEvent, BotStatus, Job } from './contracts.ts';
+import { isBoolean, isNonEmptyString, isNumber, isOneOf, isOptional, isRecord, isRecordOf, isString, parseJson } from './lib/guards.ts';
 import { isSlackBotId, isSlackChannelId, isSlackUserId } from './slack-names.ts';
 
 export const STATUS_SOCKET = 'status.sock';
@@ -52,7 +53,9 @@ const MAX_NAME_LENGTH = 200;
 /** macOS limits a socket path to 104 bytes including the terminator. */
 const MAX_PATH_BYTES = 103;
 
-const str = (value: unknown): string => (typeof value === 'string' ? value : String(value ?? ''));
+/** A field as text: strings as they are, numbers and booleans spelled out, anything else (an object, null) empty, never `[object Object]`. */
+const str = (value: unknown): string =>
+  typeof value === 'string' ? value : typeof value === 'number' || typeof value === 'boolean' ? String(value) : '';
 
 /**
  * The daemon's event as the app sees it, or null for events the app doesn't show (progress lines, question
@@ -140,12 +143,10 @@ const unique = (value: unknown, valid: (id: string) => boolean): string[] =>
  * and at most `MAX_NAME_IDS` are kept.
  */
 export const parseNamesRequest = (text: string): Omit<NamesRequest, 'type'> | null => {
-  let value: unknown;
-  try { value = JSON.parse(text); } catch { return null; }
-  if (typeof value !== 'object' || value === null || (value as { type?: unknown }).type !== 'names') return null;
-  const { users: rawUsers, channels: rawChannels } = value as { users?: unknown; channels?: unknown };
-  const users = unique(rawUsers, (id) => isSlackUserId(id) || isSlackBotId(id)).slice(0, MAX_NAME_IDS);
-  const channels = unique(rawChannels, isSlackChannelId).slice(0, MAX_NAME_IDS - users.length);
+  const value = parseJson(text);
+  if (!isRecord(value) || value.type !== 'names') return null;
+  const users = unique(value.users, (id) => isSlackUserId(id) || isSlackBotId(id)).slice(0, MAX_NAME_IDS);
+  const channels = unique(value.channels, isSlackChannelId).slice(0, MAX_NAME_IDS - users.length);
   if (users.length + channels.length === 0) return null;
   return { users, channels };
 };
@@ -153,9 +154,9 @@ export const parseNamesRequest = (text: string): Omit<NamesRequest, 'type'> | nu
 /** Only the names asked for, and only strings that look like names: whatever the resolver returned, nothing else goes out. */
 const pick = (asked: string[], names: unknown): Record<string, string> => {
   const out: Record<string, string> = {};
-  if (typeof names !== 'object' || names === null) return out;
+  if (!isRecord(names)) return out;
   for (const id of asked) {
-    const name = (names as Record<string, unknown>)[id];
+    const name = names[id];
     if (typeof name === 'string' && name.trim() && name.length <= MAX_NAME_LENGTH) out[id] = name;
   }
   return out;
@@ -287,11 +288,33 @@ export const startStatusServer = async ({ profileDir, status, now = () => new Da
   };
 };
 
-const isStatusMessage = (value: unknown): value is StatusMessage => {
-  if (typeof value !== 'object' || value === null) return false;
-  const message = value as { type?: unknown; status?: { state?: unknown }; event?: { event?: unknown } };
-  if (message.type === 'status') return message.status?.state === 'up' || message.status?.state === 'stopped';
-  if (message.type === 'event') return typeof message.event?.event === 'string';
+/** A `BotStatus` as the daemon sends it: every field the app reads, with its type. */
+export const isBotStatus = (value: unknown): value is BotStatus => {
+  if (!isRecord(value)) return false;
+  if (value.state === 'stopped') return true;
+  return value.state === 'up' && Number.isSafeInteger(value.pid) && isString(value.startedAt) && isBoolean(value.slackConnected)
+    && isRecord(value.counts) && isNumber(value.counts.needsYou) && isNumber(value.counts.running);
+};
+
+const isReplyKind = isOneOf('reply', 'quiet', 'status_posted', 'status_edited');
+
+/** A `BotEvent` the app knows, with the fields of its kind. An event name the app doesn't know yet is rejected. */
+export const isBotEvent = (value: unknown): value is BotEvent => {
+  if (!isRecord(value) || !isString(value.at) || !isString(value.key)) return false;
+  switch (value.event) {
+    case 'job_started': return isString(value.t3ThreadId) && isString(value.requester);
+    case 'reply': return isReplyKind(value.kind) && isOptional(isBoolean)(value.needsOwner) && isOptional(isBoolean)(value.notice);
+    case 'needs_owner': return true;
+    case 'failure': return isString(value.error);
+    default: return false;
+  }
+};
+
+/** One line from the daemon the subscriber may deliver: a well-formed status or a known, well-formed event. */
+export const isStatusMessage = (value: unknown): value is StatusMessage => {
+  if (!isRecord(value)) return false;
+  if (value.type === 'status') return isBotStatus(value.status);
+  if (value.type === 'event') return isBotEvent(value.event);
   return false;
 };
 
@@ -344,8 +367,7 @@ export const subscribeStatus = (
         const text = buffer.slice(0, end);
         buffer = buffer.slice(end + 1);
         end = buffer.indexOf('\n');
-        let parsed: unknown;
-        try { parsed = JSON.parse(text); } catch { continue; }
+        const parsed = parseJson(text);
         if (isStatusMessage(parsed)) deliver(parsed);
       }
     });
@@ -373,12 +395,11 @@ export interface RequestNamesOptions {
   timeoutMs?: number;
 }
 
-const isNamesReply = (value: unknown): value is NamesReply => {
-  if (typeof value !== 'object' || value === null) return false;
-  const reply = value as { type?: unknown; users?: unknown; channels?: unknown };
-  return reply.type === 'names' && typeof reply.users === 'object' && reply.users !== null
-    && typeof reply.channels === 'object' && reply.channels !== null;
-};
+const isNameMap = isRecordOf(isNonEmptyString);
+
+/** The daemon's answer to a names request: `id → name` maps whose every name is a string. */
+export const isNamesReply = (value: unknown): value is NamesReply =>
+  isRecord(value) && value.type === 'names' && isNameMap(value.users) && isNameMap(value.channels);
 
 /**
  * Asks the daemon in `profileDir` to name these Slack IDs, on a connection of its own that closes after the answer.
@@ -413,8 +434,7 @@ export const requestNames = (
       const text = buffer.slice(0, end);
       buffer = buffer.slice(end + 1);
       end = buffer.indexOf('\n');
-      let parsed: unknown;
-      try { parsed = JSON.parse(text); } catch { continue; }
+      const parsed = parseJson(text);
       if (isNamesReply(parsed)) finish(parsed);
     }
     // Status lines are small; a daemon that sends something this large without a newline isn't one we talk to.

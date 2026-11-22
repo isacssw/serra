@@ -96,6 +96,25 @@ export const startThread = async ({ project, baseRef, branch, title, brief, prov
   return out.threadId;
 };
 
+/**
+ * The threads in `project` titled `title` and created at or after `since`, newest first. A start cut off by a crash may
+ * still have made its thread: the bot confirms which one is its own before carrying on there. Throws on output that
+ * isn't T3's list, so a change in T3 shows up in the log instead of passing for "none".
+ */
+export const findThreads = async (project: string, title: string, since: string, bin = T3_BIN): Promise<string[]> => {
+  const raw = await run(bin, ['thread', 'list', '--json', '--project', project]);
+  const start = raw.search(/[[{]/);
+  const parsed: unknown = start === -1 ? null : JSON.parse(raw.slice(start));
+  const list = Array.isArray(parsed) ? parsed : isRecord(parsed) && Array.isArray(parsed.threads) ? parsed.threads : null;
+  if (!list) throw new Error(`Unexpected t3 thread list output: ${raw.slice(0, 200)}`);
+  const from = Date.parse(since);
+  return list
+    .filter((thread): thread is Record<string, unknown> & { threadId: string; createdAt: string } => isRecord(thread)
+      && thread.title === title && typeof thread.threadId === 'string' && typeof thread.createdAt === 'string' && Date.parse(thread.createdAt) >= from)
+    .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))
+    .map((thread) => thread.threadId);
+};
+
 /** Queues a message on a thread. A busy thread gets it as its next turn. */
 export const sendToThread = async (threadId: string, message: string, bin = T3_BIN): Promise<void> => {
   await run(bin, ['thread', 'send', '--json', threadId, '-'], { input: message });

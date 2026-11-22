@@ -12,9 +12,9 @@ import {
   BRIEF_PLACEHOLDERS, briefProblems, createBriefService, fillBrief, fillBriefText, NO_THREAD, REQUIRED_PLACEHOLDERS,
   sampleBriefInput,
 } from '../src/brief.ts';
-import { emptyDraft, isDirty, loadedDraft, proposedLabel, replacesLine } from '../app/renderer/screens/brief.logic.ts';
+import { DOCUMENTS, emptyDraft, isDirty, loadedDraft, proposedLabel, replacesLine } from '../app/renderer/screens/brief.logic.ts';
 import { codeRoot, loadConfig } from '../src/config.ts';
-import { createKnowledge, INDEX_MAX_LINES } from '../src/knowledge.ts';
+import { createKnowledge } from '../src/knowledge.ts';
 
 const TEMPLATE = readFileSync(join(codeRoot, 'templates/brief.md'), 'utf8');
 const POLICY = '# Owner policy\n\nOpen draft PRs.\n';
@@ -200,21 +200,36 @@ test('an invalid proposal is refused before anything is written', async (t) => {
 
 // --- screen helpers ---------------------------------------------------------------------------------------------
 
-test('screen helpers: proposal labels, dirty drafts and the apply line', () => {
-  assert.deepEqual(proposedLabel('2026-11-17-lean-brief'), { date: '2026-11-17', title: 'Lean brief' });
-  assert.deepEqual(proposedLabel('shorter_policy'), { date: null, title: 'Shorter policy' });
-  assert.deepEqual(proposedLabel('2026-11-17'), { date: '2026-11-17', title: '2026-11-17' });
-  assert.equal(isDirty(emptyDraft()), false);
-  assert.equal(isDirty(loadedDraft('a')), false);
-  assert.equal(isDirty({ saved: 'a', text: 'b' }), true);
-  assert.match(replacesLine(['policy', 'brief']), /^Replaces brief\.md and policy\.md\./);
-});
+test('the Brief screen shows each waiting proposal by date and title, names the files applying it replaces, and marks an edit unsaved until it is saved', async (t) => {
+  const directory = tempProfile(t);
+  propose(directory, '2026-11-17-lean-brief', { 'brief.md': TEMPLATE, 'policy.md': '# Owner policy\n\nReady PRs.\n' });
+  propose(directory, 'shorter_policy', { 'policy.md': '# Owner policy\n\nShort.\n' });
+  const bridge = bridgeFor(directory);
 
-test('the brief tells workers to replace an old rule rather than add beside it, and never to approve knowledge themselves', () => {
-  const text = TEMPLATE.replace(/\s+/g, ' ');
-  assert.match(text, /check the index for a page on the same topic\. If there is one, add `target: <that page>`/);
-  assert.match(text, /write the whole page as it should now read/);
-  assert.match(text, /keep the old one under a `Replaced` heading .* with the date it stopped applying\. Never leave both as current rules\./);
-  assert.match(text, /Never promote, merge or undo a proposal, and never edit `index\.md`, `log\.md` or a page outside `proposals\/` yourself/);
-  assert.match(readFileSync(join(codeRoot, 'templates/knowledge/proposals/README.md'), 'utf8'), /`Replaced` heading with the date it stopped applying/);
+  // The proposal list, as the screen labels it.
+  const names = await bridge.brief.listProposed();
+  assert.deepEqual(names.map(proposedLabel), [
+    { date: '2026-11-17', title: 'Lean brief' },
+    { date: null, title: 'Shorter policy' },
+  ]);
+
+  // The apply dialog's line comes from what the proposal holds.
+  const applyLine = async (name: string): Promise<string> => {
+    const proposed = await bridge.brief.readProposed(name);
+    return replacesLine(DOCUMENTS.filter((document) => proposed[document.id] !== undefined).map((document) => document.id));
+  };
+  assert.match(await applyLine('2026-11-17-lean-brief'), /^Replaces brief\.md and policy\.md\./);
+  assert.match(await applyLine('shorter_policy'), /^Replaces policy\.md\./);
+
+  // An editor is clean before and after loading, dirty once edited, and clean again once the save lands.
+  let draft = emptyDraft();
+  assert.equal(isDirty(draft), false);
+  draft = loadedDraft(await bridge.brief.read('policy'));
+  assert.equal(isDirty(draft), false);
+  draft = { ...draft, text: '# Owner policy\n\nOpen ready PRs.\n' };
+  assert.equal(isDirty(draft), true);
+  await bridge.brief.save('policy', draft.text);
+  draft = loadedDraft(await bridge.brief.read('policy'));
+  assert.equal(isDirty(draft), false);
+  assert.equal(readFileSync(join(directory, 'policy.md'), 'utf8'), '# Owner policy\n\nOpen ready PRs.\n');
 });

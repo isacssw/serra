@@ -1,3 +1,4 @@
+import { readProfileFile } from '../config.ts';
 import type { Command } from '../manage.ts';
 import type { SecretSource, SecretStatus } from '../contracts.ts';
 import {
@@ -63,7 +64,7 @@ const command: Command = {
     let source: SecretSource;
     let value: string | undefined;
     if (flag('--keychain')) {
-      const fallback = defaultKeychainSource(profileDir, name);
+      const fallback = defaultKeychainSource(readProfileFile(profileDir), name);
       source = { kind: 'keychain', service: option('--service') ?? fallback.service, account: option('--account') ?? fallback.account };
       if (!flag('--existing')) value = await readStdin();
     } else if (reference !== undefined) source = { kind: '1password', reference };

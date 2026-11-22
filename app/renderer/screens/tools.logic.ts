@@ -5,13 +5,13 @@ import type { McpOverview, McpScope, McpServer, WorkerDriver } from '../../../sr
 import { CLI_CATALOG, PROVIDER_MCP, RECOMMENDATIONS, type CliSpec, type Recommendation, type ToolIcon } from '../../../src/tool-catalog.ts';
 import type { BrandId } from '../ui/brand-icons.ts';
 
-export const DRIVER_NAMES: Record<WorkerDriver, string> = { claude: 'Claude', codex: 'Codex' };
+const DRIVER_NAMES: Record<WorkerDriver, string> = { claude: 'Claude', codex: 'Codex' };
 
 /** A status pill's colour. `off` is a quiet grey dot. */
-export type StatusTone = 'up' | 'warn' | 'down' | 'neutral' | 'off';
+type StatusTone = 'up' | 'warn' | 'down' | 'neutral' | 'off';
 export interface Status { tone: StatusTone; text: string }
 
-export const SCOPE_LABELS: Record<McpScope, string> = {
+const SCOPE_LABELS: Record<McpScope, string> = {
   user: 'User config', project: 'Project', local: 'This folder only', connector: 'claude.ai connector', plugin: 'Plugin', provider: 'Built in',
 };
 

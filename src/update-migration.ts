@@ -16,6 +16,7 @@
 import { chmodSync, copyFileSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { PROFILE_FILE, validateProfile, writeProfileFile } from './config.ts';
+import { isRecord, isString, isTime, parseJson, readJsonOrNull } from './lib/guards.ts';
 
 /** What the profile's `updates.source` points at. Only the last three are cleared on their own. */
 export type SourceKind =
@@ -31,7 +32,7 @@ export type SourceKind =
   /** A folder with neither git nor Serra's package.json. */
   | 'not-a-checkout';
 
-const code = (error: unknown): string | undefined => (error as NodeJS.ErrnoException | null)?.code;
+const code = (error: unknown): string | undefined => (isRecord(error) && isString(error.code) ? error.code : undefined);
 const ABSENT = new Set(['ENOENT', 'ENOTDIR']);
 
 /**
@@ -62,8 +63,12 @@ export const classifySource = (source: string): SourceKind => {
   try { if (!statSync(source).isDirectory()) return link ? 'unknown' : 'not-a-checkout'; } catch { return 'unknown'; }
   if (unmounted(source)) return 'unknown';
   let name: unknown;
-  try { name = (JSON.parse(readFileSync(join(source, 'package.json'), 'utf8')) as { name?: unknown }).name; }
-  catch (error) { if (!ABSENT.has(code(error) ?? '')) return 'unknown'; }
+  try {
+    // Text that isn't JSON (a package.json mid-conflict) is unknown, like a read that fails.
+    const pkg = parseJson(readFileSync(join(source, 'package.json'), 'utf8'));
+    if (!isRecord(pkg)) return 'unknown';
+    name = pkg.name;
+  } catch (error) { if (!ABSENT.has(code(error) ?? '')) return 'unknown'; }
   if (name === 'serra') return 'checkout';
   // A clone has a `.git` folder, a worktree a `.git` file, here or above. A repository we can't recognise stays.
   for (let at = source; ; at = dirname(at)) {
@@ -103,7 +108,7 @@ export interface ClearedSource {
 }
 
 /** Copies profile.json into `<profile>/backups/<stamp>-<label>/` (private, like deploy's backups). Returns the folder. */
-export const backupProfile = (profileDir: string, label: string, now = new Date()): string => {
+const backupProfile = (profileDir: string, label: string, now = new Date()): string => {
   const directory = resolve(profileDir);
   const backup = join(directory, 'backups', `${now.toISOString().replace(/[:.]/g, '-')}-${label}`);
   mkdirSync(backup, { recursive: true, mode: 0o700 });
@@ -114,10 +119,8 @@ export const backupProfile = (profileDir: string, label: string, now = new Date(
 };
 
 const currentSource = (profileDir: string): string | null => {
-  try {
-    const raw = JSON.parse(readFileSync(join(resolve(profileDir), PROFILE_FILE), 'utf8')) as { updates?: { source?: unknown } };
-    return typeof raw.updates?.source === 'string' ? raw.updates.source : null;
-  } catch { return null; }
+  const raw = readJsonOrNull(join(resolve(profileDir), PROFILE_FILE), isRecord);
+  return raw && isRecord(raw.updates) && isString(raw.updates.source) ? raw.updates.source : null;
 };
 
 /**
@@ -127,8 +130,9 @@ const currentSource = (profileDir: string): string | null => {
  */
 export const clearUpdateSource = (profileDir: string, reason = '', now = new Date(), expected?: string): ClearedSource | null => {
   const path = join(resolve(profileDir), PROFILE_FILE);
-  const raw = JSON.parse(readFileSync(path, 'utf8')) as Record<string, unknown> & { updates?: { source?: unknown } };
-  if (typeof raw.updates?.source !== 'string') return null;
+  const raw = parseJson(readFileSync(path, 'utf8'));
+  if (!isRecord(raw)) throw new Error(`${path} must contain a JSON object`);
+  if (!isRecord(raw.updates) || !isString(raw.updates.source)) return null;
   const source = raw.updates.source;
   if (expected !== undefined && source !== expected) return null;
   const { updates: _cleared, ...next } = raw;
@@ -145,8 +149,10 @@ export const clearUpdateSource = (profileDir: string, reason = '', now = new Dat
 };
 
 const NOTICE = 'cleared.json';
+const isClearedSource = (value: unknown): value is ClearedSource =>
+  isRecord(value) && isString(value.source) && isString(value.reason) && isString(value.backup) && isTime(value.at);
 /** How long Updates mentions a cleared source. */
-export const NOTICE_DAYS = 7;
+const NOTICE_DAYS = 7;
 
 /** Drops the notices (not the backups): the owner set a source again, so an earlier clear no longer applies. */
 export const forgetCleared = (profileDir: string): void => {
@@ -164,11 +170,10 @@ export const lastCleared = (profileDir: string, now = new Date()): ClearedSource
   // Only the latest clear counts: after Follow app updates (no notice), an older automatic one no longer applies.
   const latest = names[0];
   if (!latest) return null;
-  try {
-    const notice = JSON.parse(readFileSync(join(root, latest, NOTICE), 'utf8')) as ClearedSource;
-    const age = now.getTime() - Date.parse(notice.at);
-    return age >= 0 && age <= NOTICE_DAYS * 24 * 60 * 60_000 ? notice : null;
-  } catch { return null; }
+  const notice = readJsonOrNull(join(root, latest, NOTICE), isClearedSource);
+  if (!notice) return null;
+  const age = now.getTime() - Date.parse(notice.at);
+  return age >= 0 && age <= NOTICE_DAYS * 24 * 60 * 60_000 ? notice : null;
 };
 
 /**

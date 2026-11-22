@@ -1,218 +1,29 @@
-import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
-import { basename, dirname, join } from 'node:path';
+/** The daemon's entry: the real Slack connection, knowledge and clock for `startDaemon`, plus signals. */
 import { App, LogLevel, SocketModeReceiver } from '@slack/bolt';
-import { createBot } from './bot.ts';
+import { loadConfig } from './config.ts';
+import { startDaemon } from './daemon.ts';
 import { createKnowledge } from './knowledge.ts';
-import { proposeBriefUpdate } from './brief.ts';
-import { createStore } from './state.ts';
-import { loadConfig, defaultProfileRoot } from './config.ts';
-import { acquireLock } from './lock.ts';
-import { incomingMessage } from './incoming.ts';
-import { eventLog, timestampedLogger } from './logging.ts';
-import { QUESTION_ACTION, questionInteraction } from './questions.ts';
-import { jobCounts, startStatusServer, type StatusServer } from './status-socket.ts';
-import { answerNameRequests, createSlackNames } from './slack-names.ts';
-import { watchProfile } from './profile-reload.ts';
-import { checkProjectAccess } from './project-access.ts';
-import { acknowledgePause, admit, dropHeld, heldThread, holdRequest, readHeld, readPause } from './intake.ts';
-import type { IncomingMessage } from './types.ts';
-
-const POLL_MS = 15_000;
+import { errorMessage } from './lib/errors.ts';
+import { timestampedLogger } from './logging.ts';
 
 const config = loadConfig();
-mkdirSync(dirname(config.statePath), { recursive: true, mode: 0o700 });
-const releaseProfileLock = acquireLock(`${config.statePath}.lock`);
-process.on('exit', releaseProfileLock);
-const { checkKnowledge, loadIndex, briefKnowledge, seedApproved, untaggedPages } = createKnowledge(config.knowledgeDir);
-
 const logger = timestampedLogger(LogLevel.INFO);
-// Under launchd, macOS may block the repository (Documents, Desktop, Downloads). Find out now, not on the first job.
-try { await checkProjectAccess([config.project, ...config.repositories.map(({ path }) => path)]); }
-catch (error) { logger.error(error instanceof Error ? error.message : String(error)); process.exit(1); }
 // The receiver is made here rather than by `socketMode: true` so its connection state can feed the status socket.
 const receiver = new SocketModeReceiver({ appToken: config.appToken, logger, logLevel: LogLevel.INFO });
 const app = new App({ token: config.botToken, receiver, logger, logLevel: LogLevel.INFO });
-let slackConnected = false;
 
-let botUserId = '';
-let botId = '';
-const logsDir = join(config.profileDir, 'logs');
-mkdirSync(logsDir, { recursive: true, mode: 0o700 });
-const store = createStore(config.statePath);
-const logEvent = eventLog(join(logsDir, 'events.jsonl'));
-let status: StatusServer | null = null;
-const bot = createBot({
-  config, client: app.client, botUserId: () => botUserId, store, loadIndex, loadKnowledge: (visibility) => briefKnowledge(visibility), logger: app.logger,
-  // The app sees the same events as events.jsonl, live.
-  events: (name, fields) => { logEvent(name, fields); status?.publish(name, fields); },
+const daemon = await startDaemon({
+  config, app, client: app.client, logger: app.logger, connection: receiver.client, knowledge: createKnowledge(config.knowledgeDir),
+}).catch((error: unknown) => {
+  logger.error(errorMessage(error));
+  process.exit(1);
 });
-
-const errorMessage = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
 let stopping = false;
-const pending = new Set<Promise<unknown>>();
-const track = async (work: Promise<unknown>): Promise<void> => {
-  pending.add(work);
-  try { await work; } finally { pending.delete(work); }
-};
-
-const HELD_REACTION = 'hourglass_flowing_sand';
-/** Requests let through and still being started (fetching context, starting the T3 thread), not yet running jobs. */
-let starting = 0;
-
-/** While new work is paused, tells the app how many requests are still being started, so it waits for them. */
-const acknowledge = (): void => {
-  if (config.profileDir && readPause(config.profileDir)) {
-    try { acknowledgePause(config.profileDir, starting); } catch (error) { app.logger.warn(`Couldn't acknowledge the pause: ${errorMessage(error)}`); }
-  }
-};
-
-const start = async (msg: IncomingMessage): Promise<void> => {
-  starting += 1;
-  try { await track(bot.handle(msg)); } finally { starting -= 1; acknowledge(); }
-};
-
-/** The thread has a request waiting for the restart: replies there wait behind it. */
-const owns = (channel: string, threadTs: string): boolean =>
-  bot.ownsThread(channel, threadTs) || (config.profileDir ? heldThread(config.profileDir, channel, threadTs) : false);
-
-/**
- * Handles a message now, or holds it while the app has paused new work for an update (intake.ts): a request that
- * would start a job waits, with an hourglass on it, for the restarted bot. Messages for running jobs go through.
- */
-const receive = async (msg: IncomingMessage): Promise<void> => {
-  const paused = config.profileDir ? readPause(config.profileDir) : null;
-  const waitingBehind = config.profileDir ? heldThread(config.profileDir, msg.channel, msg.threadTs) : false;
-  if (config.profileDir && (waitingBehind || admit(paused !== null, bot.runningIn(msg.channel, msg.threadTs)) === 'hold')) {
-    holdRequest(config.profileDir, msg);
-    await app.client.reactions.add({ channel: msg.channel, timestamp: msg.messageTs, name: HELD_REACTION }).catch(() => {});
-    app.logger.info(`Holding a new request in ${msg.channel} until Serra finishes updating.`);
-    acknowledge();
-    return;
-  }
-  await start(msg);
-};
-
-let releasing = false;
-/** Starts the requests held during a pause, once it is over (at start, or when the update was called off), in order. */
-const releaseHeld = async (): Promise<void> => {
-  if (!config.profileDir || releasing) return;
-  releasing = true;
-  try {
-    for (const msg of readHeld(config.profileDir)) {
-      // Checked again before each one: an update may have paused new work meanwhile.
-      if (stopping || readPause(config.profileDir)) return;
-      dropHeld(config.profileDir, msg);
-      await app.client.reactions.remove({ channel: msg.channel, timestamp: msg.messageTs, name: HELD_REACTION }).catch(() => {});
-      await start(msg).catch((error: unknown) => app.logger.error(`Held request failed: ${errorMessage(error)}`));
-    }
-  } finally { releasing = false; }
-};
-
-app.event('app_mention', async ({ event }) => {
-  if (stopping) return;
-  const msg = incomingMessage(event, 'app_mention', botUserId, owns, { messageTriggers: config.messageTriggers, botId });
-  if (msg) await receive(msg);
-});
-
-// Agent view emits this when someone opens the app. Wait for their message before starting work.
-app.event('app_home_opened', async () => {});
-
-app.action(QUESTION_ACTION, async ({ ack, body }) => {
-  await ack();
-  if (stopping) return;
-  const interaction = questionInteraction(body);
-  if (interaction) await track(bot.handleQuestionAction(interaction));
-});
-
-app.message(async ({ message }) => {
-  if (stopping) return;
-  const msg = incomingMessage(message, 'message', botUserId, owns, { messageTriggers: config.messageTriggers, botId });
-  if (msg) await receive(msg);
-});
-
-// A missing index stops the daemon here instead of failing the first request. An index over its cap and page problems only warn.
-loadIndex();
-// From here on, briefs use the knowledge as the owner approved it: a file changed outside Serra waits for them in Pages.
-if (seedApproved()) app.logger.info('Keeping an approved copy of knowledge/ from now on.');
-// Pages from before audiences reach only the owner's replies: say so once at start, where an upgrading owner looks.
-const untagged = untaggedPages();
-if (untagged.length > 0) {
-  app.logger.info(`${untagged.length} knowledge page(s) don't say who may hear them, so only your own replies use them. Choose in the app: Knowledge › About me.`);
-}
-if (proposeBriefUpdate(config.profileDir)) {
-  app.logger.info('The shipped brief has new knowledge rules: review it in Brief & policy (proposed/knowledge-update).');
-}
-const knowledge = checkKnowledge({
-  roots: [{ name: basename(config.project), path: config.project }, ...config.repositories.map(({ name, path }) => ({ name, path }))],
-});
-for (const problem of knowledge.problems) app.logger.warn(`knowledge/${problem}`);
-for (const warning of knowledge.warnings) app.logger.warn(`knowledge/${warning}`);
-
-const auth = await app.client.auth.test();
-botUserId = auth.user_id ?? '';
-botId = auth.bot_id ?? '';
-if (!botUserId) throw new Error('Slack auth.test returned no bot user ID');
-const locksDir = join(defaultProfileRoot, 'locks');
-mkdirSync(locksDir, { recursive: true, mode: 0o700 });
-const releaseBotLock = acquireLock(join(locksDir, `${botUserId}.lock`));
-process.on('exit', releaseBotLock);
-receiver.client.on('connected', () => { slackConnected = true; status?.refresh(); });
-for (const state of ['disconnected', 'reconnecting']) receiver.client.on(state, () => { slackConnected = false; status?.refresh(); });
-await app.start();
-slackConnected = true;
-const startedAt = new Date().toISOString();
-// The app's Jobs names (SERRA-55): the app asks over the status socket and gets names back, so it never reads the bot
-// token. The token is the one this process already holds; it never leaves it, and lookups never throw into the bot.
-const slackNames = createSlackNames({ token: async () => config.botToken, log: (message) => app.logger.warn(message) });
-// The app's live view. Without it the bot still works, and the app shows "stopped".
-status = await startStatusServer({
-  profileDir: config.profileDir,
-  status: () => ({ state: 'up', pid: process.pid, startedAt, slackConnected, counts: jobCounts(store.allJobs().map(([, job]) => job)) }),
-  names: answerNameRequests(slackNames),
-}).catch((error: unknown) => {
-  app.logger.warn(`Status socket not started: ${errorMessage(error)}`);
-  return null;
-});
-if (status) process.on('exit', status.removeSocketFile);
-const readyPath = config.profileDir ? join(config.profileDir, 'ready.json') : undefined;
-if (readyPath) writeFileSync(readyPath, JSON.stringify({ pid: process.pid, botUserId, startedAt: new Date().toISOString() }), { mode: 0o600 });
-app.logger.info(`${config.name} is up as @${auth.user} in ${auth.team}. Project ${config.project}, base ${config.baseRef}.`);
-app.logger.info(
-  `Knowledge: ${knowledge.pages.length} pages, ${knowledge.unverified.length} not verified, ${knowledge.proposals.length} proposals waiting.`,
-);
-// People and message triggers apply as soon as profile.json changes. Other sections wait for a restart.
-const profileWatcher = watchProfile(config.profileDir, bot.reloadProfile, {
-  onError: (error) => app.logger.warn(`Not watching profile.json, changes apply after a restart: ${errorMessage(error)}`),
-});
-// Jobs saved as running that T3 no longer runs (a run that ended while the bot was stopped, state from an older
-// install) are cleared once, before the first poll, so the Jobs list matches T3.
-void track(bot.reconcile()).catch((error: unknown) => app.logger.error(`Reconciling jobs failed: ${errorMessage(error)}`))
-  .finally(() => status?.refresh());
-// Requests held while the previous bot was paused for an update start now.
-acknowledge();
-void releaseHeld();
-const timer = setInterval(() => {
-  if (stopping) return;
-  acknowledge();
-  void releaseHeld();
-  void track(bot.poll()).catch((error: unknown) => {
-    app.logger.error(`Poll failed: ${errorMessage(error)}`);
-  }).finally(() => status?.refresh());
-}, POLL_MS);
-
-const shutdown = async (): Promise<void> => {
+const shutdown = (): void => {
   if (stopping) return;
   stopping = true;
-  clearInterval(timer);
-  profileWatcher.close();
-  if (readyPath && existsSync(readyPath)) rmSync(readyPath);
-  await status?.close();
-  await app.stop();
-  // Messages still waiting for a quiet moment go to their workers now, so a restart loses none.
-  await bot.drain();
-  await Promise.allSettled([...pending]);
-  process.exit(0);
+  void daemon.stop().catch((error: unknown) => logger.error(`Shutdown failed: ${errorMessage(error)}`)).finally(() => process.exit(0));
 };
-process.on('SIGTERM', () => { void shutdown(); });
-process.on('SIGINT', () => { void shutdown(); });
+process.on('SIGTERM', shutdown);
+process.on('SIGINT', shutdown);

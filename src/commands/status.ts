@@ -1,6 +1,6 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import { loadConfig } from '../config.ts';
-import { launchd } from '../deploy.ts';
+import { launchd, readPrepared } from '../deploy.ts';
 import type { Command } from '../manage.ts';
 
 const command: Command = {
@@ -11,7 +11,9 @@ const command: Command = {
     const config = loadConfig({ profileDir: directory, env: {} });
     log(`Service ${config.serviceLabel}: ${await launchd.loaded(config.serviceLabel) ? 'loaded' : 'stopped'}`);
     log(`Profile: ${directory}\nLogs: ${directory}/logs/bot.log`);
-    if (existsSync(`${directory}/active.json`)) log(`Active release: ${JSON.parse(readFileSync(`${directory}/active.json`, 'utf8')).release}`);
+    const active = readPrepared(`${directory}/active.json`);
+    if (active) log(`Active release: ${active.release}`);
+    else if (existsSync(`${directory}/active.json`)) log("Active release: unknown (active.json can't be read).");
     else log('No release activated for this profile.');
   },
 };

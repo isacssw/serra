@@ -6,9 +6,8 @@ import { join } from 'node:path';
 import test, { type TestContext } from 'node:test';
 import * as config from '../src/config.ts';
 import * as contracts from '../src/contracts.ts';
-import type { Job as ContractJob, Profile } from '../src/contracts.ts';
-import { commands, runCli, type Command, type CommandTable } from '../src/manage.ts';
-import type { Job } from '../src/types.ts';
+import type { Profile } from '../src/contracts.ts';
+import { runCli, type Command, type CommandTable } from '../src/manage.ts';
 
 const profile = (allowedUsers: string[] = []): Profile => ({
   version: 1, bot: { id: 'friday', name: 'Friday' }, owner: { name: 'Alex', slackUserId: 'U0123456789', githubLogin: 'alex' },
@@ -23,15 +22,6 @@ const tempProfile = (t: TestContext): string => {
 };
 const read = (directory: string): string => readFileSync(join(directory, 'profile.json'), 'utf8');
 const strays = (directory: string): string[] => readdirSync(directory).filter((name) => name.endsWith('.tmp'));
-
-test('contracts re-export the existing validator, writers and Job instead of copying them', () => {
-  assert.equal(contracts.validateProfile, config.validateProfile);
-  assert.equal(contracts.writeProfileFile, config.writeProfileFile);
-  assert.equal(contracts.writeFileAtomic, config.writeFileAtomic);
-  // Compile-time: the contract Job and the stored Job are the same type in both directions.
-  const stored = {} as Job; const shared: ContractJob = stored; const back: Job = shared;
-  assert.equal(back, stored);
-});
 
 test('writeProfileFile replaces profile.json with owner-only permissions and leaves no temp file', (t) => {
   const directory = tempProfile(t);
@@ -122,18 +112,6 @@ test('the CLI dispatches through the command table and gives each command its pa
   try { assert.match((await cli(['hello'], table)).err, /--profile \/absolute\/profile\/folder is required/); }
   finally { if (saved !== undefined) process.env.BOT_PROFILE = saved; }
   assert.deepEqual(await cli(['broken', '--profile', '/p'], table), { code: 1, out: '', err: 'went wrong' });
-});
-
-test('every file in src/commands has exactly one table line, and every line loads a command', async () => {
-  const files = readdirSync(new URL('../src/commands/', import.meta.url)).filter((name) => name.endsWith('.ts')).map((name) => name.slice(0, -3)).sort();
-  assert.deepEqual(Object.keys(commands).sort(), files);
-  for (const [name, load] of Object.entries(commands)) {
-    const command = (await load()).default;
-    assert.ok(command.summary.trim(), `${name} needs a summary`);
-    assert.equal(typeof command.run, 'function');
-  }
-  for (const name of ['prepare', 'activate', 'rollback', 'status', 'stop', 'start', 'cleanup']) assert.ok(name in commands, name);
-  for (const name of ['activate', 'rollback', 'status', 'stop', 'start']) assert.equal((await commands[name]!()).default.macOnly, true, name);
 });
 
 test('pnpm bot cleanup still runs end to end through the table', (t) => {

@@ -8,7 +8,7 @@ export const themes: readonly Theme[] = ['system', 'light', 'dark'];
 
 export const themeLabels: Record<Theme, string> = { system: 'System', light: 'Light', dark: 'Dark' };
 
-export const isTheme = (value: unknown): value is Theme => themes.includes(value as Theme);
+const isTheme = (value: unknown): value is Theme => themes.includes(value as Theme);
 
 /** Just what `applyTheme` touches, so tests can pass a plain object for <html>. */
 export interface ThemeRoot { dataset: Record<string, string | undefined> }

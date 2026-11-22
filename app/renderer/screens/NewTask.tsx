@@ -132,7 +132,7 @@ export const NewTask = () => {
             <span title={startedLink ? 'Open the T3 thread' : "T3 didn't return a link for this thread yet"}>
               <Button size="sm" icon={<Layers size={14} />} disabled={!startedLink} onClick={() => { if (startedLink) openLink(startedLink); }}>T3</Button>
             </span>
-            <Button size="sm" icon={<ListChecks size={14} />} onClick={() => navigate('/jobs/running')}>Show in Jobs</Button>
+            <Button size="sm" icon={<ListChecks size={14} />} onClick={() => void navigate('/jobs/running')}>Show in Jobs</Button>
           </div>
         </section>
       )}
