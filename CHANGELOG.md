@@ -4,6 +4,8 @@ Serra follows [Semantic Versioning](https://semver.org) once it reaches 1.0. Unt
 
 ## Unreleased
 
+## 0.1.0-alpha.5 (2026-11-24)
+
 - Fixed: About me now renders a page's Markdown instead of showing it as raw lines — headings, bullets, tables, quotes, fenced code, bold, italics, `code` and links (only http and https open, outside the app), so a preview reads the way the brief carries it.
 - Fixed: Settings › Meetings forgot a source's **Test** result as soon as you left the screen, so a source that passed showed "Not tested" again. Serra now keeps the last answer per source in `meeting-sources.json` in the profile, shows when it ran ("Tested 2 h ago") with a **Test again** button, and shows the source untested again after a week or once the T3 provider or model changes. Opening the screen still makes no model call.
 - Settings › People now shows the Slack name of each allowed person, not only the owner's. Names come from the running bot, like in Jobs, so the app still never reads the bot token; until a name is known, the row shows "Name not known yet" beside the member ID.
