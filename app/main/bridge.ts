@@ -322,11 +322,11 @@ export interface SerraApi {
     settings(): MeetingSettings & { notice: string };
     setEnabled(enabled: boolean): MeetingSettings & { notice: string };
     /**
-     * Which T3 provider and model meeting runs use, and the transcript sources, untested. Reads files only: no model
-     * call, no T3 run.
+     * Which T3 provider and model meeting runs use, and each transcript source with its last Test's answer (untested
+     * after a week or a change of provider or model). Reads files only: no model call, no T3 run.
      */
     sources(): { runner: MeetingRunner; sources: ProviderStatus[] };
-    /** The owner's Test button: one read-only T3 run asks the provider whether it could read this source. */
+    /** The owner's Test button: one read-only T3 run asks the provider whether it could read this source. Kept. */
     testSource(provider: MeetingProvider): ProviderStatus;
     /** Meetings with edits waiting, each rendered against the page as it is now. */
     list(): MeetingView[];

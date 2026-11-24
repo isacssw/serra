@@ -363,10 +363,15 @@ export interface MeetingRunner {
   detail: string;
 }
 
+/** The T3 provider instance and model meeting runs use: the profile's worker, else T3's default. Null when T3 picks. */
+export const runnerIdentity = (worker: { provider?: string; model?: string } | undefined, t3: T3Providers | null): { instance: string | null; model: string | null } => ({
+  instance: worker?.provider ?? t3?.defaultInstance ?? null,
+  model: worker?.provider ? worker.model ?? null : worker?.model ?? t3?.defaultModel ?? null,
+});
+
 export const meetingRunner = (worker: { provider?: string; model?: string } | undefined, t3: T3Providers | null, t3Installed: boolean): MeetingRunner => {
   if (!t3Installed) return { label: 'T3 Code', model: null, ready: false, detail: 'Serra can\'t find T3 Code’s `t3` command. Install T3 Code and open it once.' };
-  const instance = worker?.provider ?? t3?.defaultInstance ?? null;
-  const model = worker?.provider ? worker.model ?? null : worker?.model ?? t3?.defaultModel ?? null;
+  const { instance, model } = runnerIdentity(worker, t3);
   const found = t3 && instance ? providerFor(t3, instance) : null;
   const from = worker?.provider ? 'the profile’s worker' : 'T3’s default';
   if (!instance) return { label: 'T3’s default', model, ready: true, detail: 'Runs on the provider and model T3 uses by default.' };

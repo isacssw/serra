@@ -4,6 +4,8 @@ Serra follows [Semantic Versioning](https://semver.org) once it reaches 1.0. Unt
 
 ## Unreleased
 
+- Fixed: Settings › Meetings forgot a source's **Test** result as soon as you left the screen, so a source that passed showed "Not tested" again. Serra now keeps the last answer per source in `meeting-sources.json` in the profile, shows when it ran ("Tested 2 h ago") with a **Test again** button, and shows the source untested again after a week or once the T3 provider or model changes. Opening the screen still makes no model call.
+
 ## 0.1.0-alpha.4 (2026-11-22)
 
 - Meetings (off until you turn it on in Settings › Meetings): send a new DM to the bot starting with "remember this meeting", with a Granola or Google Meet transcript link, a transcript file or pasted text. Serra keeps only the decisions you approve in Proposals, on pages your team may read, never stores the transcript, lists action items in a digest, and Forget meeting removes everything a meeting added. Reading a link and picking out decisions each run as a T3 thread in Serra's own empty folder (a T3 project called "Serra meetings"), on the provider and model you use in T3, so it works with Claude, Codex, Cursor and T3's other providers. These runs aren't sandboxed: they have the same access as any T3 thread, and only Serra's brief asks them to change nothing, which is why capture is off by default. Settings › Meetings shows which T3 provider runs meetings, and **Test** on a source runs one short T3 run only when you press it. See `docs/meetings.md`.

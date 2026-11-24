@@ -11,6 +11,7 @@ import { serra } from '../../bridge.ts';
 import { Badge, Button, Dialog, Page, useToast } from '../../ui/index.ts';
 import { ToolIcon } from '../../ui/ToolIcon.tsx';
 import { SourceIcon } from '../proposals/MeetingReview.tsx';
+import { testedLine, testLabel } from './meetings.logic.ts';
 
 const message = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
@@ -44,7 +45,7 @@ const PROVIDER_ROWS: { provider: MeetingProvider; label: string; how: string }[]
   { provider: 'google-meet', label: 'Google Meet', how: 'Send the transcript Doc’s link from Drive.' },
 ];
 
-const SourceRow = ({ icon, label, how, status, action }: { icon: ReactNode; label: string; how: string; status: { label: string; tone: BadgeTone; detail?: string } | null; action?: ReactNode }) => (
+const SourceRow = ({ icon, label, how, status, action }: { icon: ReactNode; label: string; how: string; status: { label: string; tone: BadgeTone; detail?: string; tested?: string | null } | null; action?: ReactNode }) => (
   <li className="flex items-start gap-3 py-3">
     {icon}
     <div className="flex min-w-0 flex-1 flex-col gap-0.5">
@@ -54,6 +55,7 @@ const SourceRow = ({ icon, label, how, status, action }: { icon: ReactNode; labe
       </div>
       <p className="text-[13px] text-muted">{how}</p>
       {status?.detail && <p className="text-[13px] text-muted">{status.detail}</p>}
+      {status?.tested && <p className="text-xs text-muted">{status.tested}</p>}
     </div>
     {action}
   </li>
@@ -90,8 +92,7 @@ export const Meetings = () => {
     try {
       const next = await bridge.meetings.sources();
       setRunner(next.runner);
-      // A source the owner tested keeps its answer until they test it again.
-      setSources((current) => next.sources.map((entry) => current?.find((seen) => seen.provider === entry.provider && seen.state !== 'untested') ?? entry));
+      setSources(next.sources);
     } catch (failure) { toast({ message: message(failure), tone: 'error' }); } finally { setChecking(false); }
   }, [toast]);
 
@@ -133,7 +134,7 @@ export const Meetings = () => {
   const statusOf = (provider: MeetingProvider) => {
     const found = sources?.find((entry) => entry.provider === provider);
     if (!found) return checking ? { label: 'Checking…', tone: 'neutral' as const } : null;
-    return { ...STATE[found.state], detail: found.detail };
+    return { ...STATE[found.state], detail: found.detail, tested: testedLine(found, new Date()) };
   };
 
   return (
@@ -171,7 +172,7 @@ export const Meetings = () => {
                 key={row.provider} icon={<SourceIcon source={row.provider} />} label={row.label} how={row.how} status={statusOf(row.provider)}
                 action={(
                   <Button size="sm" disabled={testing !== null || runner?.ready === false} icon={testing === row.provider ? <LoaderCircle size={14} className="animate-spin" /> : undefined} onClick={() => void test(row.provider)}>
-                    {testing === row.provider ? 'Testing…' : 'Test'}
+                    {testing === row.provider ? 'Testing…' : testLabel(sources?.find((entry) => entry.provider === row.provider))}
                   </Button>
                 )}
               />

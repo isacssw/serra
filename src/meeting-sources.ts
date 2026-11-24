@@ -86,7 +86,13 @@ export const PROVIDER_IDS: readonly MeetingProvider[] = ['granola', 'google-meet
  */
 type ProviderState = 'ready' | 'needs-sign-in' | 'missing' | 'untested' | 'unknown';
 
-export interface ProviderStatus { provider: MeetingProvider; state: ProviderState; detail: string }
+export interface ProviderStatus {
+  provider: MeetingProvider;
+  state: ProviderState;
+  detail: string;
+  /** When the owner last tested it, for a result the app kept (`meeting-sources.json`). */
+  testedAt?: string;
+}
 
 export interface Fetched { text: string; title: string | null }
 

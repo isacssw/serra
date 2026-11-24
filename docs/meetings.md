@@ -38,7 +38,7 @@ Serra never holds a Granola or Google key. It reads through **the connections of
 | Google Meet | A Google Drive connection in that provider, signed in. Meet saves transcripts to Drive on Workspace Business Standard and above, when transcription is on. |
 | File or paste | Nothing. Every notetaker exports text. |
 
-Settings › Meetings › Sources shows which T3 provider and model meeting runs use (the profile's worker, else T3's default) and whether T3 has it turned on. That reads files only. **Test** on a source starts one short T3 run that asks the provider whether it has that connection: it's the only time the screen makes a model call, and only when you press it.
+Settings › Meetings › Sources shows which T3 provider and model meeting runs use (the profile's worker, else T3's default) and whether T3 has it turned on. That reads files only. **Test** on a source starts one short T3 run that asks the provider whether it has that connection: it's the only time the screen makes a model call, and only when you press it. Serra keeps the answer in `meeting-sources.json` in the profile, so the row still says what the test found (and when) after you leave the screen or restart the app; the button becomes **Test again**. An answer counts for a week, and only on the provider and model it ran on: change either and the source shows untested again.
 
 ## How it's read
 

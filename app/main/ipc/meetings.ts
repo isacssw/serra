@@ -1,6 +1,7 @@
 // Meetings (SERRA-62, SERRA-69), on the services in src/meeting-store.ts, src/meeting-settings.ts and
 // src/meeting-runs.ts. Handlers only check input and call them. Approving, discarding and forgetting are the owner's,
-// here in the app. `sources` reads files only; a model call happens only in `testSource`, on the owner's button.
+// here in the app. `sources` reads files only (with the last Test's answers, kept by `testSource`); a model call happens
+// only in `testSource`, on the owner's button.
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { profileT3Bin } from '../../../src/cleanup.ts';
@@ -9,8 +10,9 @@ import { isRecord } from '../../../src/json-guards.ts';
 import { errorMessage, shortError } from '../../../src/lib/errors.ts';
 import { createMeetingStore, type MeetingReviewed } from '../../../src/meeting-store.ts';
 import { MEETING_NOTICE, readMeetingSettings, writeMeetingSettings } from '../../../src/meeting-settings.ts';
-import { createMeetingRuns, meetingRunner } from '../../../src/meeting-runs.ts';
-import { PROVIDER_IDS, PROVIDERS, type MeetingProvider } from '../../../src/meeting-sources.ts';
+import { createMeetingRuns, meetingRunner, runnerIdentity } from '../../../src/meeting-runs.ts';
+import { saveSourceTest, sourceStatuses } from '../../../src/meeting-source-tests.ts';
+import { PROVIDER_IDS, type MeetingProvider } from '../../../src/meeting-sources.ts';
 import { readT3Providers } from '../../../src/t3-providers.ts';
 import type { Handlers } from '../bridge.ts';
 import type { HandlerContext } from './context.ts';
@@ -55,17 +57,20 @@ export const meetingsHandlers = (context: HandlerContext, options: MeetingsHandl
     },
     sources: () => {
       const t3Bin = profileT3Bin(context.profileDir());
+      const chosen = worker();
+      const t3 = readProviders();
       return {
-        runner: meetingRunner(worker(), readProviders(), existsSync(t3Bin)),
-        sources: PROVIDER_IDS.map((provider) => ({ provider, state: 'untested' as const, detail: PROVIDERS[provider].plan })),
+        runner: meetingRunner(chosen, t3, existsSync(t3Bin)),
+        sources: sourceStatuses(context.profileDir(), runnerIdentity(chosen, t3)),
       };
     },
     testSource: (provider) => {
       const chosen = worker();
+      const profileDir = context.profileDir();
       return makeRuns({
-        t3Bin: profileT3Bin(context.profileDir()),
+        t3Bin: profileT3Bin(profileDir),
         ...(chosen?.provider ? { provider: chosen.provider } : {}), ...(chosen?.model ? { model: chosen.model } : {}),
-      }).checkSource(source(provider)).catch((error: unknown) => {
+      }).checkSource(source(provider)).then((result) => saveSourceTest(profileDir, result, runnerIdentity(chosen, readProviders()))).catch((error: unknown) => {
         // The screen gets a short reason; the full one (a command's output, paths) stays in the app's log.
         console.error(`[serra] meetings test failed: ${errorMessage(error)}`);
         throw new Error(shortError(error));
