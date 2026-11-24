@@ -228,6 +228,11 @@ export interface SerraApi {
     addPerson(slackUserId: string): SavedSection;
     /** Stops allowing a Slack member. The owner can't be removed. */
     removePerson(slackUserId: string): SavedSection;
+    /**
+     * The Slack names known for these member IDs, by ID; IDs without one are left out. Never waits: the running bot is
+     * asked for the rest, and a `names` push says when they arrive. The app never reads the bot token for this.
+     */
+    peopleNames(slackUserIds: string[]): Record<string, string>;
   };
   /** Secrets (APP-15, sources from APP-8). Never returns a token's value. */
   secrets: {
@@ -371,6 +376,8 @@ export interface SerraPushes {
   proposals: null;
   /** Job rows have new details to show (APP-29: Slack names that just resolved): the Jobs screen rereads its list. */
   jobs: null;
+  /** Slack names just resolved: screens that show people (Settings › People) ask for them again. */
+  names: null;
 }
 
 export type Unsubscribe = () => void;
@@ -402,7 +409,7 @@ export const bridgeMethods = {
   proposals: methods<'proposals'>()(['list', 'diff', 'targets', 'promote', 'mergeInto', 'discard', 'undo']),
   pages: methods<'pages'>()(['list', 'read', 'save', 'drift', 'acceptDrift', 'restoreDrift', 'aboutMe', 'untagged', 'share']),
   brief: methods<'brief'>()(['read', 'save', 'check', 'preview', 'listProposed', 'readProposed', 'applyProposed']),
-  settings: methods<'settings'>()(['read', 'sections', 'saveSection', 'addPerson', 'removePerson']),
+  settings: methods<'settings'>()(['read', 'sections', 'saveSection', 'addPerson', 'removePerson', 'peopleNames']),
   secrets: methods<'secrets'>()(['list', 'setSource', 'check']),
   tools: methods<'tools'>()(['overview', 'clis']),
   updates: methods<'updates'>()([
@@ -415,7 +422,7 @@ export const bridgeMethods = {
   meetings: methods<'meetings'>()(['settings', 'setEnabled', 'sources', 'testSource', 'list', 'history', 'approve', 'discard', 'discardMeeting', 'forget']),
 } satisfies { [N in Namespace]: readonly (keyof SerraApi[N])[] };
 
-const pushChannels = ['status', 'event', 'releaseLog', 'appUpdate', 'navigate', 'proposals', 'jobs'] as const satisfies readonly (keyof SerraPushes)[];
+const pushChannels = ['status', 'event', 'releaseLog', 'appUpdate', 'navigate', 'proposals', 'jobs', 'names'] as const satisfies readonly (keyof SerraPushes)[];
 
 export const invokeChannel = (namespace: string, method: string): string => `serra:${namespace}.${method}`;
 export const pushChannel = (name: keyof SerraPushes): string => `serra:on.${name}`;

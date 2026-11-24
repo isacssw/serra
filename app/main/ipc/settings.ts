@@ -7,8 +7,11 @@ import {
   addAllowedUser, isProfileSection, PROFILE_SECTIONS, PROFILE_SETTINGS, removeAllowedUser, updateProfileSection,
   type SettingChange,
 } from '../../../src/profile-settings.ts';
+import { isSlackUserId } from '../../../src/slack-names.ts';
+import { MAX_NAME_IDS } from '../../../src/status-socket.ts';
 import type { Handlers, SavedSection } from '../bridge.ts';
 import type { HandlerContext } from './context.ts';
+import { profileSlackNames, type ProfileNames } from './slack-names.ts';
 
 const saved = ({ profile, appliesWhen, changed }: SettingChange): SavedSection => ({ profile, applies: appliesWhen, changed });
 
@@ -24,7 +27,18 @@ const memberId = (value: unknown): string => {
   return value;
 };
 
-export const settingsHandlers = (context: HandlerContext): Handlers<'settings'> => ({
+/** Member IDs to name: text that looks like one, without repeats, at most what one request to the bot may carry. */
+const memberIds = (value: unknown): string[] => {
+  if (!Array.isArray(value)) throw new Error('peopleNames needs a list of Slack member IDs.');
+  return [...new Set(value.filter((id): id is string => typeof id === 'string' && isSlackUserId(id)))].slice(0, MAX_NAME_IDS);
+};
+
+export interface SettingsDeps {
+  /** The Slack names cache shared with Jobs. Tests pass their own. */
+  names?: ProfileNames;
+}
+
+export const settingsHandlers = (context: HandlerContext, { names = profileSlackNames(context) }: SettingsDeps = {}): Handlers<'settings'> => ({
   read: () => readProfileFile(context.profileDir()),
   sections: () => ({ ...PROFILE_SETTINGS }),
   saveSection: (section, value) => {
@@ -34,4 +48,11 @@ export const settingsHandlers = (context: HandlerContext): Handlers<'settings'> 
   },
   addPerson: (slackUserId) => saved(addAllowedUser(context.profileDir(), memberId(slackUserId))),
   removePerson: (slackUserId) => saved(removeAllowedUser(context.profileDir(), memberId(slackUserId))),
+  // Never waits for Slack: the names known now, while the bot is asked for the rest; a `names` push says when they came.
+  peopleNames: (slackUserIds) => {
+    const ids = memberIds(slackUserIds);
+    const cache = names(context.profileDir());
+    void cache.request({ users: ids });
+    return Object.fromEntries(ids.flatMap((id) => { const name = cache.userName(id); return name ? [[id, name]] : []; }));
+  },
 });

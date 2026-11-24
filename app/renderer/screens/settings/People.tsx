@@ -1,20 +1,42 @@
 // People (APP-14): who may ask the bot for work. Matches the mockup: name, Slack member ID, the owner locked,
-// remove, and add by member ID. Applies now: the daemon reloads allowedUsers live (APP-5).
-import { useState, type FormEvent } from 'react';
+// remove, and add by member ID. Applies now: the daemon reloads allowedUsers live (APP-5). Allowed people's names
+// come from Slack through the running bot (`settings.peopleNames`); the app never reads the bot token.
+import { useEffect, useState, type FormEvent } from 'react';
 import { Lock, X } from 'lucide-react';
+import type { Profile } from '../../../../src/contracts.ts';
+import { serra } from '../../bridge.ts';
 import { Button, Input, Table, TBody, Td, Th, THead, Tr } from '../../ui/index.ts';
-import { addPersonFieldMessage, addPersonProblem, peopleRows } from './settings.logic.ts';
+import { addPersonFieldMessage, addPersonProblem, peopleRows, peopleToName } from './settings.logic.ts';
 import { SectionCard, SettingsPage, useSettings } from './SettingsKit.tsx';
+
+/** Slack names of the allowed people, by member ID: known names at once, the rest when the bot finds them. */
+const useSlackNames = (profile: Profile | null): Record<string, string> => {
+  const [names, setNames] = useState<Record<string, string>>({});
+  const ids = profile ? peopleToName(profile).join(',') : '';
+  useEffect(() => {
+    const bridge = serra();
+    if (!bridge || !ids) return;
+    let live = true;
+    const load = (): void => {
+      bridge.settings.peopleNames(ids.split(',')).then((found) => { if (live) setNames(found); }, () => {});
+    };
+    load();
+    const off = bridge.on.names(load);
+    return () => { live = false; off(); };
+  }, [ids]);
+  return names;
+};
 
 export const People = () => {
   const state = useSettings();
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState<string | null>(null);
+  const names = useSlackNames(state.profile);
 
   return (
     <SettingsPage title="People" sections={['allowedUsers']} state={state}>
       {(profile, settings) => {
-        const rows = peopleRows(profile);
+        const rows = peopleRows(profile, names);
         const problem = addPersonFieldMessage(input, profile);
         const canAdd = !!input.trim() && addPersonProblem(input, profile) === null && busy === null;
         const add = async (event: FormEvent): Promise<void> => {
@@ -37,7 +59,7 @@ export const People = () => {
                 {rows.map((row) => (
                   <Tr key={row.slackUserId}>
                     <Td className="font-semibold">
-                      {row.name ?? <span className="font-normal text-muted" title="The profile stores member IDs only. Look the person up in Slack by this ID.">Not stored</span>}
+                      {row.name ?? <span className="font-normal text-muted" title="The running bot looks names up in Slack.">Name not known yet</span>}
                     </Td>
                     <Td className="font-mono">{row.slackUserId}</Td>
                     <Td>
@@ -55,7 +77,6 @@ export const People = () => {
                 ))}
               </TBody>
             </Table>
-            <p className="text-xs text-muted">Only the owner's name is in the profile. Other people are listed by Slack member ID.</p>
             <form className="flex items-start gap-3" onSubmit={(event) => { void add(event); }}>
               <Input
                 aria-label="Slack member ID"
