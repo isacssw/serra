@@ -67,10 +67,12 @@ export const meetingsHandlers = (context: HandlerContext, options: MeetingsHandl
     testSource: (provider) => {
       const chosen = worker();
       const profileDir = context.profileDir();
+      // The runner as the test starts, so a T3 default changed mid-run can't claim this answer.
+      const runner = runnerIdentity(chosen, readProviders());
       return makeRuns({
         t3Bin: profileT3Bin(profileDir),
         ...(chosen?.provider ? { provider: chosen.provider } : {}), ...(chosen?.model ? { model: chosen.model } : {}),
-      }).checkSource(source(provider)).then((result) => saveSourceTest(profileDir, result, runnerIdentity(chosen, readProviders()))).catch((error: unknown) => {
+      }).checkSource(source(provider)).then((result) => saveSourceTest(profileDir, result, runner)).catch((error: unknown) => {
         // The screen gets a short reason; the full one (a command's output, paths) stays in the app's log.
         console.error(`[serra] meetings test failed: ${errorMessage(error)}`);
         throw new Error(shortError(error));
