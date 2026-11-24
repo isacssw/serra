@@ -316,18 +316,26 @@ export const formChanged = (form: SectionForm, profile: Profile, values: FormVal
 export interface PersonRow {
   slackUserId: string;
   access: 'owner' | 'allowed';
-  /** Only the owner's name is in the profile. Allowed people are shown by member ID; nothing looks names up. */
+  /** The owner's name from the profile; an allowed person's Slack name once the bot has looked it up, else null. */
   name: string | null;
 }
 
-/** The owner first (always allowed, listed or not), then allowed people in file order, without repeats. */
-export const peopleRows = (profile: Profile): PersonRow[] => {
+/**
+ * The owner first (always allowed, listed or not), then allowed people in file order, without repeats. `names` are
+ * Slack names by member ID (`settings.peopleNames`); the owner keeps the name in the profile.
+ */
+export const peopleRows = (profile: Profile, names: Readonly<Record<string, string>> = {}): PersonRow[] => {
   const owner = profile.owner.slackUserId;
   return [
     { slackUserId: owner, access: 'owner', name: profile.owner.name },
-    ...[...new Set(profile.allowedUsers)].filter((id) => id !== owner).map((id): PersonRow => ({ slackUserId: id, access: 'allowed', name: null })),
+    ...[...new Set(profile.allowedUsers)].filter((id) => id !== owner)
+      .map((id): PersonRow => ({ slackUserId: id, access: 'allowed', name: (Object.hasOwn(names, id) ? names[id] : undefined) ?? null })),
   ];
 };
+
+/** The member IDs whose Slack names the People screen asks for: allowed people, not the owner. */
+export const peopleToName = (profile: Profile): string[] =>
+  peopleRows(profile).filter((row) => row.access === 'allowed').map((row) => row.slackUserId);
 
 /** Why the Add person field can't be added as typed, or null. */
 export const addPersonProblem = (input: string, profile: Profile): Problem => {

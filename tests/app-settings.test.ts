@@ -10,7 +10,7 @@ import { memoryPrefs } from '../app/main/prefs.ts';
 import { stoppedStatusSource } from '../app/main/status.ts';
 import {
   addPersonFieldMessage, addPersonProblem, appliesLabel, botForm, branchPatternForm, channelIdProblem, emptyTriggerRow,
-  formChanged, memberIdProblem, ownerForm, parseRepositories, parseTriggers, peopleRows, pendingRestart, projectForm,
+  formChanged, memberIdProblem, ownerForm, parseRepositories, parseTriggers, peopleRows, peopleToName, pendingRestart, projectForm,
   repositoryRows, reviewForm, sectionList, serviceLabelForm, t3BinForm, triggerRows, updatesForm, workerForm, type SectionForm,
 } from '../app/renderer/screens/settings/settings.logic.ts';
 import { loadConfig } from '../src/config.ts';
@@ -151,6 +151,17 @@ test('people: the owner first with the stored name, others by member ID with no 
     { slackUserId: MEMBER, access: 'allowed', name: null },
     { slackUserId: NEWCOMER, access: 'allowed', name: null },
   ]);
+});
+
+test('people: allowed people show their Slack name once known; the owner keeps the profile name', () => {
+  const profile = baseProfile([MEMBER, NEWCOMER]);
+  assert.deepEqual(peopleToName(profile), [MEMBER, NEWCOMER], 'the owner is never looked up');
+  assert.deepEqual(peopleRows(profile, { [OWNER]: 'Someone Else', [MEMBER]: 'Ada' }), [
+    { slackUserId: OWNER, access: 'owner', name: 'Alex' },
+    { slackUserId: MEMBER, access: 'allowed', name: 'Ada' },
+    { slackUserId: NEWCOMER, access: 'allowed', name: null },
+  ]);
+  assert.equal(peopleRows(baseProfile(['toString']), {})[1]!.name, null, 'only names given for that ID');
 });
 
 test('add person: format, owner and duplicate messages; quiet while an ID is still being typed', () => {

@@ -5,7 +5,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test, { type TestContext } from 'node:test';
 import type { HandlerContext } from '../app/main/ipc/context.ts';
+import { createHandlers } from '../app/main/ipc/index.ts';
 import { jobsHandlers } from '../app/main/ipc/jobs.ts';
+import { profileSlackNames } from '../app/main/ipc/slack-names.ts';
 import { notificationText } from '../app/main/notifications.logic.ts';
 import { memoryPrefs } from '../app/main/prefs.ts';
 import { stoppedStatusSource } from '../app/main/status.ts';
@@ -203,14 +205,14 @@ test('jobs.list never waits for Slack: raw IDs first, then a push, then names', 
   assert.deepEqual(pushes, []);
   release();
   await new Promise((resolve) => setTimeout(resolve, 10));
-  assert.deepEqual(pushes, ['jobs'], 'the screen is told to list again');
+  assert.deepEqual(pushes, ['jobs', 'names'], 'the screens are told to list again');
   assert.deepEqual(askedDirs, [dir], 'the bot of this profile was asked, once');
 
   const second = await handlers.list();
   assert.deepEqual(second.map((row) => [row.requesterName, row.channelName]), [['Sam Rivera', '#billing-alerts'], ['Ada', DM_LABEL]]);
   assert.ok(!JSON.stringify(second).includes('xoxb'), 'no token in what goes to the window');
   await new Promise((resolve) => setTimeout(resolve, 10));
-  assert.deepEqual(pushes, ['jobs'], 'cached names don\'t push again, so the screen never loops');
+  assert.deepEqual(pushes, ['jobs', 'names'], 'cached names don\'t push again, so the screen never loops');
 });
 
 test('jobs.list with Slack refusing still lists every job, with raw IDs', async (t) => {
@@ -227,6 +229,40 @@ test('jobs.list with Slack refusing still lists every job, with raw IDs', async 
   const rows = await handlers.list();
   assert.deepEqual(rows.map((row) => [row.requester, row.requesterName]), [['U0EXAMPLE01', undefined], ['U0OTHER0001', undefined]]);
   assert.deepEqual(pushes, []);
+});
+
+test('settings.peopleNames never waits: known names now, a push when the bot finds the rest', async (t) => {
+  const dir = jobsProfile(t);
+  const slack = fakeSlack();
+  const pushes: string[] = [];
+  const asked: string[] = [];
+  const ctx = context(dir, pushes);
+  const { settings } = createHandlers(ctx, profileSlackNames(ctx, { ask: daemon(slack, asked), log: () => {} }));
+  const release = slack.hold();
+  assert.deepEqual(await settings.peopleNames(['U0EXAMPLE01', 'U0OTHER0001', 'U0EXAMPLE01', 'not an id', 'C0EXAMPLE01']), {}, 'nothing known yet');
+  release();
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  assert.deepEqual(pushes, ['jobs', 'names'], 'People is told to ask again');
+  assert.deepEqual(slack.calls.sort(), ['U0EXAMPLE01', 'U0OTHER0001'], 'only member IDs, each once');
+  assert.deepEqual(await settings.peopleNames(['U0EXAMPLE01', 'U0OTHER0001', 'U0NOBODY001']), { U0EXAMPLE01: 'Sam Rivera', U0OTHER0001: 'Ada' });
+  await assert.rejects(async () => settings.peopleNames('U0EXAMPLE01' as unknown as string[]), /list of Slack member IDs/);
+});
+
+test('Jobs and People share one names cache: a name Jobs found shows in People without asking the bot again', async (t) => {
+  const dir = jobsProfile(t);
+  const slack = fakeSlack();
+  const asked: string[] = [];
+  const ctx = context(dir, []);
+  const handlers = createHandlers(ctx, profileSlackNames(ctx, { ask: daemon(slack, asked), log: () => {} }));
+  const rows = await handlers.jobs.list();
+  assert.ok(rows.some((row) => row.requester === 'U0EXAMPLE01'));
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  const calls = asked.length;
+  const names = await handlers.settings.peopleNames(['U0EXAMPLE01']);
+  assert.deepEqual(names, { U0EXAMPLE01: 'Sam Rivera' });
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  assert.equal(asked.length, calls, 'a fresh name is not asked for again');
+  assert.ok(!JSON.stringify(names).includes('xoxb'), 'no token in what goes to the window');
 });
 
 const row = (fields: Partial<JobRow> = {}): JobRow => ({

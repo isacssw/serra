@@ -321,7 +321,7 @@ for (const source of ['onepassword', 'keychain', 'env'] as const) {
     const first = await app.list();
     assert.deepEqual(first.map((row) => [row.requesterName, row.channelName]), [[undefined, undefined], [undefined, DM_LABEL]], 'raw IDs first: the list never waits');
     await settle(100);
-    assert.deepEqual(pushes, ['jobs']);
+    assert.deepEqual(pushes, ['jobs', 'names']);
     const rows = await app.list();
     assert.deepEqual(rows.map((row) => [row.requesterName, row.channelName]), [['Sam Rivera', '#billing-alerts'], ['Acme Monitor', DM_LABEL]]);
     assert.ok(!JSON.stringify(rows).includes('xoxb'));

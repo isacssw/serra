@@ -3,11 +3,10 @@ import { applyWorktreeCleanup, planWorktreeCleanup, profileT3Bin, runCommand, ty
 import { listJobs, t3ThreadLookup, type ThreadInfo, type ThreadLookup } from '../../../src/jobs.ts';
 import { slackWorkspace } from '../../../src/secrets.ts';
 import { slackMentions, slackPlainText, type SlackNames } from '../../../src/slack-names.ts';
-import { createStoredSlackNames, type NamesAsk } from '../../../src/slack-names-store.ts';
-import { requestNames } from '../../../src/status-socket.ts';
 import { t3TaskState } from '../../../src/tasks.ts';
 import type { Handlers } from '../bridge.ts';
 import type { HandlerContext } from './context.ts';
+import { profileSlackNames, type ProfileNames, type SlackNamesDeps } from './slack-names.ts';
 
 export interface JobsDeps {
   /** Runs `t3`, `git` and `gh`. Tests pass a fake. */
@@ -15,14 +14,10 @@ export interface JobsDeps {
   now?: () => Date;
   /** Only worktrees inside this folder are removed (default: `~/.t3/worktrees`). */
   worktreesRoot?: string;
-  /**
-   * Slack names (APP-29). The running bot names the IDs over the status socket, so the app never reads the bot token
-   * (SERRA-55); names are kept in the profile's `slack-names.json`. Tests pass a fake `ask` or a timeout.
-   */
-  slackNames?: {
-    ask?: (profileDir: string) => NamesAsk; timeoutMs?: number; ttlMs?: number; retryMs?: number; backoffMs?: number;
-    log?: (message: string) => void;
-  };
+  /** The Slack names cache shared with Settings › People (`profileSlackNames`). Made from `slackNames` when absent. */
+  names?: ProfileNames;
+  /** How that cache is made when `names` is absent. Tests pass a fake `ask` or a timeout. */
+  slackNames?: SlackNamesDeps;
 }
 
 /** How long a thread without a PR is remembered before T3 is asked again: its worker may open one any minute. */
@@ -82,27 +77,9 @@ const withNames = (rows: Row[], names: SlackNames): Row[] => {
   });
 };
 
-export const jobsHandlers = (context: HandlerContext, { run = runCommand, now = () => new Date(), worktreesRoot, slackNames = {} }: JobsDeps = {}): Handlers<'jobs'> => {
+export const jobsHandlers = (context: HandlerContext, { run = runCommand, now = () => new Date(), worktreesRoot, names, slackNames = {} }: JobsDeps = {}): Handlers<'jobs'> => {
   const threads = new Map<string, { info: ThreadInfo; until: number }>();
-  // One cache per profile: another profile may be another Slack workspace.
-  const namesByProfile = new Map<string, SlackNames>();
-  const namesFor = (profileDir: string): SlackNames => {
-    let names = namesByProfile.get(profileDir);
-    if (!names) {
-      names = createStoredSlackNames({
-        profileDir,
-        ask: slackNames.ask?.(profileDir) ?? ((ids) => requestNames(profileDir, ids, slackNames.timeoutMs ? { timeoutMs: slackNames.timeoutMs } : {})),
-        ...(slackNames.ttlMs ? { ttlMs: slackNames.ttlMs } : {}),
-        ...(slackNames.retryMs ? { retryMs: slackNames.retryMs } : {}),
-        ...(slackNames.backoffMs ? { backoffMs: slackNames.backoffMs } : {}),
-        // Only the newest profile's names refresh the screen; a switch away makes the old cache quiet.
-        onResolved: () => { if (context.profileDirOrNull() === profileDir) context.push?.('jobs', null); },
-        log: slackNames.log ?? console.error,
-      });
-      namesByProfile.set(profileDir, names);
-    }
-    return names;
-  };
+  const namesFor = names ?? profileSlackNames(context, slackNames);
   return {
     // Works from the files whether or not the daemon runs. Slack links use the workspace the last token check saved.
     list: async () => {

@@ -16,20 +16,21 @@ import { settingsHandlers } from './settings.ts';
 import { toolsHandlers } from './tools.ts';
 import { tasksHandlers } from './tasks.ts';
 import { setupHandlers } from './setup.ts';
+import { profileSlackNames } from './slack-names.ts';
 import { updatesHandlers } from './updates.ts';
 
 export type AllHandlers = { [N in Namespace]: Handlers<N> };
 
-/** One handler set per namespace, each from its own `ipc/<namespace>.ts`. */
-export const createHandlers = (context: HandlerContext): AllHandlers => ({
+/** One handler set per namespace, each from its own `ipc/<namespace>.ts`. Jobs and Settings share one Slack names cache. */
+export const createHandlers = (context: HandlerContext, names = profileSlackNames(context)): AllHandlers => ({
   app: appHandlers(context),
   setup: setupHandlers(context),
   bot: botHandlers(context),
-  jobs: jobsHandlers(context),
+  jobs: jobsHandlers(context, { names }),
   proposals: proposalsHandlers(context),
   pages: pagesHandlers(context),
   brief: briefHandlers(context),
-  settings: settingsHandlers(context),
+  settings: settingsHandlers(context, { names }),
   secrets: secretsHandlers(context),
   tools: toolsHandlers(context),
   updates: updatesHandlers(context),
