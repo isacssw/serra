@@ -606,10 +606,12 @@ test('one audience line per page, untagged pages stay owner-only through approva
 });
 
 test('a reply written with knowledge taken back since is not posted', async (t) => {
-  const run = await botOn(fixture(t));
+  const profileDir = fixture(t);
+  const run = await botOn(profileDir);
   await run.bot.handle({ channel: 'CTEAM', threadTs: '4.1', messageTs: '4.1', user: PRIYA, text: '<@UMOSS> how do I cut a release?', direct: true });
   run.restrict('workflows/release.md');
-  await run.finish('Run pnpm release:prepare, then wait for Jonas.');
+  await run.finish('Run pnpm release:prepare, then wait for Jonas.\n<knowledge-used>workflows/release.md</knowledge-used>');
+  assert.deepEqual(readKnowledgeUse(profileDir), [], 'a withheld reply used nothing anyone saw');
   assert.ok(!run.posted.some((text) => /release:prepare/.test(text)), 'the old answer is withheld');
   assert.ok(run.posted.some((text) => /made private, so I won't post it/.test(text)));
 });
@@ -1078,6 +1080,9 @@ test('the line naming the pages a reply used is never posted, and only pages its
   const profileDir = fixture(t);
   const run = await botOn(profileDir);
   await run.bot.handle({ channel: 'CTEAM', threadTs: '5.1', messageTs: '5.1', user: PRIYA, text: '<@UMOSS> how do I cut a release?', direct: true });
+  // The brief points the worker at the release runbook and asks which pages it used.
+  assert.match(run.started.at(-1) ?? '', /closest to this request, best first: `workflows\/release\.md`/);
+  assert.match(run.started.at(-1) ?? '', /<knowledge-used>/);
   await run.finish('Run pnpm release:prepare.\n\n<knowledge-used>workflows/release.md, owner/private-notes.md</knowledge-used>');
   assert.ok(run.posted.some((text) => /release:prepare/.test(text)));
   assert.ok(!run.posted.some((text) => /knowledge-used|private-notes/.test(text)), 'the line is Serra\'s, never the thread\'s');

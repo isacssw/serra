@@ -140,19 +140,24 @@ const CONFLICT_AT = 0.4;
  * the other Thursday, one has a number the other changes, or one says "never" where the other doesn't. Only facts
  * sharing a word are compared, so this stays fast on a full knowledge base.
  */
-export const findOverlaps = (facts: Fact[]): { duplicates: FactPair[]; conflicts: FactPair[] } => {
+export const findOverlaps = (facts: Fact[], comparable: (a: string, b: string) => boolean = () => true): { duplicates: FactPair[]; conflicts: FactPair[] } => {
   const byWord = new Map<string, number[]>();
-  facts.forEach((fact, at) => { for (const word of fact.words) byWord.set(word, [...(byWord.get(word) ?? []), at]); });
+  facts.forEach((fact, at) => {
+    for (const word of topic(fact.words)) {
+      const list = byWord.get(word);
+      if (list) list.push(at); else byWord.set(word, [at]);
+    }
+  });
   const seen = new Set<string>();
   const duplicates: FactPair[] = [];
   const conflicts: FactPair[] = [];
   facts.forEach((fact, at) => {
-    for (const word of fact.words) {
+    for (const word of topic(fact.words)) {
       for (const other of byWord.get(word) ?? []) {
         if (other <= at || seen.has(`${at}:${other}`)) continue;
         seen.add(`${at}:${other}`);
         const that = facts[other]!;
-        if (fact.text === that.text && fact.page === that.page) continue;
+        if (fact.page !== that.page && !comparable(fact.page, that.page)) continue;
         // The words that can differ between two versions of one rule (a day, a number, a "never") don't count
         // towards whether they're about the same thing.
         const similarity = jaccard(topic(fact.words), topic(that.words));
@@ -168,6 +173,19 @@ export const findOverlaps = (facts: Fact[]): { duplicates: FactPair[]; conflicts
   });
   const order = (a: FactPair, b: FactPair): number => b.similarity - a.similarity;
   return { duplicates: duplicates.sort(order), conflicts: conflicts.sort(order) };
+};
+
+/**
+ * Whether two pages can hold the same rule: pages of one area, and for people only cards that look like the same
+ * person (`people/priya.md` and `people/priya-nair.md`). "Ana reviews on Monday" and "Bruno reviews on Friday" are two
+ * true facts about two people, not a conflict.
+ */
+const samePageSubject = (a: string, b: string, areaOf: Map<string, Area>): boolean => {
+  const area = areaOf.get(a);
+  if (area !== areaOf.get(b)) return false;
+  if (area !== 'people') return true;
+  const name = (path: string): string[] => (path.split('/').pop() ?? '').replace(/\.md$/, '').split(/[-_\s]+/).filter((word) => word.length > 1);
+  return name(a).some((word) => name(b).includes(word));
 };
 
 /** Pages whose descriptions say they cover the same thing: two places for one topic. */
@@ -237,7 +255,8 @@ export const assessKnowledge = (files: KnowledgeFile[], now: Date): Health => {
   const index = files.find((file) => file.path === 'index.md')?.text ?? '';
   const pages = describePages(files, index, now);
   const facts = files.filter((file) => isPage(file.path)).flatMap((file) => pageFacts(file.path, file.text));
-  const { duplicates, conflicts } = findOverlaps(facts);
+  const areaOf = new Map(pages.map((page) => [page.path, page.area]));
+  const { duplicates, conflicts } = findOverlaps(facts, (a, b) => samePageSubject(a, b, areaOf));
   const overlaps = overlappingPages(pages);
   const issues: Issue[] = [];
   for (const pair of conflicts) {
@@ -262,6 +281,7 @@ export const assessKnowledge = (files: KnowledgeFile[], now: Date): Health => {
   if (indexLines > INDEX_MAX_LINES * 0.85) issues.push({ kind: 'index-full', pages: ['index.md'], text: `The index is ${indexLines} of ${INDEX_MAX_LINES} lines. Merge pages before it fills.` });
 
   const conflicted = new Set(conflicts.flatMap((pair) => [pair.a.page, pair.b.page]));
+  const disputed = new Set(conflicts.flatMap((pair) => [pair.a.text, pair.b.text]));
   const duplicated = new Set([...duplicates.flatMap((pair) => [pair.a.page, pair.b.page]), ...overlaps.flat()]);
   const count = Math.max(1, pages.length);
   const organisedPage = (page: PageInfo): number =>
@@ -271,7 +291,8 @@ export const assessKnowledge = (files: KnowledgeFile[], now: Date): Health => {
     const mine = pages.filter((page) => page.area === area);
     const confirmed = mine.filter((page) => page.verified !== null);
     const lead = [...confirmed].sort((a, b) => Number(b.facts > 0) - Number(a.facts > 0) || (b.verified ?? '').localeCompare(a.verified ?? ''))[0];
-    const headline = lead ? facts.find((fact) => fact.page === lead.path)?.text ?? (lead.description || null) : null;
+    // A rule that disagrees with another isn't what the bot knows for sure: the area shows a settled one.
+    const headline = lead ? facts.find((fact) => fact.page === lead.path && !disputed.has(fact.text))?.text ?? (lead.description || null) : null;
     return {
       area, label: AREA_LABELS[area], pages: mine.length, confirmed: confirmed.length, facts: mine.reduce((sum, page) => sum + page.facts, 0),
       latest: confirmed.map((page) => page.verified!).sort().at(-1) ?? null, headline: headline ? short(headline, 120) : null,
@@ -319,13 +340,19 @@ export interface KnowledgeEvent {
   added: string[];
   /** Lines it took out, at most three. */
   removed: string[];
+  /** The page's description, for a change that added no line of its own. */
+  description: string;
   /** How the change came in. */
   via: 'proposal' | 'meeting' | 'edit' | 'retire' | 'restore' | 'other';
 }
 
 const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
 
-export interface HistoryPoint { at: string; score: number; pages: number; facts: number; conflicts: number; duplicates: number }
+export interface HistoryPoint {
+  at: string; score: number; pages: number; facts: number; conflicts: number; duplicates: number;
+  /** What changed at this point, like "Learned owner/role.md"; absent for a weekly point with no change. */
+  change?: string;
+}
 
 export interface KnowledgeHistory { points: HistoryPoint[]; events: KnowledgeEvent[] }
 
@@ -339,7 +366,8 @@ const viaOf = (change: KnowledgeChange): KnowledgeEvent['via'] => {
 };
 
 const eventsOf = (change: KnowledgeChange): KnowledgeEvent[] => change.files.filter((file) => isPage(file.path)).flatMap((file) => {
-  const type = frontmatter(file.after ?? file.before ?? '')?.get('type')?.trim() ?? '';
+  const fields = frontmatter(file.after ?? file.before ?? '');
+  const type = fields?.get('type')?.trim() ?? '';
   const before = new Map((file.before ? pageFacts(file.path, file.before) : []).map((fact) => [fact.text, fact]));
   const after = new Map((file.after ? pageFacts(file.path, file.after) : []).map((fact) => [fact.text, fact]));
   const added = [...after.keys()].filter((text) => !before.has(text));
@@ -351,7 +379,7 @@ const eventsOf = (change: KnowledgeChange): KnowledgeEvent[] => change.files.fil
   else if (replacedNow || (added.length > 0 && removed.length > 0)) kind = 'replaced';
   else if (added.length > 0 || removed.length > 0) kind = 'updated';
   else kind = 'confirmed';
-  return [{ at: change.at, kind, page: file.path, area: pageArea(file.path, type), added: added.slice(0, 3).map((text) => short(text)), removed: removed.slice(0, 3).map((text) => short(text)), via: viaOf(change) }];
+  return [{ at: change.at, kind, page: file.path, area: pageArea(file.path, type), added: added.slice(0, 3).map((text) => short(text)), removed: removed.slice(0, 3).map((text) => short(text)), description: fields?.get('description')?.trim() ?? '', via: viaOf(change) }];
 });
 
 /**
@@ -359,6 +387,17 @@ const eventsOf = (change: KnowledgeChange): KnowledgeEvent[] => change.files.fil
  * change taught the bot, newest first. The past is rebuilt by undoing the changes on today's files, newest first, so
  * it needs nothing but the backups Serra already keeps. A change that was undone left nothing behind and is skipped.
  */
+const LABEL: Record<EventKind, string> = { learned: 'Learned', updated: 'Updated', replaced: 'Replaced a rule on', removed: 'Retired', confirmed: 'Confirmed' };
+
+/** One line for what a day's changes did: the change itself, or how many pages changed when there were several. */
+const dayLabel = (events: KnowledgeEvent[]): string | undefined => {
+  const pages = [...new Set(events.map((event) => event.page))];
+  if (pages.length === 0) return undefined;
+  if (pages.length > 1) return `Changed ${pages.length} pages`;
+  const last = events.at(-1)!;
+  return `${LABEL[last.kind]} ${last.page}`;
+};
+
 export const knowledgeHistory = (files: KnowledgeFile[], changes: KnowledgeChange[], now: Date): KnowledgeHistory => {
   const kept = changes.filter((change) => !change.undoneAt && change.files.length > 0 && Date.parse(change.at) <= now.getTime())
     .sort((a, b) => b.at.localeCompare(a.at));
@@ -387,6 +426,7 @@ export const knowledgeHistory = (files: KnowledgeFile[], changes: KnowledgeChang
   // Then forward again, oldest first: a point after each change, and one a week in between, since pages also age
   // without anyone touching them. One point per day, the day's last.
   const byDay = new Map<string, HistoryPoint>();
+  const dayEvents = new Map<string, KnowledgeEvent[]>();
   const add = (point: HistoryPoint): void => { byDay.set(point.at.slice(0, 10), point); };
   let last = order.length > 0 ? Date.parse(order.at(-1)!.at) : now.getTime();
   if (order.length > 0 && [...state.keys()].some(isPage)) add(snapshot(new Date(last - 1000)));
@@ -396,11 +436,16 @@ export const knowledgeHistory = (files: KnowledgeFile[], changes: KnowledgeChang
   for (const change of [...order].reverse()) {
     weekly(Date.parse(change.at));
     for (const file of change.files) set(file.path, file.after);
-    add(snapshot(new Date(change.at)));
+    const day = change.at.slice(0, 10);
+    dayEvents.set(day, [...(dayEvents.get(day) ?? []), ...eventsOf(change)]);
+    const label = dayLabel(dayEvents.get(day)!);
+    add({ ...snapshot(new Date(change.at)), ...(label ? { change: label } : {}) });
     last = Date.parse(change.at);
   }
   weekly(now.getTime());
-  add(snapshot(now));
+  // Today's point keeps what changed today.
+  const today = byDay.get(now.toISOString().slice(0, 10))?.change;
+  add({ ...snapshot(now), ...(today ? { change: today } : {}) });
   return { points: [...byDay.values()], events: order.flatMap(eventsOf) };
 };
 
@@ -437,7 +482,7 @@ const FIELD_WEIGHTS: readonly [keyof PageCard, number][] = [['path', 3], ['when'
  * description, headings and text, with the fields that summarise a page counting most. Only pages that share a
  * meaningful word with the request, and score at least `minShare` of the best one, are returned.
  */
-export const rankPages = (request: string, cards: PageCard[], { limit = 3, minShare = 0.35 }: { limit?: number; minShare?: number } = {}): { path: string; score: number }[] => {
+export const rankPages = (request: string, cards: PageCard[], { limit = 3, minShare = 0.35, minScore = 4 }: { limit?: number; minShare?: number; minScore?: number } = {}): { path: string; score: number }[] => {
   const query = [...new Set(words(request))];
   if (query.length === 0 || cards.length === 0) return [];
   const docs = cards.map((card) => {
@@ -455,14 +500,18 @@ export const rankPages = (request: string, cards: PageCard[], { limit = 3, minSh
   const b = 0.75;
   const scored = docs.map((doc) => {
     let score = 0;
+    let matched = 0;
     for (const word of query) {
       const tf = doc.counts.get(word) ?? 0;
       if (tf === 0) continue;
+      matched += 1;
       const df = docs.filter((other) => other.counts.has(word)).length;
       const idf = Math.log(1 + (docs.length - df + 0.5) / (df + 0.5));
       score += idf * ((tf * (k1 + 1)) / (tf + k1 * (1 - b + (b * doc.length) / average)));
     }
-    return { path: doc.path, score: Math.round(score * 100) / 100 };
+    // A hint needs two words shared with the request, or one strong one: a single passing word is no reason to open a page.
+    const strong = matched >= 2 || score >= minScore;
+    return { path: doc.path, score: strong ? Math.round(score * 100) / 100 : 0 };
   }).filter((doc) => doc.score > 0).sort((x, y) => y.score - x.score || x.path.localeCompare(y.path));
   const best = scored[0]?.score ?? 0;
   return scored.filter((doc) => doc.score >= best * minShare).slice(0, limit);

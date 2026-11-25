@@ -14,21 +14,20 @@ const tree = (dir: string, relativeDir = ''): KnowledgeFile[] => readdirSync(joi
 });
 const pct = (value: number): string => `${Math.round(value * 100)}%`;
 
-const { fixtures } = JSON.parse(readFileSync(join(root, 'evals/retrieval-cases.json'), 'utf8')) as { fixtures: Record<string, { request: string; pages: string[] }[]> };
-console.log('## Relevance (right page in the top 1 / top 3)\n\n| Fixture | Cases | Pages + rows | Rows only | Misses |\n|---|---|---|---|---|');
+const { fixtures, none } = JSON.parse(readFileSync(join(root, 'evals/retrieval-cases.json'), 'utf8')) as { fixtures: Record<string, { request: string; pages: string[] }[]>; none: { requests: string[] } };
+console.log('## Relevance hint\n\nTop 1 / top 3: a right page first / among the three named. Precision: of the requests that got a hint, how many named a right page. No-page hints: of the requests no page helps with, how many still got one.\n');
+console.log('| Fixture | Cases | Top 1 | Top 3 | Hinted | Precision | No-page hints | Misses |\n|---|---|---|---|---|---|---|---|');
 for (const [dir, cases] of Object.entries(fixtures)) {
   const files = tree(join(root, dir));
   const cards = pageCards(files.find((file) => file.path === 'index.md')!.text, files);
-  const rowsOnly = cards.map((card) => ({ ...card, body: '', headings: '' }));
-  const run = (using: typeof cards) => cases.map((item) => {
-    const ranked = rankPages(item.request, using).map((page) => page.path);
-    return { item, top1: item.pages.includes(ranked[0] ?? ''), top3: ranked.some((path) => item.pages.includes(path)) };
+  const runs = cases.map((item) => {
+    const ranked = rankPages(item.request, cards).map((page) => page.path);
+    return { item, ranked, top1: item.pages.includes(ranked[0] ?? ''), top3: ranked.some((path) => item.pages.includes(path)) };
   });
-  const full = run(cards);
-  const rows = run(rowsOnly);
-  const share = (list: typeof full, key: 'top1' | 'top3') => list.filter((entry) => entry[key]).length / list.length;
-  const misses = full.filter((entry) => !entry.top3).map((entry) => `"${entry.item.request}"`).join('; ');
-  console.log(`| ${dir} | ${cases.length} | ${pct(share(full, 'top1'))} / ${pct(share(full, 'top3'))} | ${pct(share(rows, 'top1'))} / ${pct(share(rows, 'top3'))} | ${misses || 'none'} |`);
+  const hinted = runs.filter((run) => run.ranked.length > 0);
+  const falseHints = none.requests.filter((request) => rankPages(request, cards).length > 0).length;
+  const misses = runs.filter((run) => !run.top3).map((run) => `"${run.item.request}"${run.ranked.length ? ` → ${run.ranked[0]}` : ' (no hint)'}`).join('; ');
+  console.log(`| ${dir} | ${cases.length} | ${pct(runs.filter((run) => run.top1).length / runs.length)} | ${pct(runs.filter((run) => run.top3).length / runs.length)} | ${pct(hinted.length / runs.length)} | ${pct(hinted.filter((run) => run.top3).length / Math.max(1, hinted.length))} | ${falseHints} of ${none.requests.length} | ${misses || 'none'} |`);
 }
 
 console.log('\n## Health of the clean fixtures\n');

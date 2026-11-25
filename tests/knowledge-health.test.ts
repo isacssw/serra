@@ -24,32 +24,33 @@ const tree = (dir: string, relativeDir = ''): KnowledgeFile[] => readdirSync(joi
 });
 
 interface RetrievalCase { request: string; pages: string[] }
-const retrieval = JSON.parse(readFileSync(new URL('../evals/retrieval-cases.json', import.meta.url), 'utf8')) as { fixtures: Record<string, RetrievalCase[]> };
+const retrieval = JSON.parse(readFileSync(new URL('../evals/retrieval-cases.json', import.meta.url), 'utf8')) as { fixtures: Record<string, RetrievalCase[]>; none: { requests: string[] } };
 
-/** Share of cases with a right page first, and in the top three, for a ranker. */
-const score = (cases: RetrievalCase[], rank: (request: string) => string[]): { top1: number; top3: number } => {
-  let top1 = 0;
-  let top3 = 0;
-  for (const item of cases) {
-    const ranked = rank(item.request);
-    if (item.pages.includes(ranked[0] ?? '')) top1 += 1;
-    if (ranked.slice(0, 3).some((path) => item.pages.includes(path))) top3 += 1;
-  }
-  return { top1: top1 / cases.length, top3: top3 / cases.length };
+/** For a ranker: right page first, a right page in the top three, how often it hints at all, and how often a hint is right. */
+const score = (cases: RetrievalCase[], rank: (request: string) => string[]) => {
+  const runs = cases.map((item) => ({ item, ranked: rank(item.request) }));
+  const hinted = runs.filter((run) => run.ranked.length > 0);
+  const hit = (run: (typeof runs)[number]): boolean => run.ranked.slice(0, 3).some((path) => run.item.pages.includes(path));
+  return {
+    top1: runs.filter((run) => run.item.pages.includes(run.ranked[0] ?? '')).length / runs.length,
+    top3: runs.filter(hit).length / runs.length,
+    precision: hinted.filter(hit).length / Math.max(1, hinted.length),
+  };
 };
 
-test('relevance: the pages a brief points at fit the request, on the tuned owner and the held-out one', () => {
+test('relevance: the pages a brief points at fit the request, on the tuned owner and the held-out one, and nothing is hinted when nothing fits', () => {
   for (const [dir, cases] of Object.entries(retrieval.fixtures)) {
+    const heldOut = dir.includes('heldout');
     const files = tree(new URL(`../${dir}`, import.meta.url).pathname);
     const index = files.find((file) => file.path === 'index.md')!.text;
     const cards = pageCards(index, files);
     assert.equal(cards.length, files.filter((file) => file.path !== 'index.md' && file.path.includes('/')).length, `${dir}: every indexed page has a card`);
     const full = score(cases, (request) => rankPages(request, cards).map((page) => page.path));
-    // The same ranker on index rows alone: what a worker matching rows by eye has to go on.
-    const rowsOnly = score(cases, (request) => rankPages(request, cards.map((card) => ({ ...card, body: '', headings: '' }))).map((page) => page.path));
-    assert.ok(full.top3 >= 0.85, `${dir}: a right page in the top 3 for ${Math.round(full.top3 * 100)}% of requests`);
-    assert.ok(full.top1 >= 0.7, `${dir}: a right page first for ${Math.round(full.top1 * 100)}% of requests`);
-    assert.ok(full.top3 >= rowsOnly.top3, `${dir}: reading the pages finds at least what the rows alone do`);
+    // A hint is either right or absent: when the brief names pages, one of them fits.
+    assert.ok(full.precision >= 0.85, `${dir}: ${Math.round(full.precision * 100)}% of hints hold a right page`);
+    assert.ok(full.top3 >= (heldOut ? 0.7 : 0.8), `${dir}: a right page in the top 3 for ${Math.round(full.top3 * 100)}% of requests`);
+    const falseHints = retrieval.none.requests.filter((request) => rankPages(request, cards).length > 0);
+    assert.ok(falseHints.length <= 2, `${dir}: requests no page helps get no hint (${falseHints.length} of ${retrieval.none.requests.length} did: ${falseHints.join('; ')})`);
   }
 });
 
@@ -102,6 +103,22 @@ test('health: conflicts and repeats are told apart from rules that merely look a
     return conflicts.length > 0 ? 'conflict' : duplicates.length > 0 ? 'duplicate' : 'neither';
   });
   assert.deepEqual(found, gold.map((pair) => pair.is));
+
+  // Two people's cards hold two true facts, never a conflict; two cards for one person are compared.
+  const card = (name: string, line: string): string => `---\ntype: person\ndescription: Who ${name} is\nwritten: 2026-11-01\nverified: 2026-11-20\nsources:\n  - Owner\n---\n# ${name}\n\n- ${line}\n`;
+  const index = '| a | `people/ana.md` | Ana |\n| b | `people/bruno.md` | Bruno |\n| c | `people/ana-silva.md` | Ana |';
+  const people = assessKnowledge([
+    { path: 'index.md', text: index },
+    { path: 'people/ana.md', text: card('Ana', 'Reviews pull requests on Monday.') },
+    { path: 'people/bruno.md', text: card('Bruno', 'Reviews pull requests on Friday.') },
+  ], NOW);
+  assert.deepEqual(people.issues.filter((issue) => issue.kind === 'conflict'), []);
+  const same = assessKnowledge([
+    { path: 'index.md', text: index },
+    { path: 'people/ana.md', text: card('Ana', 'Reviews pull requests on Monday.') },
+    { path: 'people/ana-silva.md', text: card('Ana Silva', 'Reviews pull requests on Friday.') },
+  ], NOW);
+  assert.equal(same.issues.filter((issue) => issue.kind === 'conflict').length, 1);
 });
 
 test('growth: six months of an owner\'s knowledge, through the real approval code, rot and recover the way the score says', () => {
@@ -138,7 +155,8 @@ test('growth: six months of an owner\'s knowledge, through the real approval cod
   const days = groupByDay(history.events, sim.now);
   assert.equal(days[0]!.confirmed.length, 8, 'eight re-confirmations fold into one line');
   assert.equal(scoreWord(messy!.health.score, 11).tone, 'down');
-  assert.equal(changeText(90, 82, '2026-10-26T00:00:00Z'), '+8 since 26 Oct');
+  assert.equal(changeText(90, 82, '2026-10-26T00:00:00Z'), '+8 since Oct 26');
+  assert.ok(chart.grid[0]!.label !== '0', 'the axis starts near the lowest score, so a dip shows');
 });
 
 test('the score weighs consistency and freshness most', () => {

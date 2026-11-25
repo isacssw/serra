@@ -160,6 +160,8 @@ const layoutProfile = (): string => {
   writeFileSync(join(directory, 'logs', 'knowledge-usage.jsonl'), uses.map((cited, at) =>
     JSON.stringify({ at: new Date(Date.now() - (at + 1) * 86_400_000).toISOString(), runId: `smoke-${at}`, visibility: 'team', cited, offered: 4 })).join('\n') + '\n');
   writeFileSync(join(knowledge, 'proposals/2026-11-19-role.md'), page("The owner's role", ['verified: no', 'target: owner/role.md'], 'Owns the API and reviews every PR.'));
+  // A correction that repeats a page the owner has, so Proposals shows where it belongs.
+  writeFileSync(join(knowledge, 'proposals/2026-11-20-release-days.md'), page('When the owner ships', ['verified: no'], '- Risky releases ship on Thursday now.'));
   // A page changed outside Serra after the owner approved the rest, so Pages shows its notice.
   createJournal(knowledge).seed();
   writeFileSync(join(knowledge, 'owner/voice.md'), page('How the owner writes', team, '# Voice\n\n- Lead with the answer.\n- No exclamation marks.\n- Edited by hand.'));
@@ -385,6 +387,14 @@ const runThemeChecks = async (window: BrowserWindow): Promise<string[]> => {
         reports.push(report);
         if (shots) {
           writeFileSync(join(shots, `${theme}-${route}.png`), (await window.webContents.capturePage()).toPNG());
+          // Pages with a page open, and its Retire dialog.
+          if (route === 'pages') {
+            await run(`(async () => { location.hash = '#/knowledge/pages?page=owner%2Fworking-style.md'; await new Promise((r) => setTimeout(r, 400)); })()`);
+            writeFileSync(join(shots, `${theme}-pages-detail.png`), (await window.webContents.capturePage()).toPNG());
+            await run(`(async () => { [...document.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Retire…')?.click(); await new Promise((r) => setTimeout(r, 300)); })()`);
+            writeFileSync(join(shots, `${theme}-pages-retire.png`), (await window.webContents.capturePage()).toPNG());
+            await run(`(async () => { [...document.querySelectorAll('dialog[open] button')].find((b) => b.textContent.trim() === 'Cancel')?.click(); await new Promise((r) => setTimeout(r, 200)); })()`);
+          }
           // Overview is long: its lower half too, scrolled into view.
           if (route === 'knowledge-overview') {
             await run(`(async () => { for (const el of document.querySelectorAll('*')) if (el.scrollHeight > el.clientHeight + 40 && getComputedStyle(el).overflowY.match(/auto|scroll/)) el.scrollTop = el.scrollHeight; await new Promise((r) => setTimeout(r, 150)); })()`);
