@@ -36,8 +36,8 @@ type Drifted = { path: string; approved: string | null; current: string | null }
  * Files under knowledge/ that changed outside Serra (by hand, or a worker in a thread). Workers keep getting the
  * approved version until the owner looks at each change and accepts it as theirs or puts the approved text back.
  */
-const DriftNotice = ({ files, busy, onAccept, onRestore }: {
-  files: Drifted[]; busy: boolean; onAccept: (file: Drifted) => void; onRestore: (file: Drifted) => void;
+const DriftNotice = ({ files, busy, onAccept, onRestore, name }: {
+  name: (path: string) => string; files: Drifted[]; busy: boolean; onAccept: (file: Drifted) => void; onRestore: (file: Drifted) => void;
 }) => {
   const [open, setOpen] = useState<string | null>(null);
   return (
@@ -58,7 +58,7 @@ const DriftNotice = ({ files, busy, onAccept, onRestore }: {
                   className="inline-flex min-w-0 items-center gap-1 rounded-md px-1 text-left font-mono text-xs text-ink hover:bg-hover focus-visible:outline-2 focus-visible:outline-focus"
                 >
                   <ChevronRight size={13} aria-hidden className={cx('shrink-0 transition-transform', open === file.path && 'rotate-90')} />
-                  <span className="truncate">{file.path}</span>
+                  <span className="truncate font-sans" title={file.path}>{name(file.path)}</span>
                 </button>
                 <span className="text-xs text-muted">{file.current === null ? 'deleted' : file.approved === null ? 'new' : 'edited'}</span>
                 <span className="ml-auto flex gap-1">
@@ -292,6 +292,15 @@ export const Pages = () => {
   };
 
   // ⌘S / Ctrl+S saves, through the same checks as the button.
+  // A page picked from the list comes into view, wherever the list left the window scrolled.
+  const detailRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = detailRef.current;
+    if (!selected || !el) return;
+    const top = el.getBoundingClientRect().top;
+    if (top > window.innerHeight * 0.6 || top < 0) el.scrollIntoView({ block: 'start', behavior: 'smooth' });
+  }, [selected]);
+
   const saveRef = useRef(save);
   saveRef.current = save;
   useEffect(() => {
@@ -309,7 +318,7 @@ export const Pages = () => {
     <Page title="Pages">
       {loadError && <p role="alert" className="text-sm text-down">{loadError}</p>}
       {drifted.length > 0 && (
-        <DriftNotice files={drifted} busy={resolving} onAccept={(file) => void resolveDrift(file, true)} onRestore={(file) => void resolveDrift(file, false)} />
+        <DriftNotice name={(path) => pages?.find((entry) => entry.path === path)?.description ?? path} files={drifted} busy={resolving} onAccept={(file) => void resolveDrift(file, true)} onRestore={(file) => void resolveDrift(file, false)} />
       )}
       {pages && pages.length === 0 && (
         <p className="text-sm text-muted">No pages yet.</p>
@@ -349,7 +358,7 @@ export const Pages = () => {
               : <p className="px-1 text-sm text-muted">No pages match.</p>}
           </nav>
 
-          <div className="flex min-w-0 flex-1 flex-col gap-4 border-line lg:border-l lg:pl-6">
+          <div ref={detailRef} className="flex min-w-0 flex-1 scroll-mt-4 flex-col gap-4 border-line lg:border-l lg:pl-6">
             {readError && <p role="alert" className="text-sm text-down">{readError}</p>}
             {!page && !readError && <p className="text-sm text-muted">Pick a page to edit.</p>}
             {page && (
@@ -377,7 +386,7 @@ export const Pages = () => {
             {page && state && (
               <>
                 <AudiencePicker text={draft} disabled={saving} onChange={setDraft} />
-                {pairs.some((issue) => issue.kind === 'conflict') && <SettleLink onSettle={() => void navigate('/knowledge/overview')} />}
+                {pairs.some((issue) => issue.kind === 'conflict') && <SettleLink onSettle={() => void navigate('/knowledge/overview#todo')} />}
                 {!editing && !state.dirty && (
                   <div className="flex flex-col gap-3">
                     <div className="rounded-lg border border-line bg-panel"><PageBody text={pageBody(draft)} onOpen={(href) => void serra()?.app.openExternal(href)} /></div>

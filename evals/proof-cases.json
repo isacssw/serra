@@ -1,5 +1,5 @@
 {
-  "about": "Before/after proof (evals/kb-proof.ts). Robin's fixture, eight months on: 45 pages, a rule that changed on the same page, a newer rule on a page the question doesn't point to, a stale page with a newer one beside it, and 15 distractor pages. Every case is something a model can't guess without Robin's notes. `include`: regexes the reply must match (case-insensitive). `exclude`: must not match. `judge`: a rubric a second T3 run scores 0-2. A case passes when every regex holds and the judge, if any, gives 2. Version 2 (round 7): the `friday` case no longer depends on today's real weekday (v1 asked as if it were Friday, and workers corrected it from the clock); four more changed rules were added to the fixture, which also changed the right answers of `flags` and `payload-retention`. No case was changed to fit a result. v1 results stay in ~/serra-notes/kb-growth/evals/proof-r6-claude/. Grading fix after the round-7 run, applied to every arm alike: `payload-retention` lost an `exclude` regex that failed replies which named the old 30 days as out of date, and each rubric is now scored by three grader runs, majority wins (one grader run scored correct Friday answers 0). After round 8: the `friday` rubric now states Robin's real hours (graders were marking the right hours as invented), applied to every arm alike by --regrade. Round 7 added five held-out changed-rule cases (category `held-out`), written after the detector was frozen for them; nothing was tuned on them. Round 8: `pr-size` and `priya-style` passed with no notes at all, so their regexes now need what only Robin's notes say (400 lines; send trade-offs). Round 10: `pr-size` asked for 400, but the fixture's current PR limit is 300 (the `pr-limit` case), so it passed replies that gave the out-of-date limit; it now needs 300, applied to every arm alike by `--regrade --only pr-size`. Round 11: ten held-out cases (category `held-out-2`) whose change is not a number or a weekday (a bus, an SDK, a tool, an endpoint, an owner, a process, a language, a login, a vendor), on three new pages whose index rows don't point to the questions. Written before any run; the detector and brief code were not changed for them.",
+  "about": "Before/after proof (evals/kb-proof.ts). Robin's fixture, eight months on: 45 pages, a rule that changed on the same page, a newer rule on a page the question doesn't point to, a stale page with a newer one beside it, and 15 distractor pages. Every case is something a model can't guess without Robin's notes. `include`: regexes the reply must match (case-insensitive). `exclude`: must not match. `judge`: a rubric a second T3 run scores 0-2. A case passes when every regex holds and the judge, if any, gives 2. Version 2 (round 7): the `friday` case no longer depends on today's real weekday (v1 asked as if it were Friday, and workers corrected it from the clock); four more changed rules were added to the fixture, which also changed the right answers of `flags` and `payload-retention`. No case was changed to fit a result. v1 results stay in ~/serra-notes/kb-growth/evals/proof-r6-claude/. Grading fix after the round-7 run, applied to every arm alike: `payload-retention` lost an `exclude` regex that failed replies which named the old 30 days as out of date, and each rubric is now scored by three grader runs, majority wins (one grader run scored correct Friday answers 0). After round 8: the `friday` rubric now states Robin's real hours (graders were marking the right hours as invented), applied to every arm alike by --regrade. Round 7 added five held-out changed-rule cases (category `held-out`), written after the detector was frozen for them; nothing was tuned on them. Round 8: `pr-size` and `priya-style` passed with no notes at all, so their regexes now need what only Robin's notes say (400 lines; send trade-offs). Round 10: `pr-size` asked for 400, but the fixture's current PR limit is 300 (the `pr-limit` case), so it passed replies that gave the out-of-date limit; it now needs 300, applied to every arm alike by `--regrade --only pr-size`. Round 11: ten held-out cases (category `held-out-2`) whose change is not a number or a weekday (a bus, an SDK, a tool, an endpoint, an owner, a process, a language, a login, a vendor), on three new pages whose index rows don't point to the questions. Written before any run; the detector and brief code were not changed for them. After round 11's first review, before any held-out-2 run was graded: `go-sdk` and `french` regexes now need the current answer (the judge already did); applied to every arm by `--regrade`. `new-dashboard` is weaker than the others (the old page says alerts page Jonas's team, not who builds dashboards) and is reported both with and without it.",
   "cases": [
     {
       "id": "priorities",
@@ -316,7 +316,7 @@
       "user": "UPRIYA0001",
       "text": "is there an official Go SDK for Ledgerline?",
       "include": [
-        "\\bno\\b|retired|not any ?more|no longer"
+        "retired|no longer|discontinued|deprecated"
       ],
       "judge": "The SDKs page lists TypeScript, Python and Go; a newer platform note (2026-11-14) says the Go SDK was retired on 2026-11-01. 2 = says no, it was retired; 1 = both without picking, or asks; 0 = says yes."
     },
@@ -382,11 +382,11 @@
       "user": "UPRIYA0001",
       "text": "is the merchant dashboard available in French?",
       "include": [
-        "\\byes\\b|live"
+        "\\byes\\b|\\bis live\\b|\\bnow live\\b|live (in|since)"
       ],
       "judge": "The localisation page lists English, Portuguese and German; a newer Q4 note (2026-11-19) says French is live since 2026-11-12. 2 = yes, French is live; 1 = both without picking, or asks; 0 = says no.",
       "exclude": [
-        "not (yet )?(available|live|supported)"
+        "(isn'?t|not|no) (yet )?(live|available|supported)|not (offered )?in French"
       ]
     },
     {

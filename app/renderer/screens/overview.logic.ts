@@ -159,7 +159,7 @@ export interface FixItem {
   href?: string;
 }
 
-const FIX_RANK: Record<string, number> = { unreviewed: -1, replace: 0, proposal: 0.5, conflict: 1, missing: 1.5, 'index-full': 2, duplicate: 3, overlap: 4, retire: 5, confirm: 6, stale: 7, unindexed: 8, draft: 9, long: 10, unstructured: 11 };
+const FIX_RANK: Record<string, number> = { replace: 0, proposal: 0.5, conflict: 1, unreviewed: 1.2, missing: 1.5, 'index-full': 2, duplicate: 3, overlap: 4, retire: 5, confirm: 6, stale: 7, unindexed: 8, draft: 9, long: 10, unstructured: 11 };
 
 /**
  * Every organising job in one list, worst first: the weekly review's fixes (one click) and what the health check finds
@@ -197,7 +197,7 @@ export const fixItems = (overview: Pick<KnowledgeOverview, 'review' | 'health' |
     id: `missing:${item.topic}`, title: item.topic, why: item.count > 1 ? `Asked ${item.count}×` : 'Missing', lines: [], pages: [], action: 'Tell it', tell: item.topic,
   }));
   const unreviewed: FixItem[] = overview.unreviewed ? [{
-    id: 'unreviewed:', title: overview.unreviewed === 1 ? 'A hand edit' : `${overview.unreviewed} hand edits`, why: 'Not used until you look', lines: [], pages: [], action: 'Review', href: '/knowledge/pages',
+    id: 'unreviewed:', title: overview.unreviewed === 1 ? 'A page edited outside Serra' : `${overview.unreviewed} pages edited outside Serra`, why: 'Not used until you look', lines: [], pages: [], action: 'Review', href: '/knowledge/pages',
   }] : [];
   const kind = (item: FixItem): string => item.suggestion?.kind === 'confirm' && !overview.review?.suggestions.some((suggestion) => suggestion.id === item.id) ? 'stale' : item.suggestion?.kind ?? item.id.split(':')[0]!;
   return [...unreviewed, ...fromReview, ...fromProposals, ...missing, ...fromHealth].sort((a, b) => (FIX_RANK[kind(a)] ?? 20) - (FIX_RANK[kind(b)] ?? 20));

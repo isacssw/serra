@@ -9,6 +9,14 @@ import { AudienceChoice } from './AudienceChoice.tsx';
 import { serra } from '../bridge.ts';
 import { Button, cx, Dialog, Page, useToast } from '../ui/index.ts';
 
+/** A card's title in words: "Working style", not owner/working-style.md. */
+const sectionTitle = (path: string): string => {
+  const named: Record<string, string> = { 'people/': 'People', outsiders: 'Rules for outsiders', 'private topics': 'Private topics' };
+  if (named[path]) return named[path];
+  const words = (path.split('/').pop() ?? path).replace(/\.md$/, '').replace(/[-_]+/g, ' ');
+  return words.charAt(0).toUpperCase() + words.slice(1);
+};
+
 const AUDIENCES: { value: Visibility; label: string; icon: typeof User; hint: string }[] = [
   { value: 'owner', label: 'You', icon: User, hint: 'Your DMs with the bot and tasks you start in the app.' },
   { value: 'team', label: 'Your team', icon: Users, hint: 'Channels and teammates’ DMs. Pages only you may hear are left out.' },
@@ -81,7 +89,7 @@ export const AboutMe = () => {
         <section aria-labelledby="untagged-title" className="flex items-center gap-3 rounded-lg border border-line bg-panel px-4 py-2.5">
           <Users size={16} aria-hidden className="shrink-0 text-muted" />
           <h2 id="untagged-title" className="min-w-0 flex-1 text-[13px]" title="Teammates' briefs leave these out until you choose.">
-            {untagged.length === 1 ? '1 page only you hear' : `${untagged.length} pages only you hear`}
+            {untagged.length === 1 ? '1 private page' : `${untagged.length} private pages`}
           </h2>
           <Button size="sm" onClick={() => { setShareTo('team'); setSharing(new Set()); }}>Share</Button>
         </section>
@@ -122,7 +130,7 @@ export const AboutMe = () => {
               <section key={section.path} aria-label={section.path} className="rounded-lg border border-line bg-panel">
                 <header className="flex items-center justify-between gap-3 border-b border-line-subtle px-4 py-2.5">
                   <div className="flex min-w-0 items-baseline gap-2">
-                    <h2 className="min-w-0 font-mono text-[13px] font-semibold break-all">{section.path === 'people/' ? 'people/ (one line each)' : section.path === 'outsiders' ? 'Rules for outsiders (built in)' : section.path === 'private topics' ? 'Private topics (built in)' : section.path}</h2>
+                    <h2 className="min-w-0 text-[13px] font-semibold" title={section.path}>{sectionTitle(section.path)}</h2>
                   </div>
                   {section.path !== 'people/' && section.path !== 'outsiders' && section.path !== 'private topics' && <button
                     type="button"

@@ -404,15 +404,15 @@ test('Overview leads with one number: replies the notes shaped this week, else o
   assert.equal(headline({ review: null, usage: { replies: 0, withKnowledge: 0, days: 30 } } as unknown as Parameters<typeof headline>[0]), null);
 });
 
-test('To do is the one place to act: hand edits first, what replies missed, and Keep buttons on rules that disagree', () => {
+test('To do is the one place to act: rules that disagree (with Keep buttons), hand edits, what replies missed', () => {
   const facts = [{ page: 'owner/style.md', text: 'Risky releases ship on Tuesday.' }, { page: 'owner/style.md', text: 'Risky releases ship on Thursday now.' }];
   const items = fixItems({
     value: [], unreviewed: 2,
     review: { suggestions: [], missing: [{ topic: 'who approves refunds over 500 EUR', count: 2 }] },
     health: { issues: [{ kind: 'conflict', pages: ['owner/style.md'], text: '', detail: [], facts }] },
   } as unknown as Parameters<typeof fixItems>[0]);
-  assert.deepEqual(items.map((item) => [item.title, item.action]), [['2 hand edits', 'Review'], ['owner/style.md', 'Settle'], ['who approves refunds over 500 EUR', 'Tell it']]);
-  assert.equal(items[0]!.href, '/knowledge/pages');
-  assert.deepEqual(items[1]!.keep, facts, 'the conflict is settled right there, one Keep per rule');
+  assert.deepEqual(items.map((item) => [item.title, item.action]), [['owner/style.md', 'Settle'], ['2 pages edited outside Serra', 'Review'], ['who approves refunds over 500 EUR', 'Tell it']], 'what shapes replies now comes first');
+  assert.deepEqual(items[0]!.keep, facts, 'the conflict is settled right there, one Keep per rule');
+  assert.equal(items[1]!.href, '/knowledge/pages');
   assert.equal(items[2]!.tell, 'who approves refunds over 500 EUR');
 });

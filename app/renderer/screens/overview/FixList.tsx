@@ -25,7 +25,8 @@ export const FixList = ({ overview, onOpen, onChanged }: { overview: KnowledgeOv
   const [done, setDone] = useState<Set<string>>(new Set());
   const [diff, setDiff] = useState<{ id: string; current: string | null; proposed: string } | null>(null);
   const [asking, setAsking] = useState<{ title: string; description: string; items: ReviewSuggestion[] } | null>(null);
-  const [all, setAll] = useState(false);
+  // Pages' "Settle" link lands here with the whole list open (#todo).
+  const [all, setAll] = useState(() => window.location.hash.endsWith('#todo'));
   const items = fixItems(overview).filter((item) => !done.has(item.id));
   // "Do all" takes the fixes that change text the owner can see first. Saying a page still holds is theirs to say.
   const oneClick = items.flatMap((item) => (item.suggestion && item.suggestion.kind !== 'confirm' ? [item.suggestion] : []));
@@ -95,7 +96,7 @@ export const FixList = ({ overview, onOpen, onChanged }: { overview: KnowledgeOv
   };
 
   return (
-    <section aria-labelledby="todo-title" className="flex flex-col gap-2">
+    <section id="todo" aria-labelledby="todo-title" className="flex flex-col gap-2">
       <div className="flex items-baseline justify-between gap-2">
         <h2 id="todo-title" className="text-sm font-semibold">To do <span className="font-normal tabular-nums text-muted">{items.length}</span></h2>
         {oneClick.length > 1 && (
@@ -108,7 +109,7 @@ export const FixList = ({ overview, onOpen, onChanged }: { overview: KnowledgeOv
         {shown.map((item) => (
           <li key={item.id} className="flex flex-col gap-2 px-4 py-2.5">
             <div className="flex items-center gap-3">
-              <p className="min-w-0 flex-1 truncate text-[13px]" title={[item.title, ...item.lines].join('\n')}>
+              <p className="line-clamp-2 min-w-0 flex-1 text-[13px]" title={[item.title, ...item.lines].join('\n')}>
                 <span className="font-medium">{item.title}</span> <span className="text-muted">· {item.why}</span>
               </p>
               <div className="flex shrink-0 items-center gap-1">
