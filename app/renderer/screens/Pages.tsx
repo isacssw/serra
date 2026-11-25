@@ -3,7 +3,7 @@
 // message the service refuses a save with, so Save stays disabled until the page would pass `pnpm knowledge`.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AlertTriangle, CheckCircle2, ChevronRight, FileText, Search } from 'lucide-react';
-import { useSearchParams } from 'react-router';
+import { useNavigate, useSearchParams } from 'react-router';
 import type { KnowledgePage } from '../../../src/contracts.ts';
 import type { KnowledgeOverview } from '../../../src/knowledge-overview.ts';
 import { serra } from '../bridge.ts';
@@ -73,6 +73,8 @@ const DriftNotice = ({ files, busy, onAccept, onRestore, name }: {
           ))}
         </ul>
       </div>
+      {/* Only where To do can settle it in a click: a rule inside prose stays here, with the page's Edit. */}
+      {oneClick && <button type="button" onClick={onSettle} className="self-start text-xs text-ink underline underline-offset-2 hover:no-underline focus-visible:outline-2 focus-visible:outline-focus">Settle in To do</button>}
     </section>
   );
 };
@@ -119,7 +121,7 @@ const PageList = ({ pages, selected, onSelect }: { pages: KnowledgePage[]; selec
  * Rules on this page that disagree with or repeat another, shown as they read. Overview's To do keeps one in a click
  * where it can; here the page's own Edit settles it, so a rule inside a sentence of prose is never a dead end.
  */
-const RulesNote = ({ issues }: { issues: KnowledgeOverview['health']['issues'] }) => {
+const RulesNote = ({ issues, oneClick, onSettle }: { issues: KnowledgeOverview['health']['issues']; oneClick: boolean; onSettle: () => void }) => {
   const pairs = issues.filter((issue) => (issue.kind === 'conflict' || issue.kind === 'duplicate') && (issue.facts?.length ?? 0) === 2);
   if (pairs.length === 0) return null;
   return (
@@ -135,6 +137,7 @@ const RulesNote = ({ issues }: { issues: KnowledgeOverview['health']['issues'] }
 };
 
 export const Pages = () => {
+  const navigate = useNavigate();
   const toast = useToast();
   const [pages, setPages] = useState<KnowledgePage[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -398,7 +401,11 @@ export const Pages = () => {
             {page && state && (
               <>
                 <AudiencePicker text={draft} disabled={saving} onChange={setDraft} />
-                <RulesNote issues={pairs} />
+                <RulesNote
+                  issues={pairs}
+                  oneClick={pairs.some((issue) => issue.kind === 'conflict' && (issue.facts ?? []).length === 2 && issue.facts!.every((fact) => fact.page === selected && currentRules(saved ?? '').includes(fact.text)))}
+                  onSettle={() => void navigate('/knowledge/overview#todo')}
+                />
                 {!editing && !state.dirty && (
                   <div className="flex flex-col gap-3">
                     <div className="rounded-lg border border-line bg-panel"><PageBody text={pageBody(draft)} onOpen={(href) => void serra()?.app.openExternal(href)} /></div>
