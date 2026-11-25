@@ -13,7 +13,7 @@ import { AudienceChoice } from './AudienceChoice.tsx';
 import { DiffView } from './proposals/DiffView.tsx';
 import { Badge, Button, cx, Dialog, Page, useToast } from '../ui/index.ts';
 import {
-  badgeCounts, badgeLabel, keepRule, badgeTitle, badgeTone, editorState, filterPages, groupByFolder, keepSelection, localDate, markVerified,
+  badgeCounts, badgeLabel, currentRules, keepRule, newerRule, badgeTitle, badgeTone, editorState, filterPages, groupByFolder, keepSelection, localDate, markVerified,
   pageName, pagesSummary, type PageFilter,
 } from './pages.logic.ts';
 
@@ -127,34 +127,48 @@ const PageList = ({ pages, selected, onSelect }: { pages: KnowledgePage[]; selec
  */
 const RulePairs = ({ page, pairs, draft, disabled, onKeep, onOpen }: {
   page: string; pairs: KnowledgeOverview['health']['issues']; draft: string; disabled: boolean; onKeep: (drop: string) => void; onOpen: (path: string) => void;
-}) => (
-  <section aria-label="Rules to settle" className="flex flex-col gap-3 rounded-lg border border-line bg-panel px-3 py-2.5">
-    {pairs.map((issue, at) => {
-      const facts = (issue.facts ?? []).filter((fact) => fact.page !== page || draft.includes(fact.text));
-      if (facts.length < 2) return null;
-      const here = facts.every((fact) => fact.page === page);
-      return (
-        <div key={at} className="flex flex-col gap-1.5">
-          <p className="flex items-center gap-1.5 text-[13px]">
-            <AlertTriangle size={14} aria-hidden className={issue.kind === 'conflict' ? 'text-warn' : 'text-muted'} />
-            {issue.kind === 'conflict' ? 'Two rules disagree. Keep the current one.' : 'This rule is written twice. Keep one.'}
-          </p>
-          {facts.map((fact, which) => (
-            <div key={which} className="flex items-start gap-2">
-              <p className="min-w-0 flex-1 border-l-2 border-line pl-2 text-xs text-muted">
-                {fact.text}{fact.page === page ? '' : <> <span className="text-faint">on</span> <button type="button" onClick={() => onOpen(fact.page)} className="font-mono text-ink underline underline-offset-2 hover:no-underline focus-visible:outline-2 focus-visible:outline-focus">{fact.page}</button></>}
-              </p>
-              {here && (
-                <Button size="sm" disabled={disabled} onClick={() => onKeep(facts[1 - which]!.text)}>Keep this one</Button>
-              )}
-            </div>
-          ))}
-          {here && <p className="text-xs text-faint">The other moves under “Replaced”, dated today. Save to keep it.</p>}
-        </div>
-      );
-    })}
-  </section>
-);
+}) => {
+  // Only rules still current in the draft: once one is kept, the pair is settled and leaves the panel.
+  const current = currentRules(draft);
+  const shown = pairs.flatMap((issue) => {
+    const facts = (issue.facts ?? []).filter((fact) => fact.page !== page || current.some((line) => line.includes(fact.text)));
+    return facts.length < 2 ? [] : [{ issue, facts }];
+  });
+  if (shown.length === 0) return null;
+  return (
+    <section aria-label="Rules to settle" className="flex flex-col gap-3 rounded-lg border border-line bg-panel px-3 py-2.5">
+      {shown.map(({ issue, facts }, at) => {
+        const here = facts.every((fact) => fact.page === page);
+        // "Keep this one" moves the other rule's line; a rule inside a sentence of prose is edited by hand.
+        const wholeLines = here && facts.every((fact) => current.includes(fact.text));
+        const newer = issue.kind === 'conflict' ? newerRule(facts[0]!.text, facts[1]!.text) : null;
+        return (
+          <div key={at} className="flex flex-col gap-1.5">
+            <p className="flex items-center gap-1.5 text-[13px]">
+              <AlertTriangle size={14} aria-hidden className={issue.kind === 'conflict' ? 'text-warn' : 'text-muted'} />
+              {issue.kind === 'conflict' ? 'Two rules disagree. Keep the current one.' : 'This rule is written twice. Keep one.'}
+            </p>
+            {facts.map((fact, which) => (
+              <div key={which} className="flex items-start gap-2">
+                <p className="min-w-0 flex-1 border-l-2 border-line pl-2 text-xs text-muted">
+                  {fact.text}
+                  {newer === which && <span className="ml-1.5 rounded bg-raised px-1 py-0.5 text-[11px] text-ink">Looks newer</span>}
+                  {fact.page === page ? '' : <> <span className="text-faint">on</span> <button type="button" onClick={() => onOpen(fact.page)} className="font-mono text-ink underline underline-offset-2 hover:no-underline focus-visible:outline-2 focus-visible:outline-focus">{fact.page}</button></>}
+                </p>
+                {wholeLines && (
+                  <Button size="sm" variant={newer === which ? 'primary' : 'secondary'} disabled={disabled} onClick={() => onKeep(facts[1 - which]!.text)}>Keep this one</Button>
+                )}
+              </div>
+            ))}
+            {wholeLines
+              ? <p className="text-xs text-faint">The other moves under “Replaced”, dated today. Save to keep it.</p>
+              : here && <p className="text-xs text-faint">Edit the page below so only the current rule is left.</p>}
+          </div>
+        );
+      })}
+    </section>
+  );
+};
 
 export const Pages = () => {
   const toast = useToast();
@@ -264,6 +278,8 @@ export const Pages = () => {
       setSaved(text);
       setDraft(text);
       setPages((list) => list?.map((entry) => (entry.path === updated.path ? updated : entry)) ?? list);
+      // What the page still has to settle, as saved: a kept rule leaves the panel and the warning.
+      bridge.pages.issues(updated.path).then(setPairs, () => undefined);
       toast({ message: `Saved ${updated.path}. The old text is in the profile's backups/knowledge/.`, tone: 'success' });
     } catch (error) {
       toast({ message: message(error), tone: 'error' });
@@ -399,7 +415,7 @@ export const Pages = () => {
                     </div>
                   ) : (
                     <p className="flex items-center gap-1.5 text-sm text-muted">
-                      {pairs.some((issue) => issue.kind === 'conflict')
+                      {pairs.some((issue) => issue.kind === 'conflict' && (issue.facts ?? []).filter((fact) => fact.page !== selected || currentRules(draft).some((line) => line.includes(fact.text))).length >= 2)
                         ? <><AlertTriangle size={15} aria-hidden className="text-warn" />Header and length pass, but two rules on this page disagree. Settle them above.</>
                         : <><CheckCircle2 size={15} aria-hidden className="text-up" />Header and length pass the knowledge check.</>}
                     </p>

@@ -16,7 +16,7 @@ import { knowledgeOverview } from '../src/knowledge-overview.ts';
 import { createJournal } from '../src/knowledge-journal.ts';
 import { createKnowledge } from '../src/knowledge.ts';
 import { changeText, groupByDay, scoreChart, scoreWord } from '../app/renderer/screens/overview.logic.ts';
-import { keepRule } from '../app/renderer/screens/pages.logic.ts';
+import { currentRules, keepRule, newerRule } from '../app/renderer/screens/pages.logic.ts';
 
 const NOW = new Date('2026-11-25T12:00:00Z');
 
@@ -292,4 +292,17 @@ test('keeping one of two rules moves the other under Replaced, dated, where the 
   assert.equal(kept, '---\ntype: rule\n---\n# How I work\n\n- A bug fix starts with a failing test.\n- Risky releases ship on Thursday now.\n\n## Replaced\n\n- Until 2026-11-25: Risky releases ship on Tuesday.\n');
   assert.deepEqual(assessKnowledge([{ path: 'index.md', text: '| a | `owner/work.md` | a |' }, { path: 'owner/work.md', text: kept.replace('type: rule', 'type: rule\ndescription: How I work\nwritten: 2026-11-01\nverified: 2026-11-20\nsources:\n  - Owner') }], NOW).issues, []);
   assert.equal(keepRule(kept, 'Not on the page.', '2026-11-25'), kept);
+});
+
+test('keeping a rule settles the pair: amounts survive, the kept page reads as settled, and prose is left to edit by hand', () => {
+  const header = '---\ntype: rule\ndescription: Refunds\nwritten: 2026-11-01\nverified: 2026-11-20\nsources:\n  - Owner\n---\n';
+  const text = `${header}- Refunds over $100 need Robin.\n- Refunds over $250 need Robin now.\n\n## Replaced\n\n- Until 2026-10-01: Refunds over $50 needed Robin.\n`;
+  const kept = keepRule(text, 'Refunds over $100 need Robin.', '2026-11-25');
+  assert.match(kept, /## Replaced\n\n- Until 2026-11-25: Refunds over \$100 need Robin\.\n- Until 2026-10-01: Refunds over \$50 needed Robin\.\n$/);
+  assert.deepEqual(currentRules(kept), ['Refunds over $250 need Robin now.']);
+  assert.equal(newerRule('Refunds over $100 need Robin.', 'Refunds over $250 need Robin now.'), 1);
+  assert.equal(newerRule('Ship on Tuesday.', 'Ship on Thursday.'), null);
+  // The page as the owner saves it has nothing left to settle.
+  const issues = assessKnowledge([{ path: 'index.md', text: '| a | `owner/refunds.md` | a |' }, { path: 'owner/refunds.md', text: kept }], NOW).issues;
+  assert.deepEqual(issues, []);
 });

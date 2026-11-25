@@ -8,6 +8,7 @@
 //
 // Needs T3 Code running. Runs are read-only by brief, in one scratch project folder Serra makes once
 // (~/.local/share/serra-evals/kb-live). Results go to evals/results/<label>.{md,json} (git-ignored).
+import { execFileSync } from 'node:child_process';
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -72,6 +73,8 @@ const messyCases: (Case & { fixture: string })[] = [
     judge: 'Webhooks retry 5 times over 24 hours with exponential backoff, then the merchant gets an email. 2 = says 5 times (24 hours or backoff a plus); 1 = right count, wrong details; 0 = wrong count.' },
   { id: 'messy-priya', category: 'repeat', via: 'dm', user: OWNER, text: 'how does Priya like to get updates?', include: ['written|summary|numbers'], expected: ['people/priya.md', 'people/priya-nair.md'], fixture: 'messy',
     judge: 'Priya prefers a short written summary before any call and likes numbers in the first line. 2 = says both; 1 = says one; 0 = says something else.' },
+  { id: 'messy-rate-limit', category: 'conflict', via: 'dm', user: OWNER, text: 'a merchant is getting 429s, what is our API rate limit per merchant?', include: ['250'], expected: ['product/quotas.md', 'product/rate-limits.md'], fixture: 'messy',
+    judge: 'Two pages disagree: product/rate-limits.md (confirmed 2026-06-01) says 100 requests per second per merchant; product/quotas.md (confirmed 2026-09-20, newer) says 250. 2 = says 250 is current and notes the older 100 (or asks which holds); 1 = says 250 without noting the other; 0 = says 100.' },
 ];
 const cases = args.set === 'messy' ? messyCases.filter((item) => !args.only || args.only.split(',').includes(item.id)) : ownerCases;
 const ARMS = args.set === 'messy' ? (['notes', 'no-notes'] as const) : (['hint', 'no-hint'] as const);
@@ -83,6 +86,8 @@ const HINT = /\n*Pages that look closest to this request, best first: [^\n]*\n*/
 interface Result {
   id: string; arm: 'hint' | 'no-hint' | 'notes' | 'no-notes'; run: number; expected: string[]; fixture: string; pass: boolean; named: string[]; opened: string[];
   hinted: string[]; error?: string; seconds: number; reply: string;
+  /** The provider and model T3 ran the reply on, read back from the thread. */
+  ranOn?: string;
   /** The judge's 0–2, with --judge, for a case with a rubric. */
   score?: number;
   /** The worker stopped to ask the owner instead of answering. */
@@ -99,6 +104,12 @@ const scratch = (fixture: string): { dir: string; profileDir: string } => {
       mkdirSync(dirname(join(profileDir, 'knowledge', file.path)), { recursive: true });
       writeFileSync(join(profileDir, 'knowledge', file.path), file.text);
     }
+    // A limit that changed, written on a second page with no "now" in it: only the dates say which is current.
+    const limit = (description: string, date: string, line: string): string => `---\ntype: product\ndescription: ${description}\naudience: team\nwritten: ${date}\nverified: ${date}\nsources:\n  - Owner, ${date}\n---\n\n# ${description}\n\n- ${line}\n- Increases are approved by Alex after a load test.\n`;
+    writeFileSync(join(profileDir, 'knowledge/product/rate-limits.md'), limit('API rate limits', '2026-06-01', 'The API rate limit is 100 requests per second per merchant.'));
+    writeFileSync(join(profileDir, 'knowledge/product/quotas.md'), limit('API quotas and plan limits', '2026-09-20', 'The API rate limit is 250 requests per second per merchant.'));
+    const index = join(profileDir, 'knowledge/index.md');
+    writeFileSync(index, `${readFileSync(index, 'utf8').trimEnd()}\n| rate limits or 429s | \`product/rate-limits.md\` | API rate limits |\n| plan quotas | \`product/quotas.md\` | API quotas and plan limits |\n`);
   } else cpSync(join(root, fixture, 'knowledge'), join(profileDir, 'knowledge'), { recursive: true });
   const profile = readFileSync(join(root, fixture === 'messy' ? 'evals/fixture' : fixture, 'profile.json'), 'utf8').replace('PROJECT_PATH', project);
   writeFileSync(join(profileDir, 'profile.json'), fixture === 'messy' ? profile.replaceAll('Robin', 'Alex') : profile);
@@ -148,6 +159,16 @@ const judge = async (rubric: string, question: string, reply: string): Promise<n
   return null;
 };
 
+/** "claudeAgent claude-opus-5-5": what T3 says the thread ran on, so a report never says only "the default". */
+const ranOnOf = (threadId: string): string | undefined => {
+  try {
+    const raw = execFileSync(t3Bin, ['thread', 'show', '--json', threadId], { encoding: 'utf8' });
+    const value: unknown = JSON.parse(raw.slice(raw.indexOf('{')));
+    const thread = isRecord(value) && isRecord(value.thread) ? value.thread : null;
+    return thread && typeof thread.providerInstanceId === 'string' ? `${thread.providerInstanceId} ${typeof thread.model === 'string' ? thread.model : ''}`.trim() : undefined;
+  } catch { return undefined; }
+};
+
 const runOne = async (item: Case & { fixture: string }, arm: Result['arm'], run: number): Promise<Result> => {
   const started = Date.now();
   const { dir, profileDir } = scratch(item.fixture);
@@ -180,9 +201,10 @@ const runOne = async (item: Case & { fixture: string }, arm: Result['arm'], run:
         const { reply, cited } = takeKnowledgeUsed(text);
         const pages = readFileSync(join(profileDir, 'knowledge/index.md'), 'utf8').match(/`[^`\s]+\.md`/g)?.map((path) => path.slice(1, -1)) ?? [];
         const opened = await openedPages(threadId, thread.latestRunId, pages);
+        const ranOn = ranOnOf(threadId);
         const pass = (item.include ?? []).every((pattern) => new RegExp(pattern, 'iu').test(reply)) && !(item.exclude ?? []).some((pattern) => new RegExp(pattern, 'iu').test(reply));
         const score = args.judge && item.judge ? await judge(item.judge, item.text, reply).catch(() => null) : null;
-        return { ...base, pass, named: cited, opened, hinted, carried, reply, ...(score === null ? {} : { score }), seconds: (Date.now() - started) / 1000 };
+        return { ...base, pass, named: cited, opened, hinted, carried, reply, ...(ranOn ? { ranOn } : {}), ...(score === null ? {} : { score }), seconds: (Date.now() - started) / 1000 };
       }
       if (Date.now() > deadline) throw new Error(`timed out: ${thread.link}`);
     }
@@ -225,8 +247,8 @@ const summary = (arm: Result['arm'], fixture?: string) => {
 };
 const lines = [
   `# Knowledge live eval: ${args.label}`, '',
-  `Through Serra's T3 layer, on ${args.provider ? `${args.provider} ${args.model ?? ''}` : "T3's default provider"}, ${args.runs} run(s) of ${cases.length} cases per arm, ${new Date().toISOString().slice(0, 10)}. ${results.filter((result) => result.error).length} run(s) failed in the harness and are left out.`, '',
-  '| Arm | Owner | Runs | Answer right | Named pages used | Named pages were opened or in About me | Named an expected page | Opened a page | Opened a hinted page | Asked the owner | Judge 0–2 |', '|---|---|---|---|---|---|---|---|---|---|---|',
+  `Through Serra's T3 layer, on ${[...new Set(results.flatMap((result) => (result.ranOn ? [result.ranOn] : [])))].join(', ') || (args.provider ? `${args.provider} ${args.model ?? ''}` : "T3's default provider")}, ${args.runs} run(s) of ${cases.length} cases per arm, ${new Date().toISOString().slice(0, 10)}. ${results.filter((result) => result.error).length} run(s) failed in the harness and are left out.`, '',
+  '| Arm | Owner | Runs | Answer right | Named pages used | Named pages were opened or in About me | Named an expected page | Opened a page | Opened a hinted page | Asked the owner | Judge 0–2 (cases with a rubric) |', '|---|---|---|---|---|---|---|---|---|---|---|',
   ...ARMS.flatMap((arm) => (args.set === 'messy' ? ['messy'] : [undefined, ...SETS.map((set) => set.fixture)]).map((fixture) => {
     const row = summary(arm, fixture);
     return `| ${arm} | ${fixture ? fixture.replace('evals/', '') : 'both'} | ${row.runs} | ${row.pass} | ${row.named} | ${row.honest} | ${row.namedRight} | ${row.opened} | ${row.followed} | ${row.asked} | ${row.judged} |`;

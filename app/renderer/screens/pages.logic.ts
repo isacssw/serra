@@ -116,8 +116,22 @@ export const keepRule = (text: string, drop: string, date: string): string => {
   const body = lines.join('\n').trimEnd();
   const entry = `- Until ${date}: ${drop.trim()}`;
   return /^##\s+Replaced\b/im.test(body)
-    ? `${body.replace(/^(##\s+Replaced\b[^\n]*\n(?:\n)?)/im, `$1${entry}\n`)}\n`
+    // A function, not a replacement string: a rule like "Refunds over $100" must not be read as `$1`.
+    ? `${body.replace(/^(##\s+Replaced\b[^\n]*\n(?:\n)?)/im, (head) => `${head}${entry}\n`)}\n`
     : `${body}\n\n## Replaced\n\n${entry}\n`;
+};
+
+/** The page's current rules, one per line, without its header or anything under `## Replaced`. */
+export const currentRules = (text: string): string[] => text.replace(/\r\n?/g, '\n')
+  .replace(/^---\n[\s\S]*?\n---\n/, '')
+  .replace(/^##\s+Replaced\b[\s\S]*?(?=^##\s|(?![\s\S]))/gim, '')
+  .split('\n').map((line) => line.trim().replace(/^([-*]|\d+\.)\s+/, '').trim()).filter(Boolean);
+
+/** Which of two disagreeing rules reads as the newer one: the one that says "now", "since" or "from", else neither. */
+export const newerRule = (a: string, b: string): 0 | 1 | null => {
+  const fresh = (text: string): boolean => /\b(now|since|from now|as of|starting)\b/i.test(text);
+  if (fresh(a) === fresh(b)) return null;
+  return fresh(a) ? 0 : 1;
 };
 
 /** Which page to show after the list reloads: the current one if it's still there, else the first. */

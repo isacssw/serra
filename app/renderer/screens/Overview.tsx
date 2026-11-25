@@ -55,7 +55,7 @@ const Label = ({ x, y, width, height, align, children }: { x: number; y: number;
 const ScoreChart = ({ overview }: { overview: KnowledgeOverview }) => {
   const width = 640;
   const height = 168;
-  const factsHeight = 56;
+  const factsHeight = 64;
   const chart = scoreChart(overview.points, width, height);
   const facts = factsChart(overview.points, width, factsHeight);
   const [active, setActive] = useState<number | null>(null);
@@ -113,8 +113,8 @@ const ScoreChart = ({ overview }: { overview: KnowledgeOverview }) => {
         {facts.dots.length > 1 && (
           // The count where it started and where it is, so the line reads as numbers, not just a direction.
           <>
-            <Label x={facts.dots[0]!.x + 4} y={Math.max(10, facts.dots[0]!.y - 8)} width={width} height={factsHeight} align="start">{facts.dots[0]!.point.facts}</Label>
-            <Label x={facts.dots.at(-1)!.x} y={Math.max(10, facts.dots.at(-1)!.y - 8)} width={width} height={factsHeight} align="end">{facts.dots.at(-1)!.point.facts}</Label>
+            <Label x={facts.dots[0]!.x + 4} y={8} width={width} height={factsHeight} align="start">{facts.dots[0]!.point.facts}</Label>
+            <Label x={facts.dots.at(-1)!.x} y={8} width={width} height={factsHeight} align="end">{facts.dots.at(-1)!.point.facts}</Label>
           </>
         )}
         {shown && <Label x={Math.min(shown.x + 4, width - 40)} y={factsHeight - 12} width={width} height={factsHeight} align="start">{chart.dots[active!]!.point.facts} facts</Label>}

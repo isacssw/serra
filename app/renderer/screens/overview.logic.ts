@@ -65,7 +65,7 @@ export const scoreChart = (points: HistoryPoint[], width: number, height: number
 };
 
 /** Facts known over time, from zero: whether the bot knows more, which the score alone can hide. */
-export const factsChart = (points: HistoryPoint[], width: number, height: number, pad = { left: 36, right: 8, top: 6, bottom: 4 }): ChartGeometry => {
+export const factsChart = (points: HistoryPoint[], width: number, height: number, pad = { left: 36, right: 8, top: 18, bottom: 4 }): ChartGeometry => {
   const top = Math.max(1, ...points.map((point) => point.facts));
   return stepChart(points, (point) => point.facts, 0, top, width, height, pad, [0, top]);
 };
