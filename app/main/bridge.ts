@@ -208,6 +208,8 @@ export interface SerraApi {
     share(pages: { path: string; text: string }[], audience: Visibility): { shared: string[] };
     /** Knowledge › Overview: health, how it grew, and what replies used. */
     overview(): KnowledgeOverview;
+    /** Rules on this page that disagree with or repeat another, as the page is on disk now, for the editor. */
+    issues(path: string): KnowledgeOverview['health']['issues'];
   };
   /** Brief and policy (APP-21). */
   brief: {
@@ -414,7 +416,7 @@ export const bridgeMethods = {
   bot: methods<'bot'>()(['status', 'start', 'stop', 'restart']),
   jobs: methods<'jobs'>()(['list', 'cleanupWorktrees']),
   proposals: methods<'proposals'>()(['list', 'diff', 'targets', 'promote', 'mergeInto', 'discard', 'undo', 'retire', 'similar']),
-  pages: methods<'pages'>()(['list', 'read', 'save', 'drift', 'acceptDrift', 'restoreDrift', 'aboutMe', 'untagged', 'share', 'overview']),
+  pages: methods<'pages'>()(['list', 'read', 'save', 'drift', 'acceptDrift', 'restoreDrift', 'aboutMe', 'untagged', 'share', 'overview', 'issues']),
   brief: methods<'brief'>()(['read', 'save', 'check', 'preview', 'listProposed', 'readProposed', 'applyProposed']),
   settings: methods<'settings'>()(['read', 'sections', 'saveSection', 'addPerson', 'removePerson', 'peopleNames']),
   secrets: methods<'secrets'>()(['list', 'setSource', 'check']),

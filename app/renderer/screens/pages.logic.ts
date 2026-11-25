@@ -103,6 +103,23 @@ export const localDate = (now: Date): string =>
 /** The draft with `verified` set to `date`. A draft with no header is returned as it is (the problems list says why). */
 export const markVerified = (text: string, date: string): string => setHeaderField(text.replace(/\r\n?/g, '\n'), 'verified', date);
 
+/**
+ * The page with `drop` (a rule on it, as Overview quotes it) moved under a `## Replaced` heading at the end, dated
+ * `date`, so `keep` is the one current rule. The bot never reads what's under that heading. Unchanged when `drop` isn't
+ * a line of the page.
+ */
+export const keepRule = (text: string, drop: string, date: string): string => {
+  const lines = text.replace(/\r\n?/g, '\n').split('\n');
+  const at = lines.findIndex((line) => line.trim().replace(/^([-*]|\d+\.)\s+/, '').trim() === drop.trim());
+  if (at === -1) return text;
+  lines.splice(at, 1);
+  const body = lines.join('\n').trimEnd();
+  const entry = `- Until ${date}: ${drop.trim()}`;
+  return /^##\s+Replaced\b/im.test(body)
+    ? `${body.replace(/^(##\s+Replaced\b[^\n]*\n(?:\n)?)/im, `$1${entry}\n`)}\n`
+    : `${body}\n\n## Replaced\n\n${entry}\n`;
+};
+
 /** Which page to show after the list reloads: the current one if it's still there, else the first. */
 export const keepSelection = (pages: readonly KnowledgePage[], current: string | null): string | null =>
   current && pages.some((page) => page.path === current) ? current : (pages[0]?.path ?? null);

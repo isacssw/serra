@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AlertTriangle, CheckCircle2, ChevronRight, FileText, Search } from 'lucide-react';
 import { useSearchParams } from 'react-router';
 import type { KnowledgePage } from '../../../src/contracts.ts';
+import type { KnowledgeOverview } from '../../../src/knowledge-overview.ts';
 import { serra } from '../bridge.ts';
 import { frontmatter, setHeaderField } from '../../../src/knowledge-rules.ts';
 import { pageAudience } from '../../../src/owner-model.ts';
@@ -12,7 +13,7 @@ import { AudienceChoice } from './AudienceChoice.tsx';
 import { DiffView } from './proposals/DiffView.tsx';
 import { Badge, Button, cx, Dialog, Page, useToast } from '../ui/index.ts';
 import {
-  badgeCounts, badgeLabel, badgeTitle, badgeTone, editorState, filterPages, groupByFolder, keepSelection, localDate, markVerified,
+  badgeCounts, badgeLabel, keepRule, badgeTitle, badgeTone, editorState, filterPages, groupByFolder, keepSelection, localDate, markVerified,
   pageName, pagesSummary, type PageFilter,
 } from './pages.logic.ts';
 
@@ -120,6 +121,41 @@ const PageList = ({ pages, selected, onSelect }: { pages: KnowledgePage[]; selec
   </div>
 );
 
+/**
+ * Rules on this page that disagree with or repeat another rule. A pair on this page gets "Keep this one", which moves
+ * the other under Replaced in the draft for the owner to save; a pair across pages links to the other page.
+ */
+const RulePairs = ({ page, pairs, draft, disabled, onKeep, onOpen }: {
+  page: string; pairs: KnowledgeOverview['health']['issues']; draft: string; disabled: boolean; onKeep: (drop: string) => void; onOpen: (path: string) => void;
+}) => (
+  <section aria-label="Rules to settle" className="flex flex-col gap-3 rounded-lg border border-line bg-panel px-3 py-2.5">
+    {pairs.map((issue, at) => {
+      const facts = (issue.facts ?? []).filter((fact) => fact.page !== page || draft.includes(fact.text));
+      if (facts.length < 2) return null;
+      const here = facts.every((fact) => fact.page === page);
+      return (
+        <div key={at} className="flex flex-col gap-1.5">
+          <p className="flex items-center gap-1.5 text-[13px]">
+            <AlertTriangle size={14} aria-hidden className={issue.kind === 'conflict' ? 'text-warn' : 'text-muted'} />
+            {issue.kind === 'conflict' ? 'Two rules disagree. Keep the current one.' : 'This rule is written twice. Keep one.'}
+          </p>
+          {facts.map((fact, which) => (
+            <div key={which} className="flex items-start gap-2">
+              <p className="min-w-0 flex-1 border-l-2 border-line pl-2 text-xs text-muted">
+                {fact.text}{fact.page === page ? '' : <> <span className="text-faint">on</span> <button type="button" onClick={() => onOpen(fact.page)} className="font-mono text-ink underline underline-offset-2 hover:no-underline focus-visible:outline-2 focus-visible:outline-focus">{fact.page}</button></>}
+              </p>
+              {here && (
+                <Button size="sm" disabled={disabled} onClick={() => onKeep(facts[1 - which]!.text)}>Keep this one</Button>
+              )}
+            </div>
+          ))}
+          {here && <p className="text-xs text-faint">The other moves under “Replaced”, dated today. Save to keep it.</p>}
+        </div>
+      );
+    })}
+  </section>
+);
+
 export const Pages = () => {
   const toast = useToast();
   const [pages, setPages] = useState<KnowledgePage[] | null>(null);
@@ -134,6 +170,8 @@ export const Pages = () => {
   /** A page the owner clicked while the draft had unsaved changes; the discard dialog asks first. */
   const [pendingSelect, setPendingSelect] = useState<string | null>(null);
   const [retiring, setRetiring] = useState(false);
+  /** Rules on the open page that disagree with or repeat another, as saved. */
+  const [pairs, setPairs] = useState<KnowledgeOverview['health']['issues']>([]);
   const [drifted, setDrifted] = useState<Drifted[]>([]);
   const [resolving, setResolving] = useState(false);
   /** Bumped after an outside change is accepted or restored, so the open page shows its text as it is now. */
@@ -181,6 +219,8 @@ export const Pages = () => {
       (text) => { if (live) { setSaved(text); setDraft(text); } },
       (error) => { if (live) setReadError(message(error)); },
     );
+    setPairs([]);
+    bridge.pages.issues(selected).then((found) => { if (live) setPairs(found); }, () => undefined);
     return () => { live = false; };
   }, [selected, readVersion]);
 
@@ -338,6 +378,7 @@ export const Pages = () => {
             {page && state && (
               <>
                 <AudiencePicker text={draft} disabled={saving} onChange={setDraft} />
+                {pairs.length > 0 && <RulePairs page={selected!} pairs={pairs} draft={draft} disabled={saving} onKeep={(drop) => setDraft((text) => keepRule(text, drop, localDate(new Date())))} onOpen={(path) => { if (state?.dirty) setPendingSelect(path); else setSelected(path); }} />}
                 <textarea
                   value={draft}
                   onChange={(event) => setDraft(event.target.value)}
@@ -358,7 +399,9 @@ export const Pages = () => {
                     </div>
                   ) : (
                     <p className="flex items-center gap-1.5 text-sm text-muted">
-                      <CheckCircle2 size={15} aria-hidden className="text-up" />Header and length pass the knowledge check.
+                      {pairs.some((issue) => issue.kind === 'conflict')
+                        ? <><AlertTriangle size={15} aria-hidden className="text-warn" />Header and length pass, but two rules on this page disagree. Settle them above.</>
+                        : <><CheckCircle2 size={15} aria-hidden className="text-up" />Header and length pass the knowledge check.</>}
                     </p>
                   )}
                 </div>

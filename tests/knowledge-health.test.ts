@@ -16,6 +16,7 @@ import { knowledgeOverview } from '../src/knowledge-overview.ts';
 import { createJournal } from '../src/knowledge-journal.ts';
 import { createKnowledge } from '../src/knowledge.ts';
 import { changeText, groupByDay, scoreChart, scoreWord } from '../app/renderer/screens/overview.logic.ts';
+import { keepRule } from '../app/renderer/screens/pages.logic.ts';
 
 const NOW = new Date('2026-11-25T12:00:00Z');
 
@@ -99,6 +100,9 @@ test('health: conflicts and repeats are told apart from rules that merely look a
     { a: 'Jonas runs the on-call rota.', b: 'Priya runs the payouts roadmap.', is: 'neither' },
     { a: 'Deploy to staging and run the smoke suite.', b: 'Tag from main after CI is green.', is: 'neither' },
     { a: 'Refunds over 500 EUR need Robin.', b: 'Rate limit increases need a load test.', is: 'neither' },
+    // Same shape, different subjects: two true facts, not a conflict.
+    { a: 'Webhooks retry 5 times over 24 hours.', b: 'Invoices retry 3 times over 24 hours.', is: 'neither' },
+    { a: 'The API rate limit is 100 requests per minute.', b: 'The dashboard rate limit is 20 requests per minute.', is: 'neither' },
   ];
   const found = gold.map((pair) => {
     const { duplicates, conflicts } = findOverlaps([...facts('one.md', [pair.a]), ...facts('two.md', [pair.b])]);
@@ -224,7 +228,7 @@ test('the index tells the worker when two rules disagree, so it never picks one 
     { path: 'owner/working-style.md', text: page('- Risky releases ship on Tuesday.\n- Risky releases ship on Thursday now.') },
     { path: 'owner/voice.md', text: page('- Lead with the answer.') },
   ], NOW);
-  assert.match(marked, /`owner\/working-style\.md` \| How I decide \(two rules disagree: "Risky releases ship on Tuesday\." and "Risky releases ship on Thursday now\."; don't pick one silently/);
+  assert.match(marked, /`owner\/working-style\.md` \| How I decide \(two rules disagree: "Risky releases ship on Tuesday\." and "Risky releases ship on Thursday now\."; if one is clearly newer .*follow it and say the other looks out of date; ask the owner only when you can't tell\) \|$/m);
   assert.match(marked, /\| voice \| `owner\/voice\.md` \| How I write \|$/m, 'a settled page is left alone');
 });
 
@@ -256,4 +260,36 @@ test('history ends where the knowledge is, an accepted hand edit included', (t) 
   assert.equal(last.score, overview.health.score);
   assert.equal(last.facts, overview.health.facts);
   assert.ok(overview.events.some((event) => event.page === 'owner/working-style.md' && event.added.includes('Risky releases ship on Monday.')), 'the accepted edit is in the timeline');
+});
+
+test('pages whose rows carry a conflict note stay in the relevance hint', () => {
+  const page = (body: string): string => `---\ntype: rule\ndescription: Release days\nwritten: 2026-11-01\nverified: 2026-11-20\nsources:\n  - Owner\n---\n${body}\n`;
+  const files = [
+    { path: 'owner/style.md', text: page('- Risky releases ship on Tuesday.') },
+    { path: 'owner/releases.md', text: page('- Risky releases ship on Thursday.') },
+  ];
+  const marked = markIndexRows('| release days | `owner/style.md` | How I ship |\n| release days | `owner/releases.md` | When I ship |', files, NOW);
+  assert.match(marked, /two rules disagree/);
+  assert.deepEqual(pageCards(marked, files).map((card) => card.path), ['owner/style.md', 'owner/releases.md']);
+  assert.equal(rankPages('which day do risky releases ship?', pageCards(marked, files)).length, 2);
+});
+
+test('two people are never one: a shared surname or role is not the same person, in health or in Proposals', () => {
+  const card = (name: string, line: string): string => `---\ntype: person\ndescription: Who ${name} is\nwritten: 2026-11-01\nverified: 2026-11-20\nsources:\n  - Owner\n---\n# ${name}\n\n- ${line}\n`;
+  const files = [
+    { path: 'index.md', text: '| a | `people/ana-silva.md` | a |\n| b | `people/bruno-silva.md` | b |' },
+    { path: 'people/ana-silva.md', text: card('Ana Silva', 'Reviews pull requests on Monday.') },
+    { path: 'people/bruno-silva.md', text: card('Bruno Silva', 'Reviews pull requests on Friday.') },
+  ];
+  assert.deepEqual(assessKnowledge(files, NOW).issues, []);
+  const bruno = '---\ntype: person\ndescription: Who Bruno is\n---\n# Bruno\n\n- Reviews pull requests on Wednesday.\n';
+  assert.deepEqual(similarPages(bruno, files.filter((file) => file.path !== 'people/bruno-silva.md')), [], 'a Bruno proposal is never said to change Ana\'s card');
+});
+
+test('keeping one of two rules moves the other under Replaced, dated, where the bot no longer reads it', () => {
+  const text = '---\ntype: rule\n---\n# How I work\n\n- Risky releases ship on Tuesday.\n- A bug fix starts with a failing test.\n- Risky releases ship on Thursday now.\n';
+  const kept = keepRule(text, 'Risky releases ship on Tuesday.', '2026-11-25');
+  assert.equal(kept, '---\ntype: rule\n---\n# How I work\n\n- A bug fix starts with a failing test.\n- Risky releases ship on Thursday now.\n\n## Replaced\n\n- Until 2026-11-25: Risky releases ship on Tuesday.\n');
+  assert.deepEqual(assessKnowledge([{ path: 'index.md', text: '| a | `owner/work.md` | a |' }, { path: 'owner/work.md', text: kept.replace('type: rule', 'type: rule\ndescription: How I work\nwritten: 2026-11-01\nverified: 2026-11-20\nsources:\n  - Owner') }], NOW).issues, []);
+  assert.equal(keepRule(kept, 'Not on the page.', '2026-11-25'), kept);
 });

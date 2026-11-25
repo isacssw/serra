@@ -195,13 +195,16 @@ export const Proposals = () => {
     bridge.pages.read(mergeTarget).then(
       (current) => {
         if (!live) return;
-        const start = `${current.trimEnd()}\n\n${proposalBody(diff.proposed)}\n`;
-        setMergeBase(current); setMergeText(start); setMergeStart(start); setMergeAudience(approvalAudience(diff.proposed, current).audience);
+        // A proposal that changes one rule on this page starts as the page with that rule swapped, ready to merge.
+        const clash = similar.find((page) => page.path === mergeTarget)?.disagrees;
+        const swapped = clash && current.includes(clash.page) ? current.replace(clash.page, clash.proposal) : null;
+        const start = swapped ?? `${current.trimEnd()}\n\n${proposalBody(diff.proposed)}\n`;
+        setMergeBase(current); setMergeText(start); setMergeStart(swapped ? null : start); setMergeAudience(approvalAudience(diff.proposed, current).audience);
       },
       (error) => { if (live) { setMergeOpen(false); toast({ message: message(error), tone: 'error' }); } },
     );
     return () => { live = false; };
-  }, [mergeOpen, mergeTarget, diff, toast]);
+  }, [mergeOpen, mergeTarget, diff, toast, similar]);
 
   useEffect(() => {
     if (!diff) return;
@@ -355,6 +358,7 @@ export const Proposals = () => {
         <Select label="Page" value={mergeTarget} onChange={setMergeTarget} options={targets.pages.map((value) => ({ value, label: value }))} />
         <label className="mt-3 flex flex-col gap-1.5 text-sm">
           <span className="font-medium">Page after the merge</span>
+          {mergeStart === null && mergeText !== null && mergeBase !== null && mergeText !== mergeBase && similar[0]?.disagrees && similar[0].path === mergeTarget && <span className="text-xs text-muted">The old rule is swapped for the proposed one. Check the page, then merge.</span>}
           {mergeStart !== null && <span className="text-xs text-muted">The proposal is below the page. Edit them into one page, removing any rule it replaces, before merging.</span>}
           {mergeBase !== null && mergeText !== null && <MergeStats before={mergeBase} after={mergeText} />}
           <textarea

@@ -31,29 +31,47 @@ const { values: args } = parseArgs({
     concurrency: { type: 'string', default: '4' },
     timeout: { type: 'string', default: '420' },
     set: { type: 'string', default: 'owners' },
+    judge: { type: 'boolean', default: false },
   },
 });
 const t3Bin = process.env.T3_BIN ?? join(homedir(), '.t3/bin/t3');
 
-interface Case extends EvalCase { id: string; category: string; include?: string[]; exclude?: string[]; expected?: string[] }
+interface Case extends EvalCase { id: string; category: string; include?: string[]; exclude?: string[]; expected?: string[]; judge?: string }
 const SETS = [
   { fixture: 'evals/fixture', cases: 'evals/cases.json' },
   { fixture: 'evals/fixture-heldout', cases: 'evals/cases-heldout.json' },
 ];
 // Cases a regex can grade, from both owners; the held-out owner's were never used to tune anything here.
+/** The pages each owner case needs: a reply that names one of them used the right knowledge. */
+const EXPECTED: Record<string, string[]> = {
+  'identity-owner-asks': ['owner/role.md'], 'identity-who-owns': ['owner/role.md', 'product/rate-limits.md'], 'identity-hours': ['owner/role.md'],
+  'people-signoff': ['workflows/release.md', 'people/jonas.md', 'people/priya.md'], 'people-dana': ['people/dana.md'], 'people-message-priya': ['people/priya.md'],
+  'people-jonas-style': ['people/jonas.md'], 'voice-tuesday-post': ['owner/voice.md'], 'process-thursday': ['owner/working-style.md', 'workflows/release.md'],
+  'process-release-steps': ['workflows/release.md'], 'process-incident': ['workflows/incident.md'], 'privacy-owner-still-knows': ['owner/private-notes.md'],
+  'people-who-decides': ['people/priya.md'], 'process-big-pr': ['owner/working-style.md'], 'process-prod-patch': ['workflows/incident.md', 'owner/working-style.md', 'product/refunds-api.md'],
+  'privacy-owner-discount': ['owner/private-notes.md'], 'h-identity-tuesday': ['owner/role.md'], 'h-identity-hiring': ['owner/role.md'],
+  'h-people-payments-review': ['people/lena-fischer.md', 'product/payments-app.md'], 'h-people-sync': ['people/kenji-sato.md', 'product/offline-sync.md'],
+  'h-people-ask-kenji': ['people/kenji-sato.md'], 'h-process-ios-monday': ['workflows/app-release.md', 'owner/how-i-work.md'], 'h-process-hotfix': ['workflows/hotfix.md', 'people/omar-haddad.md'],
+  'h-process-crash': ['workflows/crash-triage.md'], 'h-process-branch': ['owner/how-i-work.md', 'product/feature-flags.md'], 'h-priv-owner': ['owner/private.md'],
+};
+
 const ownerCases = SETS.flatMap((set) => (JSON.parse(readFileSync(join(root, set.cases), 'utf8')) as { cases: Case[] }).cases
   .filter((item) => item.include?.length && (!args.only || args.only.split(',').includes(item.id)))
-  .map((item) => ({ ...item, fixture: set.fixture })));
+  .map((item) => ({ ...item, fixture: set.fixture, expected: EXPECTED[item.id] ?? [] })));
 
 // --set messy: the growth simulation's owner (Alex) at their messiest, before any tidy: two rules that disagree, a
 // rule on two pages, every page stale. Arms: the brief as it ships, which marks the disagreeing rows, and without
 // those marks. A right answer names the current rule and says the other exists, or asks.
 const OWNER = 'UROBIN0001';
 const messyCases: (Case & { fixture: string })[] = [
-  { id: 'messy-release-day', category: 'conflict', via: 'dm', user: OWNER, text: 'which day do risky releases ship?', include: ['Thursday', 'Tuesday|disagree|conflict|confirm|two rules|both'], expected: ['owner/working-style.md', 'owner/releases.md'], fixture: 'messy' },
-  { id: 'messy-pr-size', category: 'conflict', via: 'dm', user: OWNER, text: 'how big can a PR be before I should split it?', include: ['300|400', '(300[\\s\\S]*400|400[\\s\\S]*300)|disagree|conflict|confirm|two rules|both'], expected: ['owner/working-style.md'], fixture: 'messy' },
-  { id: 'messy-webhook-retries', category: 'repeat', via: 'dm', user: OWNER, text: 'how many times do webhooks retry before we give up?', include: ['\\b5\\b|five'], expected: ['product/webhooks.md', 'product/webhook-retries.md'], fixture: 'messy' },
-  { id: 'messy-priya', category: 'repeat', via: 'dm', user: OWNER, text: 'how does Priya like to get updates?', include: ['written|summary|numbers'], expected: ['people/priya.md', 'people/priya-nair.md'], fixture: 'messy' },
+  { id: 'messy-release-day', category: 'conflict', via: 'dm', user: OWNER, text: 'which day do risky releases ship?', include: ['Thursday', 'Tuesday|disagree|conflict|confirm|two rules|both'], expected: ['owner/working-style.md', 'owner/releases.md'], fixture: 'messy',
+    judge: 'Two notes disagree: an older one says risky releases ship on Tuesday, a newer one (2026-06-15) says Thursday. 2 = treats Thursday as current or asks which holds, and says the Tuesday rule exists or is out of date; 1 = gives Thursday without mentioning the other rule; 0 = says Tuesday, or invents another day.' },
+  { id: 'messy-pr-size', category: 'conflict', via: 'dm', user: OWNER, text: 'how big can a PR be before I should split it?', include: ['300|400', '(300[\\s\\S]*400|400[\\s\\S]*300)|disagree|conflict|confirm|two rules|both'], expected: ['owner/working-style.md'], fixture: 'messy',
+    judge: 'The page says both "under 400 changed lines" (older) and "under 300 changed lines" (added later). 2 = says the two disagree and names one as current or asks; 1 = gives one number without noting the other; 0 = invents a different number.' },
+  { id: 'messy-webhook-retries', category: 'repeat', via: 'dm', user: OWNER, text: 'how many times do webhooks retry before we give up?', include: ['\\b5\\b|five'], expected: ['product/webhooks.md', 'product/webhook-retries.md'], fixture: 'messy',
+    judge: 'Webhooks retry 5 times over 24 hours with exponential backoff, then the merchant gets an email. 2 = says 5 times (24 hours or backoff a plus); 1 = right count, wrong details; 0 = wrong count.' },
+  { id: 'messy-priya', category: 'repeat', via: 'dm', user: OWNER, text: 'how does Priya like to get updates?', include: ['written|summary|numbers'], expected: ['people/priya.md', 'people/priya-nair.md'], fixture: 'messy',
+    judge: 'Priya prefers a short written summary before any call and likes numbers in the first line. 2 = says both; 1 = says one; 0 = says something else.' },
 ];
 const cases = args.set === 'messy' ? messyCases.filter((item) => !args.only || args.only.split(',').includes(item.id)) : ownerCases;
 const ARMS = args.set === 'messy' ? (['notes', 'no-notes'] as const) : (['hint', 'no-hint'] as const);
@@ -65,6 +83,8 @@ const HINT = /\n*Pages that look closest to this request, best first: [^\n]*\n*/
 interface Result {
   id: string; arm: 'hint' | 'no-hint' | 'notes' | 'no-notes'; run: number; expected: string[]; fixture: string; pass: boolean; named: string[]; opened: string[];
   hinted: string[]; error?: string; seconds: number; reply: string;
+  /** The judge's 0–2, with --judge, for a case with a rubric. */
+  score?: number;
   /** The worker stopped to ask the owner instead of answering. */
   asked?: boolean;
   /** Pages the brief carried whole, in About me: naming one is honest without opening it. */
@@ -109,6 +129,25 @@ const openedPages = async (threadId: string, runId: string, pages: string[]): Pr
   } finally { await session.close(); }
 };
 
+/**
+ * A second T3 run reads the case's rubric, the question and the reply, and scores it 0–2: whether the answer is right,
+ * not only whether it has the right words. Same T3 layer and provider as the reply.
+ */
+const judge = async (rubric: string, question: string, reply: string): Promise<number | null> => {
+  const prompt = `You grade one reply from an assistant. Don't open any file or run anything. Answer with one line: SCORE: 0, 1 or 2.\n\nRubric: ${rubric}\n\nQuestion:\n${question}\n\nReply:\n${reply}`;
+  const threadId = await startFolderThread({ project, title: 'Serra KB eval: grade', brief: prompt, ...(args.provider ? { provider: args.provider } : {}), ...(args.model ? { model: args.model } : {}) }, t3Bin);
+  for (let tries = 0; tries < 60; tries += 1) {
+    await new Promise((resolve) => { setTimeout(resolve, 4000); });
+    const { thread, messages } = await showThread(threadId, t3Bin, 2);
+    if (thread.activeRunId === null && thread.latestRunId !== null) {
+      const text = messages.findLast((message) => message.role === 'assistant')?.text ?? '';
+      const score = /SCORE:\s*([012])/i.exec(text)?.[1];
+      return score === undefined ? null : Number(score);
+    }
+  }
+  return null;
+};
+
 const runOne = async (item: Case & { fixture: string }, arm: Result['arm'], run: number): Promise<Result> => {
   const started = Date.now();
   const { dir, profileDir } = scratch(item.fixture);
@@ -133,7 +172,8 @@ const runOne = async (item: Case & { fixture: string }, arm: Result['arm'], run:
         const session = await openT3Session({ bin: t3Bin });
         try { await session.call('t3_thread_interrupt', { threadId, stop: true, reason: 'Eval graded the question.' }); } catch { /* the eval only reads it */ } finally { await session.close(); }
         const pass = (item.include ?? []).every((pattern) => new RegExp(pattern, 'iu').test(text));
-        return { ...base, pass, asked: true, named: [], opened: [], hinted, carried, reply: `(asked) ${text}`, seconds: (Date.now() - started) / 1000 };
+        const score = args.judge && item.judge ? await judge(item.judge, item.text, `(The assistant stopped to ask the owner:) ${text}`).catch(() => null) : null;
+        return { ...base, pass, asked: true, named: [], opened: [], hinted, carried, reply: `(asked) ${text}`, ...(score === null ? {} : { score }), seconds: (Date.now() - started) / 1000 };
       }
       if (thread.activeRunId === null && thread.latestRunId !== null) {
         const text = messages.findLast((message) => message.role === 'assistant' && message.runId === thread.latestRunId)?.text ?? '';
@@ -141,7 +181,8 @@ const runOne = async (item: Case & { fixture: string }, arm: Result['arm'], run:
         const pages = readFileSync(join(profileDir, 'knowledge/index.md'), 'utf8').match(/`[^`\s]+\.md`/g)?.map((path) => path.slice(1, -1)) ?? [];
         const opened = await openedPages(threadId, thread.latestRunId, pages);
         const pass = (item.include ?? []).every((pattern) => new RegExp(pattern, 'iu').test(reply)) && !(item.exclude ?? []).some((pattern) => new RegExp(pattern, 'iu').test(reply));
-        return { ...base, pass, named: cited, opened, hinted, carried, reply, seconds: (Date.now() - started) / 1000 };
+        const score = args.judge && item.judge ? await judge(item.judge, item.text, reply).catch(() => null) : null;
+        return { ...base, pass, named: cited, opened, hinted, carried, reply, ...(score === null ? {} : { score }), seconds: (Date.now() - started) / 1000 };
       }
       if (Date.now() > deadline) throw new Error(`timed out: ${thread.link}`);
     }
@@ -177,17 +218,18 @@ const summary = (arm: Result['arm'], fixture?: string) => {
   const namedRight = graded.filter((result) => result.named.some((path) => result.expected.includes(path)));
   const named = answered.filter((result) => result.named.length > 0);
   const honest = named.filter((result) => result.named.every((path) => result.opened.includes(path) || result.carried.includes(path)));
-  const openedAny = done.filter((result) => result.opened.length > 0);
-  const followed = done.filter((result) => result.hinted.length > 0 && result.hinted.some((path) => result.opened.includes(path)));
-  return { runs: done.length, pass: pct(done.filter((result) => result.pass).length, done.length), named: pct(named.length, answered.length), honest: pct(honest.length, named.length), opened: pct(openedAny.length, done.length), followed: pct(followed.length, done.filter((result) => result.hinted.length > 0).length), namedRight: pct(namedRight.length, graded.length), asked: pct(done.filter((result) => result.asked).length, done.length) };
+  const openedAny = answered.filter((result) => result.opened.length > 0);
+  const followed = answered.filter((result) => result.hinted.length > 0 && result.hinted.some((path) => result.opened.includes(path)));
+  return { runs: done.length, pass: pct(done.filter((result) => result.pass).length, done.length), named: pct(named.length, answered.length), honest: pct(honest.length, named.length), opened: pct(openedAny.length, answered.length), followed: pct(followed.length, answered.filter((result) => result.hinted.length > 0).length), namedRight: pct(namedRight.length, graded.length), asked: pct(done.filter((result) => result.asked).length, done.length),
+    judged: (() => { const scored = done.filter((result) => result.score !== undefined); return scored.length ? `${(scored.reduce((sum, result) => sum + result.score!, 0) / scored.length).toFixed(2)} (${scored.length})` : '–'; })() };
 };
 const lines = [
   `# Knowledge live eval: ${args.label}`, '',
   `Through Serra's T3 layer, on ${args.provider ? `${args.provider} ${args.model ?? ''}` : "T3's default provider"}, ${args.runs} run(s) of ${cases.length} cases per arm, ${new Date().toISOString().slice(0, 10)}. ${results.filter((result) => result.error).length} run(s) failed in the harness and are left out.`, '',
-  '| Arm | Owner | Runs | Answer right | Named pages used | Named pages were opened or in About me | Named an expected page | Opened a page | Opened a hinted page | Asked the owner |', '|---|---|---|---|---|---|---|---|---|---|',
+  '| Arm | Owner | Runs | Answer right | Named pages used | Named pages were opened or in About me | Named an expected page | Opened a page | Opened a hinted page | Asked the owner | Judge 0–2 |', '|---|---|---|---|---|---|---|---|---|---|---|',
   ...ARMS.flatMap((arm) => (args.set === 'messy' ? ['messy'] : [undefined, ...SETS.map((set) => set.fixture)]).map((fixture) => {
     const row = summary(arm, fixture);
-    return `| ${arm} | ${fixture ? fixture.replace('evals/', '') : 'both'} | ${row.runs} | ${row.pass} | ${row.named} | ${row.honest} | ${row.namedRight} | ${row.opened} | ${row.followed} | ${row.asked} |`;
+    return `| ${arm} | ${fixture ? fixture.replace('evals/', '') : 'both'} | ${row.runs} | ${row.pass} | ${row.named} | ${row.honest} | ${row.namedRight} | ${row.opened} | ${row.followed} | ${row.asked} | ${row.judged} |`;
   })),
 ];
 const outDir = join(root, 'evals/results');

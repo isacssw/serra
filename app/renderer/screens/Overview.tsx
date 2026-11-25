@@ -36,7 +36,6 @@ const Tile = ({ label, value, unit, note, noteTone = 'neutral' }: { label: strin
   </div>
 );
 
-/** The score over time: one ink line, no legend (it's one series), a dot per point with the details on hover or focus. */
 /** An axis label in HTML over the chart, so it stays a readable size however wide the chart is drawn. */
 const Label = ({ x, y, width, height, align, children }: { x: number; y: number; width: number; height: number; align: 'start' | 'middle' | 'end'; children: React.ReactNode }) => (
   <span
@@ -111,6 +110,14 @@ const ScoreChart = ({ overview }: { overview: KnowledgeOverview }) => {
           {shown && <line x1={shown.x} x2={shown.x} y1={4} y2={factsHeight - 4} className="stroke-line-strong" strokeWidth={1} />}
         </svg>
         <Label x={30} y={factsHeight / 2} width={width} height={factsHeight} align="end">Facts</Label>
+        {facts.dots.length > 1 && (
+          // The count where it started and where it is, so the line reads as numbers, not just a direction.
+          <>
+            <Label x={facts.dots[0]!.x + 4} y={Math.max(10, facts.dots[0]!.y - 8)} width={width} height={factsHeight} align="start">{facts.dots[0]!.point.facts}</Label>
+            <Label x={facts.dots.at(-1)!.x} y={Math.max(10, facts.dots.at(-1)!.y - 8)} width={width} height={factsHeight} align="end">{facts.dots.at(-1)!.point.facts}</Label>
+          </>
+        )}
+        {shown && <Label x={Math.min(shown.x + 4, width - 40)} y={factsHeight - 12} width={width} height={factsHeight} align="start">{chart.dots[active!]!.point.facts} facts</Label>}
       </div>
     </div>
   );

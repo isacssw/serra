@@ -3,7 +3,8 @@ import { join } from 'node:path';
 import { readProfileFile } from '../../../src/config.ts';
 import { createKnowledge, profileRoots, type KnowledgeRoot } from '../../../src/knowledge.ts';
 import { createMeetingStore } from '../../../src/meeting-store.ts';
-import { knowledgeOverview } from '../../../src/knowledge-overview.ts';
+import { knowledgeOverview, listKnowledgeFiles } from '../../../src/knowledge-overview.ts';
+import { assessKnowledge } from '../../../src/knowledge-health.ts';
 import type { Handlers } from '../bridge.ts';
 import type { HandlerContext } from './context.ts';
 
@@ -53,6 +54,11 @@ export const pagesHandlers = (context: HandlerContext): Handlers<'pages'> => {
       if (!Array.isArray(paths) || paths.some((item) => typeof item?.path !== 'string' || typeof item?.text !== 'string')) throw new Error('Pick the pages to share.');
       const items = paths as { path: string; text: string }[];
       return service().shareWith(items.map(({ path }) => path), audience, { roots: roots(), seen: Object.fromEntries(items.map(({ path, text }) => [path, text])) });
+    },
+    issues: (path) => {
+      const page = pagePath(path);
+      return assessKnowledge(listKnowledgeFiles(join(context.profileDir(), 'knowledge')), new Date()).issues
+        .filter((issue) => (issue.kind === 'conflict' || issue.kind === 'duplicate') && issue.pages.includes(page));
     },
     overview: () => knowledgeOverview({ knowledgeDir: join(context.profileDir(), 'knowledge'), profileDir: context.profileDir() }),
   };

@@ -38,10 +38,10 @@ const pageArea = (path: string, type: string): Area => {
 const STOP = new Set(('a an and are as at be but by can do does for from has have how i if in into is it its me my of on or our '
   + 'so that the their them then there these they this to up us was we what when where which who why will with you your '
   + 'about any all also just more most should would could please quick check before after get got need needs make sure '
-  + 's t').split(' '));
+  + 'every each s t').split(' '));
 /** Words that turn a rule around: two lines alike but for one of these say opposite things. */
 const NEGATIONS = new Set(['never', 'not', 'no', 'dont', 'don', 'doesnt', 'without', 'stop', 'avoid', 'instead']);
-const SLOTS = /\b(monday|tuesday|wednesday|thursday|friday|saturday|sunday|weekly|daily|monthly|morning|afternoon|evening|\d+(?:[.:]\d+)?%?)\b/g;
+const SLOTS = /\b(always|monday|tuesday|wednesday|thursday|friday|saturday|sunday|weekly|daily|monthly|morning|afternoon|evening|\d+(?:[.:]\d+)?%?)\b/g;
 
 /** A rough stem: enough that "releases", "released" and "release" meet. */
 const stem = (word: string): string => word
@@ -126,8 +126,9 @@ const describePages = (files: KnowledgeFile[], index: string, now: Date): PageIn
 export interface FactPair { a: { page: string; text: string }; b: { page: string; text: string }; similarity: number }
 
 const slots = (text: string): Set<string> => new Set(text.toLowerCase().match(SLOTS) ?? []);
-const SLOT_WORD = /^(monday|tuesday|wednesday|thursday|friday|saturday|sunday|weekly|daily|monthly|morning|afternoon|evening|\d+)$/;
+const SLOT_WORD = /^(always|alway|monday|tuesday|wednesday|thursday|friday|saturday|sunday|weekly|daily|monthly|morning|afternoon|evening|\d+)$/;
 const topic = (set: Set<string>): Set<string> => new Set([...set].filter((word) => !NEGATIONS.has(word) && !SLOT_WORD.test(word)));
+const subject = (text: string): string => words(text).find((word) => !NEGATIONS.has(word) && !SLOT_WORD.test(word)) ?? '';
 const negated = (set: Set<string>): boolean => [...set].some((word) => NEGATIONS.has(word));
 
 /** Above this, two facts say the same thing. */
@@ -166,8 +167,12 @@ export const findOverlaps = (facts: Fact[], comparable: (a: string, b: string) =
         const theirs = slots(that.text);
         const slotClash = mine.size > 0 && theirs.size > 0 && [...mine].some((slot) => !theirs.has(slot)) && [...theirs].some((slot) => !mine.has(slot));
         const negationClash = negated(fact.words) !== negated(that.words);
-        if (similarity >= CONFLICT_AT && (slotClash || (negationClash && similarity >= 0.5))) conflicts.push(pair);
-        else if (similarity >= DUPLICATE_AT) duplicates.push(pair);
+        // Two rules about different things ("Webhooks retry 5 times", "Invoices retry 3 times") start differently:
+        // a conflict needs the same subject, the first word that isn't a day, a number or a "never".
+        const sameSubject = subject(fact.text) === subject(that.text);
+        if (sameSubject && similarity >= CONFLICT_AT && (slotClash || (negationClash && similarity >= 0.5))) conflicts.push(pair);
+        // A repeat about a different subject has to be near word for word.
+        else if (similarity >= DUPLICATE_AT && (sameSubject || similarity >= 0.85)) duplicates.push(pair);
       }
     }
   });
@@ -186,7 +191,9 @@ const samePageSubject = (a: string, b: string, areaOf: Map<string, Area>): boole
   if (areaOf.get(a) !== 'people' && areaOf.get(b) !== 'people') return true;
   if (areaOf.get(a) !== areaOf.get(b)) return false;
   const name = (path: string): string[] => (path.split('/').pop() ?? '').replace(/\.md$/, '').split(/[-_\s]+/).filter((word) => word.length > 1);
-  return name(a).some((word) => name(b).includes(word));
+  // The same person when one file's name words are all in the other's: priya and priya-nair, not ana-silva and bruno-silva.
+  const [x, y] = [name(a), name(b)];
+  return x.length > 0 && y.length > 0 && (x.every((word) => y.includes(word)) || y.every((word) => x.includes(word)));
 };
 
 /** Pages whose descriptions say they cover the same thing: two places for one topic. */
@@ -213,8 +220,10 @@ interface Issue {
   pages: string[];
   /** One plain sentence for the owner. */
   text: string;
-  /** For pairs: the two lines. */
+  /** For pairs: the two lines, shortened for a list. */
   detail?: string[];
+  /** For pairs: the two lines whole, with their pages, for fixing them. */
+  facts?: { page: string; text: string }[];
 }
 
 /** The parts the score is made of, each 0–100. */
@@ -265,12 +274,12 @@ export const assessKnowledge = (files: KnowledgeFile[], now: Date): Health => {
   for (const pair of conflicts) {
     issues.push({ kind: 'conflict', pages: [...new Set([pair.b.page, pair.a.page])], text: pair.a.page === pair.b.page
       ? `${pair.a.page} has two rules that disagree. Keep the current one and move the other under "Replaced".`
-      : `${pair.a.page} and ${pair.b.page} disagree. Keep the current rule on one page.`, detail: [short(pair.a.text), short(pair.b.text)] });
+      : `${pair.a.page} and ${pair.b.page} disagree. Keep the current rule on one page.`, detail: [short(pair.a.text), short(pair.b.text)], facts: [pair.a, pair.b] });
   }
   for (const pair of duplicates) {
     issues.push({ kind: 'duplicate', pages: [...new Set([pair.b.page, pair.a.page])], text: pair.a.page === pair.b.page
       ? `${pair.a.page} says the same thing twice.`
-      : `${pair.a.page} and ${pair.b.page} say the same thing. One rule lives on one page.`, detail: [short(pair.a.text), short(pair.b.text)] });
+      : `${pair.a.page} and ${pair.b.page} say the same thing. One rule lives on one page.`, detail: [short(pair.a.text), short(pair.b.text)], facts: [pair.a, pair.b] });
   }
   for (const [a, b] of overlaps) issues.push({ kind: 'overlap', pages: [a, b], text: `${a} and ${b} cover the same topic. Merge them into one page.` });
   for (const page of pages) {
@@ -465,17 +474,27 @@ export const knowledgeHistory = (files: KnowledgeFile[], changes: KnowledgeChang
 export interface PageCard { path: string; when: string; description: string; headings: string; body: string }
 
 /** One card per indexed page, from the index rows and the pages' approved text. */
+/**
+ * The page an index row opens: the cell that is only a backticked path. A note added to another cell (one that quotes
+ * another page) doesn't count. Null for headings, notes and rows that open no page or several.
+ */
+const rowPage = (line: string): string | null => {
+  if (!line.trim().startsWith('|')) return null;
+  const pages = line.split(/(?<!\\)\|/).map((cell) => /^\s*`([^`\s]+\.md)`\s*$/.exec(cell)?.[1]).filter((path): path is string => path !== undefined);
+  return pages.length === 1 ? pages[0]! : null;
+};
+
 export const pageCards = (index: string, files: KnowledgeFile[]): PageCard[] => {
   const texts = new Map(files.map((file) => [file.path, file.text]));
   return index.split('\n').flatMap((line) => {
-    if (!line.trim().startsWith('|')) return [];
-    const pages = [...line.matchAll(/`([^`\s]+\.md)`/g)].map((match) => match[1]!);
-    if (pages.length !== 1 || !texts.has(pages[0]!)) return [];
-    const text = texts.get(pages[0]!)!;
+    const page = rowPage(line);
+    if (page === null || !texts.has(page)) return [];
+    const text = texts.get(page)!;
     const body = currentText(text);
     return [{
-      path: pages[0]!,
-      when: line.replace(/`[^`]*`/g, ' ').replace(/\|/g, ' '),
+      path: page,
+      // The row's own words, without the notes Serra adds in brackets.
+      when: line.replace(/\([^()]*(?:\([^()]*\)[^()]*)*\)/g, ' ').replace(/`[^`]*`/g, ' ').replace(/\|/g, ' '),
       description: frontmatter(text)?.get('description')?.trim() ?? '',
       headings: body.split('\n').filter((row) => row.startsWith('#')).join(' '),
       body,
@@ -534,13 +553,17 @@ export const similarPages = (proposal: string, files: KnowledgeFile[], { limit =
   const description = frontmatter(proposal)?.get('description')?.trim() ?? '';
   const mineWords = new Set([...words(description), ...mine.flatMap((fact) => [...fact.words])]);
   if (mineWords.size === 0) return [];
-  return files.filter((file) => isPage(file.path)).map((file) => {
+  const said = new Set(proposal.toLowerCase().match(/[a-z]+/g) ?? []);
+  // A person's card is only a match for a proposal that names that person.
+  const about = (path: string): boolean => !path.startsWith('people/')
+    || (path.split('/').pop() ?? '').replace(/\.md$/, '').split(/[-_\s]+/).filter((word) => word.length > 1).every((word) => said.has(word));
+  return files.filter((file) => isPage(file.path) && about(file.path)).map((file) => {
     const facts = pageFacts(file.path, file.text);
     const theirs = new Set([...words(frontmatter(file.text)?.get('description') ?? ''), ...facts.flatMap((fact) => [...fact.words])]);
     const shared = facts.filter((fact) => mine.some((other) => jaccard(topic(fact.words), topic(other.words)) >= CONFLICT_AT)).map((fact) => short(fact.text));
     // A proposal that changes a rule on the page, rather than repeating it: the screen says it disagrees.
     const clash = findOverlaps([...facts, ...mine]).conflicts.find((pair) => (pair.a.page === 'proposal') !== (pair.b.page === 'proposal'));
-    const disagrees = clash ? { page: short(clash.a.page === 'proposal' ? clash.b.text : clash.a.text), proposal: short(clash.a.page === 'proposal' ? clash.a.text : clash.b.text) } : null;
+    const disagrees = clash ? { page: clash.a.page === 'proposal' ? clash.b.text : clash.a.text, proposal: clash.a.page === 'proposal' ? clash.a.text : clash.b.text } : null;
     let overlap = 0;
     for (const word of mineWords) if (theirs.has(word)) overlap += 1;
     return { path: file.path, similarity: Math.round((overlap / mineWords.size) * 100) / 100, shared: shared.slice(0, 3), disagrees };
@@ -564,15 +587,16 @@ export const markIndexRows = (index: string, files: KnowledgeFile[], now: Date):
   const pages = describePages(files, index, now);
   const areaOf = new Map(pages.map((page) => [page.path, page.area]));
   const { conflicts } = findOverlaps(files.filter((file) => isPage(file.path)).flatMap((file) => pageFacts(file.path, file.text)), (a, b) => samePageSubject(a, b, areaOf));
+  const confirmed = new Map(files.map((file) => [file.path, frontmatter(file.text)?.get('verified')?.trim() ?? '']));
   for (const pair of conflicts.slice(0, 6)) {
-    const note = `two rules disagree: "${short(pair.a.text, 70)}" and "${short(pair.b.text, 70)}"${pair.a.page === pair.b.page ? '' : ` (on \`${pair.a.page}\` and \`${pair.b.page}\`)`}; don't pick one silently: say which you followed, or ask the owner`;
-    for (const path of new Set([pair.a.page, pair.b.page])) add(path, note);
+    const where = pair.a.page === pair.b.page ? '' : ` (on \`${pair.a.page}\`, confirmed ${confirmed.get(pair.a.page) || 'never'}, and \`${pair.b.page}\`, confirmed ${confirmed.get(pair.b.page) || 'never'})`;
+    const note = `two rules disagree: "${short(pair.a.text, 70)}" and "${short(pair.b.text, 70)}"${where}; if one is clearly newer (a later date, or it says "now" or "since"), follow it and say the other looks out of date; ask the owner only when you can't tell`;
+    for (const path of new Set([pair.a.page, pair.b.page])) add(path, note.replace(/\|/g, '\\|'));
   }
   if (notes.size === 0) return index;
   return index.split('\n').map((line) => {
-    if (!line.trim().startsWith('|')) return line;
-    const paths = [...line.matchAll(/`([^`\s]+\.md)`/g)].map((match) => match[1]!);
-    const note = paths.length === 1 ? notes.get(paths[0]!)?.join('; ') : undefined;
+    const page = rowPage(line);
+    const note = page === null ? undefined : notes.get(page)?.join('; ');
     if (!note) return line;
     const end = line.trimEnd();
     return end.endsWith('|') ? `${end.slice(0, -1).trimEnd()} (${note}) |` : `${end} (${note})`;
