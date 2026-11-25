@@ -44,8 +44,8 @@ test('theme pref: each theme saves through setPrefs, survives a reload from disk
     assert.equal((await handlers.app.getPrefs()).theme, theme);
   }
   // A hand-edited file with a bad theme opens on the default instead of failing.
-  assert.equal(readPrefs({ theme: 'sepia', lastScreen: '/brief' }).theme, 'system');
-  assert.equal(readPrefs({ theme: 'sepia', lastScreen: '/brief' }).lastScreen, '/brief');
+  assert.equal(readPrefs({ theme: 'sepia', lastScreen: '/settings/brief' }).theme, 'system');
+  assert.equal(readPrefs({ theme: 'sepia', lastScreen: '/settings/brief' }).lastScreen, '/settings/brief');
 });
 
 test('native theme: set from the saved pref at startup', () => {
@@ -64,7 +64,7 @@ test('native theme: follows every saved change, and a rejected change leaves it 
   assert.equal(native.themeSource, 'dark');
   assert.throws(() => handlers.app.setPrefs({ theme: 'neon' as Theme }), /theme must be one of/);
   assert.equal(native.themeSource, 'dark');
-  await handlers.app.setPrefs({ lastScreen: '/brief' });
+  await handlers.app.setPrefs({ lastScreen: '/settings/brief' });
   assert.equal(native.themeSource, 'dark', 'saving another pref keeps the theme');
   await handlers.app.setPrefs({ theme: 'system' });
   assert.equal(native.themeSource, 'system');

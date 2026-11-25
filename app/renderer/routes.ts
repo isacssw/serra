@@ -3,7 +3,7 @@
 // edit this file or the router.
 // Pure data and functions: imported by `node --test` as well as the renderer.
 
-export type SidebarSection = 'jobs' | 'knowledge' | 'brief' | 'settings';
+export type SidebarSection = 'jobs' | 'knowledge' | 'settings';
 
 /** The live counts a sidebar item can show (see badges.logic.ts). */
 export type BadgeKey = 'needsYou' | 'running' | 'proposals' | 'untagged' | 'drift';
@@ -40,12 +40,12 @@ export const routes = [
   { id: 'about-me', path: '/knowledge/about', label: 'About me', section: 'knowledge', needs: 'profile', ticket: 'SERRA-41' },
   { id: 'proposals', path: '/knowledge/proposals', label: 'Proposals', section: 'knowledge', badge: 'proposals', needs: 'profile', ticket: 'APP-13' },
   { id: 'pages', path: '/knowledge/pages', label: 'Pages', section: 'knowledge', needs: 'profile', ticket: 'APP-20' },
-  { id: 'brief', path: '/brief', label: 'Brief & policy', section: 'brief', needs: 'profile', ticket: 'APP-21' },
   { id: 'settings-bot', path: '/settings/bot', label: 'Bot & Slack', section: 'settings', needs: 'profile', ticket: 'APP-14' },
   { id: 'settings-people', path: '/settings/people', label: 'People', section: 'settings', needs: 'profile', ticket: 'APP-14' },
   { id: 'settings-repositories', path: '/settings/repositories', label: 'Repositories', section: 'settings', needs: 'profile', ticket: 'APP-14' },
   { id: 'settings-alerts', path: '/settings/alerts', label: 'Alerts', section: 'settings', needs: 'profile', ticket: 'APP-14' },
   { id: 'settings-worker', path: '/settings/worker', label: 'Worker', section: 'settings', needs: 'profile', ticket: 'APP-14' },
+  { id: 'brief', path: '/settings/brief', label: 'Brief & policy', section: 'settings', needs: 'profile', ticket: 'APP-21' },
   { id: 'settings-meetings', path: '/settings/meetings', label: 'Meetings', section: 'settings', needs: 'profile', ticket: 'SERRA-62' },
   { id: 'secrets', path: '/settings/secrets', label: 'Secrets', section: 'settings', needs: 'profile', ticket: 'APP-15' },
   { id: 'tools', path: '/settings/tools', label: 'Tools', section: 'settings', needs: 'profile', ticket: 'APP-23' },
@@ -56,11 +56,10 @@ export const routes = [
 
 export type RouteId = (typeof routes)[number]['id'];
 
-/** Sidebar group headings, in order. Jobs is a single item under New task; `brief` sits with Knowledge. */
+/** Sidebar group headings, in order. Jobs is a single item under New task. Knowledge holds only what the owner checks: what the bot knows and what to add or remove; Brief & policy is a setting. */
 export const sections: readonly { id: SidebarSection; heading: string | null }[] = [
   { id: 'jobs', heading: null },
   { id: 'knowledge', heading: 'Knowledge' },
-  { id: 'brief', heading: null },
   { id: 'settings', heading: 'Settings' },
 ];
 

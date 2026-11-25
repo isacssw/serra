@@ -13,7 +13,7 @@ Use one private profile per bot, outside the code checkout. `pnpm run setup` cre
 | secrets.json | Where each token comes from (Keychain or 1Password), when Slack last accepted it, and the Slack workspace URL. Never a token value |
 | brief.md | Worker instructions, generated from the shared template for new profiles |
 | policy.md | Owner's confirmed workflow choices, read by the generic brief |
-| proposed/ | Brief and policy rewrites waiting for the owner: one folder each, with a brief.md and/or policy.md. The app's Brief & policy screen compares and applies them |
+| proposed/ | Brief and policy rewrites waiting for the owner: one folder each, with a brief.md and/or policy.md. The app's Settings › Brief & policy screen compares and applies them |
 | knowledge/ | Indexed owner knowledge, drafts, and proposals. Starts from the empty template in templates/knowledge |
 | onboarding.md | How to start the knowledge interview |
 | manifest.json | Slack app manifest with the chosen name |

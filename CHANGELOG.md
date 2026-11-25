@@ -4,6 +4,7 @@ Serra follows [Semantic Versioning](https://semver.org) once it reaches 1.0. Unt
 
 ## Unreleased
 
+- **Brief & policy moved to Settings.** Knowledge now holds only what you check: what your bot knows, and what to add or remove.
 - **Knowledge screens you read at a glance.** Overview leads with one number (replies your notes shaped this week) and one before/after example; To do appears only when there is something to do, three at a time, and is the one place to settle rules that disagree. Charts, areas and per-page stats are under Details. Pages, About me and Proposals lost their explanatory paragraphs.
 - **A weekly knowledge review.** Once a week Serra looks back at the bot's replies and shows a digest at the top of Knowledge › Overview: a real request answered with and without the page that answered it, what the bot needed and no note had, and one-click fixes (approve a rewrite, retire a page, confirm a stale one still holds). It runs as a read-only T3 run on the worker's provider; nothing changes until you approve. Turn it off or run it now from Overview.
 - Overview shows **what each page does**: how many replies used it, with a request it answered, and which pages no reply used, with Retire next to them. Pages lists pages by topic and description instead of folder and file name.

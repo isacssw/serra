@@ -14,7 +14,7 @@
 
 - **Ask from Slack.** Mention the bot or DM it. Reply in the thread to keep going.
 - **Your Mac, your logins.** The agent you run in T3 Code (Claude, Codex, …) works in a fresh worktree of your repository. No server, no provider keys.
-- **Careful by default.** The default brief tells the agent to open draft PRs and never merge, force-push or touch production. Tune it in **Brief & policy**.
+- **Careful by default.** The default brief tells the agent to open draft PRs and never merge, force-push or touch production. Tune it in **Settings › Brief & policy**.
 
 **[Download for Mac](https://github.com/isacssw/serra/releases)** (Apple silicon)<br>
 Needs [T3 Code](https://github.com/pingdotgg/t3code) running, Node 24+ (or 22.18+ on 22.x) with pnpm, the GitHub CLI signed in, and permission to create a Slack app. [Full list](#what-you-need)
@@ -146,7 +146,7 @@ There is no importer: Serra can't read another bot's config, state or memory. Se
 | **Slack app** | Easiest: let setup create a **new** Slack app, then retire the old bot. To reuse your old app: stop the old bot first (two programs on one Socket Mode app split the messages between them). In **Connect Slack**, click **Copy manifest** instead of Create in Slack, paste it over your app's manifest (your app › **App Manifest**), reinstall the app, then paste its two tokens below. |
 | **Owner, allowed users, repositories** | Enter them in setup, then **Settings › People** and **Settings › Repositories**. They are the `owner`, `allowedUsers` and `repositories` fields of `profile.json` ([all fields](docs/configuration.md#profile-format)). |
 | **Model and provider** | **Settings › Worker** (`worker.provider`, `worker.model`). |
-| **Instructions / system prompt** | Put your own rules in **Brief & policy** (`policy.md` in the profile). Keep the generated `brief.md`; it holds Serra's safety rules. |
+| **Instructions / system prompt** | Put your own rules in **Settings › Brief & policy** (`policy.md` in the profile). Keep the generated `brief.md`; it holds Serra's safety rules. |
 | **About-me / memory / knowledge notes** | Two ways. Run the [interview](#4-teach-it-how-you-work-optional) with your old notes at hand. Or save each note as a Markdown file in `<profile>/knowledge/proposals/`, with the page header described in [knowledge/README.md](templates/knowledge/README.md) (start with `audience: owner`, so only you hear it), and click **Add page** on each one in **Knowledge › Proposals**. |
 | **Thread history, open conversations, scheduled jobs** | Not carried over. Serra starts with empty job state. |
 
@@ -155,7 +155,7 @@ There is no importer: Serra can't read another bot's config, state or memory. Se
 - 👀 means it saw your message; it goes away when the bot answers. A long job gets one "Still on it" line.
 - Clarifying questions appear in the thread with buttons. The requester or the owner can answer.
 - The owner is pinged only when the bot is blocked on something only they can do.
-- By default it opens **draft** PRs, never merges, never force-pushes, and won't touch production or shared systems. The rules are in **Brief & policy**.
+- By default it opens **draft** PRs, never merges, never force-pushes, and won't touch production or shared systems. The rules are in **Settings › Brief & policy**.
 
 ## Where things live
 
