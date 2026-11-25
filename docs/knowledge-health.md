@@ -65,6 +65,24 @@ Measured on invented owners, through Serra's own T3 layer (`evals/kb-live.ts`), 
 - When the newer of two rules sat on a page whose index row doesn't match the question, workers with the conflict notes answered with the newer rule every time (8 of 8 runs); without them they said the notes disagree and gave no answer (0 of 8).
 - Replies named the pages they used in every answered run, and the named pages were ones the worker had opened or had in About me in 96–100% of runs.
 
+### Before and after
+
+`evals/kb-proof.ts` asks the same 27 questions of an invented owner with 45 pages (rules that changed, a stale page beside a newer one, 15 distractor pages) in three arms: no notes, `main` (ae1a362), and this version. Each question runs 3 times per arm, on Claude Opus 5.5 through T3. Every case and every run is reported, including failures. A run that stops for a tool approval is a harness error and is listed apart; there were none.
+
+| Arm | Pass | 95% interval | Changed rules | Held-out changed rules |
+|---|---|---|---|---|
+| No notes | 0 of 81 | 0–5% | 0% | 0% |
+| `main` | 73 of 81 (90%) | 82–95% | 71% | 93% |
+| This version | 81 of 81 (100%) | 95–100% | 100% | 100% |
+
+`main` failed every run of `payload-retention` and `rate-limit` (it gave the older rule), one run of `fx-time` and one of `log-retention`. The five held-out cases were written after the detector was frozen: it flags only 2 of them, and `main` already answered 14 of 15 runs, so most of the gain is on the eight changed-rule cases. To run it again (T3 Code running, `main` checked out at `<main>` with `node_modules` installed):
+
+```
+node evals/kb-proof.ts --label proof --runs 3 --before <main> --provider claudeAgent --model claude-opus-5-5 --out <dir> [--resume]
+```
+
+It writes `summary.md`, `results.json` and every reply under `none/`, `before/` and `after/`. Eval threads run approval-required, at most three at once, and are settled as soon as their answer is saved; the run ends by settling anything left and reporting the count.
+
 ## Checking it
 
 `node evals/kb-health.ts` prints the numbers: how often the hint's top three hold a right page for 60 requests on two invented owners, how often it stays quiet on 8 requests no page helps with, the health of those owners' pages, and six months of an invented owner whose knowledge picks up conflicts, repeats and stale pages and is then tidied, all through Serra's real approval code. `tests/knowledge-health.test.ts` holds the same checks as tests.
