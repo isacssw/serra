@@ -141,6 +141,23 @@ const openedPages = async (threadId: string, runId: string, pages: string[]): Pr
 };
 
 /**
+ * The run's final answer. Some providers (Codex) post a short "I'll check…" before their tools and the answer after,
+ * and the thread can show the run as done a moment before the answer lands: wait until the run's last assistant
+ * message stops changing, reading enough messages to see all of the run's.
+ */
+const finalAnswer = async (threadId: string, runId: string): Promise<string | null> => {
+  let last: string | null = null;
+  for (let tries = 0; tries < 6; tries += 1) {
+    await new Promise((resolve) => { setTimeout(resolve, 2500); });
+    const { messages } = await showThread(threadId, t3Bin, 30);
+    const text = messages.findLast((message) => message.role === 'assistant' && message.runId === runId)?.text ?? null;
+    if (text !== null && text === last) return text;
+    last = text;
+  }
+  return last;
+};
+
+/**
  * A second T3 run reads the case's rubric, the question and the reply, and scores it 0–2: whether the answer is right,
  * not only whether it has the right words. Same T3 layer and provider as the reply.
  */
@@ -151,7 +168,7 @@ const judge = async (rubric: string, question: string, reply: string): Promise<n
     await new Promise((resolve) => { setTimeout(resolve, 4000); });
     const { thread, messages } = await showThread(threadId, t3Bin, 2);
     if (thread.activeRunId === null && thread.latestRunId !== null) {
-      const text = messages.findLast((message) => message.role === 'assistant')?.text ?? '';
+      const text = await finalAnswer(threadId, thread.latestRunId) ?? messages.findLast((message) => message.role === 'assistant')?.text ?? '';
       const score = /SCORE:\s*([012])/i.exec(text)?.[1];
       return score === undefined ? null : Number(score);
     }
@@ -188,6 +205,8 @@ const runOne = async (item: Case & { fixture: string }, arm: Result['arm'], run:
     for (;;) {
       await new Promise((resolve) => { setTimeout(resolve, 5000); });
       const { thread, messages } = await showThread(threadId, t3Bin, 3);
+      // A run the provider refused (a usage limit, an outage) says nothing about the brief: a harness error, not a fail.
+      if (thread.status === 'failed') throw new Error(`the T3 run failed (provider error, e.g. a usage limit): ${thread.link}`);
       if ((thread.pendingRequestCount ?? 0) > 0) {
         // The worker stopped to ask the owner a question: for two rules that disagree, that is a right answer. The
         // question's text is graded as the reply, then the run is stopped.
@@ -201,7 +220,7 @@ const runOne = async (item: Case & { fixture: string }, arm: Result['arm'], run:
         return { ...base, pass, asked: true, named: [], opened: [], hinted, carried, reply: `(asked) ${text}`, ...(score === null ? {} : { score }), seconds: (Date.now() - started) / 1000 };
       }
       if (thread.activeRunId === null && thread.latestRunId !== null) {
-        const text = messages.findLast((message) => message.role === 'assistant' && message.runId === thread.latestRunId)?.text ?? '';
+        const text = await finalAnswer(threadId, thread.latestRunId) ?? messages.findLast((message) => message.role === 'assistant' && message.runId === thread.latestRunId)?.text ?? '';
         const { reply, cited } = takeKnowledgeUsed(text);
         const pages = readFileSync(join(profileDir, 'knowledge/index.md'), 'utf8').match(/`[^`\s]+\.md`/g)?.map((path) => path.slice(1, -1)) ?? [];
         const opened = await openedPages(threadId, thread.latestRunId, pages);
