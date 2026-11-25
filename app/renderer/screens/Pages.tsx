@@ -73,8 +73,6 @@ const DriftNotice = ({ files, busy, onAccept, onRestore, name }: {
           ))}
         </ul>
       </div>
-      {/* Only where To do can settle it in a click: a rule inside prose stays here, with the page's Edit. */}
-      {oneClick && <button type="button" onClick={onSettle} className="self-start text-xs text-ink underline underline-offset-2 hover:no-underline focus-visible:outline-2 focus-visible:outline-focus">Settle in To do</button>}
     </section>
   );
 };
@@ -132,6 +130,8 @@ const RulesNote = ({ issues, oneClick, onSettle }: { issues: KnowledgeOverview['
           {issue.facts!.map((fact) => <p key={fact.text} className="border-l-2 border-line pl-2 text-xs text-muted" title={fact.page}>{fact.text}</p>)}
         </div>
       ))}
+      {/* Only where To do can settle it in a click: a rule inside prose stays here, with the page's Edit. */}
+      {oneClick && <button type="button" onClick={onSettle} className="self-start text-xs text-ink underline underline-offset-2 hover:no-underline focus-visible:outline-2 focus-visible:outline-focus">Settle in To do</button>}
     </section>
   );
 };
