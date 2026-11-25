@@ -273,7 +273,7 @@ export const Proposals = () => {
               <>
                 <div className="flex flex-col gap-1">
                   <h2 className="text-lg font-semibold tracking-tight">{title}</h2>
-                  <Sources text={diff.proposed} from={diff.proposal.from} target={diff.proposal.target} />
+                  <Sources text={diff.proposed} from={diff.proposal.from} />
                 </div>
                 {stale && (
                   <p role="status" className="rounded-lg border border-warn/40 bg-panel px-3 py-2.5 text-[13px] text-warn">
@@ -426,7 +426,7 @@ const ChangeSummary = ({ current, proposed }: { current: string | null; proposed
       {shown.map((line) => (
         <li key={`${line.kind}${line.text}`} className="flex gap-2">
           <span aria-label={label[line.kind]} className={cx('w-3 shrink-0 text-center font-medium', line.kind === 'adds' ? 'text-up' : line.kind === 'removes' ? 'text-down' : 'text-muted')}>{mark[line.kind]}</span>
-          <span className={cx('min-w-0', line.kind === 'adds' ? 'text-ink' : 'text-muted line-through decoration-line-strong')}>{line.text}</span>
+          <span className={cx('min-w-0', line.kind === 'adds' ? 'text-ink' : 'text-muted')}><span className={line.kind === 'adds' ? '' : 'line-through decoration-line-strong'}>{line.text}</span>{line.kind === 'replaces' && <span className="text-xs no-underline"> · kept as old</span>}</span>
         </li>
       ))}
       {lines.length > shown.length && <li className="pl-5 text-xs text-muted">{lines.length - shown.length} more</li>}
@@ -435,7 +435,7 @@ const ChangeSummary = ({ current, proposed }: { current: string | null; proposed
 };
 
 /** Where the proposal came from, in a few words; its sources on hover. */
-const Sources = ({ text, from, target }: { text: string; from?: ProposalSource; target: string | null }) => {
+const Sources = ({ text, from }: { text: string; from?: ProposalSource }) => {
   const sources = sourcesOf(text);
   const opened = (href: string) => (event: { preventDefault: () => void }) => { event.preventDefault(); void serra()?.app.openExternal(href); };
   return (
@@ -445,7 +445,6 @@ const Sources = ({ text, from, target }: { text: string; from?: ProposalSource; 
           ? (from.via === 'app' ? 'From your task' : 'From your Slack thread')
           : `From ${from.who}’s Slack thread · approve only what you said`
         : 'Source not recorded'}
-      {target && <> · <code>{target}</code></>}
       {from?.link && <>{' · '}<a href={from.link} onClick={opened(from.link)} className="text-ink underline underline-offset-2 hover:no-underline focus-visible:outline-2 focus-visible:outline-focus">Thread</a></>}
     </p>
   );

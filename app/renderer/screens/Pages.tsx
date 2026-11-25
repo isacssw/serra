@@ -41,8 +41,7 @@ const DriftNotice = ({ files, busy, onAccept, onRestore, name }: {
 }) => {
   const [open, setOpen] = useState<string | null>(null);
   return (
-    <section aria-labelledby="drift-title" className="flex gap-3 rounded-lg border border-warn/40 bg-panel p-4">
-      <AlertTriangle size={16} aria-hidden className="mt-0.5 shrink-0 text-warn" />
+    <section aria-labelledby="drift-title" className="flex gap-3 rounded-lg border border-line bg-panel p-4">
       <div className="flex min-w-0 flex-1 flex-col gap-1">
         <h2 id="drift-title" className="text-sm font-semibold">
           {files.length === 1 ? '1 hand edit' : `${files.length} hand edits`}

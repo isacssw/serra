@@ -83,7 +83,7 @@ export const AboutMe = () => {
   const used = about ? Math.min(100, Math.round((100 * about.chars) / ABOUT_MAX_CHARS)) : 0;
 
   return (
-    <Page title="About me" subtitle={about ? `In every brief · ${used}% full` : undefined}>
+    <Page title="About me" subtitle={about ? `In every brief · ${used}% of the space` : undefined}>
       {error && <p role="alert" className="text-sm text-down">{error}</p>}
       {untagged.length > 0 && (
         <section aria-labelledby="untagged-title" className="flex items-center gap-3 rounded-lg border border-line bg-panel px-4 py-2.5">

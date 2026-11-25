@@ -176,8 +176,13 @@ const versus = (a: string, b: string): string => {
 
 export const fixItems = (overview: Pick<KnowledgeOverview, 'review' | 'health' | 'value'> & Partial<Pick<KnowledgeOverview, 'confirmHeldBack' | 'proposals' | 'unreviewed'>>): FixItem[] => {
   const title = (path: string): string => overview.value.find((page) => page.path === path)?.title ?? path;
+  // A rewrite that settles two rules says which, in three words, like the rule pair itself.
+  const pairOn = (page: string): string | null => {
+    const facts = overview.health.issues.find((issue) => issue.kind === 'conflict' && issue.pages.includes(page) && issue.facts?.length === 2)?.facts;
+    return facts ? versus(facts[0]!.text, facts[1]!.text) : null;
+  };
   const fromReview: FixItem[] = (overview.review?.suggestions ?? []).map((suggestion) => ({
-    id: suggestion.id, title: suggestion.title, why: suggestion.why, lines: [], pages: [suggestion.page],
+    id: suggestion.id, title: suggestion.title, why: (suggestion.kind === 'replace' ? pairOn(suggestion.page) : null) ?? suggestion.why, lines: [], pages: [suggestion.page],
     action: suggestionAction(suggestion.kind), suggestion,
   }));
   const covered = new Set(fromReview.map((item) => `${item.suggestion!.kind === 'replace' ? 'conflict' : item.suggestion!.kind === 'confirm' ? 'stale' : 'overlap'}:${item.pages[0]}`));
