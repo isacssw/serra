@@ -5,6 +5,10 @@ import { createKnowledge, profileRoots, type KnowledgeRoot } from '../../../src/
 import { createMeetingStore } from '../../../src/meeting-store.ts';
 import { knowledgeOverview, listKnowledgeFiles } from '../../../src/knowledge-overview.ts';
 import { assessKnowledge } from '../../../src/knowledge-health.ts';
+import { runKnowledgeReview } from '../../../src/knowledge-review.ts';
+import { setReviewWeekly, type KnowledgeReview } from '../../../src/knowledge-review-store.ts';
+import { createMeetingRuns } from '../../../src/meeting-runs.ts';
+import { profileT3Bin } from '../../../src/cleanup.ts';
 import type { Handlers } from '../bridge.ts';
 import type { HandlerContext } from './context.ts';
 
@@ -12,6 +16,8 @@ const pagePath = (value: unknown): string => {
   if (typeof value !== 'string' || value.trim() === '') throw new Error('Page is missing.');
   return value;
 };
+
+let reviewRun: Promise<KnowledgeReview> | null = null;
 
 export const pagesHandlers = (context: HandlerContext): Handlers<'pages'> => {
   // A new service per call: the profile folder can change while the app runs.
@@ -59,6 +65,20 @@ export const pagesHandlers = (context: HandlerContext): Handlers<'pages'> => {
       const page = pagePath(path);
       return assessKnowledge(listKnowledgeFiles(join(context.profileDir(), 'knowledge')), new Date()).issues
         .filter((issue) => (issue.kind === 'conflict' || issue.kind === 'duplicate') && issue.pages.includes(page));
+    },
+    runReview: () => {
+      // One review at a time: a second click waits for the first.
+      reviewRun ??= (async () => {
+        const profileDir = context.profileDir();
+        const worker = readProfileFile(profileDir).worker;
+        const runs = createMeetingRuns({ t3Bin: profileT3Bin(profileDir), ...(worker?.provider ? { provider: worker.provider } : {}), ...(worker?.model ? { model: worker.model } : {}) });
+        return runKnowledgeReview({ profileDir, knowledgeDir: join(profileDir, 'knowledge'), ask: runs.ask });
+      })().finally(() => { reviewRun = null; });
+      return reviewRun;
+    },
+    setReviewWeekly: (weekly) => {
+      if (typeof weekly !== 'boolean') throw new Error('Turn the weekly review on or off.');
+      setReviewWeekly(context.profileDir(), weekly);
     },
     overview: () => knowledgeOverview({ knowledgeDir: join(context.profileDir(), 'knowledge'), profileDir: context.profileDir() }),
   };

@@ -3,21 +3,33 @@
 // and keeps one record per run in `logs/knowledge-usage.jsonl` in the profile. Only the owner's app reads it.
 import { appendFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { isArrayOf, isNumber, isOneOf, isRecord, isString } from './lib/guards.ts';
+import { isArrayOf, isNumber, isOneOf, isOptional, isRecord, isString } from './lib/guards.ts';
 
 const BLOCK = /\n?[ \t]*<knowledge-used>([\s\S]*?)<\/knowledge-used>[ \t]*/gi;
+const MISSING = /\n?[ \t]*<knowledge-missing>([\s\S]*?)<\/knowledge-missing>[ \t]*/gi;
 
-/** The reply without its `<knowledge-used>` lines, and the page paths they named, each once. */
-export const takeKnowledgeUsed = (reply: string): { reply: string; cited: string[] } => {
+/**
+ * The reply without its `<knowledge-used>` and `<knowledge-missing>` lines, the page paths the first named, each once,
+ * and what the second said the owner hadn't written down (a few words each, at most five).
+ */
+export const takeKnowledgeUsed = (reply: string): { reply: string; cited: string[]; missing: string[] } => {
   const cited: string[] = [];
-  const stripped = reply.replace(BLOCK, (_line, list: string) => {
+  const missing: string[] = [];
+  let stripped = reply.replace(BLOCK, (_line, list: string) => {
     for (const item of list.split(/[,\n]/)) {
       const path = item.trim().replace(/^`|`$/g, '').replace(/^\.\//, '');
       if (/^[\w@().-]+(?:\/[\w@().-]+)*\.md$/.test(path) && !cited.includes(path)) cited.push(path);
     }
     return '';
   });
-  return { reply: cited.length > 0 || stripped !== reply ? stripped.trimEnd() : reply, cited };
+  stripped = stripped.replace(MISSING, (_line, list: string) => {
+    for (const item of list.split(/[;\n]/)) {
+      const topic = item.replace(/\s+/g, ' ').trim().slice(0, 120);
+      if (topic && missing.length < 5 && !missing.includes(topic)) missing.push(topic);
+    }
+    return '';
+  });
+  return { reply: stripped !== reply ? stripped.trimEnd() : reply, cited, missing };
 };
 
 export interface KnowledgeUse {
@@ -30,10 +42,17 @@ export interface KnowledgeUse {
   cited: string[];
   /** How many pages the worker could open. */
   offered: number;
+  /** The start of what was asked. */
+  request?: string;
+  /** The start of the reply as posted. */
+  reply?: string;
+  /** What the worker said it needed and the owner hadn't written down. */
+  missing?: string[];
 }
 
 const isUse = (value: unknown): value is KnowledgeUse => isRecord(value) && isString(value.at) && isString(value.runId)
-  && isOneOf('owner', 'team', 'external')(value.visibility) && isArrayOf(isString)(value.cited) && isNumber(value.offered);
+  && isOneOf('owner', 'team', 'external')(value.visibility) && isArrayOf(isString)(value.cited) && isNumber(value.offered)
+  && isOptional(isString)(value.request) && isOptional(isString)(value.reply) && isOptional(isArrayOf(isString))(value.missing);
 
 const usageFile = (profileDir: string): string => join(profileDir, 'logs', 'knowledge-usage.jsonl');
 

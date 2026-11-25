@@ -195,7 +195,8 @@ test('the pages a reply used are recorded once per run and never posted', (t) =>
   const { reply: posted, cited } = takeKnowledgeUsed(reply);
   assert.equal(posted, 'Ship it on Thursday.');
   assert.deepEqual(cited, ['owner/working-style.md', 'people/priya.md']);
-  assert.deepEqual(takeKnowledgeUsed('No knowledge here.'), { reply: 'No knowledge here.', cited: [] });
+  assert.deepEqual(takeKnowledgeUsed('No knowledge here.'), { reply: 'No knowledge here.', cited: [], missing: [] });
+  assert.deepEqual(takeKnowledgeUsed('Ask Priya.\n<knowledge-missing>who approves refunds over 500 EUR</knowledge-missing>'), { reply: 'Ask Priya.', cited: [], missing: ['who approves refunds over 500 EUR'] });
 
   const profile = mkdtempSync(join(tmpdir(), 'serra-usage-'));
   t.after(() => rmSync(profile, { recursive: true, force: true }));

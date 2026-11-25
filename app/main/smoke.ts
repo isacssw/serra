@@ -156,9 +156,30 @@ const layoutProfile = (): string => {
   }
   record('20261118-edit-working-style', '2026-11-18', [{ path: 'owner/working-style.md', before: styleBefore, after: styleAfter }]);
   mkdirSync(join(directory, 'logs'), { recursive: true });
-  const uses = [['owner/role.md', 'owner/working-style.md'], ['owner/working-style.md'], [], ['people/ana-silva.md', 'owner/role.md'], ['owner/working-style.md']];
-  writeFileSync(join(directory, 'logs', 'knowledge-usage.jsonl'), uses.map((cited, at) =>
-    JSON.stringify({ at: new Date(Date.now() - (at + 1) * 86_400_000).toISOString(), runId: `smoke-${at}`, visibility: 'team', cited, offered: 4 })).join('\n') + '\n');
+  const uses: [string[], string, string][] = [
+    [['owner/role.md', 'owner/working-style.md'], 'can we ship the refunds change on Thursday?', 'Yes: risky releases ship on Thursday now. Run the smoke suite first.'],
+    [['owner/working-style.md'], 'do I need a test for this one-line fix?', 'Yes. A bug fix starts with a failing test.'],
+    [[], 'thanks!', 'Any time.'],
+    [['people/ana-silva.md', 'owner/role.md'], 'how should I send Ana the launch numbers?', 'A short written note: Ana prefers that to a call.'],
+    [['owner/working-style.md'], 'is Thursday ok for the webhook release?', 'Thursday works: that is the current release day.'],
+  ];
+  writeFileSync(join(directory, 'logs', 'knowledge-usage.jsonl'), uses.map(([cited, request, reply], at) =>
+    JSON.stringify({ at: new Date(Date.now() - (at + 1) * 86_400_000).toISOString(), runId: `smoke-${at}`, visibility: 'team', cited, offered: 4, request, reply })).join('\n') + '\n');
+  // A weekly review, as the T3 run would have written it, so Overview shows its digest.
+  mkdirSync(join(directory, 'knowledge-reviews'), { recursive: true });
+  const today = new Date().toISOString().slice(0, 10);
+  writeFileSync(join(directory, 'knowledge-reviews', `${today}.json`), JSON.stringify({
+    id: today, at: new Date().toISOString(), from: new Date(Date.now() - 7 * 86_400_000).toISOString().slice(0, 10), to: today,
+    summary: 'Your notes shaped 4 of 5 replies this week, most of all how you decide about releases. Two rules on that page disagree: settle the release day.',
+    replies: 5, withKnowledge: 4, score: { before: 91, now: 84 }, facts: { before: 6, now: 7 },
+    used: [{ page: 'owner/working-style.md', title: 'How the owner decides', uses: 3 }, { page: 'owner/role.md', title: "The owner's role", uses: 2 }],
+    missing: [{ topic: 'who approves refunds over 500 EUR', count: 2 }],
+    suggestions: [
+      { id: 'confirm:owner/role.md', kind: 'confirm', page: 'owner/role.md', title: "The owner's role", why: 'Used twice this week. Still true?' },
+      { id: 'retire:owner/notes.md', kind: 'retire', page: 'owner/notes.md', title: 'Private notes', why: 'No reply used it in a month.' },
+    ],
+    examples: [{ page: 'owner/working-style.md', title: 'How the owner decides', request: 'can we ship the refunds change on Thursday?', withPage: 'Yes: risky releases ship on Thursday now. Run the smoke suite first.', without: "I don't know your release days. Check with the team before shipping anything risky." }],
+  }));
   writeFileSync(join(knowledge, 'proposals/2026-11-19-role.md'), page("The owner's role", ['verified: no', 'target: owner/role.md'], 'Owns the API and reviews every PR.'));
   // A correction that repeats a page the owner has, so Proposals shows where it belongs.
   writeFileSync(join(knowledge, 'proposals/2026-11-20-release-days.md'), page('When the owner ships', ['verified: no'], '- Risky releases ship on Thursday now.'));

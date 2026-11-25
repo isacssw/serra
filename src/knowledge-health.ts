@@ -10,7 +10,7 @@ import { DATE, daysSince, frontmatter, INDEX_MAX_LINES, lineCount, NOT_PAGES, PA
 const AREAS = ['identity', 'rules', 'voice', 'limits', 'people', 'processes', 'projects'] as const;
 type Area = (typeof AREAS)[number] | 'other';
 
-const AREA_LABELS: Record<Area, string> = {
+export const AREA_LABELS: Record<Area, string> = {
   identity: 'Who you are', rules: 'How you work', voice: 'How you write', limits: 'Off-limits',
   people: 'People', processes: 'Processes', projects: 'Projects', other: 'Other',
 };
@@ -18,7 +18,7 @@ const AREA_LABELS: Record<Area, string> = {
 export interface KnowledgeFile { path: string; text: string }
 
 /** Which area a page belongs to, from its folder, type and name. */
-const pageArea = (path: string, type: string): Area => {
+export const pageArea = (path: string, type: string): Area => {
   const name = path.split('/').pop() ?? '';
   const folder = path.includes('/') ? path.split('/')[0]! : '';
   if (type === 'offlimits' || /off-?limits/.test(name)) return 'limits';
@@ -182,15 +182,16 @@ export const findOverlaps = (facts: Fact[], comparable: (a: string, b: string) =
       // The words that can differ between two versions of one rule (a day, a number, a "never") don't count
       // towards whether they're about the same thing.
       const similarity = common / (mine.size + theirs.size - common);
-      if (similarity < CONFLICT_AT) continue;
+      // One side's words all inside the other's: the same rule, however much longer one says it.
+      const sameSubject = common === mine.size || common === theirs.size;
+      if (similarity < CONFLICT_AT && !(sameSubject && Math.min(mine.size, theirs.size) >= 2)) continue;
       if (fact.page !== that.page && !comparable(fact.page, that.page)) continue;
       const pair = { a: { page: fact.page, text: fact.text }, b: { page: that.page, text: that.text }, similarity: Math.round(similarity * 100) / 100 };
       const slotClash = mine.slots.size > 0 && theirs.slots.size > 0 && [...mine.slots].some((slot) => !theirs.slots.has(slot)) && [...theirs.slots].some((slot) => !mine.slots.has(slot));
       const negationClash = mine.negated !== theirs.negated;
       // Two rules about different things ("Retry webhooks 5 times", "Retry invoices 3 times") each have a word the
-      // other lacks. One rule about one thing, however it's phrased, has one side's words inside the other's.
-      const sameSubject = common === mine.size || common === theirs.size;
-      if (sameSubject && (slotClash || (negationClash && similarity >= 0.5))) conflicts.push(pair);
+      // other lacks, so they're never the same subject. "Never Thursday" against "Thursday now" is a conflict too.
+      if (sameSubject && (slotClash || negationClash)) conflicts.push(pair);
       // A repeat about a different subject has to be near word for word.
       else if (similarity >= DUPLICATE_AT && (sameSubject || similarity >= 0.85)) duplicates.push(pair);
     }
@@ -689,5 +690,5 @@ export const relevanceNote = (request: string, cards: PageCard[], ignore: string
   const hint = ranked.length > 0
     ? `Pages that look closest to this request, best first: ${ranked.map((page) => `\`${page.path}\``).join(', ')}. Open them first if their row fits; they are a guess, so check other rows too.\n\n`
     : '';
-  return `${hint}If a page here shaped your reply, end the reply with one line naming the pages you used, like <knowledge-used>owner/role.md, people/priya.md</knowledge-used>. Serra removes that line before anyone sees the reply. Leave it out when you used none.`;
+  return `${hint}If a page here shaped your reply, end the reply with one line naming the pages you used, like <knowledge-used>owner/role.md, people/priya.md</knowledge-used>. If you needed something about the owner, their team or their work that no page says, add one more line naming it in a few words, like <knowledge-missing>who approves refunds over 500 EUR</knowledge-missing>. Serra removes these lines before anyone sees the reply. Leave them out when they don't apply.`;
 };

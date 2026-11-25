@@ -3,7 +3,9 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { createJournal } from './knowledge-journal.ts';
-import { assessKnowledge, isPage, knowledgeHistory, type Health, type HistoryPoint, type KnowledgeChange, type KnowledgeEvent, type KnowledgeFile } from './knowledge-health.ts';
+import { latestReview, reviewSettings, type KnowledgeReview } from './knowledge-review-store.ts';
+import { compileAboutMe } from './owner-model.ts';
+import { AREA_LABELS, pageArea, assessKnowledge, isPage, knowledgeHistory, type Health, type HistoryPoint, type KnowledgeChange, type KnowledgeEvent, type KnowledgeFile } from './knowledge-health.ts';
 import { ARCHIVE_DIR, frontmatter, PROPOSALS_DIR } from './knowledge-rules.ts';
 import { readKnowledgeUse } from './knowledge-usage.ts';
 import { isArrayOf, isRecord, isString, isStringOrNull, isOptional } from './lib/guards.ts';
@@ -23,7 +25,30 @@ interface KnowledgeUsage {
   days: number;
 }
 
+/** One request a page answered, and the start of the reply. */
+interface PageExample { at: string; request: string; reply: string }
+
+/** What one page did for the bot in the window. */
+export interface PageValue {
+  path: string;
+  title: string;
+  area: string;
+  uses: number;
+  last: string | null;
+  /** `earns`: named by 2+ replies; `some`: by one; `carried`: in About me, so in every brief; `idle`: no reply used it
+   * in a window with enough replies to tell; `unknown`: too few replies yet. */
+  state: 'earns' | 'some' | 'carried' | 'idle' | 'unknown';
+  examples: PageExample[];
+}
+
 export interface KnowledgeOverview {
+  /** Every page, with what it did for the bot, most used first. */
+  value: PageValue[];
+  /** What replies said they needed and no page had, most asked first. */
+  missing: { topic: string; count: number }[];
+  /** The latest weekly review, or null before the first. */
+  review: KnowledgeReview | null;
+  reviewWeekly: boolean;
   health: Health;
   /** The score a month ago, or null when there's no history that far back. */
   monthAgo: HistoryPoint | null;
@@ -38,6 +63,17 @@ export interface KnowledgeOverview {
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+
+const missingTopics = (uses: { missing?: string[] }[]): { topic: string; count: number }[] => {
+  const counts = new Map<string, number>();
+  for (const use of uses) for (const topic of use.missing ?? []) counts.set(topic.toLowerCase(), (counts.get(topic.toLowerCase()) ?? 0) + 1);
+  return [...counts].sort((a, b) => b[1] - a[1]).slice(0, 8).map(([topic, count]) => ({ topic, count }));
+};
+
+const pageAreaOf = (path: string, files: KnowledgeFile[]): string => {
+  const type = frontmatter(files.find((file) => file.path === path)?.text ?? '')?.get('type')?.trim() ?? '';
+  return AREA_LABELS[pageArea(path, type)];
+};
 /** The last history worked out, for the profile and day it was for. */
 const historyCache = new Map<string, ReturnType<typeof knowledgeHistory>>();
 /** Replies before "never used" means anything. */
@@ -113,7 +149,24 @@ export const knowledgeOverview = ({ knowledgeDir, profileDir, backupDir, now = n
     }
   }
   const pages = files.filter((file) => isPage(file.path)).map((file) => file.path);
+  // What each page did for the bot: how often replies named it, with real requests it answered. About me pages ride in
+  // every brief, so they count as used whether a reply names them or not.
+  const carried = new Set(compileAboutMe(files.filter((file) => isPage(file.path)), 'owner', now).included);
+  const examples = new Map<string, PageExample[]>();
+  for (const use of [...uses].reverse()) {
+    for (const path of use.cited) {
+      const list = examples.get(path) ?? [];
+      if (use.request && list.length < 2 && !list.some((item) => item.request === use.request)) list.push({ at: use.at, request: use.request, reply: use.reply ?? '' });
+      examples.set(path, list);
+    }
+  }
+  const value: PageValue[] = pages.map((path) => {
+    const count = counts.get(path)?.uses ?? 0;
+    const state: PageValue['state'] = count >= 2 ? 'earns' : count === 1 ? 'some' : carried.has(path) ? 'carried' : uses.length >= UNUSED_AFTER ? 'idle' : 'unknown';
+    return { path, title: titles.get(path) || path, area: pageAreaOf(path, files), uses: count, last: counts.get(path)?.last ?? null, state, examples: examples.get(path) ?? [] };
+  }).sort((a, b) => b.uses - a.uses || a.title.localeCompare(b.title));
   return {
+    value, missing: missingTopics(uses), review: latestReview(profileDir), reviewWeekly: reviewSettings(profileDir).weekly,
     health, monthAgo, points, events: events.slice(0, 80), waiting: countProposals(join(root, PROPOSALS_DIR)), unreviewed: changed.length + removed.length,
     usage: {
       replies: uses.length, withKnowledge: uses.filter((use) => use.cited.length > 0).length, days,

@@ -31,6 +31,7 @@ import type { IncomingMessage } from './types.ts';
 import { readAttachmentText } from './slack/attachments.ts';
 import { createMeetingCapture, meetingsFirst, type MeetingCaptureDeps } from './meeting-capture.ts';
 import { createMeetingRuns } from './meeting-runs.ts';
+import { reviewDue, runKnowledgeReview } from './knowledge-review.ts';
 
 const POLL_MS = 15_000;
 const HELD_REACTION = 'hourglass_flowing_sand';
@@ -64,6 +65,8 @@ export interface DaemonDeps {
   pollMs?: number;
   /** Meeting capture's model and provider seams (SERRA-62). Production starts T3 runs (src/meeting-runs.ts). */
   meetings?: Partial<Pick<MeetingCaptureDeps, 'extractor' | 'sources' | 'readFile'>>;
+  /** The weekly knowledge review's model run, for tests. Defaults to a read-only T3 run. */
+  reviewAsk?: (title: string, prompt: string) => Promise<string>;
 }
 
 export interface Daemon {
@@ -330,10 +333,25 @@ export const startDaemon = async (deps: DaemonDeps): Promise<Daemon> => {
     // Requests held while the previous bot was paused for an update start now.
     acknowledge();
     void release();
+    // The weekly knowledge review (knowledge-review.ts): checked once an hour, run when a week has passed and there were
+    // replies to look at. Its model work is a read-only T3 run, like a meeting's; the owner approves what it suggests.
+    let reviewCheckedAt = 0;
+    let reviewing = false;
+    const maybeReview = (): void => {
+      if (reviewing || clock.now() - reviewCheckedAt < 60 * 60 * 1000) return;
+      reviewCheckedAt = clock.now();
+      if (!reviewDue(config.profileDir, new Date(clock.now()))) return;
+      reviewing = true;
+      void track(runKnowledgeReview({ profileDir: config.profileDir, knowledgeDir: config.knowledgeDir, ask: deps.reviewAsk ?? runs.ask, now: new Date(clock.now()) })
+        .then((review) => logger.info(`Weekly knowledge review ${review.id}: ${review.suggestions.length} suggestions${review.error ? ` (model part failed: ${review.error})` : ''}.`))
+        .catch((error: unknown) => logger.warn(`Weekly knowledge review: ${errorMessage(error)}`))
+        .finally(() => { reviewing = false; }));
+    };
     const timer = clock.setInterval(() => {
       if (stopping) return;
       acknowledge();
       void release();
+      maybeReview();
       void track(meetings.upkeep()).catch((error: unknown) => logger.warn(`Meeting upkeep: ${errorMessage(error)}`));
       void track(bot.poll()).catch((error: unknown) => logger.error(`Poll failed: ${errorMessage(error)}`)).finally(() => status?.refresh());
     }, pollMs);

@@ -17,6 +17,7 @@ import type { McpOverview } from '../../src/mcp.ts';
 import type { ProposalTargets, Reviewed } from '../../src/proposals.ts';
 import type { AboutMe, Visibility } from '../../src/owner-model.ts';
 import type { KnowledgeOverview } from '../../src/knowledge-overview.ts';
+import type { KnowledgeReview } from '../../src/knowledge-review-store.ts';
 import type { ActivationOutcome, ReleaseOverview, RollbackOutcome, RunningJob } from '../../src/releases.ts';
 import type { Prepared } from '../../src/deploy.ts';
 import type { ClearedSource } from '../../src/update-migration.ts';
@@ -208,6 +209,10 @@ export interface SerraApi {
     share(pages: { path: string; text: string }[], audience: Visibility): { shared: string[] };
     /** Knowledge › Overview: health, how it grew, and what replies used. */
     overview(): KnowledgeOverview;
+    /** Run the weekly knowledge review now, through T3, and return its digest. */
+    runReview(): Promise<KnowledgeReview>;
+    /** Turn the weekly review on or off. */
+    setReviewWeekly(weekly: boolean): void;
     /** Rules on this page that disagree with or repeat another, as the page is on disk now, for the editor. */
     issues(path: string): KnowledgeOverview['health']['issues'];
   };
@@ -416,7 +421,7 @@ export const bridgeMethods = {
   bot: methods<'bot'>()(['status', 'start', 'stop', 'restart']),
   jobs: methods<'jobs'>()(['list', 'cleanupWorktrees']),
   proposals: methods<'proposals'>()(['list', 'diff', 'targets', 'promote', 'mergeInto', 'discard', 'undo', 'retire', 'similar']),
-  pages: methods<'pages'>()(['list', 'read', 'save', 'drift', 'acceptDrift', 'restoreDrift', 'aboutMe', 'untagged', 'share', 'overview', 'issues']),
+  pages: methods<'pages'>()(['list', 'read', 'save', 'drift', 'acceptDrift', 'restoreDrift', 'aboutMe', 'untagged', 'share', 'overview', 'issues', 'runReview', 'setReviewWeekly']),
   brief: methods<'brief'>()(['read', 'save', 'check', 'preview', 'listProposed', 'readProposed', 'applyProposed']),
   settings: methods<'settings'>()(['read', 'sections', 'saveSection', 'addPerson', 'removePerson', 'peopleNames']),
   secrets: methods<'secrets'>()(['list', 'setSource', 'check']),

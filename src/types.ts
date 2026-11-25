@@ -89,6 +89,8 @@ export interface Job {
   knowledgeDir?: string;
   /** The task branch the thread works on, so a fresh thread can carry on from its committed work. */
   branch?: string;
+  /** The start of what was asked, so Overview can show which requests each knowledge page answered. */
+  request?: string;
 }
 
 export interface StartThreadInput {

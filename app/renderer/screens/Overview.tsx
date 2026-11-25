@@ -2,10 +2,12 @@
 // what the bot knows per area, what needs tidying, what it learned lately and what replies used. Read-only: every
 // fix happens in Pages or Proposals, one click away.
 import { useCallback, useEffect, useId, useState } from 'react';
-import { AlertTriangle, ArrowUpRight, BookOpen, CircleCheck, CircleDot, Copy, Sparkles } from 'lucide-react';
+import { AlertTriangle, ArrowUpRight, CircleCheck, CircleDot, Copy, Sparkles } from 'lucide-react';
 import { useNavigate } from 'react-router';
 import type { KnowledgeOverview } from '../../../src/knowledge-overview.ts';
 import { serra } from '../bridge.ts';
+import { ValueList } from './overview/ValueList.tsx';
+import { WeekDigest } from './overview/WeekDigest.tsx';
 import { Button, cx, EmptyState, Page } from '../ui/index.ts';
 import {
   changeText, EVENT_LABELS, factsChart, shortDate, groupByDay, ISSUE_LABELS, ISSUE_TONES, PART_LABELS, PART_ORDER, scoreChart, scoreWord, usedShare, type Tone,
@@ -176,7 +178,6 @@ export const Overview = () => {
   const issues = allIssues ? health.issues : health.issues.slice(0, 5);
   const days = groupByDay(overview.events, now);
   const share = usedShare(usage.replies, usage.withKnowledge);
-  const topUse = Math.max(1, ...usage.pages.map((page) => page.uses));
 
   return (
     <Page title="Overview" subtitle="How well your bot knows you, and how that changes.">
@@ -189,6 +190,9 @@ export const Overview = () => {
           </p>
         </div>
       )}
+      <WeekDigest review={overview.review} weekly={overview.reviewWeekly} onChanged={() => void load()} />
+      <ValueList value={overview.value} days={usage.days} replies={usage.replies} onOpen={open} onChanged={() => void load()} />
+
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         <Tile label="Health" value={String(health.score)} unit="/ 100" note={`${word.word}${monthAgo ? ` · ${changeText(health.score, monthAgo.score, monthAgo.at) ?? ''}` : ''}`} noteTone={word.tone} />
         <Tile label="Knows" value={String(health.facts)} unit="facts" note={[`${health.pages} page${health.pages === 1 ? '' : 's'}`, monthAgo ? changeText(health.facts, monthAgo.facts, monthAgo.at, ' facts') : null].filter(Boolean).join(' · ')} />
@@ -271,7 +275,7 @@ export const Overview = () => {
           )}
       </Section>
 
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+      <div className="flex flex-col gap-6">
         <Section title="Recently learned" aside={overview.waiting > 0 ? (
           <button type="button" onClick={() => void navigate('/knowledge/proposals')} className="underline underline-offset-2 hover:text-ink focus-visible:outline-2 focus-visible:outline-focus">{overview.waiting} waiting for you</button>
         ) : undefined}>
@@ -287,11 +291,11 @@ export const Overview = () => {
                         <li key={`${event.page}-${at}`} className="flex min-w-0 flex-col">
                           <p className="text-[13px]">
                             <span className="font-medium">{EVENT_LABELS[event.kind]}</span>{' '}
-                            <button type="button" onClick={() => open(event.page)} disabled={event.kind === 'removed'} className="font-mono text-xs text-muted hover:text-ink hover:underline focus-visible:outline-2 focus-visible:outline-focus disabled:no-underline">{event.page}</button>
+                            <button type="button" onClick={() => open(event.page)} disabled={event.kind === 'removed'} title={event.page} className="text-muted hover:text-ink hover:underline focus-visible:outline-2 focus-visible:outline-focus disabled:no-underline">{event.description || event.page}</button>
                           </p>
-                          {(event.added[0] ?? event.removed[0] ?? event.description) && (
+                          {(event.added[0] ?? event.removed[0]) && (
                             <p className="truncate text-xs text-muted">
-                              {event.added[0] ? `“${event.added[0]}”` : event.removed[0] ? `Took out “${event.removed[0]}”` : event.description}
+                              {event.added[0] ? `“${event.added[0]}”` : event.removed[0] ? `Took out “${event.removed[0]}”` : ''}
                               {event.added.length > 1 ? ` and ${event.added.length - 1} more` : ''}
                             </p>
                           )}
@@ -307,33 +311,6 @@ export const Overview = () => {
             )}
         </Section>
 
-        <Section title="Used in replies" aside={`Named by the bot · last ${usage.days} days`}>
-          {usage.pages.length === 0
-            ? (
-              <p className="flex items-start gap-2 text-[13px] text-muted"><BookOpen size={15} aria-hidden className="mt-0.5 shrink-0" />
-                {usage.replies === 0 ? 'Once the bot replies, the pages it says it used show here.' : 'No reply named a page it used yet.'}
-              </p>
-            )
-            : (
-              <ul className="flex flex-col gap-2">
-                {usage.pages.slice(0, 8).map((page) => (
-                  <li key={page.path} className="flex flex-col gap-1">
-                    <div className="flex items-baseline justify-between gap-2 text-xs">
-                      <button type="button" onClick={() => open(page.path)} title={page.path} className="flex min-w-0 items-baseline gap-2 text-left hover:underline focus-visible:outline-2 focus-visible:outline-focus">
-                        <span className="truncate text-ink">{page.title || page.path}</span>
-                        {page.title && <span className="truncate font-mono text-[11px] text-faint">{page.path}</span>}
-                      </button>
-                      <span className="shrink-0 tabular-nums text-muted">{page.uses} {page.uses === 1 ? 'reply' : 'replies'}</span>
-                    </div>
-                    <div className="h-1 rounded-full bg-raised"><div className="h-1 rounded-full bg-ink" style={{ width: `${(page.uses / topUse) * 100}%` }} /></div>
-                  </li>
-                ))}
-              </ul>
-            )}
-          {usage.unused.length > 0 && (
-            <p className="text-xs text-muted">Not used: {usage.unused.length} page{usage.unused.length === 1 ? '' : 's'}, like <span className="font-mono">{usage.unused[0]}</span>. Retire what no longer helps.</p>
-          )}
-        </Section>
       </div>
     </Page>
   );

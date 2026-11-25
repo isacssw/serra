@@ -42,7 +42,7 @@ const OPTIONAL: { [K in OptionalKeys<Job>]: (value: unknown) => boolean } = {
     && (x.ownerFollows === undefined || isBoolean(x.ownerFollows)) && (x.ownerAskOpen === undefined || isBoolean(x.ownerAskOpen)),
   visibility: isAudience,
   knowledgeRead: (x) => isRecord(x) && Object.values(x).every(isAudience),
-  knowledgeDir: isString, branch: isString,
+  knowledgeDir: isString, branch: isString, request: isString,
 };
 
 const isCard = (x: unknown): x is QuestionCard => isRecord(x) && isString(x.ts) && isString(x.requestId) && isString(x.nonce) && Array.isArray(x.questions)

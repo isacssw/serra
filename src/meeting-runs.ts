@@ -346,6 +346,11 @@ export const createMeetingRuns = ({
       }),
     /** Pick the decisions out of a (redacted) transcript, in a guarded T3 run briefed to use no tools. */
     extract: (prompt: string): Promise<string> => withRun('Serra meeting: pick out decisions', extractBrief(prompt), true, async ({ answer }) => answer),
+    /**
+     * Any other read-only question Serra asks a model, such as the weekly knowledge review: a guarded T3 run in the same
+     * empty folder, briefed to use no tools, answering only from the text it is given.
+     */
+    ask: (title: string, prompt: string): Promise<string> => withRun(title, [READ_ONLY, '- Use no tools at all. Answer only from the text in this message.', '', prompt].join('\n'), true, async ({ answer }) => answer),
     /** The owner's Test button: ask a guarded T3 run whether it could read this source. Only ever on that button. */
     checkSource: (source: MeetingProvider): Promise<ProviderStatus> =>
       withRun(`Serra meeting: check ${PROVIDERS[source].label}`, checkBrief(source), true, async ({ answer }) => parseCheckAnswer(answer, source)),

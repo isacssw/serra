@@ -40,6 +40,7 @@ const setup = (t: TestContext) => {
       return {
         fetchTranscript: async () => { throw new Error('not in this test'); },
         extract: async () => { throw new Error('not in this test'); },
+        ask: async () => { throw new Error('not in this test'); },
         checkSource: async (provider) => { tested.push(provider); return { provider, state: 'ready', detail: 'ok' }; },
       };
     },

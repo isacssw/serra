@@ -118,3 +118,19 @@ export const PART_ORDER: readonly (keyof HealthParts)[] = ['fresh', 'consistent'
 
 /** Share of replies that used knowledge, as a whole percent, or null with no replies. */
 export const usedShare = (replies: number, withKnowledge: number): number | null => (replies === 0 ? null : Math.round((withKnowledge / replies) * 100));
+
+/** The button that settles a review suggestion. */
+export const suggestionAction = (kind: 'replace' | 'retire' | 'confirm'): string => ({ replace: 'Approve', retire: 'Retire', confirm: 'Still true' })[kind];
+
+/** "12 replies · 9 used your notes · health 72 → 84 · 18 → 22 facts": the week in one line. */
+export const weekLine = (review: { replies: number; withKnowledge: number; score: { before: number | null; now: number }; facts: { before: number | null; now: number } }): string => [
+  `${review.replies} repl${review.replies === 1 ? 'y' : 'ies'}`,
+  `${review.withKnowledge} used your notes`,
+  review.score.before === null ? `health ${review.score.now}` : `health ${review.score.before} → ${review.score.now}`,
+  review.facts.before === null ? `${review.facts.now} facts` : `${review.facts.before} → ${review.facts.now} facts`,
+].join(' · ');
+
+/** What a page did, in two words, for the value list. */
+export const valueLabel = (state: 'earns' | 'some' | 'carried' | 'idle' | 'unknown', uses: number): string => ({
+  earns: `Used in ${uses} replies`, some: 'Used once', carried: 'Always in the brief', idle: 'Not used', unknown: 'Not used yet',
+})[state];

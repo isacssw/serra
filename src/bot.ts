@@ -358,7 +358,7 @@ export const createBot = ({
       lastPostedRunId: null,
       phase: { state: 'following' },
       ownerFollows: msg.user === config.owner,
-      ...(knowledge ? { visibility, knowledgeRead: knowledge.read, knowledgeDir: knowledge.readDir } : {}),
+      ...(knowledge ? { visibility, knowledgeRead: knowledge.read, knowledgeDir: knowledge.readDir, request: summary.replace(/\s+/g, ' ').trim().slice(0, 300) } : {}),
       branch: input.branch,
       createdAt: new Date(now()).toISOString(),
       lastActivityAt: new Date(now()).toISOString(),
@@ -462,14 +462,17 @@ export const createBot = ({
    */
   const postRunResult = async (key: string, job: Job, thread: T3Thread, workerReply: string, byWorker: boolean, runId: string): Promise<void> => {
     // The worker names the pages it used on a last line; that line is Serra's, never posted. Kept once per run.
-    const { reply, cited } = takeKnowledgeUsed(workerReply);
+    const { reply, cited, missing } = takeKnowledgeUsed(workerReply);
     /** Recorded once the reply is in the thread: a withheld or replaced reply used nothing anyone saw. */
     const recordUse = (): void => {
       const readable = job.knowledgeRead;
       if (!readable) return;
       try {
         recordKnowledgeUse(config.profileDir, { at: new Date(now()).toISOString(), runId, visibility: job.visibility ?? 'owner',
-          cited: cited.filter((path) => path in readable), offered: Object.keys(readable).length });
+          cited: cited.filter((path) => path in readable), offered: Object.keys(readable).length,
+          // What was asked and the start of the answer, so Overview can show what each page did. Kept in the profile only.
+          ...(job.request ? { request: job.request } : {}), reply: reply.replace(/\s+/g, ' ').trim().slice(0, 400),
+          ...(missing.length ? { missing } : {}) });
       } catch (error) { logger.warn(`Could not record which knowledge ${key} used: ${errorMessage(error)}`); }
     };
     // A reply the worker wrote with knowledge the owner has since taken back isn't posted: it may repeat that text.

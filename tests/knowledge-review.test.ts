@@ -1,0 +1,97 @@
+// The weekly knowledge review: what it reads, what it asks T3 (faked here), what it writes, and when it runs.
+import assert from 'node:assert/strict';
+import { cpSync, existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import test, { type TestContext } from 'node:test';
+import { createJournal } from '../src/knowledge-journal.ts';
+import { reviewDue, runKnowledgeReview } from '../src/knowledge-review.ts';
+import { latestReview, setReviewWeekly } from '../src/knowledge-review-store.ts';
+import { recordKnowledgeUse } from '../src/knowledge-usage.ts';
+import { createProposals } from '../src/proposals.ts';
+
+const NOW = new Date('2026-11-25T12:00:00Z');
+
+/** Robin's fixture, with a rule that disagrees on the release page and a week of replies. */
+const profile = (t: TestContext) => {
+  const dir = mkdtempSync(join(tmpdir(), 'serra-review-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const knowledge = join(dir, 'knowledge');
+  cpSync(new URL('../evals/fixture/knowledge', import.meta.url).pathname, knowledge, { recursive: true });
+  const style = join(knowledge, 'owner/working-style.md');
+  writeFileSync(style, readFileSync(style, 'utf8').replace('- A bug fix starts with a failing test.', '- A bug fix starts with a failing test.\n- Risky releases ship on Thursday now.'));
+  createJournal(knowledge).seed();
+  const reply = (day: number, cited: string[], request: string, reply: string, missing?: string[]) => recordKnowledgeUse(dir, {
+    at: new Date(NOW.getTime() - day * 86_400_000).toISOString(), runId: `r${day}-${request}`, visibility: 'team', cited, offered: 30, request, reply, ...(missing ? { missing } : {}),
+  });
+  reply(1, ['owner/working-style.md', 'workflows/release.md'], 'can we ship the webhook retry change this Thursday?', 'Not this Thursday: risky releases ship on Tuesday.');
+  reply(2, ['owner/working-style.md'], 'how big can my PR be?', 'Under 400 changed lines.');
+  reply(3, ['product/rate-limits.md'], 'what is the rate limit?', '100 requests per second per merchant.', ['who approves refunds over 500 EUR']);
+  reply(4, [], 'thanks!', 'You’re welcome.', ['who approves refunds over 500 EUR']);
+  return { dir, knowledge };
+};
+
+test('the weekly review writes a checked rewrite as a proposal, a before/after example, and the week in numbers', async (t) => {
+  const { dir, knowledge } = profile(t);
+  const asked: string[] = [];
+  const fixed = readFileSync(join(knowledge, 'owner/working-style.md'), 'utf8')
+    .replace('- Risky releases (anything touching money movement or webhooks) ship on Tuesday, never Thursday or Friday, so there\'s a week to fix them.\n', '')
+    .trimEnd() + '\n\n## Replaced\n\n- Until 2026-11-20: Risky releases shipped on Tuesday.\n';
+  const ask = async (title: string, prompt: string): Promise<string> => {
+    asked.push(prompt);
+    if (title.includes('weekly review')) {
+      return `Here you go: ${JSON.stringify({ summary: 'Your notes answered 3 of 4 replies. Settle the release day.', rewrites: [
+        { page: 'owner/working-style.md', text: fixed, why: 'Keeps Thursday, the newer rule.' },
+        { page: 'owner/role.md', text: 'not a page', why: 'invalid' },
+        { page: 'product/sdks.md', text: 'never asked for', why: 'not a page to fix' },
+      ] })}`;
+    }
+    return 'I don\'t know which day risky releases ship.';
+  };
+  const review = await runKnowledgeReview({ profileDir: dir, knowledgeDir: knowledge, ask, now: NOW });
+
+  assert.equal(review.summary, 'Your notes answered 3 of 4 replies. Settle the release day.');
+  assert.equal(review.replies, 4);
+  assert.equal(review.withKnowledge, 3);
+  assert.deepEqual(review.missing, [{ topic: 'who approves refunds over 500 eur', count: 2 }]);
+  assert.equal(review.used[0]?.page, 'owner/working-style.md');
+  // Only the checked rewrite becomes a proposal; a broken page and a page nobody asked to fix are dropped.
+  const replace = review.suggestions.filter((item) => item.kind === 'replace');
+  assert.deepEqual(replace.map((item) => item.page), ['owner/working-style.md']);
+  const proposals = createProposals({ knowledgeDir: knowledge });
+  const listed = proposals.listProposals();
+  assert.equal(listed.length, 1);
+  assert.equal(listed[0]!.target, 'owner/working-style.md');
+  assert.equal(listed[0]!.from?.who, 'Weekly review');
+  assert.match(proposals.readProposal(listed[0]!.path).proposed, /^verified: no$/m);
+  // The before/after: the week's most used page, its latest request, the real reply and the answer without it.
+  assert.equal(review.examples[0]?.page, 'owner/working-style.md');
+  assert.equal(review.examples[0]?.request, 'how big can my PR be?');
+  assert.equal(review.examples[0]?.withPage, 'Under 400 changed lines.');
+  assert.equal(review.examples[0]?.without, 'I don\'t know which day risky releases ship.');
+  assert.ok(!asked[1]!.includes('ship on Tuesday, never Thursday'), 'the "without" run never sees the page it is answering without');
+  assert.ok(asked[0]!.includes('two rules that disagree') && asked[0]!.includes('<page path="owner/working-style.md">'));
+  assert.deepEqual(latestReview(dir), review);
+});
+
+test('a review whose model run fails still saves what plain code found', async (t) => {
+  const { dir, knowledge } = profile(t);
+  const review = await runKnowledgeReview({ profileDir: dir, knowledgeDir: knowledge, ask: async () => { throw new Error('Usage limit reached'); }, now: NOW });
+  assert.equal(review.error, 'Usage limit reached');
+  assert.equal(review.replies, 4);
+  assert.deepEqual(review.examples, []);
+  assert.ok(!existsSync(join(knowledge, 'proposals/from-review')) || readdirSync(join(knowledge, 'proposals/from-review')).length === 0);
+});
+
+test('the review runs weekly, only after a week with replies, and the owner can turn it off', async (t) => {
+  const { dir, knowledge } = profile(t);
+  assert.equal(reviewDue(dir, NOW), true);
+  await runKnowledgeReview({ profileDir: dir, knowledgeDir: knowledge, ask: async () => '{}', now: NOW });
+  assert.equal(reviewDue(dir, new Date(NOW.getTime() + 3 * 86_400_000)), false, 'not again within the week');
+  assert.equal(reviewDue(dir, new Date(NOW.getTime() + 7 * 86_400_000)), false, 'a week later, but no replies that week');
+  setReviewWeekly(dir, false);
+  assert.equal(reviewDue(dir, NOW), false);
+  const quiet = mkdtempSync(join(tmpdir(), 'serra-review-quiet-'));
+  t.after(() => rmSync(quiet, { recursive: true, force: true }));
+  assert.equal(reviewDue(quiet, NOW), false, 'a bot with no replies has nothing to review');
+});
