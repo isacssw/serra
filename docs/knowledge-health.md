@@ -6,15 +6,22 @@
 
 Once a week (when the bot replied at least three times that week) Serra looks back at the week's replies and writes a short digest at the top of Overview:
 
-- **What your notes changed:** a real request from the week, the bot's real reply, and the same request answered again without the page that answered it.
+- **What your notes changed:** a real request from the week, answered twice from the same notes, once with the page that answered it and once without it, so the only difference is that page.
 - **Your bot needed, and no note had:** what replies said they were missing. Tell the bot in Slack, "remember …", and approve the proposal.
-- **Suggested fixes**, each one click: **Approve** a rewrite that settles rules that disagree or repeat (it's a proposal, checked like any other), **Retire** a page another one covers, **Still true** for a stale page the week still used. **Approve all** does them in one go.
+Its fixes go into **To do**, Overview's one list of everything to tidy, each with one button:
+
+- **Approve** a rewrite that settles rules that disagree or repeat. **See change** shows the page before and after. Serra refuses a rewrite that drops any rule the page had.
+- **Retire** a page another one covers (it asks first; Undo brings it back).
+- **Still true** for a page not confirmed in 60 days.
+- **Settle** or **Open** for what needs your judgement; the page opens with the two rules and **Keep this one**.
+
+**Do all** runs every one-click fix together. A fix done once stays done.
 
 The model part runs as a read-only T3 run in Serra's own empty folder, on the worker's provider and model, the same way meetings run, so it works with any T3 provider. Nothing changes until you approve it. Turn it off with **Every week**, or run it any time with **Run again**. Digests are kept in `knowledge-reviews/` in the profile.
 
 ## What your notes do
 
-Every page with what it did in the last 30 days: **Used in N replies** with a request it answered, **Always in the brief** (About me pages), **Used once**, or **Not used** once there were enough replies to tell, with **Retire** next to it. Pages lists pages by topic, the same areas as Overview, under their descriptions; file names are small and secondary. Everything on it is worked out on your Mac from files Serra already keeps: your pages, the backup each approval or edit leaves in `backups/knowledge/`, and `logs/knowledge-usage.jsonl`. No model is asked and nothing is sent anywhere.
+Every page with what it did in the last 30 days: **Used in N replies** with a request it answered, **Always in the brief** (About me pages), **Used once**, or **Not used** once there were enough replies to tell, with **Retire** next to it. Pages lists pages by topic, the same areas as Overview, under their descriptions; file names are small and secondary. A page opens as it reads, with **Edit**, **Still true** and **Retire…**; the Markdown and its header only show when you edit. Everything on it is worked out on your Mac from files Serra already keeps: your pages, the backup each approval or edit leaves in `backups/knowledge/`, and `logs/knowledge-usage.jsonl`. No model is asked and nothing is sent anywhere.
 
 ## The health score
 
