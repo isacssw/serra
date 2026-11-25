@@ -112,6 +112,9 @@ const ANSWER_PAGE: Record<string, string[]> = {
   'log-retention': ['product/observability.md'], 'rota-swap': ['workflows/rota-changes.md'], 'sandbox-reset': ['product/sandbox.md'], flags: ['product/release-policy.md'], jpy: ['product/currencies.md'],
   'release-day': ['owner/working-style.md'], 'rate-limit': ['product/plans.md'], handover: ['workflows/rota-changes.md'], 'friday-release': ['owner/working-style.md'],
   'pr-limit': ['owner/working-style.md'], 'fx-time': ['product/treasury.md'], 'pr-size': ['owner/working-style.md'], dana: ['people/dana.md'], 'priya-style': ['people/priya.md'], 'pdf-cache': ['product/invoices.md'],
+  'event-bus': ['product/platform-notes.md'], 'go-sdk': ['product/platform-notes.md'], 'dashboards-tool': ['product/platform-notes.md'], 'refund-endpoint': ['product/platform-notes.md'],
+  'status-page': ['workflows/november-planning.md'], changelog: ['workflows/november-planning.md'], 'new-dashboard': ['workflows/november-planning.md'],
+  french: ['product/q4-updates.md'], 'dashboard-login': ['product/q4-updates.md'], 'kyc-docs': ['product/q4-updates.md'],
 };
 
 const builders = new Map<string, (profileDir: string, item: EvalCase) => Promise<string>>();

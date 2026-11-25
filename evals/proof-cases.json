@@ -1,5 +1,5 @@
 {
-  "about": "Before/after proof (evals/kb-proof.ts). Robin's fixture, eight months on: 45 pages, a rule that changed on the same page, a newer rule on a page the question doesn't point to, a stale page with a newer one beside it, and 15 distractor pages. Every case is something a model can't guess without Robin's notes. `include`: regexes the reply must match (case-insensitive). `exclude`: must not match. `judge`: a rubric a second T3 run scores 0-2. A case passes when every regex holds and the judge, if any, gives 2. Version 2 (round 7): the `friday` case no longer depends on today's real weekday (v1 asked as if it were Friday, and workers corrected it from the clock); four more changed rules were added to the fixture, which also changed the right answers of `flags` and `payload-retention`. No case was changed to fit a result. v1 results stay in ~/serra-notes/kb-growth/evals/proof-r6-claude/. Grading fix after the round-7 run, applied to every arm alike: `payload-retention` lost an `exclude` regex that failed replies which named the old 30 days as out of date, and each rubric is now scored by three grader runs, majority wins (one grader run scored correct Friday answers 0). After round 8: the `friday` rubric now states Robin's real hours (graders were marking the right hours as invented), applied to every arm alike by --regrade. Round 7 added five held-out changed-rule cases (category `held-out`), written after the detector was frozen for them; nothing was tuned on them. Round 8: `pr-size` and `priya-style` passed with no notes at all, so their regexes now need what only Robin's notes say (400 lines; send trade-offs). Round 10: `pr-size` asked for 400, but the fixture's current PR limit is 300 (the `pr-limit` case), so it passed replies that gave the out-of-date limit; it now needs 300, applied to every arm alike by `--regrade --only pr-size`.",
+  "about": "Before/after proof (evals/kb-proof.ts). Robin's fixture, eight months on: 45 pages, a rule that changed on the same page, a newer rule on a page the question doesn't point to, a stale page with a newer one beside it, and 15 distractor pages. Every case is something a model can't guess without Robin's notes. `include`: regexes the reply must match (case-insensitive). `exclude`: must not match. `judge`: a rubric a second T3 run scores 0-2. A case passes when every regex holds and the judge, if any, gives 2. Version 2 (round 7): the `friday` case no longer depends on today's real weekday (v1 asked as if it were Friday, and workers corrected it from the clock); four more changed rules were added to the fixture, which also changed the right answers of `flags` and `payload-retention`. No case was changed to fit a result. v1 results stay in ~/serra-notes/kb-growth/evals/proof-r6-claude/. Grading fix after the round-7 run, applied to every arm alike: `payload-retention` lost an `exclude` regex that failed replies which named the old 30 days as out of date, and each rubric is now scored by three grader runs, majority wins (one grader run scored correct Friday answers 0). After round 8: the `friday` rubric now states Robin's real hours (graders were marking the right hours as invented), applied to every arm alike by --regrade. Round 7 added five held-out changed-rule cases (category `held-out`), written after the detector was frozen for them; nothing was tuned on them. Round 8: `pr-size` and `priya-style` passed with no notes at all, so their regexes now need what only Robin's notes say (400 lines; send trade-offs). Round 10: `pr-size` asked for 400, but the fixture's current PR limit is 300 (the `pr-limit` case), so it passed replies that gave the out-of-date limit; it now needs 300, applied to every arm alike by `--regrade --only pr-size`. Round 11: ten held-out cases (category `held-out-2`) whose change is not a number or a weekday (a bus, an SDK, a tool, an endpoint, an owner, a process, a language, a login, a vendor), on three new pages whose index rows don't point to the questions. Written before any run; the detector and brief code were not changed for them.",
   "cases": [
     {
       "id": "priorities",
@@ -297,6 +297,119 @@
         "Priya"
       ],
       "judge": "An older page says rota swaps go through Jonas; a newer note (2026-11-10) says swaps now go through Priya while Jonas is on leave. 2 = Priya as current; 1 = both without picking, or asks; 0 = only Jonas."
+    },
+    {
+      "id": "event-bus",
+      "category": "held-out-2",
+      "via": "channel",
+      "user": "UJONAS0001",
+      "text": "what message bus do our services use for events?",
+      "include": [
+        "Kafka"
+      ],
+      "judge": "The architecture page says events go over NATS; a newer platform note (2026-11-14) says services publish to Kafka and NATS was switched off. 2 = Kafka as current; 1 = both without picking, or asks; 0 = only NATS."
+    },
+    {
+      "id": "go-sdk",
+      "category": "held-out-2",
+      "via": "channel",
+      "user": "UPRIYA0001",
+      "text": "is there an official Go SDK for Ledgerline?",
+      "include": [
+        "\\bno\\b|retired|not any ?more|no longer"
+      ],
+      "judge": "The SDKs page lists TypeScript, Python and Go; a newer platform note (2026-11-14) says the Go SDK was retired on 2026-11-01. 2 = says no, it was retired; 1 = both without picking, or asks; 0 = says yes."
+    },
+    {
+      "id": "dashboards-tool",
+      "category": "held-out-2",
+      "via": "channel",
+      "user": "UJONAS0001",
+      "text": "where do I find the payments dashboard?",
+      "include": [
+        "Datadog"
+      ],
+      "judge": "The dashboards page says Grafana; a newer platform note (2026-11-14) says dashboards moved to Datadog and Grafana is read-only. 2 = Datadog as current; 1 = both without picking, or asks; 0 = only Grafana."
+    },
+    {
+      "id": "refund-endpoint",
+      "category": "held-out-2",
+      "via": "channel",
+      "user": "UJONAS0001",
+      "text": "which endpoint creates a refund?",
+      "include": [
+        "v3/refunds"
+      ],
+      "judge": "The refunds API page says POST /v2/refunds; a newer platform note (2026-11-14) says refunds are created with POST /v3/refunds and v2 is deprecated. 2 = /v3/refunds as current; 1 = both without picking, or asks; 0 = only /v2/refunds."
+    },
+    {
+      "id": "status-page",
+      "category": "held-out-2",
+      "via": "channel",
+      "user": "UPRIYA0001",
+      "text": "who updates the public status page during an incident?",
+      "include": [
+        "support"
+      ],
+      "judge": "An older page says Jonas posts incidents on the status page; a newer planning note (2026-11-16) says support, not Jonas, posts them. 2 = support as current; 1 = both without picking, or asks; 0 = only Jonas."
+    },
+    {
+      "id": "changelog",
+      "category": "held-out-2",
+      "via": "channel",
+      "user": "UPRIYA0001",
+      "text": "how do we tell merchants about a change we shipped?",
+      "include": [
+        "digest"
+      ],
+      "judge": "The changelog page says every merchant-visible change gets a changelog entry; a newer planning note (2026-11-16) says the changelog is replaced by a monthly release digest emailed to merchants. 2 = the monthly digest as current; 1 = both without picking, or asks; 0 = only the changelog."
+    },
+    {
+      "id": "new-dashboard",
+      "category": "held-out-2",
+      "via": "channel",
+      "user": "UJONAS0001",
+      "text": "who do I ask for a new Grafana dashboard?",
+      "include": [
+        "Mira"
+      ],
+      "judge": "The dashboards page says alerts page Jonas's team; a newer planning note (2026-11-16) says ask Mira, not Jonas, for new dashboards (and dashboards moved to Datadog). 2 = Mira (may mention Datadog); 1 = both without picking, or asks; 0 = only Jonas."
+    },
+    {
+      "id": "french",
+      "category": "held-out-2",
+      "via": "channel",
+      "user": "UPRIYA0001",
+      "text": "is the merchant dashboard available in French?",
+      "include": [
+        "\\byes\\b|live"
+      ],
+      "judge": "The localisation page lists English, Portuguese and German; a newer Q4 note (2026-11-19) says French is live since 2026-11-12. 2 = yes, French is live; 1 = both without picking, or asks; 0 = says no.",
+      "exclude": [
+        "not (yet )?(available|live|supported)"
+      ]
+    },
+    {
+      "id": "dashboard-login",
+      "category": "held-out-2",
+      "via": "channel",
+      "user": "UPRIYA0001",
+      "text": "how do people log in to the merchant dashboard?",
+      "include": [
+        "SSO|Okta"
+      ],
+      "judge": "The auth page says dashboards use OAuth; a newer Q4 note (2026-11-19) says login moved to SSO through Okta and OAuth login was removed. 2 = SSO/Okta as current; 1 = both without picking, or asks; 0 = only OAuth."
+    },
+    {
+      "id": "kyc-docs",
+      "category": "held-out-2",
+      "via": "channel",
+      "user": "UJONAS0001",
+      "text": "who keeps merchants' KYC documents?",
+      "include": [
+        "Onfido"
+      ],
+      "judge": "An older page says KYC documents are kept by the compliance team; a newer Q4 note (2026-11-19) says KYC moved to Onfido and documents are stored there. 2 = Onfido as current; 1 = both without picking, or asks; 0 = only the compliance team."
     }
   ]
 }

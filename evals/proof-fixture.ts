@@ -36,6 +36,11 @@ const ROWS: [string, string, string][] = [
   ['launches and announcements', 'product/launches.md', 'What launched lately'],
   ['refund edge cases', 'product/refund-rules.md', 'Refund rules finance asked for'],
   ['monitoring and logs', 'product/observability.md', 'How we watch production'],
+  // Held out (round 11, written before any run): changes that aren't a number or a weekday, on pages whose rows
+  // don't point to the question. Nothing in the detector or the brief was changed for them.
+  ['platform team notes', 'product/platform-notes.md', 'Platform team notes'],
+  ['decisions from november planning', 'workflows/november-planning.md', 'Decisions from November planning'],
+  ['quarterly updates', 'product/q4-updates.md', 'Q4 updates'],
   ...DISTRACTORS.map(([name, description]): [string, string, string] => [description.toLowerCase(), `product/${name}.md`, description]),
 ];
 
@@ -75,6 +80,9 @@ export const proofProfile = (withKnowledge: boolean, project: string, scratchRoo
     writeFileSync(join(knowledge, 'product/launches.md'), `${header('product', 'What launched lately', '2026-11-18')}# Launches\n\n- USD is live for merchants since 2026-11-18.\n- The new dashboard home page shipped in October.\n`);
     writeFileSync(join(knowledge, 'product/refund-rules.md'), `${header('product', 'Refund rules finance asked for', '2026-11-01')}# Refund rules\n\n- Partial refunds must be at least 50 minor units.\n- Refunds over 10,000 EUR need a second approver.\n`);
     writeFileSync(join(knowledge, 'product/observability.md'), `${header('product', 'How we watch production', '2026-10-25')}# Observability\n\n- Logs are kept 30 days.\n- Alerts page through PagerDuty.\n`);
+    writeFileSync(join(knowledge, 'product/platform-notes.md'), `${header('product', 'Platform team notes', '2026-11-14')}# Platform notes\n\n- Services publish events to Kafka now; NATS was switched off on 2026-10-28.\n- The Go SDK was retired on 2026-11-01; the official SDKs are TypeScript and Python.\n- Dashboards moved from Grafana to Datadog in November; Grafana is read-only.\n- Refunds are created with \`POST /v3/refunds\`; v2 is deprecated since 2026-11-10.\n`);
+    writeFileSync(join(knowledge, 'workflows/november-planning.md'), `${header('process', 'Decisions from November planning', '2026-11-16')}# November planning\n\n- Support, not Jonas, posts incidents on the public status page.\n- The public changelog is replaced by a monthly release digest emailed to merchants.\n- Mira's team owns the Grafana-era dashboards' replacements; ask Mira, not Jonas, for new dashboards.\n`);
+    writeFileSync(join(knowledge, 'product/q4-updates.md'), `${header('product', 'Q4 updates', '2026-11-19')}# Q4 updates\n\n- The dashboard is live in French since 2026-11-12.\n- Dashboard login moved to SSO through Okta; OAuth login was removed.\n- KYC moved to Onfido: documents are stored there, not by the compliance team.\n`);
     for (const page of ['product/support.md', 'product/refunds-api.md', 'workflows/incident.md']) {
       const file = join(knowledge, page);
       writeFileSync(file, readFileSync(file, 'utf8').replace(/^verified: .*$/m, 'verified: 2026-03-01'));
