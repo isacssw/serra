@@ -9,7 +9,7 @@ Serra follows [Semantic Versioning](https://semver.org) once it reaches 1.0. Unt
 
 - **Knowledge › Overview** shows whether your bot knows you better over time: a health score out of 100 and its trend, rebuilt from the backups Serra already keeps; what it knows per area (who you are, how you work, how you write, off-limits, people, processes, projects); what needs tidying, worst first (rules that disagree, rules written twice, two pages on one topic, stale or unindexed pages); a timeline of what it learned, replaced or retired; and which pages replies used. See `docs/knowledge-health.md`.
 - Pages has **Retire…**: a page moves to `knowledge/archive/`, its index row goes, and Undo brings it back, so a duplicate page can finally leave. Proposals says when a new proposal repeats a page you have, with **Merge into it…**.
-- When two current rules disagree, Pages shows both with **Keep this one** (the other moves under a dated `## Replaced`), and the worker's index marks both rows and says to follow the newer one.
+- When two current rules disagree, Pages shows both with a button that names the rule to keep ("Keep Thursday"): it saves at once with Undo and moves the other under a dated `## Replaced`. The worker's index marks both rows and names the current rule.
 - Workers now see which index rows are drafts or out of date, get the three pages closest to the request as a hint, and end a reply with a line naming the pages they used. Serra removes that line before posting and records it in `logs/knowledge-usage.jsonl`, with any T3 provider.
 
 ## 0.1.0-alpha.5 (2026-11-24)
