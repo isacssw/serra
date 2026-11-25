@@ -174,3 +174,22 @@ test('a change the detector can\'t see goes to the model as a question, and its 
   assert.match(prompt, /Maybe: product\/support\.md \(older\) says "Tier 1 is the support team; payments bugs go to #ledgerline-triage\."/);
   assert.deepEqual(review.suggestions.filter((item) => item.kind === 'replace').map((item) => item.page), ['product/support.md']);
 });
+
+test('a page a newer page may have overtaken is never a before/after example', async (t) => {
+  const { dir, knowledge } = profile(t);
+  writeFileSync(join(knowledge, 'product/plans.md'), [
+    '---', 'type: product', 'description: Plans and limits', 'audience: team', 'written: 2026-11-20', 'verified: 2026-11-20', 'sources:', '  - Owner interview, 2026-11-20', '---',
+    '# Plans and limits', '', '- 250 requests per second per merchant, burst 400.', '',
+  ].join('\n'));
+  createJournal(knowledge).seed();
+  const asked: string[] = [];
+  const ask = async (title: string): Promise<string> => {
+    asked.push(title);
+    if (title.includes('weekly review')) return JSON.stringify({ summary: 'A quiet week.', rewrites: [] });
+    return title.includes('with the page') ? 'Under 400 changed lines.' : 'I don\'t know.';
+  };
+  const review = await runKnowledgeReview({ profileDir: dir, knowledgeDir: knowledge, ask, now: NOW });
+  assert.ok(review.used.some((item) => item.page === 'product/rate-limits.md'), 'the page was used this week');
+  assert.ok(!review.examples.some((item) => item.page === 'product/rate-limits.md'), 'but a newer page says otherwise, so it proves nothing');
+  assert.ok(review.examples.some((item) => item.page === 'owner/working-style.md'));
+});

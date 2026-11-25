@@ -187,6 +187,8 @@ export const runKnowledgeReview = async ({ profileDir, knowledgeDir, ask, now = 
     ...topical.map((pair) => `- Maybe: ${pair.page} (older) says "${short(pair.mine.text, 120)}"; ${pair.newer.page} (confirmed later) says "${short(pair.newer.text, 120)}". If the newer one changes the older rule, rewrite ${pair.page}; if they agree or are about different things, leave it out.`),
   ];
 
+  /** A page's confirmed date, or '' when it has none ("no" sorts after every date, so it never counts as newer). */
+  const verifiedOn = (path: string): string => { const date = frontmatter(texts.get(path) ?? '')?.get('verified')?.trim() ?? ''; return DATE.test(date) ? date : ''; };
   let summary = `${uses.length} replies this week; ${uses.filter((use) => use.cited.length > 0).length} used a knowledge page.`;
   let error: string | undefined;
   const examples: ReviewExample[] = [];
@@ -218,7 +220,7 @@ export const runKnowledgeReview = async ({ profileDir, knowledgeDir, ask, now = 
       const left = assessKnowledge(after, now).issues.filter((item) => item.kind === 'conflict' && item.pages.includes(target));
       if (left.length > 0) continue;
       const newer = conflicted.filter((item) => item.kind === 'conflict' && item.pages.length === 2 && item.pages.includes(target)).flatMap((item) => item.facts ?? [])
-        .filter((fact) => fact.page !== target && (frontmatter(texts.get(fact.page) ?? '')?.get('verified')?.trim() ?? '') > (frontmatter(current)?.get('verified')?.trim() ?? ''));
+        .filter((fact) => fact.page !== target && verifiedOn(fact.page) > verifiedOn(target));
       if (newer.some((fact) => !flat(currentText(proposed)).includes(flat(fact.text)))) continue;
       // A topical pair the model settled by moving the old rule must say the newer one in its place.
       const moved = topical.filter((pair) => pair.page === target && !flat(currentText(proposed)).includes(flat(pair.mine.text)));
@@ -235,9 +237,13 @@ export const runKnowledgeReview = async ({ profileDir, knowledgeDir, ask, now = 
     }
     // Before and after: the week's most used pages, each with one request it answered, answered again without it.
     // Up to two pages, each with its own request, and only where the page changed the answer.
+    // A page a newer one may have overtaken can't show what notes are worth: without it, the reply may well be better.
+    const overtaken = (path: string): boolean => topicPairs(path, verifiedOn(path), files).length > 0
+      || conflicted.some((item) => item.pages.length === 2 && item.pages.includes(path) && item.pages.some((other) => other !== path && verifiedOn(other) > verifiedOn(path)));
     const requested = new Set<string>();
-    for (const { page } of used.slice(0, 4)) {
+    for (const { page } of used.slice(0, 6)) {
       if (examples.length >= 2) break;
+      if (overtaken(page)) continue;
       const use = [...uses].reverse().find((item) => item.cited.includes(page) && item.request && item.reply && !requested.has(item.request));
       if (!use) continue;
       requested.add(use.request!);
