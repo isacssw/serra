@@ -114,6 +114,8 @@ test('health: conflicts and repeats are told apart from rules that merely look a
     // The proof fixture's own changed rules, as written.
     { a: 'Risky releases (anything touching money movement or webhooks) ship on Tuesday, never Thursday or Friday, so there\'s a week to fix them.', b: 'Risky releases ship on Thursday now (since 2026-10-01), never Friday.', is: 'conflict' },
     { a: '100 requests per second per merchant, burst 200.', b: 'The API rate limit is 250 requests per second per merchant on every plan.', is: 'conflict' },
+    // One bullet holding several facts is read a sentence at a time.
+    { a: 'Payment records are kept 7 years. Webhook payloads 30 days. Logs 14 days.', b: 'Webhook payloads are kept 14 days.', is: 'conflict' },
   ];
   const found = gold.map((pair) => {
     const { duplicates, conflicts } = findOverlaps([...facts('one.md', [pair.a]), ...facts('two.md', [pair.b])]);

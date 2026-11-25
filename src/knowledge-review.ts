@@ -124,7 +124,9 @@ export const runKnowledgeReview = async ({ profileDir, knowledgeDir, ask, now = 
     const page = issue.pages[0]!;
     const verified = frontmatter(texts.get(page) ?? '')?.get('verified')?.trim() ?? '';
     const age = DATE.test(verified) ? daysSince(verified, now) : null;
-    if (counts.has(page)) suggest('confirm', page, `Used ${counts.get(page)}× this week, last confirmed ${age ?? '?'} days ago.`);
+    // A stale page holding a rule a newer page changed isn't "still true": the rewrite below settles it instead.
+    const disputed = health.issues.some((item) => (item.kind === 'conflict' || item.kind === 'duplicate') && item.pages.includes(page));
+    if (counts.has(page) && !disputed) suggest('confirm', page, `Used ${counts.get(page)}× this week, last confirmed ${age ?? '?'} days ago.`);
   }
   for (const issue of health.issues.filter((item) => item.kind === 'overlap')) {
     // Two pages on one topic: the one fewer replies used can go once the other holds everything.

@@ -71,9 +71,11 @@ export interface Fact { page: string; text: string; words: Set<string> }
 
 export const pageFacts = (path: string, text: string): Fact[] => currentText(text).split('\n').flatMap((line) => {
   const trimmed = line.trim();
-  if (!trimmed || trimmed.startsWith('#') || trimmed.startsWith('|') || trimmed.startsWith('```')) return [];
+  // Headings, tables, code and quoted examples (a voice page's sample message) aren't rules.
+  if (!trimmed || trimmed.startsWith('#') || trimmed.startsWith('|') || trimmed.startsWith('```') || trimmed.startsWith('>')) return [];
   const body = trimmed.replace(/^([-*]|\d+\.)\s+/, '');
-  const parts = /^([-*]|\d+\.)\s/.test(trimmed) ? [body] : body.split(/(?<=[.!?])\s+(?=[A-Z])/);
+  // A bullet can hold several facts ("Payment records are kept 7 years. Webhook payloads 30 days."): each sentence is one.
+  const parts = body.split(/(?<=[.!?])\s+(?=[A-Z])/);
   return parts.flatMap((part) => {
     const set = new Set(words(part));
     return set.size >= 3 ? [{ page: path, text: part.trim(), words: set }] : [];
@@ -200,7 +202,8 @@ export const findOverlaps = (facts: Fact[], comparable: (a: string, b: string) =
       // other lacks, so they're never the same subject. "Never Thursday" against "Thursday now" is a conflict too.
       if ((sameSubject && (slotClash || negationClash)) || (nearlyNested && slotClash)) conflicts.push(pair);
       // A repeat about a different subject has to be near word for word.
-      else if (similarity >= DUPLICATE_AT && (sameSubject || similarity >= 0.85)) duplicates.push(pair);
+      // One rule's words all inside another's (three or more), the other adding at most two: it says it again.
+      else if ((similarity >= DUPLICATE_AT && (sameSubject || similarity >= 0.85)) || (nestedTopics && Math.min(mine.size, theirs.size) >= 3 && Math.max(onlyMine, onlyTheirs) <= 2)) duplicates.push(pair);
     }
     touched.length = 0;
   }
