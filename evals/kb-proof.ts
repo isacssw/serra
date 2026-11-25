@@ -36,6 +36,7 @@ const { values: args } = parseArgs({
     concurrency: { type: 'string', default: '3' },
     out: { type: 'string' },
     regrade: { type: 'boolean', default: false },
+    resume: { type: 'boolean', default: false },
   },
 });
 const t3Bin = process.env.T3_BIN ?? join(homedir(), '.t3/bin/t3');
@@ -165,12 +166,20 @@ if (!existsSync(project)) {
   writeFileSync(join(project, 'README.md'), '# Scratch project for Serra\'s knowledge evals\n\nNothing here is real.\n');
 }
 await ensureProject(project, 'Serra KB evals', t3Bin);
-const jobs = cases.flatMap((item) => arms.flatMap((arm) => Array.from({ length: Number(args.runs) }, (_, run) => () => runOne(item, arm, run + 1))));
+// Results are saved as they come (partial.json), so a run cut short loses nothing; --resume carries on from there.
+const partial = join(outDir, 'partial.json');
+const earlier: Result[] = args.resume && existsSync(partial) ? (JSON.parse(readFileSync(partial, 'utf8')) as { results: Result[] }).results.filter((result) => !result.error) : [];
+results.push(...earlier);
+const jobs = cases.flatMap((item) => arms.flatMap((arm) => Array.from({ length: Number(args.runs) }, (_, run) => run + 1)
+  .filter((run) => !earlier.some((result) => result.id === item.id && result.arm === arm && result.run === run))
+  .map((run) => () => runOne(item, arm, run))));
 let next = 0;
 await Promise.all(Array.from({ length: Number(args.concurrency) }, async () => {
   while (next < jobs.length) {
     const result = await jobs[next++]!();
     results.push(result);
+    mkdirSync(outDir, { recursive: true });
+    writeFileSync(partial, `${JSON.stringify({ args, results }, null, 2)}\n`);
     process.stderr.write(`${result.error ? 'ERR ' : result.pass ? 'pass' : 'FAIL'}  ${result.arm.padEnd(6)} ${result.id} #${result.run}${result.error ? ` ${result.error}` : ''}\n`);
   }
 }));
