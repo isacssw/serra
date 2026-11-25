@@ -35,6 +35,7 @@ const { values: args } = parseArgs({
     only: { type: 'string' },
     concurrency: { type: 'string', default: '8' },
     out: { type: 'string' },
+    regrade: { type: 'boolean', default: false },
   },
 });
 const t3Bin = process.env.T3_BIN ?? join(homedir(), '.t3/bin/t3');
@@ -84,7 +85,13 @@ const ranOnOf = (threadId: string): string => {
   } catch { return 'unknown'; }
 };
 
+/** Three grader runs, majority wins (the middle score): one grader's off answer can't fail a right reply. */
 const judge = async (rubric: string, question: string, reply: string): Promise<number | null> => {
+  const scores = (await Promise.all([0, 1, 2].map(() => judgeOnce(rubric, question, reply).catch(() => null)))).filter((score): score is number => score !== null).sort((a, b) => a - b);
+  return scores.length === 0 ? null : scores[Math.floor((scores.length - 1) / 2)]!;
+};
+
+const judgeOnce = async (rubric: string, question: string, reply: string): Promise<number | null> => {
   const prompt = `You grade one reply from an assistant. Don't open any file or run anything. Answer with one line: SCORE: 0, 1 or 2.\n\nRubric: ${rubric}\n\nQuestion:\n${question}\n\nReply:\n${reply}`;
   const { answer } = await runT3('Serra KB proof: grade', prompt);
   const score = /SCORE:\s*([012])/i.exec(answer)?.[1];
@@ -111,6 +118,7 @@ const builder = async (arm: Arm): Promise<(profileDir: string, item: EvalCase) =
 };
 
 const outDir = resolve(args.out ?? join(root, 'evals/results', args.label!));
+const results: Result[] = [];
 const save = (result: Result, brief: string): void => {
   const dir = join(outDir, result.arm);
   mkdirSync(dir, { recursive: true });
@@ -145,13 +153,30 @@ const runOne = async (item: Case, arm: Arm, run: number): Promise<Result> => {
   }
 };
 
+// --regrade: grade the replies a run already saved again with today's cases and graders, every arm alike, and write
+// summary-regraded.md beside the original summary. Nothing is re-asked; only the grading changes.
+if (args.regrade) {
+  const saved = (JSON.parse(readFileSync(join(outDir, 'results.json'), 'utf8')) as { results: Result[] }).results;
+  const regraded: Result[] = [];
+  let at = 0;
+  await Promise.all(Array.from({ length: Number(args.concurrency) }, async () => {
+    while (at < saved.length) {
+      const result = saved[at++]!;
+      const item = cases.find((candidate) => candidate.id === result.id);
+      if (!item || result.error) { regraded.push(result); continue; }
+      const regex = item.include.every((pattern) => new RegExp(pattern, 'iu').test(result.reply)) && !(item.exclude ?? []).some((pattern) => new RegExp(pattern, 'iu').test(result.reply));
+      const score = item.judge ? await judge(item.judge, item.text, result.reply) : null;
+      regraded.push(item.judge && score === null ? { ...result, error: 'the grading run failed' } : { ...result, regex, score, pass: regex && (item.judge ? score === 2 : true) });
+    }
+  }));
+  results.push(...regraded);
+} else {
 if (!existsSync(project)) {
   mkdirSync(project, { recursive: true });
   writeFileSync(join(project, 'README.md'), '# Scratch project for Serra\'s knowledge evals\n\nNothing here is real.\n');
 }
 await ensureProject(project, 'Serra KB evals', t3Bin);
 const jobs = cases.flatMap((item) => arms.flatMap((arm) => Array.from({ length: Number(args.runs) }, (_, run) => () => runOne(item, arm, run + 1))));
-const results: Result[] = [];
 let next = 0;
 await Promise.all(Array.from({ length: Number(args.concurrency) }, async () => {
   while (next < jobs.length) {
@@ -160,6 +185,7 @@ await Promise.all(Array.from({ length: Number(args.concurrency) }, async () => {
     process.stderr.write(`${result.error ? 'ERR ' : result.pass ? 'pass' : 'FAIL'}  ${result.arm.padEnd(6)} ${result.id} #${result.run}${result.error ? ` ${result.error}` : ''}\n`);
   }
 }));
+}
 
 const pct = (part: number, whole: number): string => (whole ? `${Math.round((100 * part) / whole)}%` : '–');
 const done = (arm: Arm, filter: (result: Result) => boolean = () => true) => results.filter((result) => result.arm === arm && !result.error && filter(result));
@@ -175,7 +201,7 @@ const wilson = (passes: number, runs: number): string => {
 const cites = (arm: Arm) => done(arm, (result) => (result.cited?.length ?? 0) > 0);
 const lines = [
   `# Knowledge before/after proof: ${args.label}`, '',
-  `Code: after = ${commit(root)}${arms.includes('before') ? `, before = ${commit(resolve(args.before!))}` : ''}.`, '',
+  args.regrade ? `Replies from the original run (its code is in summary.md); graded again at ${commit(root)} with three grader runs per rubric, every arm alike.` : `Code: after = ${commit(root)}${arms.includes('before') ? `, before = ${commit(resolve(args.before!))}` : ''}.`, '',
   `${new Date().toISOString().slice(0, 10)}. Through Serra's T3 layer on ${[...new Set(results.map((result) => result.ranOn))].join(', ')}. ${cases.length} cases × ${args.runs} runs per arm. ${results.filter((result) => result.error).length} run(s) failed in the harness and are left out (listed in the arm folders).`, '',
   `| Arm | Runs | Pass | 95% interval | ${categories.join(' | ')} | Named the answer's page |`, `|---|---|---|---|${categories.map(() => '---').join('|')}|---|`,
   ...arms.map((arm) => `| ${arm} | ${done(arm).length} | ${pct(done(arm, (result) => result.pass).length, done(arm).length)} | ${wilson(done(arm, (result) => result.pass).length, done(arm).length)} | ${categories.map((category) => pct(done(arm, (result) => result.category === category && result.pass).length, done(arm, (result) => result.category === category).length)).join(' | ')} | ${arm === 'before' || arm === 'none' ? '–' : pct(cites(arm).filter((result) => result.cited!.some((path) => (ANSWER_PAGE[result.id] ?? []).includes(path))).length, cites(arm).length)} |`),
@@ -186,6 +212,6 @@ const lines = [
   }).join(' | ')} |`),
 ];
 mkdirSync(outDir, { recursive: true });
-writeFileSync(join(outDir, 'summary.md'), `${lines.join('\n')}\n`);
-writeFileSync(join(outDir, 'results.json'), `${JSON.stringify({ args, results }, null, 2)}\n`);
+writeFileSync(join(outDir, args.regrade ? 'summary-regraded.md' : 'summary.md'), `${lines.join('\n')}\n`);
+writeFileSync(join(outDir, args.regrade ? 'results-regraded.json' : 'results.json'), `${JSON.stringify({ args, results }, null, 2)}\n`);
 console.log(lines.join('\n'));
