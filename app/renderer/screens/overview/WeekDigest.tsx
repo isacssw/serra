@@ -10,19 +10,23 @@ import { shortDate, weekLine } from '../overview.logic.ts';
 
 const message = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
-/** Settle one suggestion the way its button says: approve the rewrite, retire the page, or confirm it still holds. */
-export const settle = async (suggestion: ReviewSuggestion): Promise<void> => {
+/**
+ * Settle one suggestion the way its button says: approve the rewrite, retire the page, or confirm it still holds.
+ * Returns the change's undo ID, so the toast can offer Undo where the click happened.
+ */
+export const settle = async (suggestion: ReviewSuggestion): Promise<string | null> => {
   const bridge = serra();
   if (!bridge) throw new Error('The Serra bridge is missing.');
   if (suggestion.kind === 'replace' && suggestion.proposal) {
     const { proposed, current, proposal } = await bridge.proposals.diff(suggestion.proposal);
-    await bridge.proposals.promote(suggestion.proposal, undefined, { proposal: proposed, path: proposal.target, page: current });
-  } else if (suggestion.kind === 'retire') {
-    await bridge.proposals.retire(suggestion.page, await bridge.pages.read(suggestion.page));
-  } else if (suggestion.kind === 'confirm') {
+    return (await bridge.proposals.promote(suggestion.proposal, undefined, { proposal: proposed, path: proposal.target, page: current })).undoId;
+  }
+  if (suggestion.kind === 'retire') return (await bridge.proposals.retire(suggestion.page, await bridge.pages.read(suggestion.page))).undoId;
+  if (suggestion.kind === 'confirm') {
     const text = await bridge.pages.read(suggestion.page);
     await bridge.pages.save(suggestion.page, markVerified(text, localDate(new Date())), text);
   }
+  return null;
 };
 
 export const WeekDigest = ({ review, weekly, onChanged }: { review: KnowledgeReview | null; weekly: boolean; onChanged: () => void }) => {

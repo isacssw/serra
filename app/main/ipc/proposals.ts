@@ -59,6 +59,8 @@ export const proposalsHandlers = (context: HandlerContext): Handlers<'proposals'
       if (typeof reviewed !== 'string') throw new Error('Look at the page before retiring it.');
       return { undoId: service().retirePage(text(page, 'Page'), { reviewed }).id };
     },
+    archived: () => service().listArchived(),
+    restore: (page) => ({ undoId: service().restorePage(text(page, 'Page')).id }),
     similar: (path) => {
       const knowledge = join(context.profileDir(), 'knowledge');
       const { proposed, proposal } = service().readProposal(text(path, 'Proposal'));

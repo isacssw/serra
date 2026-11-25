@@ -53,6 +53,24 @@ const sameAnswer = (a: string, b: string): boolean => {
 /** The page with one more item under its header's `sources:`. */
 const addSource = (text: string, source: string): string => text.replace(/^(sources:.*(?:\n[ \t]+-[^\n]*)*)/m, (block) => `${block}\n  - ${source}`);
 
+/**
+ * Whether another page confirmed after `verified` talks about the same thing as `page`: one of its facts shares at
+ * least two words, and half of the shorter one's, with a fact on `page`.
+ */
+const newerOnTopic = (page: string, verified: string, files: KnowledgeFile[]): boolean => {
+  const mine = pageFacts(page, files.find((file) => file.path === page)?.text ?? '');
+  return files.some((file) => {
+    if (file.path === page || !isPage(file.path)) return false;
+    const date = frontmatter(file.text)?.get('verified')?.trim() ?? '';
+    if (!DATE.test(date) || date <= verified) return false;
+    return pageFacts(file.path, file.text).some((fact) => mine.some((own) => {
+      let shared = 0;
+      for (const word of own.words) if (fact.words.has(word)) shared += 1;
+      return shared >= 2 && shared >= Math.min(own.words.size, fact.words.size) / 2;
+    }));
+  });
+};
+
 const short = (text: string, max: number): string => (text.length > max ? `${text.slice(0, max - 1).trimEnd()}…` : text);
 
 /** The first `{…}` in a model's answer, parsed, or null. */
@@ -147,7 +165,9 @@ export const runKnowledgeReview = async ({ profileDir, knowledgeDir, ask, now = 
     const age = DATE.test(verified) ? daysSince(verified, now) : null;
     // A stale page holding a rule a newer page changed isn't "still true": the rewrite below settles it instead.
     const disputed = health.issues.some((item) => (item.kind === 'conflict' || item.kind === 'duplicate') && item.pages.includes(page));
-    if (counts.has(page) && !disputed) suggest('confirm', page, `Used ${counts.get(page)}× this week, last confirmed ${age ?? '?'} days ago.`);
+    // Nor is one with a page confirmed later on the same topic, even where no rule pair was caught: the newer page
+    // may have changed it ("5%, 25%" there, "10%, 50%" here). The owner opens it from To do instead.
+    if (counts.has(page) && !disputed && !newerOnTopic(page, verified, files)) suggest('confirm', page, `Used ${counts.get(page)}× this week, last confirmed ${age ?? '?'} days ago.`);
   }
   for (const issue of health.issues.filter((item) => item.kind === 'overlap')) {
     // Two pages on one topic: the one fewer replies used can go once the other holds everything.

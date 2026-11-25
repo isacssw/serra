@@ -189,6 +189,8 @@ export const Pages = () => {
   /** A page the owner clicked while the draft had unsaved changes; the discard dialog asks first. */
   const [pendingSelect, setPendingSelect] = useState<string | null>(null);
   const [retiring, setRetiring] = useState(false);
+  /** Retired pages, listed under Archived with Restore. */
+  const [archived, setArchived] = useState<{ path: string; description: string }[]>([]);
   /** Pages open as they read; the Markdown, header and all, only when the owner chooses to edit. */
   const [editing, setEditing] = useState(false);
   /** Rules on the open page that disagree with or repeat another, as saved. */
@@ -211,9 +213,10 @@ export const Pages = () => {
     const bridge = serra();
     if (!bridge) { setLoadError('The Serra bridge is missing: open this screen in the Serra app.'); return; }
     try {
-      const [list, drift] = await Promise.all([bridge.pages.list(), bridge.pages.drift()]);
+      const [list, drift, gone] = await Promise.all([bridge.pages.list(), bridge.pages.drift(), bridge.proposals.archived().catch(() => [])]);
       setPages(list);
       setDrifted(drift);
+      setArchived(gone);
       setLoadError(null);
       setSelected((current) => keepSelection(list, current));
     } catch (error) {
@@ -294,6 +297,17 @@ export const Pages = () => {
     } finally {
       setSaving(false);
     }
+  };
+
+  /** Bring a retired page back where it was. */
+  const restore = async (path: string) => {
+    const bridge = serra();
+    if (!bridge) return;
+    try {
+      await bridge.proposals.restore(path);
+      await reload();
+      toast({ message: 'Restored. The bot uses it again.', tone: 'success' });
+    } catch (error) { toast({ message: message(error), tone: 'error' }); }
   };
 
   /** The page still holds: its confirmed date becomes today, saved straight away. */
@@ -382,7 +396,20 @@ export const Pages = () => {
               ))}
             </div>
             {visible.length > 0
-              ? <PageList pages={visible} selected={selected} onSelect={select} />
+              ? <>
+                <PageList pages={visible} selected={selected} onSelect={select} />
+                {archived.length > 0 && (
+                  <section aria-label="Archived" className="flex flex-col gap-1 border-t border-line-subtle pt-3">
+                    <h2 className="px-1 text-xs font-semibold text-muted">Archived</h2>
+                    {archived.map((item) => (
+                      <div key={item.path} className="flex items-center gap-2 px-2.5 py-1.5 text-sm">
+                        <span className="min-w-0 flex-1 truncate text-muted" title={item.path}>{item.description || item.path}</span>
+                        <Button size="sm" variant="ghost" onClick={() => void restore(item.path)}>Restore</Button>
+                      </div>
+                    ))}
+                  </section>
+                )}
+              </>
               : <p className="px-1 text-sm text-muted">No pages match.</p>}
           </nav>
 

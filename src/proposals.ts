@@ -480,6 +480,40 @@ export const createProposals = ({ knowledgeDir, backupDir, now = () => new Date(
     ]);
   });
 
+  /** Pages retired to `archive/`, with each one's description, for the app's Archived list. */
+  const listArchived = (): { path: string; description: string }[] => {
+    const dir = join(root, ARCHIVE_DIR);
+    const walk = (relativeDir: string): string[] => readdirSync(join(dir, relativeDir), { withFileTypes: true }).flatMap((entry) => {
+      const path = relativeDir ? `${relativeDir}/${entry.name}` : entry.name;
+      return entry.isDirectory() ? walk(path) : entry.name.endsWith('.md') ? [path] : [];
+    });
+    return existsSync(dir) ? walk('').sort().map((path) => ({ path, description: frontmatter(readFileSync(join(dir, path), 'utf8'))?.get('description')?.trim() ?? '' })) : [];
+  };
+
+  /**
+   * Bring a retired page back: it moves from `archive/` to where it was, gets an index row again (its description), and
+   * the log says so. Refused when a page has taken its place since.
+   */
+  const restorePage = (path: string): ProposalChange => withKnowledgeLock(root, () => {
+    const page = pagePath(path, 'Page');
+    const archived = `${ARCHIVE_DIR}/${page}`;
+    const text = readText(archived);
+    if (text === null) throw new Error(`${page} isn't in the archive.`);
+    if (readText(page) !== null) throw new Error(`${page} exists again; it can't be restored over it.`);
+    const indexBefore = readText('index.md');
+    if (indexBefore === null) throw new Error('knowledge/index.md is missing.');
+    const description = frontmatter(text)?.get('description')?.trim() || page;
+    const indexAfter = indexBefore.includes(`\`${page}\``) ? indexBefore : `${indexBefore.trimEnd()}\n| ${cell(description)} | \`${page}\` | ${cell(description)} |\n`;
+    if (lineCount(indexAfter) > INDEX_MAX_LINES) throw new Error(`index.md would be ${lineCount(indexAfter)} lines; the cap is ${INDEX_MAX_LINES}. Retire or merge another page first.`);
+    checkNoDrift([page, 'index.md']);
+    return apply('retire', archived, page, [
+      { path: archived, before: text, after: null },
+      { path: page, before: null, after: text },
+      ...(indexAfter === indexBefore ? [] : [{ path: 'index.md', before: indexBefore, after: indexAfter }]),
+      logLine(today(now()), `restored \`${page}\` from the archive, confirmed by the owner in the app.`),
+    ]);
+  });
+
   /** Remove a proposal without using it. The backup keeps its text for undo. */
   const discardProposal = (id: string): ProposalChange => withKnowledgeLock(root, () => {
     const source = notFromMeeting(proposalPath(id));
@@ -535,7 +569,7 @@ export const createProposals = ({ knowledgeDir, backupDir, now = () => new Date(
   };
 
   return {
-    listProposals, readProposal, listTargets, promoteProposal, mergeProposal, discardProposal, retirePage, undoProposalChange,
+    listProposals, readProposal, listTargets, promoteProposal, mergeProposal, discardProposal, retirePage, listArchived, restorePage, undoProposalChange,
     /** The ticket's name for undo. It reverses merges and discards too. */
     undoPromotion: undoProposalChange,
   };

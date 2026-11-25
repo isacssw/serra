@@ -2,7 +2,8 @@
 // first, each with a real request it answered; pages no reply used last, with Retire one click away.
 import { useState } from 'react';
 import type { PageValue } from '../../../../src/knowledge-overview.ts';
-import { Badge, Button, useToast } from '../../ui/index.ts';
+import { Badge, Button, Dialog, useToast } from '../../ui/index.ts';
+import { serra } from '../../bridge.ts';
 import { valueLabel } from '../overview.logic.ts';
 import { settle } from './WeekDigest.tsx';
 
@@ -15,11 +16,15 @@ export const ValueList = ({ value, days, replies, onOpen, onChanged }: { value: 
   const idle = value.filter((page) => page.state === 'idle');
   // Pages no reply used are always in view, with Retire: the dead weight is the point of this list as much as the value.
   const shown = all ? value : [...value.filter((page) => page.state !== 'idle').slice(0, 5), ...idle];
+  const [asking, setAsking] = useState<PageValue | null>(null);
   const retire = async (page: PageValue) => {
     try {
-      await settle({ id: `retire:${page.path}`, kind: 'retire', page: page.path, title: page.title, why: '' });
-      toast({ message: `Retired ${page.title}. Undo it from Pages' archive if you need it back.`, tone: 'success' });
+      const undoId = await settle({ id: `retire:${page.path}`, kind: 'retire', page: page.path, title: page.title, why: '' });
       onChanged();
+      toast({
+        message: `Retired ${page.title}. It's under Archived in Pages.`, tone: 'success',
+        ...(undoId ? { action: { label: 'Undo', onClick: () => { void serra()?.proposals.undo(undoId).then(onChanged, (failure: unknown) => toast({ message: failure instanceof Error ? failure.message : String(failure), tone: 'error' })); } } } : {}),
+      });
     } catch (failure) { toast({ message: failure instanceof Error ? failure.message : String(failure), tone: 'error' }); }
   };
   return (
@@ -40,7 +45,7 @@ export const ValueList = ({ value, days, replies, onOpen, onChanged }: { value: 
                 : <p className="text-xs text-faint">{page.area}</p>}
             </div>
             <Badge tone={TONE[page.state]} className="shrink-0">{valueLabel(page.state, page.uses)}</Badge>
-            {page.state === 'idle' && <Button size="sm" variant="ghost" onClick={() => void retire(page)}>Retire</Button>}
+            {page.state === 'idle' && <Button size="sm" variant="ghost" onClick={() => setAsking(page)}>Retire…</Button>}
           </li>
         ))}
         {(all || value.length > shown.length) && (
@@ -49,6 +54,18 @@ export const ValueList = ({ value, days, replies, onOpen, onChanged }: { value: 
           </li>
         )}
       </ul>
+      <Dialog
+        open={asking !== null}
+        onClose={() => setAsking(null)}
+        title={`Retire ${asking?.title ?? 'this page'}?`}
+        description="No reply used it lately. The bot stops using it; it moves to Archived in Pages, where you can restore it."
+        actions={(
+          <>
+            <Button data-autofocus onClick={() => setAsking(null)}>Cancel</Button>
+            <Button variant="danger" onClick={() => { const page = asking; setAsking(null); if (page) void retire(page); }}>Retire</Button>
+          </>
+        )}
+      />
     </section>
   );
 };

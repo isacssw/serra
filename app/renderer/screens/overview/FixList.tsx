@@ -22,15 +22,20 @@ export const FixList = ({ overview, onOpen, onChanged }: { overview: KnowledgeOv
   const [asking, setAsking] = useState<{ title: string; description: string; items: ReviewSuggestion[] } | null>(null);
   const [all, setAll] = useState(false);
   const items = fixItems(overview).filter((item) => !done.has(item.id));
-  const oneClick = items.flatMap((item) => (item.suggestion ? [item.suggestion] : []));
+  // "Do all" takes the fixes that change text the owner can see first. Saying a page still holds is theirs to say.
+  const oneClick = items.flatMap((item) => (item.suggestion && item.suggestion.kind !== 'confirm' ? [item.suggestion] : []));
   const shown = all ? items : items.slice(0, 6);
 
   const apply = async (list: ReviewSuggestion[]) => {
     for (const suggestion of list) {
       setBusy(suggestion.id);
       try {
-        await settle(suggestion);
+        const undoId = await settle(suggestion);
         setDone((set) => new Set([...set, suggestion.id]));
+        // One fix at a time can be taken back right here.
+        if (undoId && list.length === 1) {
+          toast({ message: `${suggestion.title}: done.`, tone: 'success', action: { label: 'Undo', onClick: () => { void serra()?.proposals.undo(undoId).then(onChanged, (failure: unknown) => toast({ message: message(failure), tone: 'error' })); } } });
+        }
       } catch (failure) {
         toast({ message: `${suggestion.title}: ${message(failure)}`, tone: 'error' });
         break;
@@ -54,7 +59,7 @@ export const FixList = ({ overview, onOpen, onChanged }: { overview: KnowledgeOv
     const suggestion = item.suggestion;
     if (!suggestion) { onOpen(item.pages[0]!); return; }
     // Taking a page away asks first; the others are reversible edits the owner sees.
-    if (suggestion.kind === 'retire') setAsking({ title: `Retire ${suggestion.title}?`, description: 'The bot stops using it. It moves to the archive, and you can undo.', items: [suggestion] });
+    if (suggestion.kind === 'retire') setAsking({ title: `Retire ${suggestion.title}?`, description: 'The bot stops using it. It moves to Archived in Pages, where you can restore it.', items: [suggestion] });
     else void apply([suggestion]);
   };
 
@@ -63,7 +68,7 @@ export const FixList = ({ overview, onOpen, onChanged }: { overview: KnowledgeOv
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <h2 id="todo-title" className="text-sm font-semibold">To do</h2>
         {oneClick.length > 1 && (
-          <Button size="sm" disabled={busy !== null} onClick={() => setAsking({ title: `Do all ${oneClick.length} one-click fixes?`, description: 'Rewrites are approved as shown, pages are retired, and stale pages are marked as still true. Each can be undone from its page.', items: oneClick })}>
+          <Button size="sm" disabled={busy !== null} onClick={() => setAsking({ title: `Do all ${oneClick.length} one-click fixes?`, description: 'Rewrites are approved as shown and pages are retired. Retired pages can be restored from Archived in Pages.', items: oneClick })}>
             Do all {oneClick.length}
           </Button>
         )}

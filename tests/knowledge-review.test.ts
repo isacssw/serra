@@ -125,3 +125,18 @@ test('a rewrite that settles a rule changed on another page must say the current
   assert.match(text, /^  - Weekly review, 2026-11-25, settled with product\/plans\.md$/m);
   assert.match(text, /^verified: no$/m);
 });
+
+test('"Still true" is offered for a stale page the week used, but never for one a newer page on its topic may have changed', async (t) => {
+  const { dir, knowledge } = profile(t);
+  const stale = (page: string) => { const file = join(knowledge, page); writeFileSync(file, readFileSync(file, 'utf8').replace(/^verified: .*$/m, 'verified: 2026-05-01')); };
+  stale('product/feature-flags.md');
+  stale('product/sandbox.md');
+  writeFileSync(join(knowledge, 'product/release-policy.md'), '---\ntype: product\ndescription: Rollouts\naudience: team\nwritten: 2026-11-05\nverified: 2026-11-05\nsources:\n  - Robin\n---\n\n- Feature flags roll out 10%, 50%, 100% over two days.\n');
+  writeFileSync(join(knowledge, 'index.md'), `${readFileSync(join(knowledge, 'index.md'), 'utf8').trimEnd()}\n| announcing changes | \`product/release-policy.md\` | Rollouts |\n`);
+  rmSync(join(dir, '.knowledge-approved'), { recursive: true, force: true });
+  createJournal(knowledge).seed();
+  for (const page of ['product/feature-flags.md', 'product/sandbox.md']) recordKnowledgeUse(dir, { at: new Date(NOW.getTime() - 3600e3).toISOString(), runId: page, visibility: 'team', cited: [page], offered: 30, request: 'q', reply: 'a' });
+  const review = await runKnowledgeReview({ profileDir: dir, knowledgeDir: knowledge, ask: async () => '{}', now: NOW });
+  const confirms = review.suggestions.filter((item) => item.kind === 'confirm').map((item) => item.page);
+  assert.deepEqual(confirms, ['product/sandbox.md']);
+});
