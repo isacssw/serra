@@ -4,7 +4,7 @@ import { readProfileFile } from '../../../src/config.ts';
 import { createKnowledge, profileRoots, type KnowledgeRoot } from '../../../src/knowledge.ts';
 import { createMeetingStore } from '../../../src/meeting-store.ts';
 import { knowledgeOverview, listKnowledgeFiles } from '../../../src/knowledge-overview.ts';
-import { assessKnowledge } from '../../../src/knowledge-health.ts';
+import { assessKnowledge, confirmHeldBack } from '../../../src/knowledge-health.ts';
 import { runKnowledgeReview } from '../../../src/knowledge-review.ts';
 import { setReviewWeekly, type KnowledgeReview } from '../../../src/knowledge-review-store.ts';
 import { createMeetingRuns } from '../../../src/meeting-runs.ts';
@@ -60,6 +60,10 @@ export const pagesHandlers = (context: HandlerContext): Handlers<'pages'> => {
       if (!Array.isArray(paths) || paths.some((item) => typeof item?.path !== 'string' || typeof item?.text !== 'string')) throw new Error('Pick the pages to share.');
       const items = paths as { path: string; text: string }[];
       return service().shareWith(items.map(({ path }) => path), audience, { roots: roots(), seen: Object.fromEntries(items.map(({ path, text }) => [path, text])) });
+    },
+    canConfirm: (path) => {
+      const files = listKnowledgeFiles(join(context.profileDir(), 'knowledge'));
+      return !confirmHeldBack(pagePath(path), files, assessKnowledge(files, new Date()));
     },
     issues: (path) => {
       const page = pagePath(path);

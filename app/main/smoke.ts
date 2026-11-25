@@ -167,6 +167,7 @@ const layoutProfile = (): string => {
     JSON.stringify({ at: new Date(Date.now() - (at + 1) * 86_400_000).toISOString(), runId: `smoke-${at}`, visibility: 'team', cited, offered: 4, request, reply })).join('\n') + '\n');
   // A weekly review, as the T3 run would have written it, with the rewrite it proposed, so Overview shows its digest.
   mkdirSync(join(knowledge, 'proposals', 'from-review', new Date().toISOString().slice(0, 10)), { recursive: true });
+  writeFileSync(join(knowledge, 'proposals', 'from-review', new Date().toISOString().slice(0, 10), '.from.json'), JSON.stringify({ who: 'Weekly review', owner: false, via: 'app' }));
   writeFileSync(join(knowledge, 'proposals', 'from-review', new Date().toISOString().slice(0, 10), `${new Date().toISOString().slice(0, 10)}-owner-working-style.md`),
     page('How the owner decides', ['verified: no', 'audience: team', 'target: owner/working-style.md'], '# How I work\n\n- Risky releases ship on Thursday now.\n- A bug fix starts with a failing test.\n\n## Replaced\n\n- Until 2026-11-18: Risky releases ship on Tuesday.'));
   mkdirSync(join(directory, 'knowledge-reviews'), { recursive: true });

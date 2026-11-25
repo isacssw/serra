@@ -133,15 +133,17 @@ export interface FixItem {
   action: string;
   /** Set when the action is one click (a review fix); otherwise the action opens the page. */
   suggestion?: ReviewSuggestion;
+  /** A proposal waiting for the owner: the action opens it in Proposals. */
+  proposal?: string;
 }
 
-const FIX_RANK: Record<string, number> = { replace: 0, conflict: 1, 'index-full': 2, duplicate: 3, overlap: 4, retire: 5, confirm: 6, stale: 7, unindexed: 8, draft: 9, long: 10, unstructured: 11 };
+const FIX_RANK: Record<string, number> = { replace: 0, proposal: 0.5, conflict: 1, 'index-full': 2, duplicate: 3, overlap: 4, retire: 5, confirm: 6, stale: 7, unindexed: 8, draft: 9, long: 10, unstructured: 11 };
 
 /**
  * Every organising job in one list, worst first: the weekly review's fixes (one click) and what the health check finds
  * now, without repeating a page a review fix already covers. Names pages by their description, not their file.
  */
-export const fixItems = (overview: Pick<KnowledgeOverview, 'review' | 'health' | 'value'>): FixItem[] => {
+export const fixItems = (overview: Pick<KnowledgeOverview, 'review' | 'health' | 'value'> & Partial<Pick<KnowledgeOverview, 'confirmHeldBack' | 'proposals'>>): FixItem[] => {
   const title = (path: string): string => overview.value.find((page) => page.path === path)?.title ?? path;
   const fromReview: FixItem[] = (overview.review?.suggestions ?? []).map((suggestion) => ({
     id: suggestion.id, title: suggestion.title, why: suggestion.why, lines: [], pages: [suggestion.page],
@@ -152,12 +154,21 @@ export const fixItems = (overview: Pick<KnowledgeOverview, 'review' | 'health' |
     const page = issue.pages[0]!;
     if (covered.has(`${issue.kind === 'duplicate' ? 'conflict' : issue.kind}:${page}`) || issue.pages.some((path) => covered.has(`conflict:${path}`))) return [];
     const why = ({ conflict: 'Two rules disagree', duplicate: 'A rule is written twice', overlap: 'Two pages on one topic', stale: 'Not confirmed in over 60 days', draft: 'Not confirmed yet', unindexed: 'Not in the index, so never used', long: 'Near the page size limit', unstructured: 'Long prose, hard for the bot to scan', 'index-full': 'The index is nearly full' } as const)[issue.kind];
-    const stale: ReviewSuggestion | undefined = issue.kind === 'stale' ? { id: `confirm:${page}`, kind: 'confirm', page, title: title(page), why } : undefined;
+    // "Still true" only where nothing suggests it changed; otherwise the page opens for the owner to look.
+    const held = overview.confirmHeldBack?.includes(page) ?? false;
+    const stale: ReviewSuggestion | undefined = issue.kind === 'stale' && !held ? { id: `confirm:${page}`, kind: 'confirm', page, title: title(page), why } : undefined;
     return [{
       id: `${issue.kind}:${issue.pages.join(',')}`, title: page === 'index.md' ? 'Knowledge index' : issue.pages.map(title).join(' and '), why, lines: issue.detail ?? [],
       pages: issue.pages, action: stale ? 'Still true' : issue.kind === 'conflict' || issue.kind === 'duplicate' ? 'Settle' : 'Open', ...(stale ? { suggestion: stale } : {}),
+      ...(issue.kind === 'stale' && held ? { why: `${why}, and a newer page on its topic may have changed it` } : {}),
     }];
   });
+  // Proposals waiting for the owner are in the same list: one place for everything to decide. The review's own
+  // rewrites are already above, with their one-click Approve.
+  const reviewed = new Set((overview.review?.suggestions ?? []).flatMap((suggestion) => (suggestion.proposal ? [suggestion.proposal] : [])));
+  const fromProposals: FixItem[] = (overview.proposals ?? []).filter((proposal) => !reviewed.has(proposal.id)).map((proposal) => ({
+    id: `proposal:${proposal.id}`, title: proposal.title, why: 'Waiting for your approval', lines: [], pages: [], action: 'Review', proposal: proposal.id,
+  }));
   const kind = (item: FixItem): string => item.suggestion?.kind === 'confirm' && !overview.review?.suggestions.some((suggestion) => suggestion.id === item.id) ? 'stale' : item.suggestion?.kind ?? item.id.split(':')[0]!;
-  return [...fromReview, ...fromHealth].sort((a, b) => (FIX_RANK[kind(a)] ?? 20) - (FIX_RANK[kind(b)] ?? 20));
+  return [...fromReview, ...fromProposals, ...fromHealth].sort((a, b) => (FIX_RANK[kind(a)] ?? 20) - (FIX_RANK[kind(b)] ?? 20));
 };

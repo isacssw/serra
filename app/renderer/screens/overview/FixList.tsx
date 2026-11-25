@@ -2,6 +2,8 @@
 // rewrite, retire a page, confirm a stale one) and what the health check finds now (rules that disagree, repeats,
 // stale pages), worst first. Rewrites show their change before they're approved; Retire asks first.
 import { useState } from 'react';
+import { useNavigate } from 'react-router';
+import { PROPOSAL_PARAM } from '../proposals.logic.ts';
 import { ArrowUpRight, Check, CircleCheck } from 'lucide-react';
 import type { KnowledgeOverview } from '../../../../src/knowledge-overview.ts';
 import type { ReviewSuggestion } from '../../../../src/knowledge-review-store.ts';
@@ -16,6 +18,7 @@ const message = (error: unknown): string => (error instanceof Error ? error.mess
 
 export const FixList = ({ overview, onOpen, onChanged }: { overview: KnowledgeOverview; onOpen: (path: string) => void; onChanged: () => void }) => {
   const toast = useToast();
+  const navigate = useNavigate();
   const [busy, setBusy] = useState<string | null>(null);
   const [done, setDone] = useState<Set<string>>(new Set());
   const [diff, setDiff] = useState<{ id: string; current: string | null; proposed: string } | null>(null);
@@ -27,10 +30,12 @@ export const FixList = ({ overview, onOpen, onChanged }: { overview: KnowledgeOv
   const shown = all ? items : items.slice(0, 6);
 
   const apply = async (list: ReviewSuggestion[]) => {
+    const undoIds: string[] = [];
     for (const suggestion of list) {
       setBusy(suggestion.id);
       try {
         const undoId = await settle(suggestion);
+        if (undoId) undoIds.push(undoId);
         setDone((set) => new Set([...set, suggestion.id]));
         // One fix at a time can be taken back right here.
         if (undoId && list.length === 1) {
@@ -42,6 +47,12 @@ export const FixList = ({ overview, onOpen, onChanged }: { overview: KnowledgeOv
       }
     }
     setBusy(null);
+    // Several fixes at once come back as one Undo, newest first.
+    if (list.length > 1 && undoIds.length > 0) {
+      toast({ message: `${undoIds.length} fixes done.`, tone: 'success', action: { label: 'Undo all', onClick: () => {
+        void (async () => { for (const id of [...undoIds].reverse()) await serra()?.proposals.undo(id); })().then(onChanged, (failure: unknown) => toast({ message: message(failure), tone: 'error' }));
+      } } });
+    }
     onChanged();
   };
   const showChange = async (item: FixItem) => {
@@ -57,6 +68,7 @@ export const FixList = ({ overview, onOpen, onChanged }: { overview: KnowledgeOv
   };
   const run = (item: FixItem) => {
     const suggestion = item.suggestion;
+    if (item.proposal) { void navigate(`/knowledge/proposals?${PROPOSAL_PARAM}=${encodeURIComponent(item.proposal)}`); return; }
     if (!suggestion) { onOpen(item.pages[0]!); return; }
     // Taking a page away asks first; the others are reversible edits the owner sees.
     if (suggestion.kind === 'retire') setAsking({ title: `Retire ${suggestion.title}?`, description: 'The bot stops using it. It moves to Archived in Pages, where you can restore it.', items: [suggestion] });

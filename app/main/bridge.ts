@@ -217,6 +217,8 @@ export interface SerraApi {
     runReview(): Promise<KnowledgeReview>;
     /** Turn the weekly review on or off. */
     setReviewWeekly(weekly: boolean): void;
+    /** Whether "Still true" may be offered for this page: false when a rule on it disagrees, or a newer page on its topic may have changed it. */
+    canConfirm(path: string): boolean;
     /** Rules on this page that disagree with or repeat another, as the page is on disk now, for the editor. */
     issues(path: string): KnowledgeOverview['health']['issues'];
   };
@@ -425,7 +427,7 @@ export const bridgeMethods = {
   bot: methods<'bot'>()(['status', 'start', 'stop', 'restart']),
   jobs: methods<'jobs'>()(['list', 'cleanupWorktrees']),
   proposals: methods<'proposals'>()(['list', 'diff', 'targets', 'promote', 'mergeInto', 'discard', 'undo', 'retire', 'similar', 'archived', 'restore']),
-  pages: methods<'pages'>()(['list', 'read', 'save', 'drift', 'acceptDrift', 'restoreDrift', 'aboutMe', 'untagged', 'share', 'overview', 'issues', 'runReview', 'setReviewWeekly']),
+  pages: methods<'pages'>()(['list', 'read', 'save', 'drift', 'acceptDrift', 'restoreDrift', 'aboutMe', 'untagged', 'share', 'overview', 'issues', 'canConfirm', 'runReview', 'setReviewWeekly']),
   brief: methods<'brief'>()(['read', 'save', 'check', 'preview', 'listProposed', 'readProposed', 'applyProposed']),
   settings: methods<'settings'>()(['read', 'sections', 'saveSection', 'addPerson', 'removePerson', 'peopleNames']),
   secrets: methods<'secrets'>()(['list', 'setSource', 'check']),

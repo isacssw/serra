@@ -81,7 +81,8 @@ export const WeekDigest = ({ review, weekly, onChanged }: { review: KnowledgeRev
               <figcaption className="text-[13px]">“{example.request}”</figcaption>
               <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                 <div className="rounded-md border border-line px-3 py-2">
-                  <p className="text-[11px] font-medium text-ink">With {example.title}</p>
+                  <p className="text-[11px] font-medium text-ink">With this page</p>
+                  <p className="text-[11px] text-muted">{example.title}</p>
                   <p className="mt-1 text-xs leading-5 text-muted">{example.withPage}</p>
                 </div>
                 <div className="rounded-md border border-dashed border-line px-3 py-2">
@@ -101,7 +102,7 @@ export const WeekDigest = ({ review, weekly, onChanged }: { review: KnowledgeRev
             {review.missing.map((item) => (
               <li key={item.topic} className="flex items-start gap-3">
                 <span className="min-w-0 flex-1">{item.topic}{item.count > 1 ? <span className="text-muted"> · asked {item.count}×</span> : null}</span>
-                <Button size="sm" variant="ghost" onClick={() => void navigate(`/jobs/new?text=${encodeURIComponent(`Remember this for my notes. ${item.topic}: `)}`)}>Tell it</Button>
+                <Button size="sm" onClick={() => void navigate(`/jobs/new?text=${encodeURIComponent(`Remember this for my notes. ${item.topic}: `)}`)}>Tell it</Button>
               </li>
             ))}
           </ul>

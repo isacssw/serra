@@ -9,7 +9,7 @@ import { mkdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { writeFileAtomic } from './config.ts';
 import { createJournal } from './knowledge-journal.ts';
-import { assessKnowledge, currentText, isPage, pageFacts, type KnowledgeFile } from './knowledge-health.ts';
+import { assessKnowledge, confirmHeldBack, currentText, isPage, pageFacts, type KnowledgeFile } from './knowledge-health.ts';
 import { knowledgeOverview, listKnowledgeFiles } from './knowledge-overview.ts';
 import { DATE, daysSince, frontmatter, pageBody, PROPOSALS_DIR, saveProblems, setHeaderField } from './knowledge-rules.ts';
 import { readKnowledgeUse, type KnowledgeUse } from './knowledge-usage.ts';
@@ -47,29 +47,15 @@ const sameAnswer = (a: string, b: string): boolean => {
   const [x, y] = [set(a), set(b)];
   let shared = 0;
   for (const word of x) if (y.has(word)) shared += 1;
-  return shared / Math.max(1, x.size + y.size - shared) >= 0.8;
+  const overlap = shared / Math.max(1, x.size + y.size - shared);
+  // The words that carry an answer: numbers, days, yes and no. Two answers giving the same ones, in mostly the same
+  // words, say the same thing however they're phrased.
+  const key = (words: Set<string>): string => [...words].filter((word) => /^\d|^(yes|no|not|never|monday|tuesday|wednesday|thursday|friday|saturday|sunday)$/.test(word)).sort().join(' ');
+  return overlap >= 0.8 || (overlap >= 0.45 && key(x) === key(y));
 };
 
 /** The page with one more item under its header's `sources:`. */
 const addSource = (text: string, source: string): string => text.replace(/^(sources:.*(?:\n[ \t]+-[^\n]*)*)/m, (block) => `${block}\n  - ${source}`);
-
-/**
- * Whether another page confirmed after `verified` talks about the same thing as `page`: one of its facts shares at
- * least two words, and half of the shorter one's, with a fact on `page`.
- */
-const newerOnTopic = (page: string, verified: string, files: KnowledgeFile[]): boolean => {
-  const mine = pageFacts(page, files.find((file) => file.path === page)?.text ?? '');
-  return files.some((file) => {
-    if (file.path === page || !isPage(file.path)) return false;
-    const date = frontmatter(file.text)?.get('verified')?.trim() ?? '';
-    if (!DATE.test(date) || date <= verified) return false;
-    return pageFacts(file.path, file.text).some((fact) => mine.some((own) => {
-      let shared = 0;
-      for (const word of own.words) if (fact.words.has(word)) shared += 1;
-      return shared >= 2 && shared >= Math.min(own.words.size, fact.words.size) / 2;
-    }));
-  });
-};
 
 const short = (text: string, max: number): string => (text.length > max ? `${text.slice(0, max - 1).trimEnd()}…` : text);
 
@@ -151,8 +137,14 @@ export const runKnowledgeReview = async ({ profileDir, knowledgeDir, ask, now = 
   for (const use of uses) for (const path of use.cited) counts.set(path, (counts.get(path) ?? 0) + 1);
   const used = [...counts].sort((a, b) => b[1] - a[1]).map(([page, count]) => ({ page, title: title(page), uses: count }));
   const asked = new Map<string, number>();
-  for (const use of uses) for (const topic of use.missing ?? []) asked.set(topic.toLowerCase(), (asked.get(topic.toLowerCase()) ?? 0) + 1);
-  const missing = [...asked].sort((a, b) => b[1] - a[1]).slice(0, 6).map(([topic, count]) => ({ topic, count }));
+  // Counted case-blind, shown as first written ("JPY", not "jpy").
+  const spelled = new Map<string, string>();
+  for (const use of uses) for (const topic of use.missing ?? []) {
+    const key = topic.toLowerCase();
+    if (!spelled.has(key)) spelled.set(key, topic);
+    asked.set(key, (asked.get(key) ?? 0) + 1);
+  }
+  const missing = [...asked].sort((a, b) => b[1] - a[1]).slice(0, 6).map(([key, count]) => ({ topic: spelled.get(key) ?? key, count }));
 
   // Plain-code suggestions: stale pages the week still used ("still true?"), and pages a repeat makes redundant.
   const suggestions: ReviewSuggestion[] = [];
@@ -164,10 +156,8 @@ export const runKnowledgeReview = async ({ profileDir, knowledgeDir, ask, now = 
     const verified = frontmatter(texts.get(page) ?? '')?.get('verified')?.trim() ?? '';
     const age = DATE.test(verified) ? daysSince(verified, now) : null;
     // A stale page holding a rule a newer page changed isn't "still true": the rewrite below settles it instead.
-    const disputed = health.issues.some((item) => (item.kind === 'conflict' || item.kind === 'duplicate') && item.pages.includes(page));
-    // Nor is one with a page confirmed later on the same topic, even where no rule pair was caught: the newer page
-    // may have changed it ("5%, 25%" there, "10%, 50%" here). The owner opens it from To do instead.
-    if (counts.has(page) && !disputed && !newerOnTopic(page, verified, files)) suggest('confirm', page, `Used ${counts.get(page)}× this week, last confirmed ${age ?? '?'} days ago.`);
+    // Nor is one a newer page on its topic may have changed ("5%, 25%" there, "10%, 50%" here): the owner opens it.
+    if (counts.has(page) && !confirmHeldBack(page, files, health)) suggest('confirm', page, `Used ${counts.get(page)}× this week, last confirmed ${age ?? '?'} days ago.`);
   }
   for (const issue of health.issues.filter((item) => item.kind === 'overlap')) {
     // Two pages on one topic: the one fewer replies used can go once the other holds everything.
@@ -199,7 +189,9 @@ export const runKnowledgeReview = async ({ profileDir, knowledgeDir, ask, now = 
       if (saveProblems(rewrite.page, proposed).length > 0) continue;
       // Nothing the page says may be dropped: every current rule is still there, as it was or under "## Replaced".
       const flat = (text: string): string => text.replace(/\s+/g, ' ').toLowerCase();
-      if (pageFacts(rewrite.page, current).some((fact) => !flat(proposed).includes(flat(fact.text)))) continue;
+      // Only the rules in a pair may move under "## Replaced"; every other rule stays current.
+      const paired = new Set(conflicted.flatMap((item) => (item.facts ?? []).filter((fact) => fact.page === rewrite.page).map((fact) => flat(fact.text))));
+      if (pageFacts(rewrite.page, current).some((fact) => !flat(paired.has(flat(fact.text)) ? proposed : currentText(proposed)).includes(flat(fact.text)))) continue;
       // And it settles what it was for: no rule on it still disagrees with another page, and where the newer rule sat
       // on the other page, this page now says it.
       const target = rewrite.page;

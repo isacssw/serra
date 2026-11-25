@@ -5,7 +5,7 @@ import { dirname, join, resolve } from 'node:path';
 import { createJournal } from './knowledge-journal.ts';
 import { latestReview, reviewSettings, type KnowledgeReview } from './knowledge-review-store.ts';
 import { compileAboutMe } from './owner-model.ts';
-import { AREA_LABELS, pageArea, assessKnowledge, isPage, knowledgeHistory, type Health, type HistoryPoint, type KnowledgeChange, type KnowledgeEvent, type KnowledgeFile } from './knowledge-health.ts';
+import { AREA_LABELS, confirmHeldBack, pageArea, assessKnowledge, isPage, knowledgeHistory, type Health, type HistoryPoint, type KnowledgeChange, type KnowledgeEvent, type KnowledgeFile } from './knowledge-health.ts';
 import { ARCHIVE_DIR, frontmatter, PROPOSALS_DIR } from './knowledge-rules.ts';
 import { readKnowledgeUse } from './knowledge-usage.ts';
 import { isArrayOf, isRecord, isString, isStringOrNull, isOptional } from './lib/guards.ts';
@@ -49,6 +49,10 @@ export interface KnowledgeOverview {
   /** The latest weekly review, or null before the first. */
   review: KnowledgeReview | null;
   reviewWeekly: boolean;
+  /** Stale pages "Still true" isn't offered for: a rule on them disagrees, or a newer page on their topic may have changed them. */
+  confirmHeldBack: string[];
+  /** Proposals waiting for the owner, by name, so To do can list them beside everything else. */
+  proposals: { id: string; title: string }[];
   health: Health;
   /** The score a month ago, or null when there's no history that far back. */
   monthAgo: HistoryPoint | null;
@@ -128,6 +132,19 @@ const readChanges = (backups: string): KnowledgeChange[] => {
   });
 };
 
+/** Every proposal waiting, by its description (or file name), newest first. */
+const waitingProposals = (dir: string, relativeDir = ''): { id: string; title: string }[] => {
+  if (!existsSync(join(dir, relativeDir))) return [];
+  return readdirSync(join(dir, relativeDir), { withFileTypes: true }).flatMap((entry) => {
+    if (entry.name.startsWith('.')) return [];
+    const id = relativeDir ? `${relativeDir}/${entry.name}` : entry.name;
+    if (entry.isDirectory()) return waitingProposals(dir, id);
+    if (!entry.name.endsWith('.md') || entry.name === 'README.md' || entry.name === 'onboarding-progress.md') return [];
+    const description = frontmatter(readFileSync(join(dir, id), 'utf8'))?.get('description')?.trim();
+    return [{ id, title: description || entry.name.replace(/\.md$/, '').replace(/^\d{4}-\d{2}-\d{2}-?/, '').replace(/[-_]+/g, ' ') }];
+  }).sort((a, b) => b.id.localeCompare(a.id));
+};
+
 const countProposals = (dir: string): number => {
   if (!existsSync(dir)) return 0;
   return readdirSync(dir, { withFileTypes: true }).reduce((sum, entry) => {
@@ -185,6 +202,8 @@ export const knowledgeOverview = ({ knowledgeDir, profileDir, backupDir, now = n
     return { path, title: titles.get(path) || path, area: pageAreaOf(path, files), uses: count, last: counts.get(path)?.last ?? null, state, examples: examples.get(path) ?? [] };
   }).sort((a, b) => b.uses - a.uses || a.title.localeCompare(b.title));
   return {
+    confirmHeldBack: health.issues.filter((issue) => issue.kind === 'stale').map((issue) => issue.pages[0]!).filter((page) => confirmHeldBack(page, files, health)),
+    proposals: waitingProposals(join(root, PROPOSALS_DIR)),
     value, missing: missingTopics(uses), review: openSuggestions(latestReview(profileDir), root, now), reviewWeekly: reviewSettings(profileDir).weekly,
     health, monthAgo, points, events: events.slice(0, 80), waiting: countProposals(join(root, PROPOSALS_DIR)), unreviewed: changed.length + removed.length,
     usage: {

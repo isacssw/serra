@@ -56,7 +56,7 @@ test('the weekly review writes a checked rewrite as a proposal, a before/after e
   assert.equal(review.summary, 'Your notes answered 3 of 4 replies. Settle the release day.');
   assert.equal(review.replies, 4);
   assert.equal(review.withKnowledge, 3);
-  assert.deepEqual(review.missing, [{ topic: 'who approves refunds over 500 eur', count: 2 }]);
+  assert.deepEqual(review.missing, [{ topic: 'who approves refunds over 500 EUR', count: 2 }], 'shown as first written');
   assert.equal(review.used[0]?.page, 'owner/working-style.md');
   // Only the checked rewrite becomes a proposal; a broken page and a page nobody asked to fix are dropped.
   const replace = review.suggestions.filter((item) => item.kind === 'replace');
@@ -139,4 +139,11 @@ test('"Still true" is offered for a stale page the week used, but never for one 
   const review = await runKnowledgeReview({ profileDir: dir, knowledgeDir: knowledge, ask: async () => '{}', now: NOW });
   const confirms = review.suggestions.filter((item) => item.kind === 'confirm').map((item) => item.page);
   assert.deepEqual(confirms, ['product/sandbox.md']);
+});
+
+test('two answers with the same numbers and mostly the same words are the same answer, so no example shows them', async (t) => {
+  const { dir, knowledge } = profile(t);
+  const review = await runKnowledgeReview({ profileDir: dir, knowledgeDir: knowledge, now: NOW,
+    ask: async (title) => (title.includes('weekly review') ? '{}' : title.includes('with the page') ? 'No. Split it into three PRs under 400 lines each.' : 'No, split it into three smaller PRs of under 400 lines.') });
+  assert.deepEqual(review.examples, []);
 });

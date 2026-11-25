@@ -157,7 +157,7 @@ const RulePairs = ({ page, pairs, draft, disabled, onKeep, onOpen }: {
               <div key={which} className="flex items-start gap-2">
                 <p className="min-w-0 flex-1 border-l-2 border-line pl-2 text-xs text-muted">
                   {fact.text}
-                  {newer === which && <span className="ml-1.5 rounded bg-raised px-1 py-0.5 text-[11px] text-ink">Looks newer</span>}
+                  {newer === which && <span className="ml-1.5 whitespace-nowrap rounded bg-raised px-1 py-0.5 text-[11px] text-ink">Looks newer</span>}
                   {fact.page === page ? '' : <> <span className="text-faint">on</span> <button type="button" onClick={() => onOpen(fact.page)} className="font-mono text-ink underline underline-offset-2 hover:no-underline focus-visible:outline-2 focus-visible:outline-focus">{fact.page}</button></>}
                 </p>
                 {wholeLines && (
@@ -193,6 +193,8 @@ export const Pages = () => {
   const [archived, setArchived] = useState<{ path: string; description: string }[]>([]);
   /** Pages open as they read; the Markdown, header and all, only when the owner chooses to edit. */
   const [editing, setEditing] = useState(false);
+  /** "Still true" only where nothing suggests the page changed: no rule on it disagrees, no newer page on its topic. */
+  const [confirmable, setConfirmable] = useState(false);
   /** Rules on the open page that disagree with or repeat another, as saved. */
   const [pairs, setPairs] = useState<KnowledgeOverview['health']['issues']>([]);
   const [drifted, setDrifted] = useState<Drifted[]>([]);
@@ -245,6 +247,8 @@ export const Pages = () => {
     );
     setPairs([]);
     setEditing(false);
+    setConfirmable(false);
+    bridge.pages.canConfirm(selected).then((ok) => { if (live) setConfirmable(ok); }, () => undefined);
     bridge.pages.issues(selected).then((found) => { if (live) setPairs(found); }, () => undefined);
     return () => { live = false; };
   }, [selected, readVersion]);
@@ -448,7 +452,7 @@ export const Pages = () => {
                     <div className="rounded-lg border border-line bg-panel"><PageBody text={pageBody(draft)} onOpen={(href) => void serra()?.app.openExternal(href)} /></div>
                     <div className="flex flex-wrap items-center gap-2">
                       <Button variant="primary" onClick={() => setEditing(true)}>Edit</Button>
-                      <Button disabled={saving} title="It still holds: mark it confirmed today." onClick={() => void confirmToday()}>Still true</Button>
+                      {confirmable && <Button disabled={saving} title="It still holds: mark it confirmed today." onClick={() => void confirmToday()}>Still true</Button>}
                       <Button variant="ghost" disabled={saving} title="Stop using this page. It moves to the archive; you can undo." onClick={() => setRetiring(true)}>Retire…</Button>
                     </div>
                   </div>

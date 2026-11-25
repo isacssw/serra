@@ -722,3 +722,32 @@ export const relevanceNote = (request: string, cards: PageCard[], ignore: string
     : '';
   return `${hint}If a page here shaped your reply, end the reply with one line naming the pages you used, like <knowledge-used>owner/role.md, people/priya.md</knowledge-used>. If you needed something about the owner, their team or their work that no page says, add one more line naming it in a few words, like <knowledge-missing>who approves refunds over 500 EUR</knowledge-missing>. Serra removes these lines before anyone sees the reply. Leave them out when they don't apply.`;
 };
+
+/**
+ * Whether another page confirmed after `verified` talks about the same thing as `page`: one of its facts shares at
+ * least two words, and half of the shorter one's, with a fact on `page`.
+ */
+const newerOnTopic = (page: string, verified: string, files: KnowledgeFile[]): boolean => {
+  const mine = pageFacts(page, files.find((file) => file.path === page)?.text ?? '');
+  return files.some((file) => {
+    if (file.path === page || !isPage(file.path)) return false;
+    const date = frontmatter(file.text)?.get('verified')?.trim() ?? '';
+    if (!DATE.test(date) || date <= verified) return false;
+    return pageFacts(file.path, file.text).some((fact) => mine.some((own) => {
+      let shared = 0;
+      for (const word of own.words) if (fact.words.has(word)) shared += 1;
+      return shared >= 2 && shared >= Math.min(own.words.size, fact.words.size) / 2;
+    }));
+  });
+};
+
+
+/**
+ * Whether "Still true" must not be offered for `page`: it holds a rule that disagrees with or repeats another, or a
+ * page confirmed later talks about the same thing and may have changed it. The owner opens such a page instead.
+ */
+export const confirmHeldBack = (page: string, files: KnowledgeFile[], health: Pick<Health, 'issues'>): boolean => {
+  if (health.issues.some((item) => (item.kind === 'conflict' || item.kind === 'duplicate') && item.pages.includes(page))) return true;
+  const verified = frontmatter(files.find((file) => file.path === page)?.text ?? '')?.get('verified')?.trim() ?? '';
+  return DATE.test(verified) && newerOnTopic(page, verified, files);
+};

@@ -14,7 +14,7 @@ import { Button, cx, Dialog, Page, useToast } from '../ui/index.ts';
 import { DiffView } from './proposals/DiffView.tsx';
 import { MeetingReview } from './proposals/MeetingReview.tsx';
 import { AudienceChoice } from './AudienceChoice.tsx';
-import { alignHeader, frontmatter, removeHeaderField, setHeaderField } from '../../../src/knowledge-rules.ts';
+import { alignHeader, frontmatter, pageBody, removeHeaderField, setHeaderField } from '../../../src/knowledge-rules.ts';
 import { localDate } from './pages.logic.ts';
 import { approvalAudience, pageAudience, type Audience } from '../../../src/owner-model.ts';
 import { useSearchParams } from 'react-router';
@@ -90,6 +90,22 @@ const Queue = ({ proposals, selected, onSelect }: { proposals: Proposal[]; selec
     ))}
   </nav>
 );
+
+/**
+ * The change a proposal makes, as rules: the page's header (dates, sources, who may hear it) is hidden unless asked
+ * for, since who may hear it has its own picker and the rest changes on every approval.
+ */
+const ProposalChange = ({ current, proposed }: { current: string | null; proposed: string }) => {
+  const [header, setHeader] = useState(false);
+  return (
+    <div className="flex flex-col gap-1.5">
+      <DiffView current={current === null ? null : header ? current : pageBody(current)} proposed={header ? proposed : pageBody(proposed)} />
+      <button type="button" onClick={() => setHeader(!header)} className="self-start text-xs text-muted underline underline-offset-2 hover:text-ink focus-visible:outline-2 focus-visible:outline-focus">
+        {header ? 'Hide the page header' : 'Show the page header too'}
+      </button>
+    </div>
+  );
+};
 
 export const Proposals = () => {
   const toast = useToast();
@@ -296,7 +312,7 @@ export const Proposals = () => {
                     <Button size="sm" disabled={busy} onClick={() => { setMergeTarget(similar[0]!.path); setMergeOpen(true); }}>Merge into it…</Button>
                   </div>
                 )}
-                <DiffView current={landing(diff, folder)} proposed={asWritten(diff, folder, picked)} />
+                <ProposalChange current={landing(diff, folder)} proposed={asWritten(diff, folder, picked)} />
                 {folders.length > 0 ? (
                   <Select
                     label="Target folder"

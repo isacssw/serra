@@ -367,6 +367,9 @@ test('To do puts every organising job in one list, one-click review fixes first,
   const items = fixItems(overview);
   assert.deepEqual(items.map((item) => [item.title, item.action]), [['How I decide', 'Approve'], ['product/old.md', 'Still true'], ['product/lost.md', 'Open']]);
   assert.equal(items[1]!.suggestion?.kind, 'confirm', 'a stale page is one click too');
+  // A stale page a newer page may have changed opens instead; waiting proposals sit in the same list.
+  const held = fixItems({ ...overview, confirmHeldBack: ['product/old.md'], proposals: [{ id: 'from-slack/x/2026-11-20-days.md', title: 'Release days' }] });
+  assert.deepEqual(held.map((item) => [item.title, item.action]), [['How I decide', 'Approve'], ['Release days', 'Review'], ['product/old.md', 'Open'], ['product/lost.md', 'Open']]);
 });
 
 test('Pages groups by topic, and the week and each page read in plain words', () => {
