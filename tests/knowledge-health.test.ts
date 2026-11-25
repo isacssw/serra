@@ -15,7 +15,7 @@ import { readKnowledgeUse, recordKnowledgeUse, takeKnowledgeUsed } from '../src/
 import { knowledgeOverview } from '../src/knowledge-overview.ts';
 import { createJournal } from '../src/knowledge-journal.ts';
 import { createKnowledge } from '../src/knowledge.ts';
-import { changeText, fixItems, groupByDay, scoreChart, scoreWord, valueLabel, valueSummary, weekLine } from '../app/renderer/screens/overview.logic.ts';
+import { changeText, fixItems, groupByDay, headline, scoreChart, scoreWord, valueLabel, valueSummary } from '../app/renderer/screens/overview.logic.ts';
 import { currentRules, groupByArea, keepLabel, keepRule, newerRule, replacedOn } from '../app/renderer/screens/pages.logic.ts';
 import { swapRule } from '../app/renderer/screens/proposals.logic.ts';
 
@@ -372,12 +372,10 @@ test('To do puts every organising job in one list, one-click review fixes first,
   assert.deepEqual(held.map((item) => [item.title, item.action]), [['How I decide', 'Approve'], ['Release days', 'Review'], ['product/old.md', 'Open'], ['product/lost.md', 'Open']]);
 });
 
-test('Pages groups by topic, and the week and each page read in plain words', () => {
+test('Pages groups by topic, and each page reads in plain words', () => {
   const page = (path: string, area: string, description: string) => ({ path, area, description, verified: null, badge: 'verified' as const, lines: 3, problems: [], warnings: [] });
   assert.deepEqual(groupByArea([page('people/b.md', 'People', 'Who Bo is'), page('owner/r.md', 'Who you are', 'Role'), page('people/a.md', 'People', 'Who Al is')])
     .map((group) => [group.area, group.pages.map((item) => item.description)]), [['Who you are', ['Role']], ['People', ['Who Al is', 'Who Bo is']]]);
-  assert.equal(weekLine({ replies: 12, withKnowledge: 9, facts: { before: 18, now: 22 } }), '12 replies · 9 used your notes · 4 new facts');
-  assert.equal(weekLine({ replies: 1, withKnowledge: 0, facts: { before: null, now: 4 } }), '1 reply · 0 used your notes');
   assert.deepEqual((['earns', 'some', 'carried', 'idle', 'unknown'] as const).map((state) => valueLabel(state, 5)), ['Used in 5 replies', 'Used once', 'Always in the brief', 'Not used', 'Not used yet']);
 });
 
@@ -397,4 +395,24 @@ test('an old rule is replaced from the date the kept rule gives, as the weekly r
   assert.equal(replacedOn('Risky releases ship on Thursday since 2026-10-01.', '2026-11-25'), '2026-10-01');
   assert.equal(replacedOn('Risky releases ship on Thursday now.', '2026-11-25'), '2026-11-25');
   assert.equal(replacedOn('From 2027-01-01 releases ship on Monday.', '2026-11-25'), '2026-11-25', 'a plan, not a start');
+});
+
+test('Overview leads with one number: replies the notes shaped this week, else over the usage window, else nothing', () => {
+  const usage = { replies: 9, withKnowledge: 6, days: 30 };
+  assert.deepEqual(headline({ review: { replies: 5, withKnowledge: 4 }, usage } as unknown as Parameters<typeof headline>[0]), { used: 4, replies: 5, period: 'this week' });
+  assert.deepEqual(headline({ review: null, usage } as unknown as Parameters<typeof headline>[0]), { used: 6, replies: 9, period: 'in 30 days' });
+  assert.equal(headline({ review: null, usage: { replies: 0, withKnowledge: 0, days: 30 } } as unknown as Parameters<typeof headline>[0]), null);
+});
+
+test('To do is the one place to act: hand edits first, what replies missed, and Keep buttons on rules that disagree', () => {
+  const facts = [{ page: 'owner/style.md', text: 'Risky releases ship on Tuesday.' }, { page: 'owner/style.md', text: 'Risky releases ship on Thursday now.' }];
+  const items = fixItems({
+    value: [], unreviewed: 2,
+    review: { suggestions: [], missing: [{ topic: 'who approves refunds over 500 EUR', count: 2 }] },
+    health: { issues: [{ kind: 'conflict', pages: ['owner/style.md'], text: '', detail: [], facts }] },
+  } as unknown as Parameters<typeof fixItems>[0]);
+  assert.deepEqual(items.map((item) => [item.title, item.action]), [['2 hand edits', 'Review'], ['owner/style.md', 'Settle'], ['who approves refunds over 500 EUR', 'Tell it']]);
+  assert.equal(items[0]!.href, '/knowledge/pages');
+  assert.deepEqual(items[1]!.keep, facts, 'the conflict is settled right there, one Keep per rule');
+  assert.equal(items[2]!.tell, 'who approves refunds over 500 EUR');
 });

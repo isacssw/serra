@@ -1,27 +1,28 @@
 # How your knowledge grows
 
-**Knowledge › Overview** shows what your notes do for your bot, whether it knows you better over time, and what to tidy. It opens on the week's review and on what each page did.
+**Knowledge › Overview** is meant to be read in five seconds. It shows one number, how many of the bot's replies used your notes this week (or in the last 30 days before the first review), and under it one real request answered with your notes and without them. **To do** shows only when there is something to do, three items at a time, each one line and one button. Everything else is under **Details**: the weekly review's summary and settings, what each page did, health over time, what the bot knows by area, and what it learned lately.
 
 ## The weekly review
 
-Once a week (when the bot replied at least three times that week) Serra looks back at the week's replies and writes a short digest at the top of Overview:
+Once a week (when the bot replied at least three times that week) Serra looks back at the week's replies:
 
-- **What your notes changed:** a real request from the week, answered twice from the same notes, once with the page that answered it and once without it, so the only difference is that page. It is shown only where the page clearly helped: not when both answers say the same, when the answer with the page hedges, or when a newer page may have overtaken it.
-- **Missing from your notes:** what replies said they were missing. **Tell it** opens a task with "Remember this…" filled in; approve the proposal it writes.
-Its fixes go into **To do**, Overview's one list of everything to tidy, each with one button:
+- **With your notes / Without:** a real request from the week, answered twice from the same notes, once with the page that answered it and once without it, so the only difference is that page. It is shown only where the page clearly helped: not when both answers say the same, when the answer with the page hedges, or when a newer page may have overtaken it.
+- What replies said they were missing goes into To do with **Tell it**, which opens a task with "Remember this…" filled in; approve the proposal it writes.
+
+**To do** is the one place to act on your knowledge:
 
 - **Approve** a rewrite that settles rules that disagree or repeat. **See change** shows the page before and after. Serra refuses a rewrite that drops any rule the page had. Approved, the page keeps its own confirmed date, so a rule the review left alone never looks newer than a later page that changed it.
+- **Keep Thursday** / **Keep Tuesday** on two rules that disagree (the button names the rule): it saves at once with Undo, and the other rule moves under a dated "Replaced". Pages only points here ("Two rules disagree · Settle"), so a conflict is settled in one place.
 - **Retire** a page another one covers, only when that page holds every rule it has (it asks first; Undo brings it back).
-- **Still true** for a page not confirmed in 60 days.
-- **Settle** or **Open** for what needs your judgement; the page opens with the two rules and **Keep Thursday** (it names the rule), which saves at once with Undo and dates the old rule from the day the kept one gives.
+- **Still true** for a page not confirmed in 60 days, **Review** for proposals and hand edits, **Tell it** for what replies missed, **Open** for the rest.
 
 **Do all** runs every one-click fix together. A fix done once stays done.
 
-The model part runs as a read-only T3 run in Serra's own empty folder, on the worker's provider and model, the same way meetings run, so it works with any T3 provider. Nothing changes until you approve it. Turn it off with **Every week**, or run it any time with **Run again**. Digests are kept in `knowledge-reviews/` in the profile.
+The model part runs as a read-only T3 run in Serra's own empty folder, on the worker's provider and model, the same way meetings run, so it works with any T3 provider. Nothing changes until you approve it. Turn it off with **Every week**, or run it any time with **Run again** (both under Details). Digests are kept in `knowledge-reviews/` in the profile.
 
 ## What your notes do
 
-Every page with what it did in the last 30 days: **Used in N replies** with a request it answered, **Always in the brief** (About me pages, counted apart: their use isn't measured, so they never count as having helped), **Used once**, or **Not used** once there were enough replies to tell, with **Retire** next to it. Pages lists pages by topic, the same areas as Overview, under their descriptions; file names are small and secondary. A page opens as it reads, with **Edit**, **Still true** and **Retire…**; the Markdown and its header only show when you edit. Everything on it is worked out on your Mac from files Serra already keeps: your pages, the backup each approval or edit leaves in `backups/knowledge/`, and `logs/knowledge-usage.jsonl`. No model is asked and nothing is sent anywhere.
+Under Details, every page with what it did in the last 30 days: **Used in N replies** with a request it answered, **Always in the brief** (About me pages, counted apart: their use isn't measured, so they never count as having helped), **Used once**, or **Not used** once there were enough replies to tell, with **Retire** next to it. Pages lists pages by topic, the same areas as Overview, by their descriptions (the file name is on hover; a search box appears once there are more than eight). A page opens as it reads, with **Edit**, **Still true** and **Retire…**; the Markdown and its header only show when you edit. Everything on it is worked out on your Mac from files Serra already keeps: your pages, the backup each approval or edit leaves in `backups/knowledge/`, and `logs/knowledge-usage.jsonl`. No model is asked and nothing is sent anywhere.
 
 ## The health score
 

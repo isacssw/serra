@@ -118,12 +118,6 @@ export const headline = (overview: Pick<KnowledgeOverview, 'review' | 'usage'>):
   return null;
 };
 
-/** "12 replies · 9 used your notes · 4 new facts": the week in one line. */
-export const weekLine = (review: { replies: number; withKnowledge: number; facts: { before: number | null; now: number } }): string => [
-  `${review.replies} repl${review.replies === 1 ? 'y' : 'ies'}`,
-  `${review.withKnowledge} used your notes`,
-  ...(review.facts.before !== null && review.facts.now > review.facts.before ? [`${review.facts.now - review.facts.before} new fact${review.facts.now - review.facts.before === 1 ? '' : 's'}`] : []),
-].join(' · ');
 
 /**
  * The value list's one line: "3 of 4 pages helped in the last 30 days · 2 always in the brief · 1 not used". Pages that
