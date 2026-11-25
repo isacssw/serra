@@ -73,32 +73,25 @@ export const AboutMe = () => {
     }
   };
   const used = about ? Math.min(100, Math.round((100 * about.chars) / ABOUT_MAX_CHARS)) : 0;
-  const hint = AUDIENCES.find((option) => option.value === visibility)?.hint;
 
   return (
-    <Page title="About me" subtitle="Always in every job's brief. Other pages are read when a request needs them.">
+    <Page title="About me">
       {error && <p role="alert" className="text-sm text-down">{error}</p>}
       {untagged.length > 0 && (
-        <section aria-labelledby="untagged-title" className="flex gap-3 rounded-lg border border-line bg-panel p-4">
-          <Users size={16} aria-hidden className="mt-0.5 shrink-0 text-muted" />
-          <div className="flex min-w-0 flex-1 flex-col gap-1">
-            <h2 id="untagged-title" className="text-sm font-semibold">
-              {untagged.length === 1 ? '1 page is only for you' : `${untagged.length} pages are only for you`}
-            </h2>
-            <p className="text-sm text-muted">
-              {untagged.length === 1 ? 'It doesn\u2019t say who may hear it, so teammates\u2019 briefs leave it out.' : 'They don\u2019t say who may hear them, so teammates\u2019 briefs leave them out.'}
-            </p>
-            <div className="mt-2">
-              <Button onClick={() => { setShareTo('team'); setSharing(new Set()); }}>{untagged.length === 1 ? 'Choose who may hear it' : 'Choose who may hear them'}</Button>
-            </div>
-          </div>
+        <section aria-labelledby="untagged-title" className="flex items-center gap-3 rounded-lg border border-line bg-panel px-4 py-2.5">
+          <Users size={16} aria-hidden className="shrink-0 text-muted" />
+          <h2 id="untagged-title" className="min-w-0 flex-1 text-[13px]" title="Teammates' briefs leave these out until you choose.">
+            {untagged.length === 1 ? '1 page only you hear' : `${untagged.length} pages only you hear`}
+          </h2>
+          <Button size="sm" onClick={() => { setShareTo('team'); setSharing(new Set()); }}>Share</Button>
         </section>
       )}
       <div className="flex flex-col gap-2">
         <div role="group" aria-label="Seen by" className="flex flex-wrap gap-1">
-          {AUDIENCES.map(({ value, label, icon: Icon }) => (
+          {AUDIENCES.map(({ value, label, icon: Icon, hint }) => (
             <button
               key={value}
+              title={hint}
               type="button"
               aria-pressed={visibility === value}
               onClick={() => setVisibility(value)}
@@ -112,7 +105,6 @@ export const AboutMe = () => {
             </button>
           ))}
         </div>
-        {hint && <p className="text-xs text-muted">{hint}</p>}
       </div>
 
       {about && (
@@ -120,10 +112,9 @@ export const AboutMe = () => {
           <div className="flex min-w-0 flex-1 flex-col gap-3">
             {about.sections.length === 0 && (
               <p className="text-sm text-muted">
-                Nothing for this audience yet. Confirm pages under owner/ (your role, how you work, your voice, what&rsquo;s off-limits)
-                and they show here.{' '}
+                Nothing yet.{' '}
                 <button type="button" onClick={() => void navigate('/knowledge/proposals?interview=1')} className="text-ink underline underline-offset-2 hover:no-underline focus-visible:outline-2 focus-visible:outline-focus">
-                  Start the interview
+                  Start interview
                 </button>
               </p>
             )}
@@ -132,7 +123,6 @@ export const AboutMe = () => {
                 <header className="flex items-center justify-between gap-3 border-b border-line-subtle px-4 py-2.5">
                   <div className="flex min-w-0 items-baseline gap-2">
                     <h2 className="min-w-0 font-mono text-[13px] font-semibold break-all">{section.path === 'people/' ? 'people/ (one line each)' : section.path === 'outsiders' ? 'Rules for outsiders (built in)' : section.path === 'private topics' ? 'Private topics (built in)' : section.path}</h2>
-                    <span className="shrink-0 text-xs text-muted">confirmed {section.verified}</span>
                   </div>
                   {section.path !== 'people/' && section.path !== 'outsiders' && section.path !== 'private topics' && <button
                     type="button"
@@ -156,9 +146,8 @@ export const AboutMe = () => {
               >
                 <div className="h-full rounded-full bg-accent" style={{ width: `${used}%` }} />
               </div>
-              <p className="text-xs text-muted">
-                {about.chars.toLocaleString()} of {ABOUT_MAX_CHARS.toLocaleString()} characters, about {Math.round(about.chars / 4).toLocaleString()} tokens.
-                Over the limit, the least important pages are left out whole.
+              <p className="text-xs tabular-nums text-muted" title={`${about.chars.toLocaleString()} of ${ABOUT_MAX_CHARS.toLocaleString()} characters, about ${Math.round(about.chars / 4).toLocaleString()} tokens. Over the limit, the least important pages are left out whole.`}>
+                {Math.round(used)}% full
               </p>
             </div>
             {about.left.length > 0 && (

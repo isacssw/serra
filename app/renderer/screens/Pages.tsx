@@ -3,7 +3,7 @@
 // message the service refuses a save with, so Save stays disabled until the page would pass `pnpm knowledge`.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AlertTriangle, CheckCircle2, ChevronRight, FileText, Search } from 'lucide-react';
-import { useSearchParams } from 'react-router';
+import { useNavigate, useSearchParams } from 'react-router';
 import type { KnowledgePage } from '../../../src/contracts.ts';
 import type { KnowledgeOverview } from '../../../src/knowledge-overview.ts';
 import { serra } from '../bridge.ts';
@@ -14,8 +14,8 @@ import { RuleDiff } from './proposals/RuleDiff.tsx';
 import { PageBody } from './PageBody.tsx';
 import { Badge, Button, cx, Dialog, Page, useToast } from '../ui/index.ts';
 import {
-  badgeCounts, badgeLabel, currentRules, keepLabel, keepRule, newerRule, replacedOn, badgeTitle, badgeTone, editorState, filterPages, groupByArea, keepSelection, localDate, markVerified,
-  pageName, pagesSummary, type PageFilter,
+  badgeLabel, currentRules, badgeTitle, badgeTone, editorState, filterPages, groupByArea, keepSelection, localDate, markVerified,
+  pageName,
 } from './pages.logic.ts';
 
 const message = (error: unknown): string => (error instanceof Error ? error.message : String(error));
@@ -39,15 +39,14 @@ type Drifted = { path: string; approved: string | null; current: string | null }
 const DriftNotice = ({ files, busy, onAccept, onRestore }: {
   files: Drifted[]; busy: boolean; onAccept: (file: Drifted) => void; onRestore: (file: Drifted) => void;
 }) => {
-  const [open, setOpen] = useState<string | null>(files.length === 1 ? files[0]!.path : null);
+  const [open, setOpen] = useState<string | null>(null);
   return (
     <section aria-labelledby="drift-title" className="flex gap-3 rounded-lg border border-warn/40 bg-panel p-4">
       <AlertTriangle size={16} aria-hidden className="mt-0.5 shrink-0 text-warn" />
       <div className="flex min-w-0 flex-1 flex-col gap-1">
         <h2 id="drift-title" className="text-sm font-semibold">
-          {files.length === 1 ? '1 file changed outside Serra' : `${files.length} files changed outside Serra`}
+          {files.length === 1 ? '1 hand edit' : `${files.length} hand edits`}
         </h2>
-        <p className="text-sm text-muted">The bot keeps using the version you approved. Review each change.</p>
         <ul className="mt-2 flex flex-col divide-y divide-line-subtle border-t border-line-subtle">
           {files.map((file) => (
             <li key={file.path} className="flex flex-col gap-2 py-2">
@@ -62,17 +61,12 @@ const DriftNotice = ({ files, busy, onAccept, onRestore }: {
                   <span className="truncate">{file.path}</span>
                 </button>
                 <span className="text-xs text-muted">{file.current === null ? 'deleted' : file.approved === null ? 'new' : 'edited'}</span>
-                {open !== file.path && <span className="ml-auto text-xs text-muted">Open it to review</span>}
+                <span className="ml-auto flex gap-1">
+                  <Button size="sm" disabled={busy} onClick={() => onAccept(file)} title="The bot uses it from now on">Accept</Button>
+                  <Button size="sm" variant="ghost" disabled={busy} onClick={() => onRestore(file)} title="Put back the version you approved">Undo it</Button>
+                </span>
               </div>
-              {open === file.path && (
-                <>
-                  <RuleDiff current={file.approved} proposed={file.current ?? ''} labels={['Approved', 'Now']} emptyCurrent="Not in the approved knowledge." />
-                  <div className="flex gap-2">
-                    <Button size="sm" variant="primary" disabled={busy} onClick={() => onAccept(file)}>Accept this change</Button>
-                    <Button size="sm" disabled={busy} onClick={() => onRestore(file)}>Restore approved</Button>
-                  </div>
-                </>
-              )}
+              {open === file.path && <RuleDiff current={file.approved} proposed={file.current ?? ''} labels={['Approved', 'Now']} emptyCurrent="Not in the approved knowledge." />}
             </li>
           ))}
         </ul>
@@ -81,12 +75,6 @@ const DriftNotice = ({ files, busy, onAccept, onRestore }: {
   );
 };
 
-const FILTERS: { value: PageFilter; label: string }[] = [
-  { value: 'all', label: 'All' },
-  { value: 'verified', label: 'Verified' },
-  { value: 'stale', label: 'Stale' },
-  { value: 'unverified', label: 'Unverified' },
-];
 
 const PageList = ({ pages, selected, onSelect }: { pages: KnowledgePage[]; selected: string | null; onSelect: (path: string) => void }) => (
   <div className="flex flex-col gap-4">
@@ -111,7 +99,6 @@ const PageList = ({ pages, selected, onSelect }: { pages: KnowledgePage[]; selec
               <FileText size={15} aria-hidden className="shrink-0 text-muted" />
               <span className="flex min-w-0 flex-1 flex-col">
                 <span className="truncate">{page.description ?? pageName(page.path)}</span>
-                {page.description && <span className="truncate font-mono text-[11px] text-faint">{pageName(page.path)}</span>}
               </span>
               {page.problems.length > 0 && (
                 <AlertTriangle size={14} aria-label="Fails the knowledge check" className="shrink-0 text-down" />
@@ -126,60 +113,19 @@ const PageList = ({ pages, selected, onSelect }: { pages: KnowledgePage[]; selec
   </div>
 );
 
-/**
- * Rules on this page that disagree with or repeat another rule. A pair on this page gets "Keep this one", which moves
- * the other under Replaced in the draft for the owner to save; a pair across pages links to the other page.
- */
-const RulePairs = ({ page, pairs, draft, disabled, onKeep, onOpen }: {
-  page: string; pairs: KnowledgeOverview['health']['issues']; draft: string; disabled: boolean; onKeep: (drop: string) => void; onOpen: (path: string) => void;
-}) => {
-  // Only rules still current in the draft: once one is kept, the pair is settled and leaves the panel.
-  const current = currentRules(draft);
-  const shown = pairs.flatMap((issue) => {
-    const facts = (issue.facts ?? []).filter((fact) => fact.page !== page || current.some((line) => line.includes(fact.text)));
-    return facts.length < 2 ? [] : [{ issue, facts }];
-  });
-  if (shown.length === 0) return null;
-  return (
-    <section aria-label="Rules to settle" className="flex flex-col gap-3 rounded-lg border border-line bg-panel px-3 py-2.5">
-      {shown.map(({ issue, facts }, at) => {
-        const here = facts.every((fact) => fact.page === page);
-        // "Keep this one" moves the other rule's line; a rule inside a sentence of prose is edited by hand.
-        const wholeLines = here && facts.every((fact) => current.includes(fact.text));
-        const newer = issue.kind === 'conflict' ? newerRule(facts[0]!.text, facts[1]!.text) : null;
-        return (
-          <div key={at} className="flex flex-col gap-1.5">
-            <p className="flex items-center gap-1.5 text-[13px]">
-              <AlertTriangle size={14} aria-hidden className={issue.kind === 'conflict' ? 'text-warn' : 'text-muted'} />
-              {issue.kind === 'conflict' ? 'Two rules disagree. Keep the current one.' : 'This rule is written twice. Keep one.'}
-            </p>
-            {facts.map((fact, which) => (
-              <div key={which} className="flex items-start gap-2">
-                <p className="min-w-0 flex-1 border-l-2 border-line pl-2 text-xs text-muted">
-                  {fact.text}
-                  {newer === which && <span className="ml-1.5 whitespace-nowrap rounded bg-raised px-1 py-0.5 text-[11px] text-ink">Looks newer</span>}
-                  {fact.page === page ? '' : <> <span className="text-faint">on</span> <button type="button" onClick={() => onOpen(fact.page)} className="font-mono text-ink underline underline-offset-2 hover:no-underline focus-visible:outline-2 focus-visible:outline-focus">{fact.page}</button></>}
-                </p>
-                {wholeLines && (
-                  <Button size="sm" variant={newer === which ? 'primary' : 'secondary'} disabled={disabled} onClick={() => onKeep(facts[1 - which]!.text)}>{keepLabel(fact.text, facts[1 - which]!.text)}</Button>
-                )}
-              </div>
-            ))}
-            {wholeLines
-              ? <p className="text-xs text-faint">Saves at once; the other moves under “Replaced”, dated today. You can undo.</p>
-              : here && <p className="text-xs text-faint">Edit the page below so only the current rule is left.</p>}
-          </div>
-        );
-      })}
-    </section>
-  );
-};
+/** A page holding a rule that disagrees with another: settled in one place, Overview's To do. */
+const SettleLink = ({ onSettle }: { onSettle: () => void }) => (
+  <p className="flex items-center gap-1.5 text-[13px]">
+    <AlertTriangle size={14} aria-hidden className="text-warn" />Two rules disagree
+    <button type="button" onClick={onSettle} className="text-ink underline underline-offset-2 hover:no-underline focus-visible:outline-2 focus-visible:outline-focus">Settle</button>
+  </p>
+);
 
 export const Pages = () => {
+  const navigate = useNavigate();
   const toast = useToast();
   const [pages, setPages] = useState<KnowledgePage[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [filter, setFilter] = useState<PageFilter>('all');
   const [query, setQuery] = useState('');
   const [selected, setSelected] = useState<string | null>(null);
   const [saved, setSaved] = useState<string | null>(null);
@@ -255,8 +201,7 @@ export const Pages = () => {
 
   const page = pages?.find((entry) => entry.path === selected) ?? null;
   const state = useMemo(() => (selected && saved !== null ? editorState(selected, saved, draft) : null), [selected, saved, draft]);
-  const visible = useMemo(() => filterPages(pages ?? [], filter, query), [pages, filter, query]);
-  const counts = useMemo(() => badgeCounts(pages ?? []), [pages]);
+  const visible = useMemo(() => filterPages(pages ?? [], 'all', query), [pages, query]);
 
   const resolveDrift = async (file: Drifted, accept: boolean) => {
     const bridge = serra();
@@ -301,34 +246,6 @@ export const Pages = () => {
     } finally {
       setSaving(false);
     }
-  };
-
-  /** Keeps one rule of a pair and saves at once (the other moves under "Replaced"); Undo puts the page back. With unsaved
-   * edits open, it only changes the draft, so nothing typed is saved unasked. */
-  const keepNow = async (drop: string) => {
-    const bridge = serra();
-    const path = selected;
-    if (!bridge || !path || saved === null || saving) return;
-    if (state?.dirty) { setDraft((text) => keepRule(text, drop, localDate(new Date()))); return; }
-    const before = saved;
-    const kept = pairs.map((issue) => issue.facts ?? []).find((facts) => facts.some((fact) => fact.text === drop))?.find((fact) => fact.text !== drop)?.text ?? '';
-    const next = keepRule(before, drop, replacedOn(kept, localDate(new Date())));
-    if (next === before) return;
-    setSaving(true);
-    try {
-      await bridge.pages.save(path, next, before);
-      const text = await bridge.pages.read(path);
-      setSaved(text);
-      setDraft(text);
-      await reload();
-      bridge.pages.issues(path).then(setPairs, () => undefined);
-      toast({
-        message: 'Saved. The other rule is kept under "Replaced".', tone: 'success',
-        action: { label: 'Undo', onClick: () => {
-          bridge.pages.save(path, before, text).then(async () => { setReadVersion((version) => version + 1); await reload(); bridge.pages.issues(path).then(setPairs, () => undefined); }, (error: unknown) => toast({ message: message(error), tone: 'error' }));
-        } },
-      });
-    } catch (error) { toast({ message: message(error), tone: 'error' }); } finally { setSaving(false); }
   };
 
   /** Bring a retired page back where it was. */
@@ -389,18 +306,20 @@ export const Pages = () => {
   }, []);
 
   return (
-    <Page title="Pages" subtitle={pages ? pagesSummary(pages) : loadError ? undefined : 'Loading…'}>
+    <Page title="Pages">
       {loadError && <p role="alert" className="text-sm text-down">{loadError}</p>}
       {drifted.length > 0 && (
         <DriftNotice files={drifted} busy={resolving} onAccept={(file) => void resolveDrift(file, true)} onRestore={(file) => void resolveDrift(file, false)} />
       )}
       {pages && pages.length === 0 && (
-        <p className="text-sm text-muted">No pages yet. Pages come in through Proposals: promote one and it shows up here.</p>
+        <p className="text-sm text-muted">No pages yet.</p>
       )}
       {pages && pages.length > 0 && (
         <div className="flex flex-col gap-6 border-t border-line pt-5 lg:flex-row lg:items-start">
           <nav aria-label="Pages" className="flex w-full shrink-0 lg:w-72 flex-col gap-3">
-            <div className="relative flex items-center">
+            {/* A short list needs no search. */}
+            {pages.length > 8 && (
+              <div className="relative flex items-center">
               <Search size={15} aria-hidden className="pointer-events-none absolute left-2.5 text-muted" />
               <input
                 type="search"
@@ -411,22 +330,7 @@ export const Pages = () => {
                 className="h-8 w-full rounded-md border border-line bg-panel pl-8 pr-2 text-sm text-ink placeholder:text-muted focus:outline-2 focus:outline-offset-1 focus:outline-focus"
               />
             </div>
-            <div role="group" aria-label="Show" className="flex flex-wrap gap-1">
-              {FILTERS.map((option) => (
-                <button
-                  key={option.value}
-                  type="button"
-                  aria-pressed={filter === option.value}
-                  onClick={() => setFilter(option.value)}
-                  className={cx(
-                    'h-7 rounded-md border px-2 text-xs tabular-nums focus-visible:outline-2 focus-visible:outline-focus',
-                    filter === option.value ? 'border-line-strong bg-selected text-ink' : 'border-line text-muted hover:bg-raised',
-                  )}
-                >
-                  {option.label} {counts[option.value]}
-                </button>
-              ))}
-            </div>
+            )}
             {visible.length > 0
               ? <>
                 <PageList pages={visible} selected={selected} onSelect={select} />
@@ -454,12 +358,8 @@ export const Pages = () => {
                   <div className="flex flex-wrap items-center gap-2">
                     <h2 className="text-base font-semibold">{page.description ?? page.path}</h2>
                     {/* A page whose rules disagree isn't settled, however recently it was confirmed. */}
-                    {pairs.some((issue) => issue.kind === 'conflict')
-                      ? <Badge tone="warn">Rules disagree</Badge>
-                      : <Badge tone={badgeTone(page.badge)} title={badgeTitle(page)}>{badgeLabel(page.badge)}</Badge>}
-                    {page.verified && <span className="text-xs text-muted">confirmed {page.verified}</span>}
+                    {!pairs.some((issue) => issue.kind === 'conflict') && page.badge !== 'verified' && <Badge tone={badgeTone(page.badge)} title={badgeTitle(page)}>{badgeLabel(page.badge)}</Badge>}
                   </div>
-                  {page.description && <p className="font-mono text-xs text-faint">{page.path}</p>}
                 </div>
                 {(page.warnings.length > 0 || page.problems.length > 0) && (
                   <ul className="flex flex-col gap-1 text-sm">
@@ -477,7 +377,7 @@ export const Pages = () => {
             {page && state && (
               <>
                 <AudiencePicker text={draft} disabled={saving} onChange={setDraft} />
-                {pairs.length > 0 && <RulePairs page={selected!} pairs={pairs} draft={draft} disabled={saving} onKeep={(drop) => { void keepNow(drop); }} onOpen={(path) => { if (state?.dirty) setPendingSelect(path); else setSelected(path); }} />}
+                {pairs.some((issue) => issue.kind === 'conflict') && <SettleLink onSettle={() => void navigate('/knowledge/overview')} />}
                 {!editing && !state.dirty && (
                   <div className="flex flex-col gap-3">
                     <div className="rounded-lg border border-line bg-panel"><PageBody text={pageBody(draft)} onOpen={(href) => void serra()?.app.openExternal(href)} /></div>
@@ -510,8 +410,8 @@ export const Pages = () => {
                   ) : (
                     <p className="flex items-center gap-1.5 text-sm text-muted">
                       {pairs.some((issue) => issue.kind === 'conflict' && (issue.facts ?? []).filter((fact) => fact.page !== selected || currentRules(draft).some((line) => line.includes(fact.text))).length >= 2)
-                        ? <><AlertTriangle size={15} aria-hidden className="text-warn" />Header and length pass, but two rules on this page disagree. Settle them above.</>
-                        : <><CheckCircle2 size={15} aria-hidden className="text-up" />Header and length pass the knowledge check.</>}
+                        ? <><AlertTriangle size={15} aria-hidden className="text-warn" />Two rules disagree</>
+                        : <><CheckCircle2 size={15} aria-hidden className="text-up" />Looks good</>}
                     </p>
                   )}
                 </div>

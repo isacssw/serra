@@ -1,17 +1,17 @@
-// Knowledge › Overview: whether the bot's knowledge of its owner is growing and staying tidy. The score, its trend,
-// what the bot knows per area, what needs tidying, what it learned lately and what replies used. Read-only: every
-// fix happens in Pages or Proposals, one click away.
+// Knowledge › Overview, read in five seconds: how many replies the notes shaped, one request answered with and without
+// them, and To do when there is something to do. Everything else (each page's use, health over time, areas, what it
+// learned lately, the weekly review's settings) is under Details.
 import { useCallback, useEffect, useId, useState } from 'react';
-import { AlertTriangle, CircleCheck, CircleDot, Sparkles } from 'lucide-react';
+import { AlertTriangle, ChevronRight, CircleCheck, CircleDot, Sparkles } from 'lucide-react';
 import { useNavigate } from 'react-router';
 import type { KnowledgeOverview } from '../../../src/knowledge-overview.ts';
 import { serra } from '../bridge.ts';
 import { FixList } from './overview/FixList.tsx';
 import { ValueList } from './overview/ValueList.tsx';
-import { WeekDigest } from './overview/WeekDigest.tsx';
+import { Proof, ReviewControls } from './overview/WeekDigest.tsx';
 import { Button, cx, EmptyState, Page } from '../ui/index.ts';
 import {
-  changeText, EVENT_LABELS, factsChart, shortDate, groupByDay, scoreChart, scoreWord,
+  changeText, EVENT_LABELS, factsChart, shortDate, groupByDay, headline, scoreChart, scoreWord,
 } from './overview.logic.ts';
 
 const message = (error: unknown): string => (error instanceof Error ? error.message : String(error));
@@ -144,15 +144,13 @@ export const Overview = () => {
   const [now] = useState(() => new Date());
 
   if (error) return <Page title="Overview"><p role="alert" className="text-sm text-down">{error}</p></Page>;
-  if (!overview) return <Page title="Overview" subtitle="Loading…" />;
+  if (!overview) return <Page title="Overview" />;
 
   const { health, monthAgo, usage } = overview;
   if (health.pages === 0) {
     return (
-      <Page title="Overview" subtitle="How well your bot knows you, and how that changes.">
-        <EmptyState icon={<Sparkles size={18} />} title="Your bot doesn't know you yet" action={<Button variant="primary" onClick={() => void navigate('/knowledge/proposals?interview=1')}>Start interview</Button>}>
-          A short interview writes the first pages: your role, how you work, how you write and who you work with.
-        </EmptyState>
+      <Page title="Overview">
+        <EmptyState icon={<Sparkles size={18} />} title="Your bot doesn't know you yet" action={<Button variant="primary" onClick={() => void navigate('/knowledge/proposals?interview=1')}>Start interview</Button>} />
       </Page>
     );
   }
@@ -163,44 +161,59 @@ export const Overview = () => {
     `${health.facts} facts${monthAgo ? ` (${changeText(health.facts, monthAgo.facts, monthAgo.at) ?? ''})` : ''}`,
   ].join(' · ');
   const days = groupByDay(overview.events, now, 5);
+  const head = headline(overview);
+  const example = overview.review?.examples[0];
 
   return (
-    <Page title="Overview" subtitle="How well your bot knows you, and how that changes.">
-      {overview.unreviewed > 0 && (
-        <div className="flex items-start gap-2 text-[13px] text-muted">
-          <AlertTriangle size={15} aria-hidden className="mt-0.5 shrink-0 text-warn" />
-          <p>
-            {overview.unreviewed === 1 ? 'A file changed outside Serra isn’t counted until you review it in ' : `${overview.unreviewed} files changed outside Serra aren’t counted until you review them in `}
-            <button type="button" onClick={() => void navigate('/knowledge/pages')} className="text-ink underline underline-offset-2 hover:no-underline focus-visible:outline-2 focus-visible:outline-focus">Pages</button>.
-          </p>
-        </div>
-      )}
-      <WeekDigest review={overview.review} weekly={overview.reviewWeekly} onChanged={() => void load()} />
+    <Page title="Overview">
+      <section aria-label="What your notes did" className="flex flex-col gap-4 rounded-lg border border-line bg-panel px-5 py-4">
+        {head
+          ? (
+            <p className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+              <span className="text-4xl font-semibold tracking-tight tabular-nums">{head.used}<span className="text-2xl font-normal text-muted"> / {head.replies}</span></span>
+              <span className="text-sm text-muted">replies used your notes {head.period}</span>
+            </p>
+          )
+          : <p className="text-sm text-muted">No replies yet.</p>}
+        {example && <Proof example={example} />}
+        {!overview.review && <ReviewControls weekly={overview.reviewWeekly} first onChanged={() => void load()} />}
+      </section>
+
       <FixList overview={overview} onOpen={open} onChanged={() => void load()} />
-      <ValueList value={overview.value} days={usage.days} replies={usage.replies} onOpen={open} onChanged={() => void load()} />
 
-      <Section title="How it’s growing" aside={growthLine}>
-        {overview.points.length > 1 && <div className="rounded-lg border border-line bg-panel px-3 pt-3 pb-1"><ScoreChart overview={overview} /></div>}
-        <ul className="flex flex-wrap gap-1.5" aria-label="What your bot knows about you, by area">
-          {health.areas.map((area) => (
-            <li key={area.area} title={area.headline ?? undefined} className={cx('flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs', area.conflicts > 0 ? 'border-warn/40 text-ink' : 'border-line text-ink')}>
-              {area.conflicts > 0
-                ? <AlertTriangle size={12} aria-label="Has rules that disagree" className="text-warn" />
-                : area.confirmed > 0 ? <CircleCheck size={12} aria-label="Covered" className="text-up" /> : <CircleDot size={12} aria-label="Nothing yet" className="text-faint" />}
-              {area.label}
-              <span className="tabular-nums text-muted">{area.facts}</span>
-            </li>
-          ))}
-        </ul>
-      </Section>
+      <details className="group flex flex-col">
+        <summary className="flex w-fit cursor-pointer list-none items-center gap-1 text-sm text-muted hover:text-ink focus-visible:outline-2 focus-visible:outline-focus [&::-webkit-details-marker]:hidden">
+          <ChevronRight size={14} aria-hidden className="transition-transform group-open:rotate-90" />Details
+        </summary>
+        <div className="mt-4 flex flex-col gap-8">
+          {overview.review && (
+            <Section title="Weekly review" aside={`${shortDate(`${overview.review.from}T00:00:00Z`)} – ${shortDate(`${overview.review.to}T00:00:00Z`)}`}>
+              <p className="text-[13px] leading-5 text-muted">{overview.review.summary}</p>
+              {overview.review.examples.slice(1).map((more) => <Proof key={more.page} example={more} />)}
+              {overview.review.error && <p className="text-xs text-warn">The model part didn’t run: {overview.review.error}</p>}
+              <ReviewControls weekly={overview.reviewWeekly} first={false} onChanged={() => void load()} />
+            </Section>
+          )}
 
-      <div className="flex flex-col gap-6">
-        <Section title="Recently learned" aside={overview.waiting > 0 ? (
-          <button type="button" onClick={() => void navigate('/knowledge/proposals')} className="underline underline-offset-2 hover:text-ink focus-visible:outline-2 focus-visible:outline-focus">{overview.waiting} waiting for you</button>
-        ) : undefined}>
-          {days.length === 0
-            ? <p className="text-[13px] text-muted">No changes recorded yet. Approvals and edits show here.</p>
-            : (
+          <ValueList value={overview.value} days={usage.days} replies={usage.replies} onOpen={open} onChanged={() => void load()} />
+
+          <Section title="Growth" aside={growthLine}>
+            {overview.points.length > 1 && <div className="rounded-lg border border-line bg-panel px-3 pt-3 pb-1"><ScoreChart overview={overview} /></div>}
+            <ul className="flex flex-wrap gap-1.5" aria-label="What your bot knows about you, by area">
+              {health.areas.map((area) => (
+                <li key={area.area} title={area.headline ?? undefined} className={cx('flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs', area.conflicts > 0 ? 'border-warn/40 text-ink' : 'border-line text-ink')}>
+                  {area.conflicts > 0
+                    ? <AlertTriangle size={12} aria-label="Has rules that disagree" className="text-warn" />
+                    : area.confirmed > 0 ? <CircleCheck size={12} aria-label="Covered" className="text-up" /> : <CircleDot size={12} aria-label="Nothing yet" className="text-faint" />}
+                  {area.label}
+                  <span className="tabular-nums text-muted">{area.facts}</span>
+                </li>
+              ))}
+            </ul>
+          </Section>
+
+          {days.length > 0 && (
+            <Section title="Recently learned">
               <ol className="flex flex-col gap-4">
                 {days.map((day) => (
                   <li key={day.day} className="flex flex-col gap-1.5">
@@ -221,16 +234,16 @@ export const Overview = () => {
                         </li>
                       ))}
                       {day.confirmed.length > 0 && (
-                        <li className="text-[13px]"><span className="font-medium">Confirmed</span> <span className="text-muted">{day.confirmed.length} page{day.confirmed.length === 1 ? '' : 's'} still hold</span></li>
+                        <li className="text-[13px]"><span className="font-medium">Confirmed</span> <span className="text-muted">{day.confirmed.length} page{day.confirmed.length === 1 ? '' : 's'}</span></li>
                       )}
                     </ul>
                   </li>
                 ))}
               </ol>
-            )}
-        </Section>
-
-      </div>
+            </Section>
+          )}
+        </div>
+      </details>
     </Page>
   );
 };

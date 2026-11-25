@@ -20,7 +20,7 @@ import { approvalAudience, pageAudience, type Audience } from '../../../src/owne
 import { useSearchParams } from 'react-router';
 import { registerActions } from '../commands/registry.ts';
 import {
-  defaultFolder, folderChoices, swapRule, folderLabel, groupByDate, interviewStartedText, nextSelection, pendingLabel, PROPOSAL_PARAM, promoteProposalAction, proposalBody,
+  defaultFolder, folderChoices, swapRule, folderLabel, groupByDate, interviewStartedText, nextSelection, PROPOSAL_PARAM, promoteProposalAction, proposalBody,
   proposalTitle, withoutTarget, diffRows, diffStats,
 } from './proposals.logic.ts';
 
@@ -256,16 +256,12 @@ export const Proposals = () => {
   return (
     <Page
       title="Proposals"
-      subtitle={proposals ? pendingLabel(proposals.length + meetingCount) : loadError ? undefined : 'Loading…'}
       actions={<InterviewButton autoOpen={search.get('interview') === '1'} onOpened={() => setSearch((params) => { params.delete('interview'); return params; }, { replace: true })} />}
     >
       {loadError && <p role="alert" className="text-sm text-down">{loadError}</p>}
       <MeetingReview stubs={meetingStubs} onChanged={() => { void reload(); }} onCount={setMeetingCount} />
       {proposals && proposals.length === 0 && meetingCount === 0 && (
-        <p className="text-sm text-muted">
-          No proposals waiting. Pages the workers propose under knowledge/proposals/ show up here. Start the interview to
-          teach the bot how you work: what you confirm in it lands here for review.
-        </p>
+        <p className="text-sm text-muted">Nothing waiting.</p>
       )}
       {proposals && proposals.length > 0 && (
         <div className="flex flex-col gap-6 border-t border-line pt-5 lg:flex-row lg:items-start">
@@ -277,13 +273,11 @@ export const Proposals = () => {
               <>
                 <div className="flex flex-col gap-1">
                   <h2 className="text-lg font-semibold tracking-tight">{title}</h2>
-                  {diff.proposal.description && diff.proposal.description !== title && <p className="text-sm text-muted">{diff.proposal.description}</p>}
-                  {diff.proposal.target && <p className="text-xs text-muted">Changes <code>{diff.proposal.target}</code></p>}
-                  <Sources text={diff.proposed} from={diff.proposal.from} />
+                  <Sources text={diff.proposed} from={diff.proposal.from} target={diff.proposal.target} />
                 </div>
                 {stale && (
                   <p role="status" className="rounded-lg border border-warn/40 bg-panel px-3 py-2.5 text-[13px] text-warn">
-                    This page changed after the weekly review wrote this. Approving it would undo that change; the left side below is the page as it is now. Discard it if the change already settled it.
+                    The page changed since. Approving undoes that change.
                   </p>
                 )}
                 {!diff.proposal.target && similar[0] && (
@@ -291,13 +285,13 @@ export const Proposals = () => {
                     <div className="flex min-w-0 flex-1 flex-col gap-0.5">
                       {similar[0].disagrees ? (
                         <>
-                          <p className="text-[13px]">Changes a rule on <code className="text-xs">{similar[0].path}</code>. Replace the old rule there, so only one is current.</p>
+                          <p className="text-[13px]">Changes a rule on <code className="text-xs">{similar[0].path}</code></p>
                           <p className="border-l-2 border-line pl-2 text-xs text-muted">On the page: {similar[0].disagrees.page}</p>
                           <p className="border-l-2 border-line pl-2 text-xs text-muted">Proposed: {similar[0].disagrees.proposal}</p>
                         </>
                       ) : (
                         <>
-                          <p className="text-[13px]">Already on <code className="text-xs">{similar[0].path}</code>. One rule lives on one page.</p>
+                          <p className="text-[13px]">Already on <code className="text-xs">{similar[0].path}</code></p>
                           <p className="truncate border-l-2 border-line pl-2 text-xs text-muted">{similar[0].shared[0]}</p>
                         </>
                       )}
@@ -306,7 +300,8 @@ export const Proposals = () => {
                   </div>
                 )}
                 <RuleDiff current={landing(diff, folder)} proposed={asWritten(diff, folder, picked)} />
-                {folders.length > 0 ? (
+                {/* A rewrite of a page goes where the page is; only a new page asks where. */}
+                {diff.proposal.target ? null : folders.length > 0 ? (
                   <Select
                     label="Target folder"
                     value={folder}
@@ -413,23 +408,20 @@ const sourcesOf = (text: string): string[] => {
   return items;
 };
 
-const Sources = ({ text, from }: { text: string; from?: ProposalSource }) => {
+/** Where the proposal came from, in a few words; its sources on hover. */
+const Sources = ({ text, from, target }: { text: string; from?: ProposalSource; target: string | null }) => {
   const sources = sourcesOf(text);
   const opened = (href: string) => (event: { preventDefault: () => void }) => { event.preventDefault(); void serra()?.app.openExternal(href); };
   return (
-    <div className="flex flex-col gap-0.5 text-xs">
-      {from ? (
-        <p className={from.owner || from.via === 'review' ? 'text-muted' : 'text-warn'}>
-          {from.via === 'review' ? 'Written by your weekly review from your own pages; nothing new added.' : from.owner
-            ? (from.via === 'app' ? 'From a task you started in the app.' : 'From a Slack thread you started.')
-            : `From a Slack thread ${from.who} started. Approve only what you said yourself.`}
-          {from.link && <>{' '}<a href={from.link} onClick={opened(from.link)} className="text-ink underline underline-offset-2 hover:no-underline focus-visible:outline-2 focus-visible:outline-focus">Open the thread</a></>}
-        </p>
-      ) : (
-        <p className="text-muted">Where this came from wasn&rsquo;t recorded.</p>
-      )}
-      <p className="text-muted">{from?.via === 'review' ? `Sources: ${sources.join('; ') || 'your pages'}.` : sources.length ? <>The worker&rsquo;s sources: {sources.join('; ')}.</> : 'The worker gave no sources.'}</p>
-    </div>
+    <p className={cx('text-xs', !from || from.owner || from.via === 'review' ? 'text-muted' : 'text-warn')} title={sources.length ? `Sources: ${sources.join('; ')}` : 'No sources given'}>
+      {from
+        ? from.via === 'review' ? 'Weekly review · from your own pages' : from.owner
+          ? (from.via === 'app' ? 'From your task' : 'From your Slack thread')
+          : `From ${from.who}’s Slack thread · approve only what you said`
+        : 'Source not recorded'}
+      {target && <> · <code>{target}</code></>}
+      {from?.link && <>{' · '}<a href={from.link} onClick={opened(from.link)} className="text-ink underline underline-offset-2 hover:no-underline focus-visible:outline-2 focus-visible:outline-focus">Thread</a></>}
+    </p>
   );
 };
 

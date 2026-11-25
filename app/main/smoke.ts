@@ -306,6 +306,32 @@ const themePaletteScript = (theme: Theme, label: string): string => `(async () =
   return report('${theme}', '⌘K › Switch theme…');
 })()`;
 
+/** The knowledge screens whose visible words the smoke run counts. */
+const KNOWLEDGE_ROUTES = ['knowledge-overview', 'about-me', 'proposals', 'pages', 'brief'];
+
+/** Words a person can see in the main pane: everything rendered, and what fits in the first screenful. */
+const wordsScript = `(() => {
+  const main = document.querySelector('[data-serra-main]');
+  const count = (text) => (text.match(/[\\p{L}\\p{N}][\\p{L}\\p{N}'’.-]*/gu) ?? []).length;
+  let total = 0; let firstScreen = 0;
+  const walker = document.createTreeWalker(main, NodeFilter.SHOW_TEXT);
+  for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+    const el = node.parentElement;
+    if (!el || !node.textContent.trim() || el.closest('[hidden], [aria-hidden="true"], dialog:not([open])')) continue;
+    // Inside a closed <details>, only its summary shows.
+    const shut = el.closest('details:not([open])');
+    if (shut && !el.closest('summary')) continue;
+    if (el.checkVisibility && !el.checkVisibility({ visibilityProperty: true, contentVisibilityAuto: true })) continue;
+    const range = document.createRange(); range.selectNodeContents(node);
+    const rects = [...range.getClientRects()].filter((r) => r.width > 0 && r.height > 0);
+    if (rects.length === 0) continue;
+    const words = count(node.textContent);
+    total += words;
+    if (rects[0].top < window.innerHeight && rects[0].bottom > 0) firstScreen += words;
+  }
+  return { total, firstScreen };
+})()`;
+
 /** The least contrast text may have with what is behind it (WCAG AA for normal text). */
 const MIN_CONTRAST = 4.5;
 
@@ -408,17 +434,22 @@ const runThemeChecks = async (window: BrowserWindow): Promise<string[]> => {
     for (const [theme, label] of [['dark', 'Dark'], ['light', 'Light'], ['system', 'System']] as const) expect(theme, await run(themePaletteScript(theme, label)));
 
     const routes = await run<string[]>(routesScript);
+    // Visible words on each knowledge screen, all of it and the first screenful, so copy cuts can be measured.
+    const words: Record<string, { total: number; firstScreen: number }> = {};
+    const countWords = async (name: string): Promise<void> => { words[name] = await run<{ total: number; firstScreen: number }>(wordsScript); };
     for (const theme of ['light', 'dark'] as const) {
       await run(themeControlScript(theme));
       const reports: ContrastReport[] = [];
       for (const route of routes) {
         const report = await run<ContrastReport>(contrastScript(route));
         reports.push(report);
+        if (theme === 'light' && KNOWLEDGE_ROUTES.includes(route)) await countWords(route);
         if (shots) {
           writeFileSync(join(shots, `${theme}-${route}.png`), (await window.webContents.capturePage()).toPNG());
           // Pages with a page open, and its Retire dialog.
           if (route === 'pages') {
             await run(`(async () => { location.hash = '#/knowledge/pages?page=owner%2Fworking-style.md'; await new Promise((r) => setTimeout(r, 400)); (document.querySelector('[data-serra-main] section[aria-label="Rules to settle"]') ?? document.querySelector('[data-serra-main] textarea'))?.scrollIntoView({ block: 'start' }); await new Promise((r) => setTimeout(r, 150)); })()`);
+            if (theme === 'light') await countWords('pages-detail');
             writeFileSync(join(shots, `${theme}-pages-detail.png`), (await window.webContents.capturePage()).toPNG());
             await run(`(async () => { [...document.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Retire…')?.click(); await new Promise((r) => setTimeout(r, 300)); })()`);
             writeFileSync(join(shots, `${theme}-pages-retire.png`), (await window.webContents.capturePage()).toPNG());
@@ -426,7 +457,8 @@ const runThemeChecks = async (window: BrowserWindow): Promise<string[]> => {
           }
           // Overview is long: what the notes do, and its lower half, scrolled into view.
           if (route === 'knowledge-overview') {
-            await run(`(async () => { document.querySelector('#value-title')?.scrollIntoView({ block: 'start' }); await new Promise((r) => setTimeout(r, 150)); })()`);
+            // Details open: what each page does, then the rest.
+            await run(`(async () => { for (const d of document.querySelectorAll('[data-serra-main] details')) d.open = true; await new Promise((r) => setTimeout(r, 150)); document.querySelector('#value-title')?.scrollIntoView({ block: 'start' }); await new Promise((r) => setTimeout(r, 150)); })()`);
             writeFileSync(join(shots, `${theme}-${route}-value.png`), (await window.webContents.capturePage()).toPNG());
             await run(`(async () => { for (const el of document.querySelectorAll('*')) if (el.scrollHeight > el.clientHeight + 40 && getComputedStyle(el).overflowY.match(/auto|scroll/)) el.scrollTop = el.scrollHeight; await new Promise((r) => setTimeout(r, 150)); })()`);
             writeFileSync(join(shots, `${theme}-${route}-end.png`), (await window.webContents.capturePage()).toPNG());
@@ -450,6 +482,10 @@ const runThemeChecks = async (window: BrowserWindow): Promise<string[]> => {
       await setupPass(withoutProfile, 'none-');
       await useProfile(directory);
       await run(`location.hash = '#/jobs/needs-you'`);
+      if (theme === 'light') {
+        console.log('[serra] smoke words:', JSON.stringify(words));
+        if (shots) writeFileSync(join(shots, 'words.json'), `${JSON.stringify(words, null, 2)}\n`);
+      }
       console.log(`[serra] smoke contrast in ${theme}:`, JSON.stringify(reports.map(({ route, checked, low }) => ({ route, checked, low: low.length }))));
     }
   } finally {

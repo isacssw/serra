@@ -108,6 +108,16 @@ const dayLabel = (day: string, now: Date): string => {
 /** The button that settles a review suggestion. */
 const suggestionAction = (kind: 'replace' | 'retire' | 'confirm'): string => ({ replace: 'Approve', retire: 'Retire', confirm: 'Still true' })[kind];
 
+/**
+ * Overview's one message: how many replies the notes shaped, this week from the review, else over the usage window.
+ * Null before any reply.
+ */
+export const headline = (overview: Pick<KnowledgeOverview, 'review' | 'usage'>): { used: number; replies: number; period: string } | null => {
+  if (overview.review && overview.review.replies > 0) return { used: overview.review.withKnowledge, replies: overview.review.replies, period: 'this week' };
+  if (overview.usage.replies > 0) return { used: overview.usage.withKnowledge, replies: overview.usage.replies, period: `in ${overview.usage.days} days` };
+  return null;
+};
+
 /** "12 replies · 9 used your notes · 4 new facts": the week in one line. */
 export const weekLine = (review: { replies: number; withKnowledge: number; facts: { before: number | null; now: number } }): string => [
   `${review.replies} repl${review.replies === 1 ? 'y' : 'ies'}`,
@@ -147,15 +157,21 @@ export interface FixItem {
   suggestion?: ReviewSuggestion;
   /** A proposal waiting for the owner: the action opens it in Proposals. */
   proposal?: string;
+  /** Two rules that disagree: one Keep button each (the other moves under "Replaced"), in place of Settle. */
+  keep?: { page: string; text: string }[];
+  /** Something replies said was missing: the action opens a task to tell the bot. */
+  tell?: string;
+  /** Where the action goes, when it is a screen rather than a page. */
+  href?: string;
 }
 
-const FIX_RANK: Record<string, number> = { replace: 0, proposal: 0.5, conflict: 1, 'index-full': 2, duplicate: 3, overlap: 4, retire: 5, confirm: 6, stale: 7, unindexed: 8, draft: 9, long: 10, unstructured: 11 };
+const FIX_RANK: Record<string, number> = { unreviewed: -1, replace: 0, proposal: 0.5, conflict: 1, missing: 1.5, 'index-full': 2, duplicate: 3, overlap: 4, retire: 5, confirm: 6, stale: 7, unindexed: 8, draft: 9, long: 10, unstructured: 11 };
 
 /**
  * Every organising job in one list, worst first: the weekly review's fixes (one click) and what the health check finds
  * now, without repeating a page a review fix already covers. Names pages by their description, not their file.
  */
-export const fixItems = (overview: Pick<KnowledgeOverview, 'review' | 'health' | 'value'> & Partial<Pick<KnowledgeOverview, 'confirmHeldBack' | 'proposals'>>): FixItem[] => {
+export const fixItems = (overview: Pick<KnowledgeOverview, 'review' | 'health' | 'value'> & Partial<Pick<KnowledgeOverview, 'confirmHeldBack' | 'proposals' | 'unreviewed'>>): FixItem[] => {
   const title = (path: string): string => overview.value.find((page) => page.path === path)?.title ?? path;
   const fromReview: FixItem[] = (overview.review?.suggestions ?? []).map((suggestion) => ({
     id: suggestion.id, title: suggestion.title, why: suggestion.why, lines: [], pages: [suggestion.page],
@@ -172,6 +188,7 @@ export const fixItems = (overview: Pick<KnowledgeOverview, 'review' | 'health' |
     return [{
       id: `${issue.kind}:${issue.pages.join(',')}`, title: page === 'index.md' ? 'Knowledge index' : issue.pages.map(title).join(' and '), why, lines: issue.detail ?? [],
       pages: issue.pages, action: stale ? 'Still true' : issue.kind === 'conflict' || issue.kind === 'duplicate' ? 'Settle' : 'Open', ...(stale ? { suggestion: stale } : {}),
+      ...(issue.kind === 'conflict' && issue.facts?.length === 2 ? { keep: issue.facts } : {}),
       ...(issue.kind === 'stale' && held ? { why: `${why}, and a newer page on its topic may have changed it` } : {}),
     }];
   });
@@ -181,6 +198,13 @@ export const fixItems = (overview: Pick<KnowledgeOverview, 'review' | 'health' |
   const fromProposals: FixItem[] = (overview.proposals ?? []).filter((proposal) => !reviewed.has(proposal.id)).map((proposal) => ({
     id: `proposal:${proposal.id}`, title: proposal.title, why: 'Waiting for your approval', lines: [], pages: [], action: 'Review', proposal: proposal.id,
   }));
+  // What replies were missing, and hand edits to look at: the same list, so there is one place to act.
+  const missing: FixItem[] = (overview.review?.missing ?? []).map((item) => ({
+    id: `missing:${item.topic}`, title: item.topic, why: item.count > 1 ? `Asked ${item.count}×` : 'Missing', lines: [], pages: [], action: 'Tell it', tell: item.topic,
+  }));
+  const unreviewed: FixItem[] = overview.unreviewed ? [{
+    id: 'unreviewed:', title: overview.unreviewed === 1 ? 'A hand edit' : `${overview.unreviewed} hand edits`, why: 'Not used until you look', lines: [], pages: [], action: 'Review', href: '/knowledge/pages',
+  }] : [];
   const kind = (item: FixItem): string => item.suggestion?.kind === 'confirm' && !overview.review?.suggestions.some((suggestion) => suggestion.id === item.id) ? 'stale' : item.suggestion?.kind ?? item.id.split(':')[0]!;
-  return [...fromReview, ...fromProposals, ...fromHealth].sort((a, b) => (FIX_RANK[kind(a)] ?? 20) - (FIX_RANK[kind(b)] ?? 20));
+  return [...unreviewed, ...fromReview, ...fromProposals, ...missing, ...fromHealth].sort((a, b) => (FIX_RANK[kind(a)] ?? 20) - (FIX_RANK[kind(b)] ?? 20));
 };
