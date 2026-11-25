@@ -239,7 +239,16 @@ test('the index tells the worker when two rules disagree, so it never picks one 
   ], NOW);
   assert.match(marked, /`owner\/working-style\.md` \| How I decide \(two rules disagree: see below\) \|/);
   assert.match(marked, /\| voice \| `owner\/voice\.md` \| How I write \|$/m, 'a settled page is left alone');
-  assert.match(marked, /Rules that disagree\. If one is clearly newer .*ask the owner only when you can't tell\.\n- "Risky releases ship on Tuesday\." \(`owner\/working-style\.md`, confirmed 2026-11-20\) and "Risky releases ship on Thursday now\." \(same page\)$/);
+  assert.match(marked, /Rules that disagree\. Follow the current one .*\n- Current: "Risky releases ship on Thursday now\." \(`owner\/working-style\.md`, confirmed 2026-11-20\)\. It replaces "Risky releases ship on Tuesday\." on the same page\.$/);
+  // Across pages, the page confirmed later holds the current rule; with nothing to tell them apart, the worker is told so.
+  const limits = (date: string, line: string): string => `---\ntype: product\ndescription: Limits\nwritten: ${date}\nverified: ${date}\nsources:\n  - Owner\n---\n- ${line}\n`;
+  const across = markIndexRows('| a | `product/rate-limits.md` | a |\n| b | `product/plans.md` | b |', [
+    { path: 'product/rate-limits.md', text: limits('2026-06-01', 'The API rate limit is 100 requests per second.') },
+    { path: 'product/plans.md', text: limits('2026-10-20', 'The API rate limit is 250 requests per second.') },
+  ], NOW);
+  assert.match(across, /- Current: "The API rate limit is 250 requests per second\." \(`product\/plans\.md`, confirmed 2026-10-20\)\. It replaces "The API rate limit is 100 requests per second\." \(`product\/rate-limits\.md`, confirmed 2026-06-01\)\./);
+  const tie = markIndexRows('| a | `owner/a.md` | a |', [{ path: 'owner/a.md', text: limits('2026-11-20', 'Keep PRs under 400 lines.\n- Keep PRs under 300 lines.') }], NOW);
+  assert.match(tie, /can't tell which is newer\.$/);
 });
 
 test('a rule is compared wherever it is written, and two people with alike cards are never merged', () => {

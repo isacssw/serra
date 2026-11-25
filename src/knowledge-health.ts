@@ -652,6 +652,18 @@ export const similarPages = (proposal: string, files: KnowledgeFile[], { limit =
  * The index with a note on each row whose page a worker should weigh with care: `(draft: not confirmed)` or
  * `(confirmed 2026-08-01; may be out of date)`. Rows of fresh pages are left as they are.
  */
+/**
+ * Which of two disagreeing rules is newer: the one saying "now", or "since"/"as of" a date, else the one on the page
+ * confirmed later. Null when nothing tells them apart.
+ */
+const newerOf = (pair: FactPair, confirmed: Map<string, string>): 'a' | 'b' | null => {
+  const fresh = (text: string): boolean => /\bnow\b/i.test(text) || /\b(since|as of|starting|from)\s+(\d{4}-\d{2}|\d{1,2}\s+)?(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec|\d{4}-\d{2})/i.test(text);
+  if (fresh(pair.a.text) !== fresh(pair.b.text)) return fresh(pair.a.text) ? 'a' : 'b';
+  const [a, b] = [confirmed.get(pair.a.page) ?? '', confirmed.get(pair.b.page) ?? ''];
+  if (pair.a.page !== pair.b.page && DATE.test(a) && DATE.test(b) && a !== b) return a > b ? 'a' : 'b';
+  return null;
+};
+
 export const markIndexRows = (index: string, files: KnowledgeFile[], now: Date): string => {
   const notes = new Map<string, string[]>();
   const add = (path: string, note: string): void => { notes.set(path, [...(notes.get(path) ?? []), note]); };
@@ -670,8 +682,16 @@ export const markIndexRows = (index: string, files: KnowledgeFile[], now: Date):
   for (const pair of listed) for (const path of new Set([pair.a.page, pair.b.page])) add(path, 'two rules disagree: see below');
   const where = (page: string): string => `\`${page}\`, confirmed ${confirmed.get(page) || 'never'}`;
   const detail = listed.length === 0 ? '' : [
-    '', '', 'Rules that disagree. If one is clearly newer (a later date, or it says "now" or "since"), follow it and say the other looks out of date; ask the owner only when you can\'t tell.',
-    ...listed.map((pair) => `- "${short(pair.a.text, 90)}" (${where(pair.a.page)}) and "${short(pair.b.text, 90)}"${pair.a.page === pair.b.page ? ' (same page)' : ` (${where(pair.b.page)})`}`),
+    '', '', 'Rules that disagree. Follow the current one and say the other is out of date; ask the owner only where it says Serra can\'t tell.',
+    ...listed.map((pair) => {
+      // When the dates or the words settle it, say which rule is current, so the worker doesn't have to weigh it.
+      const newer = newerOf(pair, confirmed);
+      if (newer) {
+        const [current, old] = newer === 'a' ? [pair.a, pair.b] : [pair.b, pair.a];
+        return `- Current: "${short(current.text, 90)}" (${where(current.page)}). It replaces "${short(old.text, 90)}"${old.page === current.page ? ' on the same page' : ` (${where(old.page)})`}.`;
+      }
+      return `- "${short(pair.a.text, 90)}" (${where(pair.a.page)}) and "${short(pair.b.text, 90)}"${pair.a.page === pair.b.page ? ' (same page)' : ` (${where(pair.b.page)})`}: can't tell which is newer.`;
+    }),
   ].join('\n');
   if (notes.size === 0) return index;
   return index.split('\n').map((line) => {

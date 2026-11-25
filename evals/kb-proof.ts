@@ -176,6 +176,8 @@ const runOne = async (item: Case, arm: Arm, run: number): Promise<Result> => {
     const { reply } = takeKnowledgeUsed(answer);
     const regex = item.include.every((pattern) => new RegExp(pattern, 'iu').test(reply)) && !(item.exclude ?? []).some((pattern) => new RegExp(pattern, 'iu').test(reply));
     const score = item.judge ? await judge(item.judge, item.text, reply).catch(() => null) : null;
+    // A grader run that failed says nothing about the reply: a harness error, not a fail.
+    if (item.judge && score === null) throw new Error('the grading run failed');
     const result = { ...base, regex, score, reply, ranOn, pass: regex && (item.judge ? score === 2 : true) };
     save(result, brief);
     return result;
