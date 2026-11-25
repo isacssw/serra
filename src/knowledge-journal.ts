@@ -1,7 +1,7 @@
 import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { basename, dirname, join, resolve } from 'node:path';
 import { writeFileAtomic } from './config.ts';
-import { NOT_PAGES, PROPOSALS_DIR } from './knowledge-rules.ts';
+import { ARCHIVE_DIR, NOT_PAGES, PROPOSALS_DIR } from './knowledge-rules.ts';
 
 /**
  * The approved copy of the knowledge a worker gets.
@@ -34,7 +34,7 @@ const approvedDir = (knowledgeDir: string): string => {
 
 /** Files that shape a brief: the index and every page. Not proposals, the log or READMEs, which workers may write. */
 const isTracked = (path: string): boolean => path === 'index.md' || (
-  path.endsWith('.md') && !NOT_PAGES.has(path) && !path.endsWith('README.md') && !path.startsWith(`${PROPOSALS_DIR}/`));
+  path.endsWith('.md') && !NOT_PAGES.has(path) && !path.endsWith('README.md') && !path.startsWith(`${PROPOSALS_DIR}/`) && !path.startsWith(`${ARCHIVE_DIR}/`));
 
 const markdown = (root: string, relativeDir = ''): string[] => {
   const dir = join(root, relativeDir);
@@ -42,7 +42,7 @@ const markdown = (root: string, relativeDir = ''): string[] => {
   return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
     if (entry.name.startsWith('.')) return [];
     const path = relativeDir ? `${relativeDir}/${entry.name}` : entry.name;
-    if (entry.isDirectory()) return path === PROPOSALS_DIR ? [] : markdown(root, path);
+    if (entry.isDirectory()) return path === PROPOSALS_DIR || path === ARCHIVE_DIR ? [] : markdown(root, path);
     return entry.isFile() && isTracked(path) ? [path] : [];
   });
 };

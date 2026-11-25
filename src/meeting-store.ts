@@ -20,7 +20,7 @@ import { dirname, join, resolve } from 'node:path';
 import { writeFileAtomic } from './config.ts';
 import { createJournal } from './knowledge-journal.ts';
 import { processAlive, withKnowledgeLock } from './knowledge-lock.ts';
-import { frontmatter, INDEX_MAX_LINES, lineCount, pageProblems, PROPOSALS_DIR } from './knowledge-rules.ts';
+import { ARCHIVE_DIR, frontmatter, INDEX_MAX_LINES, lineCount, pageProblems, PROPOSALS_DIR } from './knowledge-rules.ts';
 import type { CheckedItem, ReplyLine } from './meeting-digest.ts';
 import { applyEdit, audienceLine, decisionBullets, indexRow, MEETING_ID, mentionsMeeting, newDecisionPage, scrubMeeting, type MeetingStamp } from './meeting-page.ts';
 import { fold, hasSecret, type Transcript } from './meeting-transcript.ts';
@@ -147,7 +147,7 @@ const pagePaths = (dir: string, relativeDir = ''): string[] => {
   return readdirSync(join(dir, relativeDir), { withFileTypes: true }).flatMap((entry) => {
     if (entry.name.startsWith('.')) return [];
     const path = relativeDir ? `${relativeDir}/${entry.name}` : entry.name;
-    if (entry.isDirectory()) return path === PROPOSALS_DIR ? [] : pagePaths(dir, path);
+    if (entry.isDirectory()) return path === PROPOSALS_DIR || path === ARCHIVE_DIR ? [] : pagePaths(dir, path);
     return entry.name.endsWith('.md') && path !== 'index.md' && path !== 'log.md' && entry.name !== 'README.md' ? [path] : [];
   });
 };

@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { readProfileFile } from '../../../src/config.ts';
 import { createKnowledge, profileRoots, type KnowledgeRoot } from '../../../src/knowledge.ts';
 import { createMeetingStore } from '../../../src/meeting-store.ts';
+import { knowledgeOverview } from '../../../src/knowledge-overview.ts';
 import type { Handlers } from '../bridge.ts';
 import type { HandlerContext } from './context.ts';
 
@@ -53,5 +54,6 @@ export const pagesHandlers = (context: HandlerContext): Handlers<'pages'> => {
       const items = paths as { path: string; text: string }[];
       return service().shareWith(items.map(({ path }) => path), audience, { roots: roots(), seen: Object.fromEntries(items.map(({ path, text }) => [path, text])) });
     },
+    overview: () => knowledgeOverview({ knowledgeDir: join(context.profileDir(), 'knowledge'), profileDir: context.profileDir() }),
   };
 };

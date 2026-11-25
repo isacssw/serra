@@ -16,6 +16,7 @@ import type { CliOverview } from '../../src/clis.ts';
 import type { McpOverview } from '../../src/mcp.ts';
 import type { ProposalTargets, Reviewed } from '../../src/proposals.ts';
 import type { AboutMe, Visibility } from '../../src/owner-model.ts';
+import type { KnowledgeOverview } from '../../src/knowledge-overview.ts';
 import type { ActivationOutcome, ReleaseOverview, RollbackOutcome, RunningJob } from '../../src/releases.ts';
 import type { Prepared } from '../../src/deploy.ts';
 import type { ClearedSource } from '../../src/update-migration.ts';
@@ -179,6 +180,10 @@ export interface SerraApi {
     mergeInto(path: string, target: string, text: string | undefined, reviewed: Reviewed, audience?: Visibility): UndoHandle;
     discard(path: string): UndoHandle;
     undo(undoId: string): void;
+    /** Moves a page to `archive/` and takes its index row out. `reviewed`: the page's text as the owner saw it. */
+    retire(page: string, reviewed: string): UndoHandle;
+    /** Existing pages the proposal looks like, with the lines they share: where it may belong instead of a new page. */
+    similar(path: string): { path: string; similarity: number; shared: string[] }[];
   };
   /** Knowledge pages (APP-20). */
   pages: {
@@ -201,6 +206,8 @@ export interface SerraApi {
      * that changed since refuses the whole share.
      */
     share(pages: { path: string; text: string }[], audience: Visibility): { shared: string[] };
+    /** Knowledge › Overview: health, how it grew, and what replies used. */
+    overview(): KnowledgeOverview;
   };
   /** Brief and policy (APP-21). */
   brief: {
@@ -406,8 +413,8 @@ export const bridgeMethods = {
   ]),
   bot: methods<'bot'>()(['status', 'start', 'stop', 'restart']),
   jobs: methods<'jobs'>()(['list', 'cleanupWorktrees']),
-  proposals: methods<'proposals'>()(['list', 'diff', 'targets', 'promote', 'mergeInto', 'discard', 'undo']),
-  pages: methods<'pages'>()(['list', 'read', 'save', 'drift', 'acceptDrift', 'restoreDrift', 'aboutMe', 'untagged', 'share']),
+  proposals: methods<'proposals'>()(['list', 'diff', 'targets', 'promote', 'mergeInto', 'discard', 'undo', 'retire', 'similar']),
+  pages: methods<'pages'>()(['list', 'read', 'save', 'drift', 'acceptDrift', 'restoreDrift', 'aboutMe', 'untagged', 'share', 'overview']),
   brief: methods<'brief'>()(['read', 'save', 'check', 'preview', 'listProposed', 'readProposed', 'applyProposed']),
   settings: methods<'settings'>()(['read', 'sections', 'saveSection', 'addPerson', 'removePerson', 'peopleNames']),
   secrets: methods<'secrets'>()(['list', 'setSource', 'check']),

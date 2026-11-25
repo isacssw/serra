@@ -8,7 +8,7 @@ import { insideKnowledge, knowledgePagePath, offlimitsBudgetAfter } from './know
 import { createJournal } from './knowledge-journal.ts';
 import { withKnowledgeLock } from './knowledge-lock.ts';
 import { isArrayOf, isBoolean, isOneOf, isOptional, isRecord, isString, isStringOrNull, readJsonFile, readJsonOrNull } from './lib/guards.ts';
-import { alignHeader, DATE, frontmatter, INDEX_MAX_LINES, isOfflimits, lineCount, NOT_PAGES, pageProblems, PROPOSALS_DIR, removeHeaderField, setHeaderField } from './knowledge-rules.ts';
+import { alignHeader, ARCHIVE_DIR, DATE, frontmatter, INDEX_MAX_LINES, isOfflimits, lineCount, NOT_PAGES, pageProblems, PROPOSALS_DIR, removeHeaderField, setHeaderField } from './knowledge-rules.ts';
 
 /**
  * The owner's review queue for `knowledge/proposals/`: list, read, promote, merge, discard and undo.
@@ -25,7 +25,7 @@ const NOT_PROPOSALS = new Set(['README.md', 'onboarding-progress.md']);
 /** Leading `YYYY-MM-DD-` of a proposal's file name. */
 const DATED_NAME = /^(\d{4}-\d{2}-\d{2})-(.+)$/;
 
-export type ProposalAction = 'promote' | 'merge' | 'discard';
+export type ProposalAction = 'promote' | 'merge' | 'discard' | 'retire';
 
 /** One file a change touched. `null` means the file did not exist (before) or was removed (after). */
 export interface FileChange {
@@ -71,7 +71,7 @@ const isFileChange = (value: unknown): value is FileChange =>
 
 /** A backup's `change.json` with everything undo reads. */
 const isProposalChange = (value: unknown): value is ProposalChange =>
-  isRecord(value) && isString(value.id) && isOneOf('promote', 'merge', 'discard')(value.action) && isString(value.at)
+  isRecord(value) && isString(value.id) && isOneOf('promote', 'merge', 'discard', 'retire')(value.action) && isString(value.at)
   && isString(value.proposal) && isStringOrNull(value.page) && isArrayOf(isFileChange)(value.files) && isOptional(isString)(value.undoneAt);
 
 /** A folder's `.from.json` stamp. */
@@ -456,6 +456,30 @@ export const createProposals = ({ knowledgeDir, backupDir, now = () => new Date(
     ]);
   });
 
+  /**
+   * Take a page out of what the bot knows, as the owner chose in the app: it moves to `archive/` (kept, never read by a
+   * worker), its index row goes, and the log says so. Undo puts it back. Refused when the page changed since the owner
+   * looked at it, or outside Serra. This is how a duplicate page, or one a merge made redundant, leaves.
+   */
+  const retirePage = (path: string, { reviewed }: { reviewed: string }): ProposalChange => withKnowledgeLock(root, () => {
+    const page = pagePath(path, 'Page');
+    const current = readText(page);
+    if (current === null) throw new Error(`No page ${page} in knowledge/.`);
+    if (current !== reviewed) throw new Error(`${page} changed since you looked at it. Look at it again.`);
+    const archived = `${ARCHIVE_DIR}/${page}`;
+    const indexBefore = readText('index.md');
+    if (indexBefore === null) throw new Error('knowledge/index.md is missing.');
+    const indexAfter = indexBefore.split('\n').filter((line) => !(line.trim().startsWith('|') && line.includes(`\`${page}\``))).join('\n');
+    checkNoDrift([page, 'index.md']);
+    const at = today(now());
+    return apply('retire', page, page, [
+      { path: page, before: current, after: null },
+      { path: archived, before: readText(archived), after: current },
+      ...(indexAfter === indexBefore ? [] : [{ path: 'index.md', before: indexBefore, after: indexAfter }]),
+      logLine(at, `retired \`${page}\` to \`${archived}\`, confirmed by the owner in the app.`),
+    ]);
+  });
+
   /** Remove a proposal without using it. The backup keeps its text for undo. */
   const discardProposal = (id: string): ProposalChange => withKnowledgeLock(root, () => {
     const source = notFromMeeting(proposalPath(id));
@@ -498,7 +522,7 @@ export const createProposals = ({ knowledgeDir, backupDir, now = () => new Date(
         if (entry.name.startsWith('.')) continue;
         const path = relativeDir ? `${relativeDir}/${entry.name}` : entry.name;
         if (entry.isDirectory()) {
-          if (path === PROPOSALS_DIR) continue;
+          if (path === PROPOSALS_DIR || path === ARCHIVE_DIR) continue;
           folders.push(path);
           walk(path);
         } else if (entry.isFile() && entry.name.endsWith('.md') && !NOT_PAGES.has(path) && entry.name !== 'README.md') {
@@ -511,7 +535,7 @@ export const createProposals = ({ knowledgeDir, backupDir, now = () => new Date(
   };
 
   return {
-    listProposals, readProposal, listTargets, promoteProposal, mergeProposal, discardProposal, undoProposalChange,
+    listProposals, readProposal, listTargets, promoteProposal, mergeProposal, discardProposal, retirePage, undoProposalChange,
     /** The ticket's name for undo. It reverses merges and discards too. */
     undoPromotion: undoProposalChange,
   };

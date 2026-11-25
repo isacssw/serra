@@ -1,6 +1,6 @@
 // `--smoke` checks, run against the real window: no Node in the page, the bridge is there, and with no daemon the
 // window gets `stopped` and a failing call rejects with its message instead of crashing anything.
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { nativeTheme, type BrowserWindow } from 'electron';
@@ -140,6 +140,25 @@ const layoutProfile = (): string => {
   writeFileSync(join(knowledge, 'index.md'), "# Knowledge index\n\n| When the request | Open | What it gives you |\n|---|---|---|\n"
     + "| who owns what | `owner/role.md` | The owner's role |\n| releases, tests | `owner/working-style.md` | How the owner decides |\n"
     + "| writing | `owner/voice.md` | How the owner writes |\n| private | `owner/notes.md` | Private notes |\n| mentions Ana | `people/ana-silva.md` | Who Ana is |\n");
+  // A history for Overview: each page approved on its own day, one later edit that left an old rule beside its
+  // replacement, and replies that named the pages they used.
+  const backups = join(directory, 'backups', 'knowledge');
+  const approved = [['owner/role.md', '2026-10-06'], ['owner/voice.md', '2026-10-06'], ['owner/notes.md', '2026-10-13'], ['owner/working-style.md', '2026-10-20'], ['people/ana-silva.md', '2026-11-03']] as const;
+  const styleBefore = page('How the owner decides', team, '# How I work\n\n- Risky releases ship on Tuesday.\n- A bug fix starts with a failing test.');
+  const styleAfter = page('How the owner decides', team, '# How I work\n\n- Risky releases ship on Tuesday.\n- A bug fix starts with a failing test.\n- Risky releases ship on Thursday now.');
+  writeFileSync(join(knowledge, 'owner/working-style.md'), styleAfter);
+  const record = (id: string, at: string, files: { path: string; before: string | null; after: string }[]): void => {
+    mkdirSync(join(backups, id), { recursive: true });
+    writeFileSync(join(backups, id, 'change.json'), JSON.stringify({ id, action: files[0]!.before === null ? 'promote' : 'edit', at: `${at}T10:00:00.000Z`, proposal: 'smoke', page: files[0]!.path, files }));
+  };
+  for (const [path, at] of approved) {
+    record(`${at.replaceAll('-', '')}-${path.replace(/\W/g, '-')}`, at, [{ path, before: null, after: path === 'owner/working-style.md' ? styleBefore : readFileSync(join(knowledge, path), 'utf8') }]);
+  }
+  record('20261118-edit-working-style', '2026-11-18', [{ path: 'owner/working-style.md', before: styleBefore, after: styleAfter }]);
+  mkdirSync(join(directory, 'logs'), { recursive: true });
+  const uses = [['owner/role.md', 'owner/working-style.md'], ['owner/working-style.md'], [], ['people/ana-silva.md', 'owner/role.md'], ['owner/working-style.md']];
+  writeFileSync(join(directory, 'logs', 'knowledge-usage.jsonl'), uses.map((cited, at) =>
+    JSON.stringify({ at: new Date(Date.now() - (at + 1) * 86_400_000).toISOString(), runId: `smoke-${at}`, visibility: 'team', cited, offered: 4 })).join('\n') + '\n');
   writeFileSync(join(knowledge, 'proposals/2026-11-19-role.md'), page("The owner's role", ['verified: no', 'target: owner/role.md'], 'Owns the API and reviews every PR.'));
   // A page changed outside Serra after the owner approved the rest, so Pages shows its notice.
   createJournal(knowledge).seed();
@@ -364,7 +383,14 @@ const runThemeChecks = async (window: BrowserWindow): Promise<string[]> => {
       for (const route of routes) {
         const report = await run<ContrastReport>(contrastScript(route));
         reports.push(report);
-        if (shots) writeFileSync(join(shots, `${theme}-${route}.png`), (await window.webContents.capturePage()).toPNG());
+        if (shots) {
+          writeFileSync(join(shots, `${theme}-${route}.png`), (await window.webContents.capturePage()).toPNG());
+          // Overview is long: its lower half too, scrolled into view.
+          if (route === 'knowledge-overview') {
+            await run(`(async () => { for (const el of document.querySelectorAll('*')) if (el.scrollHeight > el.clientHeight + 40 && getComputedStyle(el).overflowY.match(/auto|scroll/)) el.scrollTop = el.scrollHeight; await new Promise((r) => setTimeout(r, 150)); })()`);
+            writeFileSync(join(shots, `${theme}-${route}-end.png`), (await window.webContents.capturePage()).toPNG());
+          }
+        }
         if (report.checked === 0) failures.push(`${theme}: no text found on ${route}`);
         for (const item of report.low) failures.push(`${theme}: "${item.text}" on ${route} reads at ${item.ratio}:1 (${item.color} on ${item.background})`);
       }

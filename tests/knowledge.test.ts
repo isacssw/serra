@@ -200,7 +200,8 @@ test('an index over its cap is still loaded whole, and the check still reports i
   const service = createKnowledge(dir);
 
   const index = service.loadIndex();
-  assert.equal(index, longIndex(70).trim(), 'every row reaches the brief; none is cut');
+  // Every row reaches the brief, none cut; each says its page is a draft, since owner/role.md isn't confirmed.
+  assert.equal(index, longIndex(70).trim().replaceAll('`owner/role.md` |', '`owner/role.md` (draft: not confirmed) |'), 'every row reaches the brief; none is cut');
   assert.match(index, /topic 69/);
 
   const report = service.checkKnowledge({ now: NOW });

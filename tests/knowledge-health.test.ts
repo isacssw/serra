@@ -1,0 +1,175 @@
+// Knowledge quality, measured: whether the pages a worker is pointed at fit the request, whether the health check
+// finds the mess a real owner's knowledge picks up (and nothing on clean fixtures), whether the history rebuilt from
+// backups shows it, and whether the pages a reply used are recorded and never posted. Fixtures only; no model.
+import assert from 'node:assert/strict';
+import { mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import test from 'node:test';
+import { simulateGrowth, PLANTED } from '../evals/kb-growth-sim.ts';
+import {
+  assessKnowledge, findOverlaps, HEALTH_WEIGHTS, knowledgeHistory, markIndexRows, pageCards, pageFacts, rankPages, relevanceNote, similarPages,
+  type KnowledgeFile,
+} from '../src/knowledge-health.ts';
+import { readKnowledgeUse, recordKnowledgeUse, takeKnowledgeUsed } from '../src/knowledge-usage.ts';
+import { knowledgeOverview } from '../src/knowledge-overview.ts';
+import { changeText, groupByDay, scoreChart, scoreWord } from '../app/renderer/screens/overview.logic.ts';
+
+const NOW = new Date('2026-11-25T12:00:00Z');
+
+const tree = (dir: string, relativeDir = ''): KnowledgeFile[] => readdirSync(join(dir, relativeDir), { withFileTypes: true }).flatMap((entry) => {
+  const path = relativeDir ? `${relativeDir}/${entry.name}` : entry.name;
+  if (entry.isDirectory()) return entry.name === 'proposals' ? [] : tree(dir, path);
+  return entry.name.endsWith('.md') ? [{ path, text: readFileSync(join(dir, path), 'utf8') }] : [];
+});
+
+interface RetrievalCase { request: string; pages: string[] }
+const retrieval = JSON.parse(readFileSync(new URL('../evals/retrieval-cases.json', import.meta.url), 'utf8')) as { fixtures: Record<string, RetrievalCase[]> };
+
+/** Share of cases with a right page first, and in the top three, for a ranker. */
+const score = (cases: RetrievalCase[], rank: (request: string) => string[]): { top1: number; top3: number } => {
+  let top1 = 0;
+  let top3 = 0;
+  for (const item of cases) {
+    const ranked = rank(item.request);
+    if (item.pages.includes(ranked[0] ?? '')) top1 += 1;
+    if (ranked.slice(0, 3).some((path) => item.pages.includes(path))) top3 += 1;
+  }
+  return { top1: top1 / cases.length, top3: top3 / cases.length };
+};
+
+test('relevance: the pages a brief points at fit the request, on the tuned owner and the held-out one', () => {
+  for (const [dir, cases] of Object.entries(retrieval.fixtures)) {
+    const files = tree(new URL(`../${dir}`, import.meta.url).pathname);
+    const index = files.find((file) => file.path === 'index.md')!.text;
+    const cards = pageCards(index, files);
+    assert.equal(cards.length, files.filter((file) => file.path !== 'index.md' && file.path.includes('/')).length, `${dir}: every indexed page has a card`);
+    const full = score(cases, (request) => rankPages(request, cards).map((page) => page.path));
+    // The same ranker on index rows alone: what a worker matching rows by eye has to go on.
+    const rowsOnly = score(cases, (request) => rankPages(request, cards.map((card) => ({ ...card, body: '', headings: '' }))).map((page) => page.path));
+    assert.ok(full.top3 >= 0.85, `${dir}: a right page in the top 3 for ${Math.round(full.top3 * 100)}% of requests`);
+    assert.ok(full.top1 >= 0.7, `${dir}: a right page first for ${Math.round(full.top1 * 100)}% of requests`);
+    assert.ok(full.top3 >= rowsOnly.top3, `${dir}: reading the pages finds at least what the rows alone do`);
+  }
+});
+
+test('relevance: the brief names the closest pages, without the owner\'s own name steering it, and asks which were used', () => {
+  const files = tree(new URL('../evals/fixture/knowledge', import.meta.url).pathname);
+  const cards = pageCards(files.find((file) => file.path === 'index.md')!.text, files);
+  const note = relevanceNote('Robin, a merchant keeps getting 429 Too Many Requests', cards, ['Robin']);
+  assert.match(note, /closest to this request, best first: `product\/rate-limits\.md`/);
+  assert.match(note, /<knowledge-used>/);
+  assert.doesNotMatch(relevanceNote('ok thanks', cards), /closest/, 'no guess when nothing matches');
+});
+
+test('the index tells the worker which pages are drafts or out of date', () => {
+  const page = (verified: string): string => `---\ntype: rule\ndescription: x\nwritten: 2026-01-01\nverified: ${verified}\nsources:\n  - Owner\n---\n- A rule.\n`;
+  const index = '| When | Open | Gives |\n|---|---|---|\n| a | `owner/a.md` | A |\n| b | `owner/b.md` | B |\n| c | `owner/c.md` | C |';
+  const marked = markIndexRows(index, [{ path: 'owner/a.md', text: page('2026-11-20') }, { path: 'owner/b.md', text: page('2026-08-01') }, { path: 'owner/c.md', text: page('no') }], NOW);
+  assert.match(marked, /\| a \| `owner\/a\.md` \| A \|/, 'a fresh page is left as it is');
+  assert.match(marked, /`owner\/b\.md` \| B \(confirmed 2026-08-01; may be out of date\) \|/);
+  assert.match(marked, /`owner\/c\.md` \| C \(draft: not confirmed\) \|/);
+});
+
+test('health: the clean fixtures have nothing to tidy', () => {
+  for (const dir of ['evals/fixture/knowledge', 'evals/fixture-heldout/knowledge']) {
+    const files = tree(new URL(`../${dir}`, import.meta.url).pathname);
+    const health = assessKnowledge(files, new Date('2026-11-25T00:00:00Z'));
+    const noise = health.issues.filter((issue) => ['conflict', 'duplicate', 'overlap', 'unstructured', 'unindexed'].includes(issue.kind));
+    assert.deepEqual(noise, [], `${dir}: no false conflicts or repeats`);
+    assert.ok(health.score >= 90, `${dir}: ${health.score}`);
+  }
+});
+
+test('health: conflicts and repeats are told apart from rules that merely look alike', () => {
+  const facts = (path: string, lines: string[]) => pageFacts(path, `---\ntype: rule\n---\n${lines.map((line) => `- ${line}`).join('\n')}\n`);
+  const gold: { a: string; b: string; is: 'conflict' | 'duplicate' | 'neither' }[] = [
+    { a: 'Risky releases ship on Tuesday, never Friday.', b: 'Risky releases ship on Thursday so the weekend is quiet.', is: 'conflict' },
+    { a: 'Keep PRs under 400 changed lines.', b: 'Keep PRs under 300 changed lines.', is: 'conflict' },
+    { a: 'Standup is at 09:30 every day.', b: 'Standup is at 10:00 every day.', is: 'conflict' },
+    { a: 'Always ask Priya before changing payout scope.', b: 'Never ask Priya before changing payout scope.', is: 'conflict' },
+    { a: 'Webhooks retry 5 times over 24 hours.', b: 'Webhooks retry 5 times over 24 hours with backoff.', is: 'duplicate' },
+    { a: 'Product manager for payouts. Decides scope.', b: 'Product manager for payouts, decides scope.', is: 'duplicate' },
+    { a: 'A bug fix starts with a failing test.', b: 'Every bug fix starts with a failing test.', is: 'duplicate' },
+    { a: 'Lead with the answer, then the reason.', b: 'Short sentences, no exclamation marks.', is: 'neither' },
+    { a: 'Payment records are kept 7 years.', b: 'Logs are kept 14 days.', is: 'neither' },
+    { a: 'Jonas runs the on-call rota.', b: 'Priya runs the payouts roadmap.', is: 'neither' },
+    { a: 'Deploy to staging and run the smoke suite.', b: 'Tag from main after CI is green.', is: 'neither' },
+    { a: 'Refunds over 500 EUR need Robin.', b: 'Rate limit increases need a load test.', is: 'neither' },
+  ];
+  const found = gold.map((pair) => {
+    const { duplicates, conflicts } = findOverlaps([...facts('one.md', [pair.a]), ...facts('two.md', [pair.b])]);
+    return conflicts.length > 0 ? 'conflict' : duplicates.length > 0 ? 'duplicate' : 'neither';
+  });
+  assert.deepEqual(found, gold.map((pair) => pair.is));
+});
+
+test('growth: six months of an owner\'s knowledge, through the real approval code, rot and recover the way the score says', () => {
+  const sim = simulateGrowth();
+  const [interview, messy, tidy] = sim.stages.map((stage) => ({ ...stage, health: assessKnowledge(stage.files, new Date(stage.at)) }));
+  // Everything planted is found, on the pages it was planted on.
+  for (const planted of PLANTED.conflicts) {
+    assert.ok(messy!.health.issues.some((issue) => issue.kind === 'conflict' && planted.pages.every((page) => issue.pages.includes(page))), `found: ${planted.note}`);
+  }
+  for (const planted of PLANTED.duplicates) {
+    assert.ok(messy!.health.issues.some((issue) => issue.kind === 'duplicate' && planted.pages.every((page) => issue.pages.includes(page))), `found: ${planted.note}`);
+  }
+  assert.ok(messy!.health.score < interview!.health.score - 20, `the mess costs points: ${interview!.health.score} → ${messy!.health.score}`);
+  assert.ok(tidy!.health.score >= 95, `one tidy pass recovers: ${tidy!.health.score}`);
+  assert.deepEqual(tidy!.health.issues, [], 'nothing left to tidy');
+  assert.ok(tidy!.health.facts > interview!.health.facts, 'and the bot still knows more than after the interview');
+
+  // The history rebuilt from the backups alone agrees with the folder as it was at each stage.
+  const history = knowledgeHistory(sim.files, sim.changes, sim.now);
+  for (const stage of [interview!, messy!, tidy!]) {
+    const point = [...history.points].reverse().find((item) => item.at <= stage.at)!;
+    assert.equal(point.score, assessKnowledge(stage.files, new Date(point.at)).score, `history at ${stage.label}`);
+  }
+  assert.equal(history.points[0]!.at.slice(0, 10), '2026-05-04', 'it starts on the day of the interview');
+  assert.ok(history.points.length >= 20, 'a point a week at least, so pages ageing shows too');
+  const kinds = new Set(history.events.map((event) => event.kind));
+  for (const kind of ['learned', 'updated', 'replaced', 'removed', 'confirmed'] as const) assert.ok(kinds.has(kind), `the timeline shows ${kind}`);
+  assert.ok(history.events.find((event) => event.page === 'owner/releases.md' && event.kind === 'learned')?.added.includes('Risky releases ship on Thursday so the weekend is quiet.'));
+
+  // What the screen draws from it.
+  const chart = scoreChart(history.points, 640, 168);
+  assert.equal(chart.dots.length, history.points.length);
+  assert.ok(chart.dots.every((dot) => dot.x >= 28 && dot.x <= 632 && dot.y >= 8 && dot.y <= 146));
+  const days = groupByDay(history.events, sim.now);
+  assert.equal(days[0]!.confirmed.length, 8, 'eight re-confirmations fold into one line');
+  assert.equal(scoreWord(messy!.health.score, 11).tone, 'down');
+  assert.equal(changeText(90, 82, '2026-10-26T00:00:00Z'), '+8 since 26 Oct');
+});
+
+test('the score weighs consistency and freshness most', () => {
+  assert.equal(Object.values(HEALTH_WEIGHTS).reduce((sum, weight) => sum + weight, 0), 1);
+  assert.ok(HEALTH_WEIGHTS.consistent >= HEALTH_WEIGHTS.unique && HEALTH_WEIGHTS.fresh >= HEALTH_WEIGHTS.coverage);
+});
+
+test('a new proposal that repeats a page is pointed at that page', () => {
+  const files = tree(new URL('../evals/fixture/knowledge', import.meta.url).pathname);
+  const proposal = '---\ntype: product\ndescription: Rate limits\nwritten: 2026-11-25\nverified: no\nsources:\n  - Robin\n---\n- 100 requests per second per merchant, burst 300.\n';
+  const [best] = similarPages(proposal, files);
+  assert.equal(best?.path, 'product/rate-limits.md');
+  assert.ok(best!.shared[0]!.startsWith('100 requests per second'));
+  assert.deepEqual(similarPages('---\ntype: x\ndescription: Lunch order\n---\n- Pizza on Friday for the whole floor.\n', files), []);
+});
+
+test('the pages a reply used are recorded once per run and never posted', (t) => {
+  const reply = 'Ship it on Thursday.\n\n<knowledge-used>owner/working-style.md, `people/priya.md`, ../secrets.json</knowledge-used>\n';
+  const { reply: posted, cited } = takeKnowledgeUsed(reply);
+  assert.equal(posted, 'Ship it on Thursday.');
+  assert.deepEqual(cited, ['owner/working-style.md', 'people/priya.md']);
+  assert.deepEqual(takeKnowledgeUsed('No knowledge here.'), { reply: 'No knowledge here.', cited: [] });
+
+  const profile = mkdtempSync(join(tmpdir(), 'serra-usage-'));
+  t.after(() => rmSync(profile, { recursive: true, force: true }));
+  recordKnowledgeUse(profile, { at: '2026-11-24T10:00:00Z', runId: 'r1', visibility: 'team', cited: ['owner/role.md'], offered: 3 });
+  recordKnowledgeUse(profile, { at: '2026-11-24T10:00:05Z', runId: 'r1', visibility: 'team', cited: ['owner/role.md'], offered: 3 });
+  recordKnowledgeUse(profile, { at: '2026-11-24T11:00:00Z', runId: 'r2', visibility: 'owner', cited: [], offered: 3 });
+  assert.equal(readKnowledgeUse(profile).length, 2, 'a run posted twice counts once');
+  const overview = knowledgeOverview({ knowledgeDir: new URL('../evals/fixture/knowledge', import.meta.url).pathname, profileDir: profile, now: NOW });
+  assert.deepEqual(overview.usage.pages, [{ path: 'owner/role.md', uses: 1, last: '2026-11-24T10:00:05Z' }]);
+  assert.equal(overview.usage.withKnowledge, 1);
+  assert.equal(overview.usage.replies, 2);
+});

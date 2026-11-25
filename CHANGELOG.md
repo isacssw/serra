@@ -4,6 +4,10 @@ Serra follows [Semantic Versioning](https://semver.org) once it reaches 1.0. Unt
 
 ## Unreleased
 
+- **Knowledge › Overview** shows whether your bot knows you better over time: a health score out of 100 and its trend, rebuilt from the backups Serra already keeps; what it knows per area (who you are, how you work, how you write, off-limits, people, processes, projects); what needs tidying, worst first (rules that disagree, rules written twice, two pages on one topic, stale or unindexed pages); a timeline of what it learned, replaced or retired; and which pages replies used. See `docs/knowledge-health.md`.
+- Pages has **Retire…**: a page moves to `knowledge/archive/`, its index row goes, and Undo brings it back, so a duplicate page can finally leave. Proposals says when a new proposal repeats a page you have, with **Merge into it…**.
+- Workers now see which index rows are drafts or out of date, get the three pages closest to the request as a hint, and end a reply with a line naming the pages they used. Serra removes that line before posting and records it in `logs/knowledge-usage.jsonl`, with any T3 provider.
+
 ## 0.1.0-alpha.5 (2026-11-24)
 
 - Fixed: About me now renders a page's Markdown instead of showing it as raw lines — headings, bullets, tables, quotes, fenced code, bold, italics, `code` and links (only http and https open, outside the app), so a preview reads the way the brief carries it.

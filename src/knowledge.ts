@@ -7,8 +7,9 @@ import { withKnowledgeLock } from './knowledge-lock.ts';
 import { createMeetingStore } from './meeting-store.ts';
 import { AUDIENCES, compileAboutMe, filterIndex, mayUse, pageAudience, type AboutMe, type Audience, type Visibility } from './owner-model.ts';
 import type { KnowledgePage, Profile } from './contracts.ts';
+import { markIndexRows, pageCards, type PageCard } from './knowledge-health.ts';
 import {
-  DATE, daysSince, frontmatter, INDEX_MAX_LINES, lineCount, normalizePageText, NOT_PAGES, pageBadge, pageProblems, PROPOSALS_DIR,
+  ARCHIVE_DIR, DATE, daysSince, frontmatter, INDEX_MAX_LINES, lineCount, normalizePageText, NOT_PAGES, pageBadge, pageProblems, PROPOSALS_DIR,
   isOfflimits, offlimitsBudgetProblem, pageBody, saveProblems, saveRefusal, setHeaderField, STALE_DAYS,
 } from './knowledge-rules.ts';
 
@@ -69,6 +70,8 @@ export interface BriefKnowledge {
   read: Record<string, Audience>;
   /** Where the worker opens pages: a snapshot of the approved pages it may use, which never changes. */
   readDir: string;
+  /** What the relevance hint ranks a request against: one card per page in this brief's index. */
+  cards?: PageCard[];
 }
 
 /** Markdown files under `dir`, relative to it, skipping dot folders. */
@@ -115,7 +118,7 @@ const markdownIn = (dir: string, relativeDir = ''): string[] => {
   return readdirSync(join(dir, relativeDir), { withFileTypes: true }).flatMap((entry) => {
     if (entry.name.startsWith('.')) return [];
     const path = relativeDir ? `${relativeDir}/${entry.name}` : entry.name;
-    if (entry.isDirectory()) return markdownIn(dir, path);
+    if (entry.isDirectory()) return path === ARCHIVE_DIR ? [] : markdownIn(dir, path);
     return entry.name.endsWith('.md') && !NOT_PAGES.has(path) && !path.startsWith(`${PROPOSALS_DIR}/`) ? [path] : [];
   });
 };
@@ -167,7 +170,7 @@ export const createKnowledge = (knowledgeDir: string, { backupDir }: KnowledgeOp
   const markdownFiles = (relativeDir = ''): string[] =>
     readdirSync(join(knowledgeDir, relativeDir), { withFileTypes: true }).flatMap((entry) => {
       const relativePath = relativeDir ? `${relativeDir}/${entry.name}` : entry.name;
-      if (entry.isDirectory()) return markdownFiles(relativePath);
+      if (entry.isDirectory()) return relativePath === ARCHIVE_DIR ? [] : markdownFiles(relativePath);
       return entry.name.endsWith('.md') ? [relativePath] : [];
     });
 
@@ -212,7 +215,8 @@ export const createKnowledge = (knowledgeDir: string, { backupDir }: KnowledgeOp
     const audiences = new Map(pages.map(({ path, text }) => [path, pageAudience(frontmatter(text))]));
     const descriptions = new Map(pages.map(({ path, text }) => [path, frontmatter(text)?.get('description')?.trim() ?? '']));
     const aboutMe = compileAboutMe(pages, visibility, now);
-    let index = filterIndex(indexText.trim(), (page) => (audiences.has(page) ? { audience: audiences.get(page)!, description: descriptions.get(page) ?? '' } : null), visibility);
+    // Each row says when its page is a draft or hasn't been re-checked in a while, so the worker weighs it accordingly.
+    let index = markIndexRows(filterIndex(indexText.trim(), (page) => (audiences.has(page) ? { audience: audiences.get(page)!, description: descriptions.get(page) ?? '' } : null), visibility), pages, now);
     // Every worker reads a snapshot of approved pages, so an edit waiting for review needs no note for teammates. The
     // owner hears which files are waiting. Before the approved copy exists, nobody opens pages.
     if (drifted && visibility === 'owner') {
@@ -228,7 +232,8 @@ export const createKnowledge = (knowledgeDir: string, { backupDir }: KnowledgeOp
     const texts = new Map(pages.map(({ path, text }) => [path, text]));
     const files = new Map([['index.md', `${index}\n`], ...usable.map((path) => [path, texts.get(path)!] as const)]);
     const readable = Object.fromEntries(usable.map((path) => [path, audiences.get(path)!]));
-    return { index, aboutMe, visibility, pages: usable, read: readable, readDir: snapshot(audienceDir(root, visibility), files, now) };
+    const cards = pageCards(index, pages.filter(({ path }) => usable.includes(path)));
+    return { index, aboutMe, visibility, pages: usable, read: readable, readDir: snapshot(audienceDir(root, visibility), files, now), cards };
   };
 
   /**

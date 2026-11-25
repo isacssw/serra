@@ -7,6 +7,8 @@ import type { PageBadge } from './contracts.ts';
 export const INDEX_MAX_LINES = 60;
 export const PAGE_MAX_LINES = 120;
 export const PROPOSALS_DIR = 'proposals';
+/** Where retired pages go: kept for history and undo, never indexed, checked or read by a worker. */
+export const ARCHIVE_DIR = 'archive';
 /** An off-limits page rides in every brief whole, so it has its own cap. */
 export const OFFLIMITS_MAX_CHARS = 1500;
 /** Files in `knowledge/` that are not pages. */

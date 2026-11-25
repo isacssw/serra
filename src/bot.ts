@@ -16,6 +16,7 @@ import { matchMessageTrigger } from './message-triggers.ts';
 import { localLinksToText } from './links.ts';
 import { createProfileReloader } from './profile-reload.ts';
 import { handleReviewRequest, type PostReview } from './review.ts';
+import { recordKnowledgeUse, takeKnowledgeUsed } from './knowledge-usage.ts';
 import { slackKey, type createStore } from './state.ts';
 import { findThreads, jobThreadInput, run, sendToThread, showThread, startThread } from './t3.ts';
 import { answerQuestion, listQuestions, type T3QuestionRequest } from './t3-questions.ts';
@@ -459,7 +460,16 @@ export const createBot = ({
    * Posts a finished run's reply. A run the worker started on its own (following CI or a bot's review) edits one
    * status message instead, unless it needs someone: a `Needs` line, a review request, an upload or a first cc.
    */
-  const postRunResult = async (key: string, job: Job, thread: T3Thread, reply: string, byWorker: boolean, runId: string): Promise<void> => {
+  const postRunResult = async (key: string, job: Job, thread: T3Thread, workerReply: string, byWorker: boolean, runId: string): Promise<void> => {
+    // The worker names the pages it used on a last line; that line is Serra's, never posted. Kept once per run.
+    const { reply, cited } = takeKnowledgeUsed(workerReply);
+    if (job.knowledgeRead && !QUIET.test(reply)) {
+      const readable = job.knowledgeRead;
+      try {
+        recordKnowledgeUse(config.profileDir, { at: new Date(now()).toISOString(), runId, visibility: job.visibility ?? 'owner',
+          cited: cited.filter((path) => path in readable), offered: Object.keys(readable).length });
+      } catch (error) { logger.warn(`Could not record which knowledge ${key} used: ${errorMessage(error)}`); }
+    }
     // A reply the worker wrote with knowledge the owner has since taken back isn't posted: it may repeat that text.
     // When the chat can't say who sees the thread, nothing is posted yet: the next poll tries again.
     const check = !QUIET.test(reply) && loadKnowledge ? await revocation(job) : null;

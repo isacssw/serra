@@ -100,6 +100,8 @@ export const Proposals = () => {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [diff, setDiff] = useState<ProposalDiff | null>(null);
+  /** Pages this proposal repeats: where it probably belongs instead of a new page. */
+  const [similar, setSimilar] = useState<{ path: string; shared: string[] }[]>([]);
   const [diffError, setDiffError] = useState<string | null>(null);
   const [targets, setTargets] = useState<ProposalTargets>({ folders: [], pages: [] });
   const [folder, setFolder] = useState('');
@@ -171,6 +173,9 @@ export const Proposals = () => {
       (next) => { if (live) setDiff(next); },
       (error) => { if (live) setDiffError(message(error)); },
     );
+    setSimilar([]);
+    // Only a hint: when it can't be worked out, the screen just doesn't show one.
+    bridge.proposals.similar(selected).then((pages) => { if (live) setSimilar(pages.filter((page) => page.shared.length > 0)); }, () => undefined);
     return () => { live = false; };
   }, [selected, diffVersion]);
 
@@ -269,6 +274,15 @@ export const Proposals = () => {
                   {diff.proposal.target && <p className="text-xs text-muted">Changes <code>{diff.proposal.target}</code></p>}
                   <Sources text={diff.proposed} from={diff.proposal.from} />
                 </div>
+                {!diff.proposal.target && similar[0] && (
+                  <div className="flex flex-wrap items-start gap-3 rounded-lg border border-line bg-panel px-3 py-2.5">
+                    <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+                      <p className="text-[13px]">Already on <code className="text-xs">{similar[0].path}</code>. One rule lives on one page.</p>
+                      <p className="truncate border-l-2 border-line pl-2 text-xs text-muted">{similar[0].shared[0]}</p>
+                    </div>
+                    <Button size="sm" disabled={busy} onClick={() => { setMergeTarget(similar[0]!.path); setMergeOpen(true); }}>Merge into it…</Button>
+                  </div>
+                )}
                 <DiffView current={landing(diff, folder)} proposed={asWritten(diff, folder, picked)} />
                 {folders.length > 0 ? (
                   <Select

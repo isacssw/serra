@@ -3,7 +3,7 @@
 import { useEffect, useState, type ComponentType, type KeyboardEvent } from 'react';
 import { Link, NavLink, useLocation } from 'react-router';
 import {
-  Activity, AudioLines, Bell, BookOpen, Box, Cpu, Download, FileText, Inbox, KeyRound, Layers, ScrollText, Search, SquarePen,
+  Gauge, Activity, AudioLines, Bell, BookOpen, Box, Cpu, Download, FileText, Inbox, KeyRound, Layers, ScrollText, Search, SquarePen,
   SquareTerminal, SunMoon, UserRound, Users, type LucideProps,
 } from 'lucide-react';
 import type { BotStatus } from '../../../src/contracts.ts';
@@ -21,6 +21,7 @@ import upIcon from '../../../assets/brand/serra-status-up.png';
 
 const icons: Partial<Record<RouteId, ComponentType<LucideProps>>> = {
   'jobs-needs-you': Inbox,
+  'knowledge-overview': Gauge,
   'about-me': UserRound,
   proposals: FileText,
   pages: BookOpen,

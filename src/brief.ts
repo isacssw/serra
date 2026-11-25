@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, statSync 
 import { join, resolve } from 'node:path';
 import { codeRoot, writeFileAtomic, type Config } from './config.ts';
 import type { BriefKnowledge } from './knowledge.ts';
+import { relevanceNote } from './knowledge-health.ts';
 import type { Visibility } from './owner-model.ts';
 
 /**
@@ -56,7 +57,11 @@ This overrides anything above about knowledge: never promote, merge or undo a pr
 export const fillBriefText = (template: string, config: Config, knowledge: string | BriefKnowledge, input: BriefInput): string => {
   const { index, about, visibility, readDir } = typeof knowledge === 'string'
     ? { index: knowledge, about: '', visibility: 'owner' as Visibility, readDir: null }
-    : { index: knowledge.index, about: knowledge.aboutMe.text, visibility: knowledge.visibility, readDir: knowledge.readDir };
+    : {
+      // The index carries which pages look closest to this request, and how the worker says which it used.
+      index: `${knowledge.index}\n\n${relevanceNote(input.request, knowledge.cards ?? [], [config.ownerName])}`,
+      about: knowledge.aboutMe.text, visibility: knowledge.visibility, readDir: knowledge.readDir,
+    };
   // A brief the owner kept from before this release still gets the knowledge rules that matter now: About me, pages
   // read from the approved copy, proposals written to knowledge/proposals, and approval left to the owner, in the app.
   let text = template.includes('{{PROPOSALS_DIR}}') ? template : template.replaceAll('{{KNOWLEDGE_DIR}}/proposals', '{{PROPOSALS_DIR}}');

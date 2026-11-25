@@ -16,6 +16,7 @@ import { BriefPolicy } from './screens/BriefPolicy.tsx';
 import { Diagnostics } from './screens/Diagnostics.tsx';
 import { Jobs } from './screens/Jobs.tsx';
 import { AboutMe } from './screens/AboutMe.tsx';
+import { Overview } from './screens/Overview.tsx';
 import { NewTask } from './screens/NewTask.tsx';
 import { Pages } from './screens/Pages.tsx';
 import { Proposals } from './screens/Proposals.tsx';
@@ -42,6 +43,7 @@ const screens: Record<RouteId, ReactElement> = {
   'jobs-running': <Jobs group="running" />,
   'jobs-done': <Jobs group="done" />,
   'new-task': <NewTask />,
+  'knowledge-overview': <Overview />,
   'about-me': <AboutMe />,
   proposals: <Proposals />,
   pages: <Pages />,

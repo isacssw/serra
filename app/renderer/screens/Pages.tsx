@@ -133,6 +133,7 @@ export const Pages = () => {
   const [saving, setSaving] = useState(false);
   /** A page the owner clicked while the draft had unsaved changes; the discard dialog asks first. */
   const [pendingSelect, setPendingSelect] = useState<string | null>(null);
+  const [retiring, setRetiring] = useState(false);
   const [drifted, setDrifted] = useState<Drifted[]>([]);
   const [resolving, setResolving] = useState(false);
   /** Bumped after an outside change is accepted or restored, so the open page shows its text as it is now. */
@@ -228,6 +229,25 @@ export const Pages = () => {
       toast({ message: message(error), tone: 'error' });
     } finally {
       setSaving(false);
+    }
+  };
+
+  /** Takes the open page out of what the bot knows: it moves to archive/, its index row goes, and undo brings it back. */
+  const retire = async () => {
+    const bridge = serra();
+    const path = selected;
+    setRetiring(false);
+    if (!bridge || !path || saved === null) return;
+    try {
+      const { undoId } = await bridge.proposals.retire(path, saved);
+      setSelected(null);
+      await reload();
+      toast({
+        message: `Retired ${path}. The bot no longer uses it; it's kept in archive/.`, tone: 'success',
+        action: { label: 'Undo', onClick: () => { bridge.proposals.undo(undoId).then(() => reload(), (error: unknown) => toast({ message: message(error), tone: 'error' })); } },
+      });
+    } catch (error) {
+      toast({ message: message(error), tone: 'error' });
     }
   };
 
@@ -355,6 +375,9 @@ export const Pages = () => {
                   >
                     Mark verified today
                   </Button>
+                  <Button variant="ghost" disabled={saving || state.dirty} title={state.dirty ? 'Save or revert your edits first.' : 'Stop using this page. It moves to archive/; you can undo.'} onClick={() => setRetiring(true)}>
+                    Retire…
+                  </Button>
                   <span className={cx('ml-auto text-xs tabular-nums', state.overCap ? 'text-down' : 'text-muted')}>{state.linesLabel}</span>
                 </div>
               </>
@@ -362,6 +385,18 @@ export const Pages = () => {
           </div>
         </div>
       )}
+      <Dialog
+        open={retiring}
+        onClose={() => setRetiring(false)}
+        title={`Retire ${selected ?? 'this page'}?`}
+        description="The bot stops using it. It moves to archive/ and its index row goes. You can undo."
+        actions={(
+          <>
+            <Button onClick={() => setRetiring(false)}>Cancel</Button>
+            <Button variant="danger" onClick={() => void retire()}>Retire</Button>
+          </>
+        )}
+      />
       <Dialog
         open={pendingSelect !== null}
         onClose={() => setPendingSelect(null)}

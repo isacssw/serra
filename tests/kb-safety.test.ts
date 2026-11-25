@@ -9,6 +9,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test, { type TestContext } from 'node:test';
 import { buildBrief } from '../evals/capture.ts';
+import { readKnowledgeUse } from '../src/knowledge-usage.ts';
 import { codeRoot } from '../src/config.ts';
 import { createKnowledge } from '../src/knowledge.ts';
 import { createProposals } from '../src/proposals.ts';
@@ -1071,4 +1072,16 @@ test('Serra stamps where a thread\'s proposals come from, and the worker is told
   await run.bot.handle({ channel: 'DROBIN', threadTs: '35.1', messageTs: '35.1', user: ROBIN, text: 'remember: no deploys on Friday', direct: true });
   const own = JSON.parse(readFileSync(join(profileDir, 'knowledge', 'proposals', 'from-slack', 'DROBIN-35-1', '.from.json'), 'utf8'));
   assert.equal(own.owner, true);
+});
+
+test('the line naming the pages a reply used is never posted, and only pages its worker could read are kept', async (t) => {
+  const profileDir = fixture(t);
+  const run = await botOn(profileDir);
+  await run.bot.handle({ channel: 'CTEAM', threadTs: '5.1', messageTs: '5.1', user: PRIYA, text: '<@UMOSS> how do I cut a release?', direct: true });
+  await run.finish('Run pnpm release:prepare.\n\n<knowledge-used>workflows/release.md, owner/private-notes.md</knowledge-used>');
+  assert.ok(run.posted.some((text) => /release:prepare/.test(text)));
+  assert.ok(!run.posted.some((text) => /knowledge-used|private-notes/.test(text)), 'the line is Serra\'s, never the thread\'s');
+  const [use] = readKnowledgeUse(profileDir);
+  assert.equal(use?.visibility, 'team');
+  assert.deepEqual(use?.cited, ['workflows/release.md'], 'an owner-only page a teammate\'s worker could not read is dropped');
 });

@@ -36,6 +36,7 @@ export const routes = [
   { id: 'jobs-running', path: '/jobs/running', label: 'Running', section: 'jobs', badge: 'running', nav: false, needs: 'profile', ticket: 'APP-12' },
   { id: 'jobs-done', path: '/jobs/done', label: 'Done today', section: 'jobs', nav: false, needs: 'profile', ticket: 'APP-12' },
   { id: 'new-task', path: '/jobs/new', label: 'New task', section: 'jobs', nav: false, needs: 'profile', ticket: 'APP-25' },
+  { id: 'knowledge-overview', path: '/knowledge/overview', label: 'Overview', section: 'knowledge', needs: 'profile', ticket: 'SERRA-KB-GROWTH' },
   { id: 'about-me', path: '/knowledge/about', label: 'About me', section: 'knowledge', badge: 'untagged', needs: 'profile', ticket: 'SERRA-41' },
   { id: 'proposals', path: '/knowledge/proposals', label: 'Proposals', section: 'knowledge', badge: 'proposals', needs: 'profile', ticket: 'APP-13' },
   { id: 'pages', path: '/knowledge/pages', label: 'Pages', section: 'knowledge', badge: 'drift', needs: 'profile', ticket: 'APP-20' },
