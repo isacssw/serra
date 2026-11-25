@@ -32,7 +32,7 @@ export const DiffView = ({ current, proposed, labels = ['Current', 'Proposed'], 
   return (
     <div className="flex flex-col gap-2">
       <p className="text-xs text-muted">
-        {current === null ? `New page, ${stats.added} lines.` : `${stats.removed} lines removed, ${stats.added} added${stats.moved ? `, ${stats.moved} moved` : ''}.`}
+        {current === null ? `New page, ${stats.added} lines.` : `${stats.removed} line${stats.removed === 1 ? '' : 's'} removed, ${stats.added} added${stats.moved ? `, ${stats.moved} moved` : ''}.`}
       </p>
       <div className="@container">
         {/* Narrow: one column, removed lines above the lines that replace them, so nothing wraps mid-word. */}
@@ -43,7 +43,8 @@ export const DiffView = ({ current, proposed, labels = ['Current', 'Proposed'], 
           <div className="py-1.5 font-mono text-xs leading-6">
             {rows.flatMap((row, index) => (row.current?.kind === 'same'
               ? [<Cell key={index} cell={row.proposed} />]
-              : [row.current && <Cell key={`${index}-was`} cell={row.current} />, row.proposed && <Cell key={`${index}-now`} cell={row.proposed} />]))}
+              // A moved line shows once, where it now sits.
+              : [row.current && row.current.kind !== 'moved' && <Cell key={`${index}-was`} cell={row.current} />, row.proposed && <Cell key={`${index}-now`} cell={row.proposed} />]))}
           </div>
         </div>
         {/* Wide: one grid, so a wrapped line on one side keeps its row level with the other side. */}
