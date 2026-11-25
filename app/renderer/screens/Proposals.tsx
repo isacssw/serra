@@ -325,7 +325,7 @@ export const Proposals = () => {
                       replaces(diff, folder) ? `Replaced ${diff.proposal.target}.` : `Promoted ${title} to ${folderLabel(folder)}.`,
                     )}
                   >
-                    {replaces(diff, folder) ? 'Replace page' : 'Add page'}
+                    {replaces(diff, folder) ? 'Approve' : 'Add page'}
                   </Button>
                   <Button disabled={busy || targets.pages.length === 0} onClick={() => setMergeOpen(true)}>Merge into…</Button>
                   <Button disabled={busy} onClick={() => void act((path) => bridge.proposals.discard(path), `Discarded ${title}.`)}>Discard</Button>

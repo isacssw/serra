@@ -3,7 +3,7 @@
 // message the service refuses a save with, so Save stays disabled until the page would pass `pnpm knowledge`.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AlertTriangle, CheckCircle2, ChevronRight, FileText, Search } from 'lucide-react';
-import { useNavigate, useSearchParams } from 'react-router';
+import { useSearchParams } from 'react-router';
 import type { KnowledgePage } from '../../../src/contracts.ts';
 import type { KnowledgeOverview } from '../../../src/knowledge-overview.ts';
 import { serra } from '../bridge.ts';
@@ -62,7 +62,10 @@ const DriftNotice = ({ files, busy, onAccept, onRestore, name }: {
                 </button>
                 <span className="text-xs text-muted">{file.current === null ? 'deleted' : file.approved === null ? 'new' : 'edited'}</span>
                 <span className="ml-auto flex gap-1">
-                  <Button size="sm" disabled={busy} onClick={() => onAccept(file)} title="The bot uses it from now on">Accept</Button>
+                  {/* Accepted only once seen: the first click shows the change. */}
+                  {open === file.path
+                    ? <Button size="sm" variant="primary" disabled={busy} onClick={() => onAccept(file)} title="The bot uses it from now on">Accept</Button>
+                    : <Button size="sm" disabled={busy} onClick={() => setOpen(file.path)}>See change</Button>}
                   <Button size="sm" variant="ghost" disabled={busy} onClick={() => onRestore(file)} title="Put back the version you approved">Undo it</Button>
                 </span>
               </div>
@@ -113,16 +116,27 @@ const PageList = ({ pages, selected, onSelect }: { pages: KnowledgePage[]; selec
   </div>
 );
 
-/** A page holding a rule that disagrees with another: settled in one place, Overview's To do. */
-const SettleLink = ({ onSettle }: { onSettle: () => void }) => (
-  <p className="flex items-center gap-1.5 text-[13px]">
-    <AlertTriangle size={14} aria-hidden className="text-warn" />Two rules disagree
-    <button type="button" onClick={onSettle} className="text-ink underline underline-offset-2 hover:no-underline focus-visible:outline-2 focus-visible:outline-focus">Settle</button>
-  </p>
-);
+/**
+ * Rules on this page that disagree with or repeat another, shown as they read. Overview's To do keeps one in a click
+ * where it can; here the owner edits, so a rule inside a sentence of prose is never a dead end.
+ */
+const RulesNote = ({ issues, onEdit }: { issues: KnowledgeOverview['health']['issues']; onEdit?: () => void }) => {
+  const pairs = issues.filter((issue) => (issue.kind === 'conflict' || issue.kind === 'duplicate') && (issue.facts?.length ?? 0) === 2);
+  if (pairs.length === 0) return null;
+  return (
+    <section aria-label="Rules to settle" className="flex flex-col gap-2 rounded-lg border border-warn/40 bg-panel px-3 py-2.5">
+      {pairs.map((issue, at) => (
+        <div key={at} className="flex flex-col gap-1">
+          <p className="flex items-center gap-1.5 text-[13px]"><AlertTriangle size={14} aria-hidden className="text-warn" />{issue.kind === 'conflict' ? 'Two rules disagree' : 'Written twice'}</p>
+          {issue.facts!.map((fact) => <p key={fact.text} className="border-l-2 border-line pl-2 text-xs text-muted" title={fact.page}>{fact.text}</p>)}
+        </div>
+      ))}
+      {onEdit && <Button size="sm" className="self-start" onClick={onEdit}>Edit</Button>}
+    </section>
+  );
+};
 
 export const Pages = () => {
-  const navigate = useNavigate();
   const toast = useToast();
   const [pages, setPages] = useState<KnowledgePage[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -386,7 +400,7 @@ export const Pages = () => {
             {page && state && (
               <>
                 <AudiencePicker text={draft} disabled={saving} onChange={setDraft} />
-                {pairs.some((issue) => issue.kind === 'conflict') && <SettleLink onSettle={() => void navigate('/knowledge/overview#todo')} />}
+                <RulesNote issues={pairs} {...(editing ? {} : { onEdit: () => setEditing(true) })} />
                 {!editing && !state.dirty && (
                   <div className="flex flex-col gap-3">
                     <div className="rounded-lg border border-line bg-panel"><PageBody text={pageBody(draft)} onOpen={(href) => void serra()?.app.openExternal(href)} /></div>
@@ -418,8 +432,8 @@ export const Pages = () => {
                     </div>
                   ) : (
                     <p className="flex items-center gap-1.5 text-sm text-muted">
-                      {pairs.some((issue) => issue.kind === 'conflict' && (issue.facts ?? []).filter((fact) => fact.page !== selected || currentRules(draft).some((line) => line.includes(fact.text))).length >= 2)
-                        ? <><AlertTriangle size={15} aria-hidden className="text-warn" />Two rules disagree</>
+                      {pairs.some((issue) => (issue.kind === 'conflict' || issue.kind === 'duplicate') && (issue.facts ?? []).filter((fact) => fact.page !== selected || currentRules(draft).some((line) => line.includes(fact.text))).length >= 2)
+                        ? <><AlertTriangle size={15} aria-hidden className="text-warn" />Keep only one of the rules above</>
                         : <><CheckCircle2 size={15} aria-hidden className="text-up" />Looks good</>}
                     </p>
                   )}

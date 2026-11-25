@@ -399,7 +399,9 @@ test('an old rule is replaced from the date the kept rule gives, as the weekly r
 
 test('Overview leads with one number: replies the notes shaped this week, else over the usage window, else nothing', () => {
   const usage = { replies: 9, withKnowledge: 6, days: 30 };
-  assert.deepEqual(headline({ review: { replies: 5, withKnowledge: 4 }, usage } as unknown as Parameters<typeof headline>[0]), { used: 4, replies: 5, period: 'this week' });
+  const now = new Date('2026-11-25T12:00:00Z');
+  assert.deepEqual(headline({ review: { replies: 5, withKnowledge: 4, to: '2026-11-24' }, usage } as unknown as Parameters<typeof headline>[0], now), { used: 4, replies: 5, period: 'this week' });
+  assert.deepEqual(headline({ review: { replies: 5, withKnowledge: 4, to: '2026-10-20' }, usage } as unknown as Parameters<typeof headline>[0], now), { used: 6, replies: 9, period: 'in 30 days' }, 'an old review is never "this week"');
   assert.deepEqual(headline({ review: null, usage } as unknown as Parameters<typeof headline>[0]), { used: 6, replies: 9, period: 'in 30 days' });
   assert.equal(headline({ review: null, usage: { replies: 0, withKnowledge: 0, days: 30 } } as unknown as Parameters<typeof headline>[0]), null);
 });

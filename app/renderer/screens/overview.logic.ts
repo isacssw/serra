@@ -3,6 +3,7 @@
 import type { EventKind, HistoryPoint, KnowledgeEvent } from '../../../src/knowledge-health.ts';
 import type { KnowledgeOverview } from '../../../src/knowledge-overview.ts';
 import type { ReviewSuggestion } from '../../../src/knowledge-review-store.ts';
+import { keepLabel } from './pages.logic.ts';
 
 export type Tone = 'up' | 'warn' | 'down' | 'neutral';
 
@@ -112,8 +113,10 @@ const suggestionAction = (kind: 'replace' | 'retire' | 'confirm'): string => ({ 
  * Overview's one message: how many replies the notes shaped, this week from the review, else over the usage window.
  * Null before any reply.
  */
-export const headline = (overview: Pick<KnowledgeOverview, 'review' | 'usage'>): { used: number; replies: number; period: string } | null => {
-  if (overview.review && overview.review.replies > 0) return { used: overview.review.withKnowledge, replies: overview.review.replies, period: 'this week' };
+export const headline = (overview: Pick<KnowledgeOverview, 'review' | 'usage'>, now = new Date()): { used: number; replies: number; period: string } | null => {
+  // A review is "this week" only while it is: an older one (weekly reviews off) gives way to the usage window.
+  const fresh = overview.review !== null && now.getTime() - Date.parse(`${overview.review.to}T00:00:00Z`) <= 8 * 24 * 60 * 60 * 1000;
+  if (overview.review && fresh && overview.review.replies > 0) return { used: overview.review.withKnowledge, replies: overview.review.replies, period: 'this week' };
   if (overview.usage.replies > 0) return { used: overview.usage.withKnowledge, replies: overview.usage.replies, period: `in ${overview.usage.days} days` };
   return null;
 };
@@ -165,6 +168,12 @@ const FIX_RANK: Record<string, number> = { replace: 0, proposal: 0.5, conflict: 
  * Every organising job in one list, worst first: the weekly review's fixes (one click) and what the health check finds
  * now, without repeating a page a review fix already covers. Names pages by their description, not their file.
  */
+/** Two rules that disagree in three words: "Tuesday vs Thursday", from what tells them apart. */
+const versus = (a: string, b: string): string => {
+  const [x, y] = [keepLabel(a, b), keepLabel(b, a)];
+  return x === 'Keep this one' || y === 'Keep this one' ? 'Two rules disagree' : `${x.slice(5)} vs ${y.slice(5)}`;
+};
+
 export const fixItems = (overview: Pick<KnowledgeOverview, 'review' | 'health' | 'value'> & Partial<Pick<KnowledgeOverview, 'confirmHeldBack' | 'proposals' | 'unreviewed'>>): FixItem[] => {
   const title = (path: string): string => overview.value.find((page) => page.path === path)?.title ?? path;
   const fromReview: FixItem[] = (overview.review?.suggestions ?? []).map((suggestion) => ({
@@ -182,7 +191,7 @@ export const fixItems = (overview: Pick<KnowledgeOverview, 'review' | 'health' |
     return [{
       id: `${issue.kind}:${issue.pages.join(',')}`, title: page === 'index.md' ? 'Knowledge index' : issue.pages.map(title).join(' and '), why, lines: issue.detail ?? [],
       pages: issue.pages, action: stale ? 'Still true' : issue.kind === 'conflict' || issue.kind === 'duplicate' ? 'Settle' : 'Open', ...(stale ? { suggestion: stale } : {}),
-      ...(issue.kind === 'conflict' && issue.facts?.length === 2 ? { keep: issue.facts } : {}),
+      ...(issue.kind === 'conflict' && issue.facts?.length === 2 ? { keep: issue.facts, why: versus(issue.facts[0]!.text, issue.facts[1]!.text) } : {}),
       ...(issue.kind === 'stale' && held ? { why: `${why}, and a newer page on its topic may have changed it` } : {}),
     }];
   });

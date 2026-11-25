@@ -346,7 +346,7 @@ const contrastScript = (route: string): string => `(async () => {
   ${route.startsWith('#') ? `location.hash = '${route}'; await new Promise((r) => setTimeout(r, 100));` : `document.querySelector('[data-serra-sidebar] a[data-route="${route}"]')?.click();`}
   await wait(() => document.querySelector('[data-serra-main] h1, [data-serra-main] [data-screen-label]'));
   // With a profile, the sidebar counts load a moment later; the capture should show them.
-  ${route.startsWith('#') ? '' : "window.dispatchEvent(new Event('serra:refresh-counts')); await wait(() => document.querySelector('[data-serra-sidebar] a[data-route=pages] span[aria-label]'));"}
+  ${route.startsWith('#') ? '' : "window.dispatchEvent(new Event('serra:refresh-counts')); await wait(() => document.querySelector('[data-serra-sidebar] a[data-route=proposals] span[aria-label]'));"}
   await new Promise((r) => setTimeout(r, 400));
   const ctx = document.createElement('canvas').getContext('2d', { willReadFrequently: true });
   const rgba = (css) => {
@@ -448,7 +448,7 @@ const runThemeChecks = async (window: BrowserWindow): Promise<string[]> => {
           writeFileSync(join(shots, `${theme}-${route}.png`), (await window.webContents.capturePage()).toPNG());
           // Pages with a page open, and its Retire dialog.
           if (route === 'pages') {
-            await run(`(async () => { location.hash = '#/knowledge/pages?page=owner%2Fworking-style.md'; await new Promise((r) => setTimeout(r, 400)); (document.querySelector('[data-serra-main] section[aria-label="Rules to settle"]') ?? document.querySelector('[data-serra-main] textarea'))?.scrollIntoView({ block: 'start' }); await new Promise((r) => setTimeout(r, 150)); })()`);
+            await run(`(async () => { location.hash = '#/knowledge/pages?page=owner%2Fworking-style.md'; await new Promise((r) => setTimeout(r, 400)); (document.querySelector('[data-serra-main] nav[aria-label="Pages"]')?.nextElementSibling ?? document.querySelector('[data-serra-main] textarea'))?.scrollIntoView({ block: 'start' }); await new Promise((r) => setTimeout(r, 150)); })()`);
             if (theme === 'light') await countWords('pages-detail');
             writeFileSync(join(shots, `${theme}-pages-detail.png`), (await window.webContents.capturePage()).toPNG());
             await run(`(async () => { [...document.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Retire…')?.click(); await new Promise((r) => setTimeout(r, 300)); })()`);

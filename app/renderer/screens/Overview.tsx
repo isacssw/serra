@@ -161,7 +161,7 @@ export const Overview = () => {
     `${health.facts} facts${monthAgo ? ` (${changeText(health.facts, monthAgo.facts, monthAgo.at) ?? ''})` : ''}`,
   ].join(' · ');
   const days = groupByDay(overview.events, now, 5);
-  const head = headline(overview);
+  const head = headline(overview, now);
   const example = overview.review?.examples[0];
 
   return (
