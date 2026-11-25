@@ -303,6 +303,33 @@ export const Pages = () => {
     }
   };
 
+  /** Keeps one rule of a pair and saves at once (the other moves under "Replaced"); Undo puts the page back. With unsaved
+   * edits open, it only changes the draft, so nothing typed is saved unasked. */
+  const keepNow = async (drop: string) => {
+    const bridge = serra();
+    const path = selected;
+    if (!bridge || !path || saved === null || saving) return;
+    if (state?.dirty) { setDraft((text) => keepRule(text, drop, localDate(new Date()))); return; }
+    const before = saved;
+    const next = keepRule(before, drop, localDate(new Date()));
+    if (next === before) return;
+    setSaving(true);
+    try {
+      await bridge.pages.save(path, next, before);
+      const text = await bridge.pages.read(path);
+      setSaved(text);
+      setDraft(text);
+      await reload();
+      bridge.pages.issues(path).then(setPairs, () => undefined);
+      toast({
+        message: 'Saved. The other rule is kept under "Replaced".', tone: 'success',
+        action: { label: 'Undo', onClick: () => {
+          bridge.pages.save(path, before, text).then(async () => { setReadVersion((version) => version + 1); await reload(); bridge.pages.issues(path).then(setPairs, () => undefined); }, (error: unknown) => toast({ message: message(error), tone: 'error' }));
+        } },
+      });
+    } catch (error) { toast({ message: message(error), tone: 'error' }); } finally { setSaving(false); }
+  };
+
   /** Bring a retired page back where it was. */
   const restore = async (path: string) => {
     const bridge = serra();
@@ -449,7 +476,7 @@ export const Pages = () => {
             {page && state && (
               <>
                 <AudiencePicker text={draft} disabled={saving} onChange={setDraft} />
-                {pairs.length > 0 && <RulePairs page={selected!} pairs={pairs} draft={draft} disabled={saving} onKeep={(drop) => setDraft((text) => keepRule(text, drop, localDate(new Date())))} onOpen={(path) => { if (state?.dirty) setPendingSelect(path); else setSelected(path); }} />}
+                {pairs.length > 0 && <RulePairs page={selected!} pairs={pairs} draft={draft} disabled={saving} onKeep={(drop) => { void keepNow(drop); }} onOpen={(path) => { if (state?.dirty) setPendingSelect(path); else setSelected(path); }} />}
                 {!editing && !state.dirty && (
                   <div className="flex flex-col gap-3">
                     <div className="rounded-lg border border-line bg-panel"><PageBody text={pageBody(draft)} onOpen={(href) => void serra()?.app.openExternal(href)} /></div>

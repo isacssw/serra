@@ -376,8 +376,8 @@ test('Pages groups by topic, and the week and each page read in plain words', ()
   const page = (path: string, area: string, description: string) => ({ path, area, description, verified: null, badge: 'verified' as const, lines: 3, problems: [], warnings: [] });
   assert.deepEqual(groupByArea([page('people/b.md', 'People', 'Who Bo is'), page('owner/r.md', 'Who you are', 'Role'), page('people/a.md', 'People', 'Who Al is')])
     .map((group) => [group.area, group.pages.map((item) => item.description)]), [['Who you are', ['Role']], ['People', ['Who Al is', 'Who Bo is']]]);
-  assert.equal(weekLine({ replies: 12, withKnowledge: 9, facts: { before: 18, now: 22 } }), '12 replies · 9 used your notes · 18 → 22 facts');
-  assert.equal(weekLine({ replies: 1, withKnowledge: 0, facts: { before: null, now: 4 } }), '1 reply · 0 used your notes · 4 facts');
+  assert.equal(weekLine({ replies: 12, withKnowledge: 9, facts: { before: 18, now: 22 } }), '12 replies · 9 used your notes · 4 new facts');
+  assert.equal(weekLine({ replies: 1, withKnowledge: 0, facts: { before: null, now: 4 } }), '1 reply · 0 used your notes');
   assert.deepEqual((['earns', 'some', 'carried', 'idle', 'unknown'] as const).map((state) => valueLabel(state, 5)), ['Used in 5 replies', 'Used once', 'Always in the brief', 'Not used', 'Not used yet']);
 });
 

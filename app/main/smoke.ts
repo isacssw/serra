@@ -201,6 +201,8 @@ const layoutScript = (profileDir: string): string => `(async () => {
   await window.serra.app.setPrefs({ profileDir: ${JSON.stringify(profileDir)} });
   window.dispatchEvent(new Event('serra:setup-changed'));
   await wait(() => !document.querySelector('[data-setup-required]'));
+  // The sidebar counts load a moment after the profile: wait for one so every capture shows them.
+  await wait(() => document.querySelector('[data-serra-sidebar] a[data-route] span[aria-label]'));
   const screens = [];
   for (const link of document.querySelectorAll('[data-serra-sidebar] a[data-route]')) {
     if (link.dataset.route === 'diagnostics') continue;

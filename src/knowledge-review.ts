@@ -95,7 +95,7 @@ const reviewPrompt = (week: { uses: KnowledgeUse[]; missing: { topic: string; co
   '- Keep the header lines as they are, except set `verified: no`. Keep every other rule word for word. Never add a fact that isn\'t on the pages.',
   '- For two rules that disagree, keep the newer one (a later date, or one that says "now" or "since") as the current rule, and move the older under a',
   '  "## Replaced" heading at the end as "- Until YYYY-MM-DD: <old rule>" (use the date the newer rule started, or the page\'s confirmed date). If you can\'t tell',
-  '  which is newer, leave that page out.',
+  '  which is newer, leave that page out. Keep the rules in their order: the current rule stays where the old one was.',
   '- When the newer rule is on another page, rewrite the page with the older one: put the newer rule where the old one was, word for word as the other',
   '  page says it, and move the old one under "## Replaced". The page must still answer its own topic with the current rule.',
   '- At most 4 rewrites. Leave "rewrites" empty when nothing needs fixing.',
