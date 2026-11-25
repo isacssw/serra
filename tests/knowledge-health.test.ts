@@ -16,7 +16,7 @@ import { knowledgeOverview } from '../src/knowledge-overview.ts';
 import { createJournal } from '../src/knowledge-journal.ts';
 import { createKnowledge } from '../src/knowledge.ts';
 import { changeText, fixItems, groupByDay, scoreChart, scoreWord, valueLabel, weekLine } from '../app/renderer/screens/overview.logic.ts';
-import { currentRules, groupByArea, keepRule, newerRule } from '../app/renderer/screens/pages.logic.ts';
+import { currentRules, groupByArea, keepLabel, keepRule, newerRule } from '../app/renderer/screens/pages.logic.ts';
 import { swapRule } from '../app/renderer/screens/proposals.logic.ts';
 
 const NOW = new Date('2026-11-25T12:00:00Z');
@@ -375,4 +375,11 @@ test('Pages groups by topic, and the week and each page read in plain words', ()
   assert.equal(weekLine({ replies: 12, withKnowledge: 9, facts: { before: 18, now: 22 } }), '12 replies · 9 used your notes · 18 → 22 facts');
   assert.equal(weekLine({ replies: 1, withKnowledge: 0, facts: { before: null, now: 4 } }), '1 reply · 0 used your notes · 4 facts');
   assert.deepEqual((['earns', 'some', 'carried', 'idle', 'unknown'] as const).map((state) => valueLabel(state, 5)), ['Used in 5 replies', 'Used once', 'Always in the brief', 'Not used', 'Not used yet']);
+});
+
+test('two rules to settle get buttons that say which', () => {
+  assert.equal(keepLabel('Risky releases ship on Thursday now.', 'Risky releases ship on Tuesday.'), 'Keep Thursday');
+  assert.equal(keepLabel('Keep PRs under 300 changed lines now.', 'Keep PRs under 400 changed lines.'), 'Keep 300');
+  assert.equal(keepLabel('Payments bugs go to #payments-bugs.', 'Payments bugs go to #ledgerline-triage.'), 'Keep #payments-bugs');
+  assert.equal(keepLabel('ship it later', 'ship it sooner'), 'Keep this one');
 });

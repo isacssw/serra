@@ -151,6 +151,17 @@ export const newerRule = (a: string, b: string): 0 | 1 | null => {
   return fresh(a) ? 0 : 1;
 };
 
+/**
+ * The Keep button's label: "Keep Thursday", "Keep 300", the word that sets this rule apart from the other, so two
+ * buttons never read the same. "Keep this one" when no single word does.
+ */
+export const keepLabel = (rule: string, other: string): string => {
+  const words = (text: string): string[] => text.match(/[\p{L}\p{N}#@][\p{L}\p{N}#@:.%-]*/gu)?.map((word) => word.replace(/[.:]+$/, '')) ?? [];
+  const theirs = new Set(words(other).map((word) => word.toLowerCase()));
+  const own = words(rule).find((word) => !theirs.has(word.toLowerCase()) && (/\d/.test(word) || /^[A-Z#]/.test(word)));
+  return own ? `Keep ${own}` : 'Keep this one';
+};
+
 /** Which page to show after the list reloads: the current one if it's still there, else the first. */
 export const keepSelection = (pages: readonly KnowledgePage[], current: string | null): string | null =>
   current && pages.some((page) => page.path === current) ? current : (pages[0]?.path ?? null);

@@ -99,3 +99,29 @@ test('the review runs weekly, only after a week with replies, and the owner can 
   t.after(() => rmSync(quiet, { recursive: true, force: true }));
   assert.equal(reviewDue(quiet, NOW), false, 'a bot with no replies has nothing to review');
 });
+
+test('a rewrite that settles a rule changed on another page must say the current rule, and is stamped as the review\'s', async (t) => {
+  const { dir, knowledge } = profile(t);
+  const header = (description: string, date: string) => `---\ntype: product\ndescription: ${description}\naudience: team\nwritten: ${date}\nverified: ${date}\nsources:\n  - Robin, ${date}\n---\n\n`;
+  writeFileSync(join(knowledge, 'product/plans.md'), `${header('Plans', '2026-11-20')}- The API rate limit is 250 requests per second per merchant on every plan.\n`);
+  const limits = join(knowledge, 'product/rate-limits.md');
+  writeFileSync(limits, readFileSync(limits, 'utf8').replace(/^verified: .*$/m, 'verified: 2026-06-01'));
+  writeFileSync(join(knowledge, 'index.md'), `${readFileSync(join(knowledge, 'index.md'), 'utf8').trimEnd()}\n| plans | \`product/plans.md\` | Plans |\n`);
+  rmSync(join(dir, '.knowledge-approved'), { recursive: true, force: true });
+  createJournal(knowledge).seed();
+  const old = '- 100 requests per second per merchant, burst 200.\n';
+  const page = readFileSync(limits, 'utf8');
+  const loses = page.replace(old, '').trimEnd() + `\n\n## Replaced\n\n- Until 2026-11-20: ${old.slice(2)}`;
+  const settles = page.replace(old, '- The API rate limit is 250 requests per second per merchant on every plan.\n').trimEnd() + `\n\n## Replaced\n\n- Until 2026-11-20: ${old.slice(2)}`;
+  const run = (text: string) => runKnowledgeReview({ profileDir: dir, knowledgeDir: knowledge, now: NOW,
+    ask: async (title) => (title.includes('weekly review') ? JSON.stringify({ summary: 'One. Two. Three.', rewrites: [{ page: 'product/rate-limits.md', text, why: 'Settles the limit.' }] }) : 'An answer.') });
+  const refused = await run(loses);
+  assert.deepEqual(refused.suggestions.filter((item) => item.kind === 'replace'), [], 'moving the old rule away without the current one leaves the page answering nothing');
+  assert.equal(refused.summary, 'One. Two.', 'the summary is two sentences, cut where one ends');
+  const kept = await run(settles);
+  const proposal = kept.suggestions.find((item) => item.kind === 'replace')!;
+  const text = readFileSync(join(knowledge, 'proposals', proposal.proposal!), 'utf8');
+  assert.match(text, /^written: 2026-11-25$/m);
+  assert.match(text, /^  - Weekly review, 2026-11-25, settled with product\/plans\.md$/m);
+  assert.match(text, /^verified: no$/m);
+});

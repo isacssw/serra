@@ -33,7 +33,9 @@ export const groupByDate = (proposals: readonly Proposal[]): ProposalGroup[] => 
 };
 
 /** A proposal's title: its file name without folder, date and `.md`, in words (`2026-11-19-ci-rerun.md` → `Ci rerun`). */
-export const proposalTitle = (proposal: Pick<Proposal, 'path'>): string => {
+export const proposalTitle = (proposal: Pick<Proposal, 'path'> & { description?: string | null }): string => {
+  // The page's own name for itself first; a file name only when it has none.
+  if (proposal.description?.trim()) return proposal.description.trim();
   const name = (proposal.path.split('/').pop() ?? proposal.path)
     .replace(/\.md$/, '').replace(/^\d{4}-\d{2}-\d{2}-?/, '').replace(/[-_]+/g, ' ').trim();
   return name ? name.charAt(0).toUpperCase() + name.slice(1) : proposal.path;

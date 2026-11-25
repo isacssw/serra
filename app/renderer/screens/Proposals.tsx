@@ -417,7 +417,7 @@ const Sources = ({ text, from }: { text: string; from?: ProposalSource }) => {
           {from.link && <>{' '}<a href={from.link} onClick={opened(from.link)} className="text-ink underline underline-offset-2 hover:no-underline focus-visible:outline-2 focus-visible:outline-focus">Open the thread</a></>}
         </p>
       ) : (
-        <p className="text-muted">Serra didn&rsquo;t record which thread wrote this (the interview and older briefs write here directly).</p>
+        <p className="text-muted">Where this came from wasn&rsquo;t recorded.</p>
       )}
       <p className="text-muted">{sources.length ? <>The worker&rsquo;s sources: {sources.join('; ')}.</> : 'The worker gave no sources.'}</p>
     </div>

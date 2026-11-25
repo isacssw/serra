@@ -1,5 +1,5 @@
 {
-  "about": "Before/after proof (evals/kb-proof.ts). Robin's fixture, eight months on: 45 pages, a rule that changed on the same page, a newer rule on a page the question doesn't point to, a stale page with a newer one beside it, and 15 distractor pages. Every case is something a model can't guess without Robin's notes. `include`: regexes the reply must match (case-insensitive). `exclude`: must not match. `judge`: a rubric a second T3 run scores 0-2. A case passes when every regex holds and the judge, if any, gives 2. Version 2 (round 7): the `friday` case no longer depends on today's real weekday (v1 asked as if it were Friday, and workers corrected it from the clock); four more changed rules were added to the fixture, which also changed the right answers of `flags` and `payload-retention`. No case was changed to fit a result. v1 results stay in ~/serra-notes/kb-growth/evals/proof-r6-claude/. Grading fix after the round-7 run, applied to every arm alike: `payload-retention` lost an `exclude` regex that failed replies which named the old 30 days as out of date, and each rubric is now scored by three grader runs, majority wins (one grader run scored correct Friday answers 0). After round 8: the `friday` rubric now states Robin's real hours (graders were marking the right hours as invented), applied to every arm alike by --regrade.",
+  "about": "Before/after proof (evals/kb-proof.ts). Robin's fixture, eight months on: 45 pages, a rule that changed on the same page, a newer rule on a page the question doesn't point to, a stale page with a newer one beside it, and 15 distractor pages. Every case is something a model can't guess without Robin's notes. `include`: regexes the reply must match (case-insensitive). `exclude`: must not match. `judge`: a rubric a second T3 run scores 0-2. A case passes when every regex holds and the judge, if any, gives 2. Version 2 (round 7): the `friday` case no longer depends on today's real weekday (v1 asked as if it were Friday, and workers corrected it from the clock); four more changed rules were added to the fixture, which also changed the right answers of `flags` and `payload-retention`. No case was changed to fit a result. v1 results stay in ~/serra-notes/kb-growth/evals/proof-r6-claude/. Grading fix after the round-7 run, applied to every arm alike: `payload-retention` lost an `exclude` regex that failed replies which named the old 30 days as out of date, and each rubric is now scored by three grader runs, majority wins (one grader run scored correct Friday answers 0). After round 8: the `friday` rubric now states Robin's real hours (graders were marking the right hours as invented), applied to every arm alike by --regrade. Round 7 added five held-out changed-rule cases (category `held-out`), written after the detector was frozen for them; nothing was tuned on them.",
   "cases": [
     {
       "id": "priorities",
@@ -238,6 +238,64 @@
       "include": [
         "24 ?h"
       ]
+    },
+    {
+      "id": "payments-bugs",
+      "category": "held-out",
+      "via": "channel",
+      "user": "UJONAS0001",
+      "text": "where should I report a payments bug?",
+      "include": [
+        "#payments-bugs"
+      ],
+      "judge": "An older page (confirmed 2026-03-01) says payments bugs go to #ledgerline-triage; a newer page (2026-11-15) says they now go to #payments-bugs. 2 = #payments-bugs as current; 1 = both without picking, or asks; 0 = only #ledgerline-triage."
+    },
+    {
+      "id": "usd-live",
+      "category": "held-out",
+      "via": "channel",
+      "user": "UPRIYA0001",
+      "text": "can merchants take payments in USD yet?",
+      "include": [
+        "\\byes\\b|live"
+      ],
+      "exclude": [
+        "not (yet )?live|not yet"
+      ],
+      "judge": "An older page says USD is next; a newer page (2026-11-18) says USD is live since 2026-11-18. 2 = says USD is live; 1 = both without picking, or asks; 0 = says USD isn't live yet."
+    },
+    {
+      "id": "partial-refund",
+      "category": "held-out",
+      "via": "channel",
+      "user": "UJONAS0001",
+      "text": "what's the smallest partial refund a merchant can make?",
+      "include": [
+        "\\b50\\b"
+      ],
+      "judge": "An older page (2026-03-01) says partial refunds go down to 1 minor unit; a newer page (2026-11-01) says at least 50 minor units. 2 = 50 minor units as current; 1 = both without picking, or asks; 0 = 1 minor unit."
+    },
+    {
+      "id": "log-retention",
+      "category": "held-out",
+      "via": "channel",
+      "user": "UJONAS0001",
+      "text": "how long do we keep logs?",
+      "include": [
+        "30 days"
+      ],
+      "judge": "An older page (2026-04-01) says logs are kept 14 days; a newer page (2026-10-25) says 30 days. 2 = 30 days as current; 1 = both without picking, or asks; 0 = 14 days."
+    },
+    {
+      "id": "rota-swap",
+      "category": "held-out",
+      "via": "channel",
+      "user": "UJONAS0001",
+      "text": "who do I ask to swap an on-call shift?",
+      "include": [
+        "Priya"
+      ],
+      "judge": "An older page says rota swaps go through Jonas; a newer note (2026-11-10) says swaps now go through Priya while Jonas is on leave. 2 = Priya as current; 1 = both without picking, or asks; 0 = only Jonas."
     }
   ]
 }

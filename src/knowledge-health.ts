@@ -61,7 +61,7 @@ const jaccard = (a: Set<string>, b: Set<string>): number => {
 // ---------------------------------------------------------------------------------------------------------------
 
 /** A page's text without its header and without anything under a `## Replaced` heading, which is history. */
-const currentText = (text: string): string => text
+export const currentText = (text: string): string => text
   .replace(/^---\n[\s\S]*?\n---\n/, '')
   .replace(/^##\s+Replaced\b[\s\S]*?(?=^##\s|(?![\s\S]))/gim, '')
   .trim();

@@ -91,6 +91,16 @@ const judge = async (rubric: string, question: string, reply: string): Promise<n
   return scores.length === 0 ? null : scores[Math.floor((scores.length - 1) / 2)]!;
 };
 
+/** The three-grader vote, tried up to three times while T3 is too busy to answer. */
+const judgeWithRetry = async (rubric: string, question: string, reply: string): Promise<number | null> => {
+  for (let tries = 0; tries < 3; tries += 1) {
+    const score = await judge(rubric, question, reply);
+    if (score !== null) return score;
+    await sleep(15_000);
+  }
+  return null;
+};
+
 const judgeOnce = async (rubric: string, question: string, reply: string): Promise<number | null> => {
   const prompt = `You grade one reply from an assistant. Don't open any file or run anything. Answer with one line: SCORE: 0, 1 or 2.\n\nRubric: ${rubric}\n\nQuestion:\n${question}\n\nReply:\n${reply}`;
   const { answer } = await runT3('Serra KB proof: grade', prompt);
@@ -105,7 +115,8 @@ interface Result { id: string; category: string; arm: Arm; run: number; pass: bo
 const ANSWER_PAGE: Record<string, string[]> = {
   priorities: ['owner/role.md'], friday: ['owner/role.md'], signoff: ['people/jonas.md', 'workflows/release.md'], scope: ['people/priya.md'],
   'release-steps': ['workflows/release.md'], incident: ['workflows/incident.md'], discount: ['owner/private-notes.md'], 'invoice-numbers': ['product/invoices.md'],
-  'payload-retention': ['product/privacy.md'], 'sandbox-reset': ['product/sandbox.md'], flags: ['product/release-policy.md'], jpy: ['product/currencies.md'],
+  'payload-retention': ['product/privacy.md'], 'payments-bugs': ['product/escalation.md'], 'usd-live': ['product/launches.md'], 'partial-refund': ['product/refund-rules.md'],
+  'log-retention': ['product/observability.md'], 'rota-swap': ['workflows/rota-changes.md'], 'sandbox-reset': ['product/sandbox.md'], flags: ['product/release-policy.md'], jpy: ['product/currencies.md'],
   'release-day': ['owner/working-style.md'], 'rate-limit': ['product/plans.md'], handover: ['workflows/rota-changes.md'], 'friday-release': ['owner/working-style.md'],
   'pr-limit': ['owner/working-style.md'], 'fx-time': ['product/treasury.md'], 'pr-size': ['owner/working-style.md'], dana: ['people/dana.md'], 'priya-style': ['people/priya.md'], 'pdf-cache': ['product/invoices.md'],
 };
@@ -138,9 +149,10 @@ const runOne = async (item: Case, arm: Arm, run: number): Promise<Result> => {
     const { answer, ranOn } = await runT3(`Serra KB proof: ${item.id} (${arm})`, brief);
     const { reply, cited, missing } = takeKnowledgeUsed(answer);
     const regex = item.include.every((pattern) => new RegExp(pattern, 'iu').test(reply)) && !(item.exclude ?? []).some((pattern) => new RegExp(pattern, 'iu').test(reply));
-    const score = item.judge ? await judge(item.judge, item.text, reply).catch(() => null) : null;
-    // A grader run that failed says nothing about the reply: a harness error, not a fail.
-    if (item.judge && score === null) throw new Error('the grading run failed');
+    // A reply that fails its regexes fails, whatever a grader would say; graders only decide the rest.
+    const score = item.judge && regex ? await judgeWithRetry(item.judge, item.text, reply) : null;
+    // A grader that failed three times over says nothing about the reply: a harness error, not a fail.
+    if (item.judge && regex && score === null) throw new Error('the grading run failed');
     const result = { ...base, regex, score, reply, ranOn, cited, missing, pass: regex && (item.judge ? score === 2 : true) };
     save(result, brief);
     return result;
@@ -165,8 +177,8 @@ if (args.regrade) {
       const item = cases.find((candidate) => candidate.id === result.id);
       if (!item || result.error) { regraded.push(result); continue; }
       const regex = item.include.every((pattern) => new RegExp(pattern, 'iu').test(result.reply)) && !(item.exclude ?? []).some((pattern) => new RegExp(pattern, 'iu').test(result.reply));
-      const score = item.judge ? await judge(item.judge, item.text, result.reply) : null;
-      regraded.push(item.judge && score === null ? { ...result, error: 'the grading run failed' } : { ...result, regex, score, pass: regex && (item.judge ? score === 2 : true) });
+      const score = item.judge && regex ? await judgeWithRetry(item.judge, item.text, result.reply) : null;
+      regraded.push(item.judge && regex && score === null ? { ...result, error: 'the grading run failed' } : { ...result, regex, score, pass: regex && (item.judge ? score === 2 : true) });
     }
   }));
   results.push(...regraded);
@@ -203,8 +215,8 @@ const lines = [
   `# Knowledge before/after proof: ${args.label}`, '',
   args.regrade ? `Replies from the original run (its code is in summary.md); graded again at ${commit(root)} with three grader runs per rubric, every arm alike.` : `Code: after = ${commit(root)}${arms.includes('before') ? `, before = ${commit(resolve(args.before!))}` : ''}.`, '',
   `${new Date().toISOString().slice(0, 10)}. Through Serra's T3 layer on ${[...new Set(results.map((result) => result.ranOn))].join(', ')}. ${cases.length} cases × ${args.runs} runs per arm. ${results.filter((result) => result.error).length} run(s) failed in the harness and are left out (listed in the arm folders).`, '',
-  `| Arm | Runs | Pass | 95% interval | ${categories.join(' | ')} | Named the answer's page |`, `|---|---|---|---|${categories.map(() => '---').join('|')}|---|`,
-  ...arms.map((arm) => `| ${arm} | ${done(arm).length} | ${pct(done(arm, (result) => result.pass).length, done(arm).length)} | ${wilson(done(arm, (result) => result.pass).length, done(arm).length)} | ${categories.map((category) => pct(done(arm, (result) => result.category === category && result.pass).length, done(arm, (result) => result.category === category).length)).join(' | ')} | ${arm === 'before' || arm === 'none' ? '–' : pct(cites(arm).filter((result) => result.cited!.some((path) => (ANSWER_PAGE[result.id] ?? []).includes(path))).length, cites(arm).length)} |`),
+  `| Arm | Runs | Pass | 95% interval | Worst case (errors count as fails) | ${categories.join(' | ')} | Named the answer's page |`, `|---|---|---|---|---|${categories.map(() => '---').join('|')}|---|`,
+  ...arms.map((arm) => `| ${arm} | ${done(arm).length} | ${pct(done(arm, (result) => result.pass).length, done(arm).length)} | ${wilson(done(arm, (result) => result.pass).length, done(arm).length)} | ${pct(done(arm, (result) => result.pass).length, results.filter((result) => result.arm === arm).length)} | ${categories.map((category) => pct(done(arm, (result) => result.category === category && result.pass).length, done(arm, (result) => result.category === category).length)).join(' | ')} | ${arm === 'before' || arm === 'none' ? '–' : pct(cites(arm).filter((result) => result.cited!.some((path) => (ANSWER_PAGE[result.id] ?? []).includes(path))).length, cites(arm).length)} |`),
   '', '| Case | ' + arms.join(' | ') + ' |', '|---|' + arms.map(() => '---').join('|') + '|',
   ...cases.map((item) => `| ${item.id} | ${arms.map((arm) => {
     const runs = results.filter((result) => result.id === item.id && result.arm === arm).sort((a, b) => a.run - b.run);

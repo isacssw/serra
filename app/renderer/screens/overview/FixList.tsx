@@ -8,6 +8,7 @@ import type { ReviewSuggestion } from '../../../../src/knowledge-review-store.ts
 import { serra } from '../../bridge.ts';
 import { Button, Dialog, useToast } from '../../ui/index.ts';
 import { DiffView } from '../proposals/DiffView.tsx';
+import { pageBody } from '../../../../src/knowledge-rules.ts';
 import { fixItems, type FixItem } from '../overview.logic.ts';
 import { settle } from './WeekDigest.tsx';
 
@@ -45,7 +46,8 @@ export const FixList = ({ overview, onOpen, onChanged }: { overview: KnowledgeOv
     if (!proposal || !bridge) return;
     try {
       const read = await bridge.proposals.diff(proposal);
-      setDiff({ id: item.id, current: read.current, proposed: read.proposed });
+      // The rules, not the header: dates and sources change on every rewrite and say nothing to the owner.
+      setDiff({ id: item.id, current: read.current === null ? null : pageBody(read.current), proposed: pageBody(read.proposed) });
     } catch (failure) { toast({ message: message(failure), tone: 'error' }); }
   };
   const run = (item: FixItem) => {

@@ -14,7 +14,7 @@ import { DiffView } from './proposals/DiffView.tsx';
 import { PageBody } from './PageBody.tsx';
 import { Badge, Button, cx, Dialog, Page, useToast } from '../ui/index.ts';
 import {
-  badgeCounts, badgeLabel, currentRules, keepRule, newerRule, badgeTitle, badgeTone, editorState, filterPages, groupByArea, keepSelection, localDate, markVerified,
+  badgeCounts, badgeLabel, currentRules, keepLabel, keepRule, newerRule, badgeTitle, badgeTone, editorState, filterPages, groupByArea, keepSelection, localDate, markVerified,
   pageName, pagesSummary, type PageFilter,
 } from './pages.logic.ts';
 
@@ -116,7 +116,8 @@ const PageList = ({ pages, selected, onSelect }: { pages: KnowledgePage[]; selec
               {page.problems.length > 0 && (
                 <AlertTriangle size={14} aria-label="Fails the knowledge check" className="shrink-0 text-down" />
               )}
-              <Badge tone={badgeTone(page.badge)} title={badgeTitle(page)}>{badgeLabel(page.badge)}</Badge>
+              {/* Only what needs a look gets a pill: a list of "Verified" says nothing. */}
+              {page.badge !== 'verified' && <Badge tone={badgeTone(page.badge)} title={badgeTitle(page)}>{badgeLabel(page.badge)}</Badge>}
             </button>
           );
         })}
@@ -160,7 +161,7 @@ const RulePairs = ({ page, pairs, draft, disabled, onKeep, onOpen }: {
                   {fact.page === page ? '' : <> <span className="text-faint">on</span> <button type="button" onClick={() => onOpen(fact.page)} className="font-mono text-ink underline underline-offset-2 hover:no-underline focus-visible:outline-2 focus-visible:outline-focus">{fact.page}</button></>}
                 </p>
                 {wholeLines && (
-                  <Button size="sm" variant={newer === which ? 'primary' : 'secondary'} disabled={disabled} onClick={() => onKeep(facts[1 - which]!.text)}>Keep this one</Button>
+                  <Button size="sm" variant={newer === which ? 'primary' : 'secondary'} disabled={disabled} onClick={() => onKeep(facts[1 - which]!.text)}>{keepLabel(fact.text, facts[1 - which]!.text)}</Button>
                 )}
               </div>
             ))}
@@ -480,7 +481,7 @@ export const Pages = () => {
       <Dialog
         open={retiring}
         onClose={() => setRetiring(false)}
-        title={`Retire ${selected ?? 'this page'}?`}
+        title={`Retire ${page?.description ?? selected ?? 'this page'}?`}
         description="The bot stops using it. It moves to the archive, and you can undo."
         actions={(
           <>

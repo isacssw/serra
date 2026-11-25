@@ -31,6 +31,11 @@ const ROWS: [string, string, string][] = [
   ['announcing changes to merchants', 'product/release-policy.md', 'How changes reach merchants'],
   ['settlement or money movement', 'product/treasury.md', 'Treasury and money movement'],
   ['merchant privacy promises', 'product/privacy.md', 'Privacy commitments to merchants'],
+  // Held out (added in round 7, after the detector was frozen for them): newer rules on pages whose rows don't say so.
+  ['triage channels', 'product/escalation.md', 'Where things get triaged'],
+  ['launches and announcements', 'product/launches.md', 'What launched lately'],
+  ['refund edge cases', 'product/refund-rules.md', 'Refund rules finance asked for'],
+  ['monitoring and logs', 'product/observability.md', 'How we watch production'],
   ...DISTRACTORS.map(([name, description]): [string, string, string] => [description.toLowerCase(), `product/${name}.md`, description]),
 ];
 
@@ -60,7 +65,15 @@ export const proofProfile = (withKnowledge: boolean, project: string): { dir: st
     const limits = join(knowledge, 'product/rate-limits.md');
     writeFileSync(limits, readFileSync(limits, 'utf8').replace(/^verified: .*$/m, 'verified: 2026-06-01'));
     writeFileSync(join(knowledge, 'product/plans.md'), `${header('product', 'Plans and packaging for sales', '2026-10-20')}# Plans\n\n- Standard and Plus plans; Plus adds priority support.\n- The API rate limit is 250 requests per second per merchant on every plan.\n`);
-    writeFileSync(join(knowledge, 'workflows/rota-changes.md'), `${header('process', 'Changes to how the team works', '2026-11-10')}# Team changes\n\n- The on-call handover moved to Tuesday at 09:00.\n- Standup is async in #ledgerline-standup.\n`);
+    writeFileSync(join(knowledge, 'workflows/rota-changes.md'), `${header('process', 'Changes to how the team works', '2026-11-10')}# Team changes\n\n- The on-call handover moved to Tuesday at 09:00.\n- Standup is async in #ledgerline-standup.\n- Rota swaps now go through Priya while Jonas is on leave.\n`);
+    writeFileSync(join(knowledge, 'product/escalation.md'), `${header('product', 'Where things get triaged', '2026-11-15')}# Triage\n\n- Payments bugs now go to #payments-bugs; #ledgerline-triage is for everything else.\n`);
+    writeFileSync(join(knowledge, 'product/launches.md'), `${header('product', 'What launched lately', '2026-11-18')}# Launches\n\n- USD is live for merchants since 2026-11-18.\n- The new dashboard home page shipped in October.\n`);
+    writeFileSync(join(knowledge, 'product/refund-rules.md'), `${header('product', 'Refund rules finance asked for', '2026-11-01')}# Refund rules\n\n- Partial refunds must be at least 50 minor units.\n- Refunds over 10,000 EUR need a second approver.\n`);
+    writeFileSync(join(knowledge, 'product/observability.md'), `${header('product', 'How we watch production', '2026-10-25')}# Observability\n\n- Logs are kept 30 days.\n- Alerts page through PagerDuty.\n`);
+    for (const page of ['product/support.md', 'product/refunds-api.md', 'workflows/incident.md']) {
+      const file = join(knowledge, page);
+      writeFileSync(file, readFileSync(file, 'utf8').replace(/^verified: .*$/m, 'verified: 2026-03-01'));
+    }
     for (const [name, description, body] of DISTRACTORS) writeFileSync(join(knowledge, `product/${name}.md`), `${header('product', description, '2026-11-01')}# ${description}\n\n${body}\n`);
     const index = join(knowledge, 'index.md');
     writeFileSync(index, `${readFileSync(index, 'utf8').trimEnd()}\n${ROWS.map(([when, path, gives]) => `| ${when} | \`${path}\` | ${gives} |`).join('\n')}\n`);
