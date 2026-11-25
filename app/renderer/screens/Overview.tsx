@@ -7,7 +7,7 @@ import { useNavigate } from 'react-router';
 import type { KnowledgeOverview } from '../../../src/knowledge-overview.ts';
 import { serra } from '../bridge.ts';
 import { ValueList } from './overview/ValueList.tsx';
-import { WeekDigest } from './overview/WeekDigest.tsx';
+import { settle, WeekDigest } from './overview/WeekDigest.tsx';
 import { Button, cx, EmptyState, Page } from '../ui/index.ts';
 import {
   changeText, EVENT_LABELS, factsChart, shortDate, groupByDay, ISSUE_LABELS, ISSUE_TONES, PART_LABELS, PART_ORDER, scoreChart, scoreWord, usedShare, type Tone,
@@ -253,6 +253,10 @@ export const Overview = () => {
                     {issue.detail?.map((line) => <p key={line} className="truncate border-l-2 border-line pl-2 text-xs text-muted">{line}</p>)}
                   </div>
                   <div className="flex shrink-0 flex-col items-end gap-0.5">
+                    {issue.kind === 'stale' && (
+                      // A stale page the owner knows still holds is one click, not an edit.
+                      <Button size="sm" onClick={() => void settle({ id: `confirm:${issue.pages[0]!}`, kind: 'confirm', page: issue.pages[0]!, title: issue.pages[0]!, why: '' }).then(load, (failure: unknown) => setError(message(failure)))}>Still true</Button>
+                    )}
                     {issue.pages[0] === 'index.md'
                       ? <Button size="sm" variant="ghost" onClick={() => void navigate('/knowledge/pages')} icon={<ArrowUpRight size={13} aria-hidden />}>Pages</Button>
                       : issue.pages.map((page) => (

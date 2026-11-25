@@ -64,6 +64,18 @@ export const groupByFolder = (pages: readonly KnowledgePage[]): PageFolder[] => 
     .map(([folder, list]) => ({ folder, pages: list }));
 };
 
+/** The order the areas come in, the same as Overview's. */
+const AREA_ORDER = ['Who you are', 'How you work', 'How you write', 'Off-limits', 'People', 'Processes', 'Projects', 'Other'];
+
+/** Pages grouped by what they're about, not where the file sits: "How you work", "People"… Each sorted by name. */
+export const groupByArea = (pages: readonly KnowledgePage[]): { area: string; pages: KnowledgePage[] }[] => {
+  const groups = new Map<string, KnowledgePage[]>();
+  for (const page of pages) groups.set(page.area ?? 'Other', [...(groups.get(page.area ?? 'Other') ?? []), page]);
+  const rank = (area: string): number => (AREA_ORDER.includes(area) ? AREA_ORDER.indexOf(area) : AREA_ORDER.length);
+  return [...groups].sort(([a], [b]) => rank(a) - rank(b) || a.localeCompare(b))
+    .map(([area, list]) => ({ area, pages: [...list].sort((x, y) => (x.description ?? x.path).localeCompare(y.description ?? y.path)) }));
+};
+
 /** The page's file name, as the list shows it under its folder. */
 export const pageName = (path: string): string => path.split('/').pop() ?? path;
 

@@ -7,7 +7,7 @@ import { withKnowledgeLock } from './knowledge-lock.ts';
 import { createMeetingStore } from './meeting-store.ts';
 import { AUDIENCES, compileAboutMe, filterIndex, mayUse, pageAudience, type AboutMe, type Audience, type Visibility } from './owner-model.ts';
 import type { KnowledgePage, Profile } from './contracts.ts';
-import { markIndexRows, pageCards, type PageCard } from './knowledge-health.ts';
+import { AREA_LABELS, markIndexRows, pageArea, pageCards, type PageCard } from './knowledge-health.ts';
 import {
   ARCHIVE_DIR, DATE, daysSince, frontmatter, INDEX_MAX_LINES, lineCount, normalizePageText, NOT_PAGES, pageBadge, pageProblems, PROPOSALS_DIR,
   isOfflimits, offlimitsBudgetProblem, pageBody, saveProblems, saveRefusal, setHeaderField, STALE_DAYS,
@@ -359,6 +359,7 @@ export const createKnowledge = (knowledgeDir: string, { backupDir }: KnowledgeOp
       ...(written ? { written } : {}),
       verified: verified && DATE.test(verified) ? verified : null,
       badge: pageBadge(verified, options.now),
+      area: AREA_LABELS[pageArea(page, type ?? '')],
       lines: lineCount(text),
       problems,
       warnings: pageWarnings(page, text, fields, options),

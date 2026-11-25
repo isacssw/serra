@@ -1,6 +1,20 @@
 # How your knowledge grows
 
-**Knowledge › Overview** shows whether your bot knows you better over time, and what to tidy. Everything on it is worked out on your Mac from files Serra already keeps: your pages, the backup each approval or edit leaves in `backups/knowledge/`, and `logs/knowledge-usage.jsonl`. No model is asked and nothing is sent anywhere.
+**Knowledge › Overview** shows what your notes do for your bot, whether it knows you better over time, and what to tidy. It opens on the week's review and on what each page did.
+
+## The weekly review
+
+Once a week (when the bot replied at least three times that week) Serra looks back at the week's replies and writes a short digest at the top of Overview:
+
+- **What your notes changed:** a real request from the week, the bot's real reply, and the same request answered again without the page that answered it.
+- **Your bot needed, and no note had:** what replies said they were missing. Tell the bot in Slack, "remember …", and approve the proposal.
+- **Suggested fixes**, each one click: **Approve** a rewrite that settles rules that disagree or repeat (it's a proposal, checked like any other), **Retire** a page another one covers, **Still true** for a stale page the week still used. **Approve all** does them in one go.
+
+The model part runs as a read-only T3 run in Serra's own empty folder, on the worker's provider and model, the same way meetings run, so it works with any T3 provider. Nothing changes until you approve it. Turn it off with **Every week**, or run it any time with **Run again**. Digests are kept in `knowledge-reviews/` in the profile.
+
+## What your notes do
+
+Every page with what it did in the last 30 days: **Used in N replies** with a request it answered, **Always in the brief** (About me pages), **Used once**, or **Not used** once there were enough replies to tell, with **Retire** next to it. Pages lists pages by topic, the same areas as Overview, under their descriptions; file names are small and secondary. Everything on it is worked out on your Mac from files Serra already keeps: your pages, the backup each approval or edit leaves in `backups/knowledge/`, and `logs/knowledge-usage.jsonl`. No model is asked and nothing is sent anywhere.
 
 ## The health score
 
@@ -28,7 +42,7 @@ Proposals also says when a new proposal repeats a page you already have, or chan
 
 ## What replies used
 
-The brief asks the worker to end a reply with one line naming the pages it used. Serra takes that line out before anything is posted and records it, for every T3 provider, since it's plain text in the reply. **Used in replies** shows the share of replies in the last 30 days that used knowledge, the pages used most, and, after ten replies, the pages none used. A task started in the app shows that line in its T3 thread, since Serra doesn't post those replies.
+The brief asks the worker to end a reply with one line naming the pages it used, and another naming anything it needed that no page says. Serra takes that line out before anything is posted and records it, for every T3 provider, since it's plain text in the reply. **Used in replies** shows the share of replies in the last 30 days that used knowledge, the pages used most, and, after ten replies, the pages none used. A task started in the app shows that line in its T3 thread, since Serra doesn't post those replies.
 
 ## What the worker sees
 

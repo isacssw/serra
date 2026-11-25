@@ -50,6 +50,8 @@ export interface KnowledgePage {
   /** Date the owner confirmed the page, `YYYY-MM-DD`, or null while it is unconfirmed. */
   verified: string | null;
   badge: PageBadge;
+  /** The area the page belongs to, as the app names it ("How you work", "People"): the list groups by it. */
+  area?: string;
   lines: number;
   /** Rule breaks that fail `pnpm knowledge` (missing header field, over the line cap, not indexed). */
   problems: string[];

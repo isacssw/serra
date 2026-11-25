@@ -13,7 +13,7 @@ import { AudienceChoice } from './AudienceChoice.tsx';
 import { DiffView } from './proposals/DiffView.tsx';
 import { Badge, Button, cx, Dialog, Page, useToast } from '../ui/index.ts';
 import {
-  badgeCounts, badgeLabel, currentRules, keepRule, newerRule, badgeTitle, badgeTone, editorState, filterPages, groupByFolder, keepSelection, localDate, markVerified,
+  badgeCounts, badgeLabel, currentRules, keepRule, newerRule, badgeTitle, badgeTone, editorState, filterPages, groupByArea, keepSelection, localDate, markVerified,
   pageName, pagesSummary, type PageFilter,
 } from './pages.logic.ts';
 
@@ -89,9 +89,9 @@ const FILTERS: { value: PageFilter; label: string }[] = [
 
 const PageList = ({ pages, selected, onSelect }: { pages: KnowledgePage[]; selected: string | null; onSelect: (path: string) => void }) => (
   <div className="flex flex-col gap-4">
-    {groupByFolder(pages).map((group) => (
-      <section key={group.folder || '.'} className="flex flex-col gap-1">
-        <h2 className="px-1 text-xs font-semibold text-muted">{group.folder ? `${group.folder}/` : 'knowledge/'}</h2>
+    {groupByArea(pages).map((group) => (
+      <section key={group.area} className="flex flex-col gap-1">
+        <h2 className="px-1 text-xs font-semibold text-muted">{group.area}</h2>
         {group.pages.map((page) => {
           const active = page.path === selected;
           return (
@@ -100,7 +100,7 @@ const PageList = ({ pages, selected, onSelect }: { pages: KnowledgePage[]; selec
               type="button"
               aria-current={active ? 'true' : undefined}
               onClick={() => onSelect(page.path)}
-              title={page.description ?? page.path}
+              title={page.path}
               className={cx(
                 'flex items-center gap-2 rounded-md border px-2.5 py-2 text-left text-sm',
                 'focus-visible:outline-2 focus-visible:outline-focus',
@@ -108,7 +108,10 @@ const PageList = ({ pages, selected, onSelect }: { pages: KnowledgePage[]; selec
               )}
             >
               <FileText size={15} aria-hidden className="shrink-0 text-muted" />
-              <span className="min-w-0 flex-1 truncate">{pageName(page.path)}</span>
+              <span className="flex min-w-0 flex-1 flex-col">
+                <span className="truncate">{page.description ?? pageName(page.path)}</span>
+                {page.description && <span className="truncate font-mono text-[11px] text-faint">{pageName(page.path)}</span>}
+              </span>
               {page.problems.length > 0 && (
                 <AlertTriangle size={14} aria-label="Fails the knowledge check" className="shrink-0 text-down" />
               )}
