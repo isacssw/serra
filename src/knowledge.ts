@@ -7,7 +7,7 @@ import { withKnowledgeLock } from './knowledge-lock.ts';
 import { createMeetingStore } from './meeting-store.ts';
 import { AUDIENCES, compileAboutMe, filterIndex, mayUse, pageAudience, type AboutMe, type Audience, type Visibility } from './owner-model.ts';
 import type { KnowledgePage, Profile } from './contracts.ts';
-import { AREA_LABELS, markIndexRows, pageArea, pageCards, type PageCard } from './knowledge-health.ts';
+import { AREA_LABELS, assessKnowledge, markIndexRows, pageArea, pageCards, type PageCard } from './knowledge-health.ts';
 import {
   ARCHIVE_DIR, DATE, daysSince, frontmatter, INDEX_MAX_LINES, lineCount, normalizePageText, NOT_PAGES, pageBadge, pageProblems, PROPOSALS_DIR,
   isOfflimits, offlimitsBudgetProblem, pageBody, saveProblems, saveRefusal, setHeaderField, STALE_DAYS,
@@ -402,7 +402,11 @@ export const createKnowledge = (knowledgeDir: string, { backupDir }: KnowledgeOp
   const listPages = ({ now = new Date(), roots = [] }: CheckOptions = {}): KnowledgePage[] => {
     if (!existsSync(root)) return [];
     const indexed = readIndexed();
-    return pageFiles().sort().map((page) => describePage(page, read(page), indexed, { now, roots }));
+    const files = pageFiles().sort();
+    // Pages holding a rule that disagrees with another are counted apart, so "verified" never covers them.
+    const disputed = new Set(assessKnowledge([{ path: 'index.md', text: existsSync(join(root, 'index.md')) ? read('index.md') : '' }, ...files.map((path) => ({ path, text: read(path) }))], now)
+      .issues.filter((issue) => issue.kind === 'conflict').flatMap((issue) => issue.pages));
+    return files.map((page) => ({ ...describePage(page, read(page), indexed, { now, roots }), ...(disputed.has(page) ? { disputed: true } : {}) }));
   };
 
   /** An existing page's path relative to `knowledge/`, checked. */

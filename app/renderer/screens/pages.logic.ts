@@ -22,7 +22,8 @@ export const badgeTitle = (page: Pick<KnowledgePage, 'badge' | 'verified'>): str
 
 export const badgeCounts = (pages: readonly KnowledgePage[]): Record<PageFilter, number> => {
   const counts: Record<PageFilter, number> = { all: pages.length, verified: 0, unverified: 0, stale: 0 };
-  for (const page of pages) counts[page.badge] += 1;
+  // A page with rules that disagree isn't counted as verified: it shows under All until it's settled.
+  for (const page of pages) if (!(page.disputed && page.badge === 'verified')) counts[page.badge] += 1;
   return counts;
 };
 
@@ -30,7 +31,10 @@ export const badgeCounts = (pages: readonly KnowledgePage[]): Record<PageFilter,
 export const pagesSummary = (pages: readonly KnowledgePage[]): string => {
   const counts = badgeCounts(pages);
   if (counts.all === 0) return 'No pages yet';
-  const parts = [`${counts.all} ${counts.all === 1 ? 'page' : 'pages'}`, `${counts.verified} verified`];
+  const settle = pages.filter((page) => page.disputed).length;
+  const verified = pages.filter((page) => page.badge === 'verified' && !page.disputed).length;
+  const parts = [`${counts.all} ${counts.all === 1 ? 'page' : 'pages'}`, `${verified} verified`];
+  if (settle > 0) parts.push(`${settle} to settle`);
   if (counts.stale > 0) parts.push(`${counts.stale} stale`);
   if (counts.unverified > 0) parts.push(`${counts.unverified} unverified`);
   return parts.join(' · ');
@@ -40,7 +44,7 @@ export const pagesSummary = (pages: readonly KnowledgePage[]): string => {
 export const filterPages = (pages: readonly KnowledgePage[], filter: PageFilter, query = ''): KnowledgePage[] => {
   const needle = query.trim().toLowerCase();
   return pages.filter((page) =>
-    (filter === 'all' || page.badge === filter)
+    (filter === 'all' || (page.badge === filter && !(filter === 'verified' && page.disputed)))
     && (!needle || page.path.toLowerCase().includes(needle) || (page.description ?? '').toLowerCase().includes(needle)));
 };
 

@@ -727,19 +727,26 @@ export const relevanceNote = (request: string, cards: PageCard[], ignore: string
  * Whether another page confirmed after `verified` talks about the same thing as `page`: one of its facts shares at
  * least two words, and half of the shorter one's, with a fact on `page`.
  */
-const newerOnTopic = (page: string, verified: string, files: KnowledgeFile[]): boolean => {
+/**
+ * Pairs of facts, one on `page` and one on a page confirmed after `verified`, that talk about the same thing: at least
+ * two shared words, and half of the shorter one's. The newer one may have changed the older, even where no day or
+ * number shows it. Used to hold back "Still true" and to hand the weekly review's model the pairs to look at.
+ */
+export const topicPairs = (page: string, verified: string, files: KnowledgeFile[]): { mine: Fact; newer: Fact }[] => {
   const mine = pageFacts(page, files.find((file) => file.path === page)?.text ?? '');
-  return files.some((file) => {
-    if (file.path === page || !isPage(file.path)) return false;
+  return files.flatMap((file) => {
+    if (file.path === page || !isPage(file.path)) return [];
     const date = frontmatter(file.text)?.get('verified')?.trim() ?? '';
-    if (!DATE.test(date) || date <= verified) return false;
-    return pageFacts(file.path, file.text).some((fact) => mine.some((own) => {
+    if (!DATE.test(date) || date <= verified) return [];
+    return pageFacts(file.path, file.text).flatMap((fact) => mine.flatMap((own) => {
       let shared = 0;
       for (const word of own.words) if (fact.words.has(word)) shared += 1;
-      return shared >= 2 && shared >= Math.min(own.words.size, fact.words.size) / 2;
+      return shared >= 2 && shared >= Math.min(own.words.size, fact.words.size) / 2 ? [{ mine: own, newer: fact }] : [];
     }));
   });
 };
+
+const newerOnTopic = (page: string, verified: string, files: KnowledgeFile[]): boolean => topicPairs(page, verified, files).length > 0;
 
 
 /**

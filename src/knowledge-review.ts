@@ -10,7 +10,7 @@ import { mkdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { writeFileAtomic } from './config.ts';
 import { createJournal } from './knowledge-journal.ts';
-import { assessKnowledge, confirmHeldBack, currentText, isPage, pageFacts, type KnowledgeFile } from './knowledge-health.ts';
+import { assessKnowledge, confirmHeldBack, currentText, isPage, pageFacts, topicPairs, type KnowledgeFile } from './knowledge-health.ts';
 import { knowledgeOverview, listKnowledgeFiles } from './knowledge-overview.ts';
 import { DATE, daysSince, frontmatter, pageBody, PROPOSALS_DIR, saveProblems, setHeaderField } from './knowledge-rules.ts';
 import { readKnowledgeUse, type KnowledgeUse } from './knowledge-usage.ts';
@@ -173,8 +173,19 @@ export const runKnowledgeReview = async ({ profileDir, knowledgeDir, ask, now = 
   }
 
   const conflicted = health.issues.filter((item) => item.kind === 'conflict' || item.kind === 'duplicate');
-  const fixPages = [...new Set(conflicted.flatMap((item) => item.pages))].filter((path) => texts.has(path)).slice(0, 6);
-  const issues = conflicted.slice(0, 10).map((item) => `- ${item.text}${item.detail ? ` ("${item.detail.join('" / "')}")` : ''}`);
+  // What plain code can't settle goes to the model as a question: a stale page and a newer page on the same topic,
+  // whose rules may disagree in words the detector doesn't catch ("#ledgerline-triage" / "now #payments-bugs").
+  const topical = health.issues.filter((item) => item.kind === 'stale').flatMap((item) => {
+    const page = item.pages[0]!;
+    if (conflicted.some((pair) => pair.pages.includes(page))) return [];
+    const verified = frontmatter(texts.get(page) ?? '')?.get('verified')?.trim() ?? '';
+    return topicPairs(page, verified, files).slice(0, 2).map((pair) => ({ page, ...pair }));
+  }).slice(0, 4);
+  const fixPages = [...new Set([...conflicted.flatMap((item) => item.pages), ...topical.flatMap((pair) => [pair.page, pair.newer.page])])].filter((path) => texts.has(path)).slice(0, 8);
+  const issues = [
+    ...conflicted.slice(0, 10).map((item) => `- ${item.text}${item.detail ? ` ("${item.detail.join('" / "')}")` : ''}`),
+    ...topical.map((pair) => `- Maybe: ${pair.page} (older) says "${short(pair.mine.text, 120)}"; ${pair.newer.page} (confirmed later) says "${short(pair.newer.text, 120)}". If the newer one changes the older rule, rewrite ${pair.page}; if they agree or are about different things, leave it out.`),
+  ];
 
   let summary = `${uses.length} replies this week; ${uses.filter((use) => use.cited.length > 0).length} used a knowledge page.`;
   let error: string | undefined;
@@ -195,7 +206,10 @@ export const runKnowledgeReview = async ({ profileDir, knowledgeDir, ask, now = 
       // Nothing the page says may be dropped: every current rule is still there, as it was or under "## Replaced".
       const flat = (text: string): string => text.replace(/\s+/g, ' ').toLowerCase();
       // Only the rules in a pair may move under "## Replaced"; every other rule stays current.
-      const paired = new Set(conflicted.flatMap((item) => (item.facts ?? []).filter((fact) => fact.page === rewrite.page).map((fact) => flat(fact.text))));
+      const paired = new Set([
+        ...conflicted.flatMap((item) => (item.facts ?? []).filter((fact) => fact.page === rewrite.page).map((fact) => flat(fact.text))),
+        ...topical.filter((pair) => pair.page === rewrite.page).map((pair) => flat(pair.mine.text)),
+      ]);
       if (pageFacts(rewrite.page, current).some((fact) => !flat(paired.has(flat(fact.text)) ? proposed : currentText(proposed)).includes(flat(fact.text)))) continue;
       // And it settles what it was for: no rule on it still disagrees with another page, and where the newer rule sat
       // on the other page, this page now says it.
@@ -206,6 +220,9 @@ export const runKnowledgeReview = async ({ profileDir, knowledgeDir, ask, now = 
       const newer = conflicted.filter((item) => item.kind === 'conflict' && item.pages.length === 2 && item.pages.includes(target)).flatMap((item) => item.facts ?? [])
         .filter((fact) => fact.page !== target && (frontmatter(texts.get(fact.page) ?? '')?.get('verified')?.trim() ?? '') > (frontmatter(current)?.get('verified')?.trim() ?? ''));
       if (newer.some((fact) => !flat(currentText(proposed)).includes(flat(fact.text)))) continue;
+      // A topical pair the model settled by moving the old rule must say the newer one in its place.
+      const moved = topical.filter((pair) => pair.page === target && !flat(currentText(proposed)).includes(flat(pair.mine.text)));
+      if (moved.some((pair) => !flat(currentText(proposed)).includes(flat(pair.newer.text)))) continue;
       if (pageAudience(frontmatter(proposed)) !== pageAudience(frontmatter(current))) continue;
       // Where it came from, written by Serra, not the model: today, and the weekly review that proposed it.
       const stamped = addSource(setHeaderField(setHeaderField(proposed, 'written', date), 'verified', 'no'), `Weekly review, ${date}${newer[0] ? `, settled with ${newer[0].page}` : ''}`);
@@ -213,7 +230,7 @@ export const runKnowledgeReview = async ({ profileDir, knowledgeDir, ask, now = 
       const name = `${date}-${rewrite.page.replace(/\.md$/, '').replace(/[^\w-]+/g, '-')}.md`;
       mkdirSync(folder, { recursive: true, mode: 0o700 });
       writeFileAtomic(join(folder, name), withTarget, { mode: 0o600 });
-      writeFileAtomic(join(folder, '.from.json'), `${JSON.stringify({ who: 'Weekly review', owner: false, via: 'app' }, null, 2)}\n`, { mode: 0o600 });
+      writeFileAtomic(join(folder, '.from.json'), `${JSON.stringify({ who: 'Weekly review', owner: false, via: 'review' }, null, 2)}\n`, { mode: 0o600 });
       suggest('replace', rewrite.page, isString(rewrite.why) ? short(rewrite.why, 200) : 'Settles rules that disagree or repeat.', { proposal: `${REVIEW_FOLDER}/${date}/${name}`, base: createHash('sha256').update(current).digest('hex') });
     }
     // Before and after: the week's most used pages, each with one request it answered, answered again without it.

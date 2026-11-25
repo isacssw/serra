@@ -154,3 +154,23 @@ test('two answers with the same numbers and mostly the same words are the same a
     ask: async (title) => (title.includes('weekly review') ? '{}' : title.includes('with the page') ? 'No. Split it into three PRs under 400 lines each.' : 'No, split it into three smaller PRs of under 400 lines.') });
   assert.deepEqual(review.examples, []);
 });
+
+test('a change the detector can\'t see goes to the model as a question, and its rewrite must say the newer rule', async (t) => {
+  const { dir, knowledge } = profile(t);
+  const support = join(knowledge, 'product/support.md');
+  writeFileSync(support, readFileSync(support, 'utf8').replace(/^verified: .*$/m, 'verified: 2026-03-01'));
+  writeFileSync(join(knowledge, 'product/escalation.md'), '---\ntype: product\ndescription: Where things get triaged\naudience: team\nwritten: 2026-11-15\nverified: 2026-11-15\nsources:\n  - Robin\n---\n\n- Payments bugs now go to #payments-bugs; #ledgerline-triage is for everything else.\n');
+  writeFileSync(join(knowledge, 'index.md'), `${readFileSync(join(knowledge, 'index.md'), 'utf8').trimEnd()}\n| triage channels | \`product/escalation.md\` | Where things get triaged |\n`);
+  rmSync(join(dir, '.knowledge-approved'), { recursive: true, force: true });
+  createJournal(knowledge).seed();
+  const page = readFileSync(support, 'utf8');
+  const old = '- Tier 1 is the support team; payments bugs go to #ledgerline-triage.\n';
+  const fixed = page.replace(old, '- Tier 1 is the support team.\n- Payments bugs now go to #payments-bugs; #ledgerline-triage is for everything else.\n').trimEnd() + `\n\n## Replaced\n\n- Until 2026-11-15: ${old.slice(2)}`;
+  let prompt = '';
+  const review = await runKnowledgeReview({ profileDir: dir, knowledgeDir: knowledge, now: NOW, ask: async (title, text) => {
+    if (title.includes('weekly review')) { prompt = text; return JSON.stringify({ summary: 'One.', rewrites: [{ page: 'product/support.md', text: fixed, why: 'Payments bugs moved channel.' }] }); }
+    return 'An answer.';
+  } });
+  assert.match(prompt, /Maybe: product\/support\.md \(older\) says "Tier 1 is the support team; payments bugs go to #ledgerline-triage\."/);
+  assert.deepEqual(review.suggestions.filter((item) => item.kind === 'replace').map((item) => item.page), ['product/support.md']);
+});

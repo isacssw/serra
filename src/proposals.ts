@@ -76,7 +76,7 @@ const isProposalChange = (value: unknown): value is ProposalChange =>
 
 /** A folder's `.from.json` stamp. */
 const isProposalSource = (value: unknown): value is ProposalSource =>
-  isRecord(value) && isString(value.who) && isBoolean(value.owner) && isOneOf('slack', 'app')(value.via) && isOptional(isString)(value.link);
+  isRecord(value) && isString(value.who) && isBoolean(value.owner) && isOneOf('slack', 'app', 'review')(value.via) && isOptional(isString)(value.link);
 
 /** What the owner was shown when they approved: the proposal's text, and which page it changes and its text then. */
 export interface Reviewed {

@@ -10,7 +10,7 @@ import { serra } from '../bridge.ts';
 import { frontmatter, pageBody, setHeaderField } from '../../../src/knowledge-rules.ts';
 import { pageAudience } from '../../../src/owner-model.ts';
 import { AudienceChoice } from './AudienceChoice.tsx';
-import { DiffView } from './proposals/DiffView.tsx';
+import { RuleDiff } from './proposals/RuleDiff.tsx';
 import { PageBody } from './PageBody.tsx';
 import { Badge, Button, cx, Dialog, Page, useToast } from '../ui/index.ts';
 import {
@@ -66,7 +66,7 @@ const DriftNotice = ({ files, busy, onAccept, onRestore }: {
               </div>
               {open === file.path && (
                 <>
-                  <DiffView current={file.approved} proposed={file.current ?? ''} labels={['Approved', 'Now']} emptyCurrent="Not in the approved knowledge." />
+                  <RuleDiff current={file.approved} proposed={file.current ?? ''} labels={['Approved', 'Now']} emptyCurrent="Not in the approved knowledge." />
                   <div className="flex gap-2">
                     <Button size="sm" variant="primary" disabled={busy} onClick={() => onAccept(file)}>Accept this change</Button>
                     <Button size="sm" disabled={busy} onClick={() => onRestore(file)}>Restore approved</Button>

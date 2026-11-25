@@ -11,10 +11,10 @@ import type { InterviewPreview } from '../../../src/tasks.ts';
 import { serra } from '../bridge.ts';
 import { REFRESH_COUNTS, announceTaskStart } from '../shell/events.ts';
 import { Button, cx, Dialog, Page, useToast } from '../ui/index.ts';
-import { DiffView } from './proposals/DiffView.tsx';
+import { RuleDiff } from './proposals/RuleDiff.tsx';
 import { MeetingReview } from './proposals/MeetingReview.tsx';
 import { AudienceChoice } from './AudienceChoice.tsx';
-import { alignHeader, frontmatter, pageBody, removeHeaderField, setHeaderField } from '../../../src/knowledge-rules.ts';
+import { alignHeader, frontmatter, removeHeaderField, setHeaderField } from '../../../src/knowledge-rules.ts';
 import { localDate } from './pages.logic.ts';
 import { approvalAudience, pageAudience, type Audience } from '../../../src/owner-model.ts';
 import { useSearchParams } from 'react-router';
@@ -91,22 +91,6 @@ const Queue = ({ proposals, selected, onSelect }: { proposals: Proposal[]; selec
   </nav>
 );
 
-/**
- * The change a proposal makes, as rules: the page's header (dates, sources, who may hear it) is hidden unless asked
- * for, since who may hear it has its own picker and the rest changes on every approval.
- */
-const ProposalChange = ({ current, proposed }: { current: string | null; proposed: string }) => {
-  const [header, setHeader] = useState(false);
-  return (
-    <div className="flex flex-col gap-1.5">
-      <DiffView current={current === null ? null : header ? current : pageBody(current)} proposed={header ? proposed : pageBody(proposed)} />
-      <button type="button" onClick={() => setHeader(!header)} className="self-start text-xs text-muted underline underline-offset-2 hover:text-ink focus-visible:outline-2 focus-visible:outline-focus">
-        {header ? 'Hide the page header' : 'Show the page header too'}
-      </button>
-    </div>
-  );
-};
-
 export const Proposals = () => {
   const toast = useToast();
   const [proposals, setProposals] = useState<Proposal[] | null>(null);
@@ -117,6 +101,8 @@ export const Proposals = () => {
   const [selected, setSelected] = useState<string | null>(null);
   const [diff, setDiff] = useState<ProposalDiff | null>(null);
   /** Pages this proposal repeats: where it probably belongs instead of a new page. */
+  /** A weekly-review rewrite of a page that changed since the review: approving it would undo the newer edit. */
+  const [stale, setStale] = useState(false);
   const [similar, setSimilar] = useState<{ path: string; shared: string[]; disagrees: { page: string; proposal: string } | null }[]>([]);
   const [diffError, setDiffError] = useState<string | null>(null);
   const [targets, setTargets] = useState<ProposalTargets>({ folders: [], pages: [] });
@@ -190,6 +176,8 @@ export const Proposals = () => {
       (error) => { if (live) setDiffError(message(error)); },
     );
     setSimilar([]);
+    setStale(false);
+    bridge.proposals.staleRewrite(selected).then((value) => { if (live) setStale(value); }, () => undefined);
     // Only a hint: when it can't be worked out, the screen just doesn't show one.
     bridge.proposals.similar(selected).then((pages) => { if (live) setSimilar(pages.filter((page) => page.shared.length > 0)); }, () => undefined);
     return () => { live = false; };
@@ -293,6 +281,11 @@ export const Proposals = () => {
                   {diff.proposal.target && <p className="text-xs text-muted">Changes <code>{diff.proposal.target}</code></p>}
                   <Sources text={diff.proposed} from={diff.proposal.from} />
                 </div>
+                {stale && (
+                  <p role="status" className="rounded-lg border border-warn/40 bg-panel px-3 py-2.5 text-[13px] text-warn">
+                    This page changed after the weekly review wrote this. Approving it would undo that change; the left side below is the page as it is now. Discard it if the change already settled it.
+                  </p>
+                )}
                 {!diff.proposal.target && similar[0] && (
                   <div className="flex flex-wrap items-start gap-3 rounded-lg border border-line bg-panel px-3 py-2.5">
                     <div className="flex min-w-0 flex-1 flex-col gap-0.5">
@@ -312,7 +305,7 @@ export const Proposals = () => {
                     <Button size="sm" disabled={busy} onClick={() => { setMergeTarget(similar[0]!.path); setMergeOpen(true); }}>Merge into it…</Button>
                   </div>
                 )}
-                <ProposalChange current={landing(diff, folder)} proposed={asWritten(diff, folder, picked)} />
+                <RuleDiff current={landing(diff, folder)} proposed={asWritten(diff, folder, picked)} />
                 {folders.length > 0 ? (
                   <Select
                     label="Target folder"
@@ -426,8 +419,8 @@ const Sources = ({ text, from }: { text: string; from?: ProposalSource }) => {
   return (
     <div className="flex flex-col gap-0.5 text-xs">
       {from ? (
-        <p className={from.owner ? 'text-muted' : 'text-warn'}>
-          {from.owner
+        <p className={from.owner || from.via === 'review' ? 'text-muted' : 'text-warn'}>
+          {from.via === 'review' ? 'Written by your weekly review from your own pages; nothing new added.' : from.owner
             ? (from.via === 'app' ? 'From a task you started in the app.' : 'From a Slack thread you started.')
             : `From a Slack thread ${from.who} started. Approve only what you said yourself.`}
           {from.link && <>{' '}<a href={from.link} onClick={opened(from.link)} className="text-ink underline underline-offset-2 hover:no-underline focus-visible:outline-2 focus-visible:outline-focus">Open the thread</a></>}

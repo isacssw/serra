@@ -1,5 +1,8 @@
 // Knowledge proposals (APP-13), on APP-3's services in src/proposals.ts. Handlers only check input and call them.
+import { createHash } from 'node:crypto';
+import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
+import { latestReview } from '../../../src/knowledge-review-store.ts';
 import { createProposals, type Reviewed } from '../../../src/proposals.ts';
 import { similarPages } from '../../../src/knowledge-health.ts';
 import { listKnowledgeFiles } from '../../../src/knowledge-overview.ts';
@@ -58,6 +61,13 @@ export const proposalsHandlers = (context: HandlerContext): Handlers<'proposals'
     retire: (page, reviewed) => {
       if (typeof reviewed !== 'string') throw new Error('Look at the page before retiring it.');
       return { undoId: service().retirePage(text(page, 'Page'), { reviewed }).id };
+    },
+    staleRewrite: (path) => {
+      const id = text(path, 'Proposal');
+      const suggestion = latestReview(context.profileDir())?.suggestions.find((item) => item.proposal === id);
+      const page = suggestion ? join(context.profileDir(), 'knowledge', suggestion.page) : null;
+      if (!suggestion?.base || !page || !existsSync(page)) return false;
+      return createHash('sha256').update(readFileSync(page, 'utf8')).digest('hex') !== suggestion.base;
     },
     archived: () => service().listArchived(),
     restore: (page) => ({ undoId: service().restorePage(text(page, 'Page')).id }),

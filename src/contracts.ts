@@ -52,6 +52,8 @@ export interface KnowledgePage {
   badge: PageBadge;
   /** The area the page belongs to, as the app names it ("How you work", "People"): the list groups by it. */
   area?: string;
+  /** A rule on it disagrees with another: it isn't settled, however recently it was confirmed. */
+  disputed?: boolean;
   lines: number;
   /** Rule breaks that fail `pnpm knowledge` (missing header field, over the line cap, not indexed). */
   problems: string[];
@@ -86,8 +88,11 @@ export interface ProposalSource {
   who: string;
   /** Whether that person is the owner. */
   owner: boolean;
-  /** Where: "Slack", "the app", or a meeting the owner sent (SERRA-62), whose edits have their own approval call. */
-  via: 'slack' | 'app' | 'meeting';
+  /**
+   * Where: "Slack", "the app", a meeting the owner sent (SERRA-62), whose edits have their own approval call, or the
+   * weekly knowledge review, which only rewrites the owner's own pages.
+   */
+  via: 'slack' | 'app' | 'meeting' | 'review';
   /** For a meeting's edit: which meeting and item, as the stub names them. The meeting registry decides if it's real. */
   meeting?: { id: string; item: string };
   /** The Slack link to the thread's first message, when there is one. */

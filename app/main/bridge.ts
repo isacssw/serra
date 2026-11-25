@@ -183,6 +183,8 @@ export interface SerraApi {
     undo(undoId: string): void;
     /** Moves a page to `archive/` and takes its index row out. `reviewed`: the page's text as the owner saw it. */
     retire(page: string, reviewed: string): UndoHandle;
+    /** True when this proposal is a weekly-review rewrite of a page that changed since the review saw it. */
+    staleRewrite(path: string): boolean;
     /** Pages retired to the archive, with their descriptions. */
     archived(): { path: string; description: string }[];
     /** Bring a retired page back where it was, with an index row. */
@@ -426,7 +428,7 @@ export const bridgeMethods = {
   ]),
   bot: methods<'bot'>()(['status', 'start', 'stop', 'restart']),
   jobs: methods<'jobs'>()(['list', 'cleanupWorktrees']),
-  proposals: methods<'proposals'>()(['list', 'diff', 'targets', 'promote', 'mergeInto', 'discard', 'undo', 'retire', 'similar', 'archived', 'restore']),
+  proposals: methods<'proposals'>()(['list', 'diff', 'targets', 'promote', 'mergeInto', 'discard', 'undo', 'retire', 'similar', 'archived', 'restore', 'staleRewrite']),
   pages: methods<'pages'>()(['list', 'read', 'save', 'drift', 'acceptDrift', 'restoreDrift', 'aboutMe', 'untagged', 'share', 'overview', 'issues', 'canConfirm', 'runReview', 'setReviewWeekly']),
   brief: methods<'brief'>()(['read', 'save', 'check', 'preview', 'listProposed', 'readProposed', 'applyProposed']),
   settings: methods<'settings'>()(['read', 'sections', 'saveSection', 'addPerson', 'removePerson', 'peopleNames']),
