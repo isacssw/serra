@@ -8,7 +8,7 @@ import type { KnowledgeOverview } from '../../../src/knowledge-overview.ts';
 import { serra } from '../bridge.ts';
 import { Button, cx, EmptyState, Page } from '../ui/index.ts';
 import {
-  changeText, EVENT_LABELS, shortDate, groupByDay, ISSUE_LABELS, ISSUE_TONES, PART_LABELS, PART_ORDER, scoreChart, scoreWord, usedShare, type Tone,
+  changeText, EVENT_LABELS, factsChart, shortDate, groupByDay, ISSUE_LABELS, ISSUE_TONES, PART_LABELS, PART_ORDER, scoreChart, scoreWord, usedShare, type Tone,
 } from './overview.logic.ts';
 
 const message = (error: unknown): string => (error instanceof Error ? error.message : String(error));
@@ -37,57 +37,81 @@ const Tile = ({ label, value, unit, note, noteTone = 'neutral' }: { label: strin
 );
 
 /** The score over time: one ink line, no legend (it's one series), a dot per point with the details on hover or focus. */
+/** An axis label in HTML over the chart, so it stays a readable size however wide the chart is drawn. */
+const Label = ({ x, y, width, height, align, children }: { x: number; y: number; width: number; height: number; align: 'start' | 'middle' | 'end'; children: React.ReactNode }) => (
+  <span
+    aria-hidden
+    className="pointer-events-none absolute whitespace-nowrap text-[11px] leading-none tabular-nums text-muted"
+    style={{ left: `${(x / width) * 100}%`, top: `${(y / height) * 100}%`, transform: `translate(${align === 'start' ? '0' : align === 'middle' ? '-50%' : '-100%'}, -50%)` }}
+  >
+    {children}
+  </span>
+);
+
+/**
+ * Health over time, with facts known drawn underneath on the same dates: the score says whether the knowledge is in
+ * good shape, the facts whether the bot knows more. One ink line each, no legend (each is named by its label). Each
+ * change is a dot reachable by keyboard; hovering or focusing one says what changed.
+ */
 const ScoreChart = ({ overview }: { overview: KnowledgeOverview }) => {
   const width = 640;
   const height = 168;
+  const factsHeight = 56;
   const chart = scoreChart(overview.points, width, height);
+  const facts = factsChart(overview.points, width, factsHeight);
   const [active, setActive] = useState<number | null>(null);
   const shown = active === null ? null : chart.dots[active] ?? null;
   return (
-    <div className="relative">
-      <svg viewBox={`0 0 ${width} ${height}`} className="h-auto w-full" role="img" aria-label={`Health score over time, from ${overview.points[0]?.score ?? 0} to ${overview.health.score}.`}>
-        {chart.grid.map((line) => (
-          <g key={line.label}>
-            <line x1={28} x2={width - 8} y1={line.y} y2={line.y} className="stroke-line-subtle" strokeWidth={1} />
-            <text x={22} y={line.y + 3.5} textAnchor="end" className="fill-faint text-[10px]">{line.label}</text>
-          </g>
-        ))}
+    <div className="flex flex-col gap-1">
+      <div className="relative">
+        <svg viewBox={`0 0 ${width} ${height}`} className="h-auto w-full" role="img" aria-label={`Health score over time, from ${overview.points[0]?.score ?? 0} to ${overview.health.score}.`}>
+          {chart.grid.map((line) => <line key={line.label} x1={36} x2={width - 8} y1={line.y} y2={line.y} className="stroke-line-subtle" strokeWidth={1} />)}
+          <path d={chart.area} className="fill-ink/5" />
+          <path d={chart.line} fill="none" className="stroke-ink" strokeWidth={2} strokeLinejoin="round" />
+          {shown && <line x1={shown.x} x2={shown.x} y1={8} y2={height - 30} className="stroke-line-strong" strokeWidth={1} />}
+          {chart.dots.map((dot, at) => (
+            <g
+              key={dot.point.at}
+              onMouseEnter={() => setActive(at)}
+              onMouseLeave={() => setActive(null)}
+              onFocus={() => setActive(at)}
+              onBlur={() => setActive(null)}
+              // Each change is a stop for the keyboard, with what changed; the weekly points between are hover only.
+              {...(dot.point.change ? { tabIndex: 0, role: 'img', 'aria-label': `${shortDate(dot.point.at)}: health ${dot.point.score}, ${dot.point.facts} facts. ${dot.point.change}.` } : {})}
+              className="outline-none focus-visible:[&>circle]:stroke-focus"
+            >
+              <rect x={dot.x - 6} y={8} width={12} height={height - 38} fill="transparent" />
+              {dot.point.change && at !== chart.dots.length - 1 && active !== at && <circle cx={dot.x} cy={dot.y} r={3} className="fill-canvas stroke-ink" strokeWidth={1.5} />}
+              {(at === chart.dots.length - 1 || active === at) && <circle cx={dot.x} cy={dot.y} r={4.5} className="fill-ink stroke-canvas" strokeWidth={2} />}
+            </g>
+          ))}
+        </svg>
+        {chart.grid.map((line) => <Label key={line.label} x={30} y={line.y} width={width} height={height} align="end">{line.label}</Label>)}
         {chart.ticks.map((tick, at) => (
-          <text key={at} x={tick.x} y={height - 6} textAnchor={at === 0 ? 'start' : at === chart.ticks.length - 1 ? 'end' : 'middle'} className="fill-faint text-[10px]">{tick.label}</text>
+          <Label key={at} x={tick.x} y={height - 9} width={width} height={height} align={at === 0 ? 'start' : at === chart.ticks.length - 1 ? 'end' : 'middle'}>{tick.label}</Label>
         ))}
-        <path d={chart.area} className="fill-ink/5" />
-        <path d={chart.line} fill="none" className="stroke-ink" strokeWidth={2} strokeLinejoin="round" />
-        {shown && <line x1={shown.x} x2={shown.x} y1={8} y2={height - 22} className="stroke-line-strong" strokeWidth={1} />}
-        {chart.dots.map((dot, at) => (
-          <g
-            key={dot.point.at}
-            onMouseEnter={() => setActive(at)}
-            onMouseLeave={() => setActive(null)}
-            onFocus={() => setActive(at)}
-            onBlur={() => setActive(null)}
-            // Each change is a stop for the keyboard, with what changed; the weekly points between are hover only.
-            {...(dot.point.change ? { tabIndex: 0, role: 'img', 'aria-label': `${shortDate(dot.point.at)}: ${dot.point.score}. ${dot.point.change}.` } : {})}
-            className="outline-none focus-visible:[&>circle]:stroke-focus"
+        {shown && (
+          <div
+            className="pointer-events-none absolute top-0 rounded-md border border-line bg-panel px-2.5 py-1.5 text-xs shadow-sm"
+            style={{ left: `${Math.min(70, Math.max(0, (shown.x / width) * 100 - 10))}%` }}
           >
-            <rect x={dot.x - 6} y={8} width={12} height={height - 30} fill="transparent" />
-            {dot.point.change && at !== chart.dots.length - 1 && active !== at && <circle cx={dot.x} cy={dot.y} r={3} className="fill-canvas stroke-ink" strokeWidth={1.5} />}
-            {(at === chart.dots.length - 1 || active === at) && <circle cx={dot.x} cy={dot.y} r={4.5} className="fill-ink stroke-canvas" strokeWidth={2} />}
-          </g>
-        ))}
-      </svg>
-      {shown && (
-        <div
-          className="pointer-events-none absolute top-0 rounded-md border border-line bg-panel px-2.5 py-1.5 text-xs shadow-sm"
-          style={{ left: `${Math.min(78, Math.max(0, (shown.x / width) * 100 - 10))}%` }}
-        >
-          <p className="font-medium tabular-nums">{shown.point.score} <span className="font-normal text-muted">· {shortDate(shown.point.at)}</span></p>
-          {shown.point.change && <p className="max-w-56 truncate">{shown.point.change}</p>}
-          <p className="text-muted">{shown.point.pages} pages · {shown.point.facts} facts</p>
-          {(shown.point.conflicts > 0 || shown.point.duplicates > 0) && (
-            <p className="text-muted">{[shown.point.conflicts > 0 && `${shown.point.conflicts} conflict${shown.point.conflicts === 1 ? '' : 's'}`, shown.point.duplicates > 0 && `${shown.point.duplicates} repeated`].filter(Boolean).join(' · ')}</p>
-          )}
-        </div>
-      )}
+            <p className="font-medium tabular-nums">{shown.point.score} <span className="font-normal text-muted">· {shortDate(shown.point.at)}</span></p>
+            {shown.point.change && <p className="max-w-56 truncate">{shown.point.change}</p>}
+            <p className="text-muted">{shown.point.facts} facts · {shown.point.pages} pages</p>
+            {(shown.point.conflicts > 0 || shown.point.duplicates > 0) && (
+              <p className="text-muted">{[shown.point.conflicts > 0 && `${shown.point.conflicts} conflict${shown.point.conflicts === 1 ? '' : 's'}`, shown.point.duplicates > 0 && `${shown.point.duplicates} repeated`].filter(Boolean).join(' · ')}</p>
+            )}
+          </div>
+        )}
+      </div>
+      <div className="relative border-t border-line-subtle pt-1">
+        <svg viewBox={`0 0 ${width} ${factsHeight}`} className="h-auto w-full" role="img" aria-label={`Facts known over time, from ${overview.points[0]?.facts ?? 0} to ${overview.health.facts}.`}>
+          <path d={facts.area} className="fill-ink/5" />
+          <path d={facts.line} fill="none" className="stroke-muted" strokeWidth={1.5} strokeLinejoin="round" />
+          {shown && <line x1={shown.x} x2={shown.x} y1={4} y2={factsHeight - 4} className="stroke-line-strong" strokeWidth={1} />}
+        </svg>
+        <Label x={30} y={factsHeight / 2} width={width} height={factsHeight} align="end">Facts</Label>
+      </div>
     </div>
   );
 };
@@ -160,11 +184,11 @@ export const Overview = () => {
       )}
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         <Tile label="Health" value={String(health.score)} unit="/ 100" note={`${word.word}${monthAgo ? ` · ${changeText(health.score, monthAgo.score, monthAgo.at) ?? ''}` : ''}`} noteTone={word.tone} />
-        <Tile label="Knows" value={String(health.facts)} unit="facts" note={[`${health.pages} page${health.pages === 1 ? '' : 's'}`, monthAgo ? changeText(health.facts, monthAgo.facts, monthAgo.at) : null].filter(Boolean).join(' · ')} />
+        <Tile label="Knows" value={String(health.facts)} unit="facts" note={[`${health.pages} page${health.pages === 1 ? '' : 's'}`, monthAgo ? changeText(health.facts, monthAgo.facts, monthAgo.at, ' facts') : null].filter(Boolean).join(' · ')} />
         <Tile
-          label={`Used in replies · ${usage.days} days`}
+          label="Used in replies"
           value={share === null ? '–' : `${share}%`}
-          note={share === null ? 'No replies yet' : `${usage.withKnowledge} of ${usage.replies} replies`}
+          note={share === null ? `No replies in the last ${usage.days} days` : `${usage.withKnowledge} of ${usage.replies} replies · last ${usage.days} days`}
         />
       </div>
 
@@ -217,9 +241,16 @@ export const Overview = () => {
                     <p className="text-[13px]"><span className="font-medium">{ISSUE_LABELS[issue.kind]}.</span> <span className="text-muted">{issue.text}</span></p>
                     {issue.detail?.map((line) => <p key={line} className="truncate border-l-2 border-line pl-2 text-xs text-muted">{line}</p>)}
                   </div>
-                  {issue.pages[0] !== 'index.md' && (
-                    <Button size="sm" variant="ghost" onClick={() => open(issue.pages[0]!)} aria-label={`Open ${issue.pages[0]}`} icon={<ArrowUpRight size={13} aria-hidden />}>Open</Button>
-                  )}
+                  <div className="flex shrink-0 flex-col items-end gap-0.5">
+                    {issue.pages[0] === 'index.md'
+                      ? <Button size="sm" variant="ghost" onClick={() => void navigate('/knowledge/pages')} icon={<ArrowUpRight size={13} aria-hidden />}>Pages</Button>
+                      : issue.pages.map((page) => (
+                        // Each page the item names opens on its own, so a conflict across two pages can be fixed from either.
+                        <Button key={page} size="sm" variant="ghost" onClick={() => open(page)} aria-label={`Open ${page}`} icon={<ArrowUpRight size={13} aria-hidden />}>
+                          {issue.pages.length > 1 ? (page.split('/').pop() ?? page) : 'Open'}
+                        </Button>
+                      ))}
+                  </div>
                 </li>
               ))}
               {health.issues.length > 5 && (

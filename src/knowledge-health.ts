@@ -181,19 +181,22 @@ export const findOverlaps = (facts: Fact[], comparable: (a: string, b: string) =
  * true facts about two people, not a conflict.
  */
 const samePageSubject = (a: string, b: string, areaOf: Map<string, Area>): boolean => {
-  const area = areaOf.get(a);
-  if (area !== areaOf.get(b)) return false;
-  if (area !== 'people') return true;
+  // A rule can be written in any area ("ship on Tuesday" in owner/ and in workflows/), so areas don't matter. What
+  // does is whose it is: a person's card is only compared with cards that look like the same person.
+  if (areaOf.get(a) !== 'people' && areaOf.get(b) !== 'people') return true;
+  if (areaOf.get(a) !== areaOf.get(b)) return false;
   const name = (path: string): string[] => (path.split('/').pop() ?? '').replace(/\.md$/, '').split(/[-_\s]+/).filter((word) => word.length > 1);
   return name(a).some((word) => name(b).includes(word));
 };
 
 /** Pages whose descriptions say they cover the same thing: two places for one topic. */
-const overlappingPages = (pages: PageInfo[]): [string, string][] => {
+const overlappingPages = (pages: PageInfo[], same: (a: string, b: string) => boolean): [string, string][] => {
   const sets = pages.map((page) => ({ path: page.path, words: new Set(words(page.description)) })).filter((page) => page.words.size >= 2);
   const pairs: [string, string][] = [];
   for (let i = 0; i < sets.length; i += 1) {
-    for (let j = i + 1; j < sets.length; j += 1) if (jaccard(sets[i]!.words, sets[j]!.words) >= 0.75) pairs.push([sets[i]!.path, sets[j]!.path]);
+    for (let j = i + 1; j < sets.length; j += 1) {
+      if (same(sets[i]!.path, sets[j]!.path) && jaccard(sets[i]!.words, sets[j]!.words) >= 0.75) pairs.push([sets[i]!.path, sets[j]!.path]);
+    }
   }
   return pairs;
 };
@@ -257,7 +260,7 @@ export const assessKnowledge = (files: KnowledgeFile[], now: Date): Health => {
   const facts = files.filter((file) => isPage(file.path)).flatMap((file) => pageFacts(file.path, file.text));
   const areaOf = new Map(pages.map((page) => [page.path, page.area]));
   const { duplicates, conflicts } = findOverlaps(facts, (a, b) => samePageSubject(a, b, areaOf));
-  const overlaps = overlappingPages(pages);
+  const overlaps = overlappingPages(pages, (a, b) => samePageSubject(a, b, areaOf));
   const issues: Issue[] = [];
   for (const pair of conflicts) {
     issues.push({ kind: 'conflict', pages: [...new Set([pair.b.page, pair.a.page])], text: pair.a.page === pair.b.page
@@ -400,7 +403,8 @@ const dayLabel = (events: KnowledgeEvent[]): string | undefined => {
 };
 
 export const knowledgeHistory = (files: KnowledgeFile[], changes: KnowledgeChange[], now: Date): KnowledgeHistory => {
-  const kept = changes.filter((change) => !change.undoneAt && change.files.length > 0 && Date.parse(change.at) <= now.getTime())
+  // A restore puts the approved text back over a hand edit: what the bot knows didn't change, so it isn't history.
+  const kept = changes.filter((change) => !change.undoneAt && change.action !== 'restore' && change.files.length > 0 && Date.parse(change.at) <= now.getTime())
     .sort((a, b) => b.at.localeCompare(a.at));
   const state = new Map(files.map((file) => [file.path, file.text]));
   const set = (path: string, text: string | null): void => { if (text === null) state.delete(path); else state.set(path, text); };
@@ -444,8 +448,11 @@ export const knowledgeHistory = (files: KnowledgeFile[], changes: KnowledgeChang
     last = Date.parse(change.at);
   }
   weekly(now.getTime());
-  // Today's point keeps what changed today.
+  // Today's point is the folder as it is, whatever the backups know: an edit accepted before Serra recorded those
+  // still counts. It keeps what changed today.
   const today = byDay.get(now.toISOString().slice(0, 10))?.change;
+  state.clear();
+  for (const file of files) state.set(file.path, file.text);
   add({ ...snapshot(now), ...(today ? { change: today } : {}) });
   return { points: [...byDay.values()], events: order.flatMap(eventsOf) };
 };
@@ -522,7 +529,7 @@ export const rankPages = (request: string, cards: PageCard[], { limit = 3, minSh
  * Existing pages a new proposal looks like, most alike first: where it should probably be merged instead of becoming
  * one more page.
  */
-export const similarPages = (proposal: string, files: KnowledgeFile[], { limit = 3 }: { limit?: number } = {}): { path: string; similarity: number; shared: string[] }[] => {
+export const similarPages = (proposal: string, files: KnowledgeFile[], { limit = 3 }: { limit?: number } = {}): { path: string; similarity: number; shared: string[]; disagrees: { page: string; proposal: string } | null }[] => {
   const mine = pageFacts('proposal', proposal);
   const description = frontmatter(proposal)?.get('description')?.trim() ?? '';
   const mineWords = new Set([...words(description), ...mine.flatMap((fact) => [...fact.words])]);
@@ -530,11 +537,15 @@ export const similarPages = (proposal: string, files: KnowledgeFile[], { limit =
   return files.filter((file) => isPage(file.path)).map((file) => {
     const facts = pageFacts(file.path, file.text);
     const theirs = new Set([...words(frontmatter(file.text)?.get('description') ?? ''), ...facts.flatMap((fact) => [...fact.words])]);
-    const shared = facts.filter((fact) => mine.some((other) => jaccard(fact.words, other.words) >= CONFLICT_AT)).map((fact) => short(fact.text));
+    const shared = facts.filter((fact) => mine.some((other) => jaccard(topic(fact.words), topic(other.words)) >= CONFLICT_AT)).map((fact) => short(fact.text));
+    // A proposal that changes a rule on the page, rather than repeating it: the screen says it disagrees.
+    const clash = findOverlaps([...facts, ...mine]).conflicts.find((pair) => (pair.a.page === 'proposal') !== (pair.b.page === 'proposal'));
+    const disagrees = clash ? { page: short(clash.a.page === 'proposal' ? clash.b.text : clash.a.text), proposal: short(clash.a.page === 'proposal' ? clash.a.text : clash.b.text) } : null;
     let overlap = 0;
     for (const word of mineWords) if (theirs.has(word)) overlap += 1;
-    return { path: file.path, similarity: Math.round((overlap / mineWords.size) * 100) / 100, shared: shared.slice(0, 3) };
-  }).filter((page) => page.shared.length > 0 || page.similarity >= 0.5).sort((a, b) => b.shared.length - a.shared.length || b.similarity - a.similarity).slice(0, limit);
+    return { path: file.path, similarity: Math.round((overlap / mineWords.size) * 100) / 100, shared: shared.slice(0, 3), disagrees };
+  }).filter((page) => page.shared.length > 0 || page.similarity >= 0.5)
+    .sort((a, b) => Number(b.disagrees !== null) - Number(a.disagrees !== null) || b.shared.length - a.shared.length || b.similarity - a.similarity).slice(0, limit);
 };
 
 /**
@@ -542,16 +553,26 @@ export const similarPages = (proposal: string, files: KnowledgeFile[], { limit =
  * `(confirmed 2026-08-01; may be out of date)`. Rows of fresh pages are left as they are.
  */
 export const markIndexRows = (index: string, files: KnowledgeFile[], now: Date): string => {
-  const notes = new Map<string, string>(files.flatMap(({ path, text }): [string, string][] => {
+  const notes = new Map<string, string[]>();
+  const add = (path: string, note: string): void => { notes.set(path, [...(notes.get(path) ?? []), note]); };
+  for (const { path, text } of files) {
     const verified = frontmatter(text)?.get('verified')?.trim() ?? '';
-    if (!DATE.test(verified)) return [[path, 'draft: not confirmed']];
-    return daysSince(verified, now) > STALE_DAYS ? [[path, `confirmed ${verified}; may be out of date`]] : [];
-  }));
+    if (!DATE.test(verified)) add(path, 'draft: not confirmed');
+    else if (daysSince(verified, now) > STALE_DAYS) add(path, `confirmed ${verified}; may be out of date`);
+  }
+  // Two current rules that disagree: the worker is told which, so it says which it followed instead of picking one silently.
+  const pages = describePages(files, index, now);
+  const areaOf = new Map(pages.map((page) => [page.path, page.area]));
+  const { conflicts } = findOverlaps(files.filter((file) => isPage(file.path)).flatMap((file) => pageFacts(file.path, file.text)), (a, b) => samePageSubject(a, b, areaOf));
+  for (const pair of conflicts.slice(0, 6)) {
+    const note = `two rules disagree: "${short(pair.a.text, 70)}" and "${short(pair.b.text, 70)}"${pair.a.page === pair.b.page ? '' : ` (on \`${pair.a.page}\` and \`${pair.b.page}\`)`}; don't pick one silently: say which you followed, or ask the owner`;
+    for (const path of new Set([pair.a.page, pair.b.page])) add(path, note);
+  }
   if (notes.size === 0) return index;
   return index.split('\n').map((line) => {
     if (!line.trim().startsWith('|')) return line;
-    const pages = [...line.matchAll(/`([^`\s]+\.md)`/g)].map((match) => match[1]!);
-    const note = pages.length === 1 ? notes.get(pages[0]!) : undefined;
+    const paths = [...line.matchAll(/`([^`\s]+\.md)`/g)].map((match) => match[1]!);
+    const note = paths.length === 1 ? notes.get(paths[0]!)?.join('; ') : undefined;
     if (!note) return line;
     const end = line.trimEnd();
     return end.endsWith('|') ? `${end.slice(0, -1).trimEnd()} (${note}) |` : `${end} (${note})`;

@@ -216,7 +216,9 @@ export const createKnowledge = (knowledgeDir: string, { backupDir }: KnowledgeOp
     const descriptions = new Map(pages.map(({ path, text }) => [path, frontmatter(text)?.get('description')?.trim() ?? '']));
     const aboutMe = compileAboutMe(pages, visibility, now);
     // Each row says when its page is a draft or hasn't been re-checked in a while, so the worker weighs it accordingly.
-    let index = markIndexRows(filterIndex(indexText.trim(), (page) => (audiences.has(page) ? { audience: audiences.get(page)!, description: descriptions.get(page) ?? '' } : null), visibility), pages, now);
+    // Only pages this reply may use are compared, so a note never quotes a page the audience may not hear.
+    const mayRead = pages.filter(({ path }) => mayUse(audiences.get(path)!, visibility));
+    let index = markIndexRows(filterIndex(indexText.trim(), (page) => (audiences.has(page) ? { audience: audiences.get(page)!, description: descriptions.get(page) ?? '' } : null), visibility), mayRead, now);
     // Every worker reads a snapshot of approved pages, so an edit waiting for review needs no note for teammates. The
     // owner hears which files are waiting. Before the approved copy exists, nobody opens pages.
     if (drifted && visibility === 'owner') {
@@ -257,7 +259,13 @@ export const createKnowledge = (knowledgeDir: string, { backupDir }: KnowledgeOp
     }
     const budget = current !== null && isOfflimits(path, frontmatter(current)) ? offlimitsBudgetAfter(root, path, current) : null;
     if (budget) throw new Error(`Not accepted. ${budget}`);
+    const before = journal.approvedText(path);
     journal.accept(path, current);
+    // Accepting is a change to what the bot knows, so it is recorded like any other: Overview's history replays these.
+    const at = new Date();
+    const backupId = `${at.toISOString().replace(/[-:]/g, '').replace(/\.\d+Z$/, 'Z')}-accept-${randomBytes(3).toString('hex')}`;
+    mkdirSync(join(backups, backupId), { recursive: true, mode: 0o700 });
+    writeFileAtomic(join(backups, backupId, 'change.json'), JSON.stringify({ id: backupId, action: 'accept', at: at.toISOString(), files: [{ path, before, after: current }] }, null, 2) + '\n');
   };
 
   /** Put back the approved text of `path` (or every changed file), keeping a backup of what was there. */

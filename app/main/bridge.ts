@@ -183,7 +183,7 @@ export interface SerraApi {
     /** Moves a page to `archive/` and takes its index row out. `reviewed`: the page's text as the owner saw it. */
     retire(page: string, reviewed: string): UndoHandle;
     /** Existing pages the proposal looks like, with the lines they share: where it may belong instead of a new page. */
-    similar(path: string): { path: string; similarity: number; shared: string[] }[];
+    similar(path: string): { path: string; similarity: number; shared: string[]; disagrees: { page: string; proposal: string } | null }[];
   };
   /** Knowledge pages (APP-20). */
   pages: {

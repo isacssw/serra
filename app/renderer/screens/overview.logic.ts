@@ -36,30 +36,38 @@ export interface ChartGeometry {
   ticks: { x: number; label: string }[];
 }
 
-/** A score line over time in a `width` × `height` box with `pad` around it for labels. Scores are 0–100. */
-export const scoreChart = (points: HistoryPoint[], width: number, height: number, pad = { left: 28, right: 8, top: 8, bottom: 22 }): ChartGeometry => {
+/** A step line of `value` over time in a `width` × `height` box, between `min` and `max`, with `pad` for labels. */
+const stepChart = (points: HistoryPoint[], value: (point: HistoryPoint) => number, min: number, max: number, width: number, height: number, pad: { left: number; right: number; top: number; bottom: number }, gridAt: number[]): ChartGeometry => {
   const inner = { w: width - pad.left - pad.right, h: height - pad.top - pad.bottom };
   const times = points.map((point) => Date.parse(point.at));
   const first = Math.min(...times);
   const last = Math.max(...times);
   const span = Math.max(1, last - first);
   const x = (time: number): number => pad.left + (points.length === 1 ? inner.w : ((time - first) / span) * inner.w);
-  // The axis starts a step below the lowest score, so a drop from 91 to 84 is visible, not a few pixels.
-  const floor = Math.max(0, Math.floor((Math.min(...points.map((point) => point.score)) - 10) / 10) * 10);
-  const y = (score: number): number => pad.top + (1 - (score - floor) / (100 - floor)) * inner.h;
-  const dots = points.map((point, at) => ({ x: Math.round(x(times[at]!) * 10) / 10, y: Math.round(y(point.score) * 10) / 10, point }));
-  // A step line: the score holds until the next change, which is what happened.
+  const y = (amount: number): number => pad.top + (1 - (amount - min) / Math.max(1, max - min)) * inner.h;
+  const dots = points.map((point, at) => ({ x: Math.round(x(times[at]!) * 10) / 10, y: Math.round(y(value(point)) * 10) / 10, point }));
+  // A step line: the value holds until the next change, which is what happened.
   const line = dots.map((dot, at) => (at === 0 ? `M${dot.x} ${dot.y}` : `H${dot.x} V${dot.y}`)).join(' ');
-  const base = y(floor);
-  const area = dots.length > 0 ? `${line} V${base} H${dots[0]!.x} Z` : '';
-  const grid = [floor, Math.round((floor + 100) / 20) * 10, 100].map((score) => ({ y: y(score), label: String(score) }));
-  const format = (time: number): string => shortDate(time);
+  const area = dots.length > 0 ? `${line} V${y(min)} H${dots[0]!.x} Z` : '';
+  const grid = gridAt.map((amount) => ({ y: y(amount), label: String(amount) }));
   const count = points.length < 2 ? 1 : 3;
   const ticks = Array.from({ length: count }, (_, at) => {
     const time = count === 1 ? last : first + (span * at) / (count - 1);
-    return { x: x(time), label: format(time) };
+    return { x: x(time), label: shortDate(time) };
   });
   return { line, area, dots, grid, ticks };
+};
+
+/** The health score over time. The axis starts a step below the lowest score, so a drop from 91 to 84 shows; gridlines are even. */
+export const scoreChart = (points: HistoryPoint[], width: number, height: number, pad = { left: 36, right: 8, top: 10, bottom: 30 }): ChartGeometry => {
+  const floor = Math.max(0, Math.floor((Math.min(...points.map((point) => point.score)) - 10) / 20) * 20);
+  return stepChart(points, (point) => point.score, floor, 100, width, height, pad, [floor, (floor + 100) / 2, 100]);
+};
+
+/** Facts known over time, from zero: whether the bot knows more, which the score alone can hide. */
+export const factsChart = (points: HistoryPoint[], width: number, height: number, pad = { left: 36, right: 8, top: 6, bottom: 4 }): ChartGeometry => {
+  const top = Math.max(1, ...points.map((point) => point.facts));
+  return stepChart(points, (point) => point.facts, 0, top, width, height, pad, [0, top]);
 };
 
 export const EVENT_LABELS: Record<EventKind, string> = {

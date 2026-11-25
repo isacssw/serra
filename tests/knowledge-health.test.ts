@@ -14,6 +14,7 @@ import {
 import { readKnowledgeUse, recordKnowledgeUse, takeKnowledgeUsed } from '../src/knowledge-usage.ts';
 import { knowledgeOverview } from '../src/knowledge-overview.ts';
 import { createJournal } from '../src/knowledge-journal.ts';
+import { createKnowledge } from '../src/knowledge.ts';
 import { changeText, groupByDay, scoreChart, scoreWord } from '../app/renderer/screens/overview.logic.ts';
 
 const NOW = new Date('2026-11-25T12:00:00Z');
@@ -152,7 +153,7 @@ test('growth: six months of an owner\'s knowledge, through the real approval cod
   // What the screen draws from it.
   const chart = scoreChart(history.points, 640, 168);
   assert.equal(chart.dots.length, history.points.length);
-  assert.ok(chart.dots.every((dot) => dot.x >= 28 && dot.x <= 632 && dot.y >= 8 && dot.y <= 146));
+  assert.ok(chart.dots.every((dot) => dot.x >= 36 && dot.x <= 632 && dot.y >= 10 && dot.y <= 138));
   const days = groupByDay(history.events, sim.now);
   assert.equal(days[0]!.confirmed.length, 8, 'eight re-confirmations fold into one line');
   assert.equal(scoreWord(messy!.health.score, 11).tone, 'down');
@@ -172,6 +173,9 @@ test('a new proposal that repeats a page is pointed at that page', () => {
   assert.equal(best?.path, 'product/rate-limits.md');
   assert.ok(best!.shared[0]!.startsWith('100 requests per second'));
   assert.deepEqual(similarPages('---\ntype: x\ndescription: Lunch order\n---\n- Pizza on Friday for the whole floor.\n', files), []);
+  // A proposal that changes a rule says so, with both lines.
+  const change = '---\ntype: product\ndescription: Rate limits\n---\n- 300 requests per second per merchant, burst 200.\n';
+  assert.deepEqual(similarPages(change, files)[0]?.disagrees, { page: '100 requests per second per merchant, burst 200.', proposal: '300 requests per second per merchant, burst 200.' });
 });
 
 test('the pages a reply used are recorded once per run and never posted', (t) => {
@@ -211,4 +215,45 @@ test('Overview counts what the bot reads: a hand edit waits for review before it
   const after = knowledgeOverview({ knowledgeDir: knowledge, profileDir: profile, now: NOW });
   assert.equal(after.health.score, before.health.score, 'an unreviewed conflict is not the bot\'s knowledge yet');
   assert.equal(after.unreviewed, 1);
+});
+
+test('the index tells the worker when two rules disagree, so it never picks one silently', () => {
+  const page = (body: string): string => `---\ntype: rule\ndescription: How I work\nwritten: 2026-11-01\nverified: 2026-11-20\nsources:\n  - Owner\n---\n${body}\n`;
+  const index = '| releases | `owner/working-style.md` | How I decide |\n| voice | `owner/voice.md` | How I write |';
+  const marked = markIndexRows(index, [
+    { path: 'owner/working-style.md', text: page('- Risky releases ship on Tuesday.\n- Risky releases ship on Thursday now.') },
+    { path: 'owner/voice.md', text: page('- Lead with the answer.') },
+  ], NOW);
+  assert.match(marked, /`owner\/working-style\.md` \| How I decide \(two rules disagree: "Risky releases ship on Tuesday\." and "Risky releases ship on Thursday now\."; don't pick one silently/);
+  assert.match(marked, /\| voice \| `owner\/voice\.md` \| How I write \|$/m, 'a settled page is left alone');
+});
+
+test('a rule is compared wherever it is written, and two people with alike cards are never merged', () => {
+  const page = (type: string, description: string, body: string): string => `---\ntype: ${type}\ndescription: ${description}\nwritten: 2026-11-01\nverified: 2026-11-20\nsources:\n  - Owner\n---\n${body}\n`;
+  const index = '| a | `owner/style.md` | a |\n| b | `workflows/release.md` | b |\n| c | `people/ana.md` | c |\n| d | `people/bruno.md` | d |';
+  const health = assessKnowledge([
+    { path: 'index.md', text: index },
+    { path: 'owner/style.md', text: page('rule', 'How I decide', '- Risky releases ship on Tuesday.') },
+    { path: 'workflows/release.md', text: page('process', 'The release runbook', '- Risky releases ship on Thursday.') },
+    { path: 'people/ana.md', text: page('person', 'Project manager and communication preferences', '# Ana\n\n- Likes a short written update.') },
+    { path: 'people/bruno.md', text: page('person', 'Project manager and communication preferences', '# Bruno\n\n- Prefers a call.') },
+  ], NOW);
+  assert.deepEqual(health.issues.map((issue) => `${issue.kind} ${issue.pages.join(' ')}`), ['conflict workflows/release.md owner/style.md']);
+});
+
+test('history ends where the knowledge is, an accepted hand edit included', (t) => {
+  const profile = mkdtempSync(join(tmpdir(), 'serra-history-'));
+  t.after(() => rmSync(profile, { recursive: true, force: true }));
+  const knowledge = join(profile, 'knowledge');
+  cpSync(new URL('../evals/fixture/knowledge', import.meta.url).pathname, knowledge, { recursive: true });
+  const service = createKnowledge(knowledge);
+  service.seedApproved();
+  const path = join(knowledge, 'owner/working-style.md');
+  writeFileSync(path, `${readFileSync(path, 'utf8').trimEnd()}\n- Risky releases ship on Monday.\n`);
+  service.acceptDrift('owner/working-style.md', readFileSync(path, 'utf8'));
+  const overview = knowledgeOverview({ knowledgeDir: knowledge, profileDir: profile, now: NOW });
+  const last = overview.points.at(-1)!;
+  assert.equal(last.score, overview.health.score);
+  assert.equal(last.facts, overview.health.facts);
+  assert.ok(overview.events.some((event) => event.page === 'owner/working-style.md' && event.added.includes('Risky releases ship on Monday.')), 'the accepted edit is in the timeline');
 });

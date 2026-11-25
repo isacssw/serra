@@ -389,7 +389,7 @@ const runThemeChecks = async (window: BrowserWindow): Promise<string[]> => {
           writeFileSync(join(shots, `${theme}-${route}.png`), (await window.webContents.capturePage()).toPNG());
           // Pages with a page open, and its Retire dialog.
           if (route === 'pages') {
-            await run(`(async () => { location.hash = '#/knowledge/pages?page=owner%2Fworking-style.md'; await new Promise((r) => setTimeout(r, 400)); })()`);
+            await run(`(async () => { location.hash = '#/knowledge/pages?page=owner%2Fworking-style.md'; await new Promise((r) => setTimeout(r, 400)); document.querySelector('[data-serra-main] textarea')?.scrollIntoView({ block: 'center' }); await new Promise((r) => setTimeout(r, 150)); })()`);
             writeFileSync(join(shots, `${theme}-pages-detail.png`), (await window.webContents.capturePage()).toPNG());
             await run(`(async () => { [...document.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Retire…')?.click(); await new Promise((r) => setTimeout(r, 300)); })()`);
             writeFileSync(join(shots, `${theme}-pages-retire.png`), (await window.webContents.capturePage()).toPNG());

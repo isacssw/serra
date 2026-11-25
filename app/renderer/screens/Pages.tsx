@@ -389,10 +389,10 @@ export const Pages = () => {
         open={retiring}
         onClose={() => setRetiring(false)}
         title={`Retire ${selected ?? 'this page'}?`}
-        description="The bot stops using it. It moves to archive/ and its index row goes. You can undo."
+        description="The bot stops using it. It moves to the archive, and you can undo."
         actions={(
           <>
-            <Button onClick={() => setRetiring(false)}>Cancel</Button>
+            <Button autoFocus onClick={() => setRetiring(false)}>Cancel</Button>
             <Button variant="danger" onClick={() => void retire()}>Retire</Button>
           </>
         )}
