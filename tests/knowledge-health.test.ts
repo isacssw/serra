@@ -279,7 +279,8 @@ test('history ends where the knowledge is, an accepted hand edit included', (t) 
   const path = join(knowledge, 'owner/working-style.md');
   writeFileSync(path, `${readFileSync(path, 'utf8').trimEnd()}\n- Risky releases ship on Monday.\n`);
   service.acceptDrift('owner/working-style.md', readFileSync(path, 'utf8'));
-  const overview = knowledgeOverview({ knowledgeDir: knowledge, profileDir: profile, now: NOW });
+  // Accepting is stamped with the real clock, so the overview is read just after it.
+  const overview = knowledgeOverview({ knowledgeDir: knowledge, profileDir: profile, now: new Date(Date.now() + 60_000) });
   const last = overview.points.at(-1)!;
   assert.equal(last.score, overview.health.score);
   assert.equal(last.facts, overview.health.facts);
