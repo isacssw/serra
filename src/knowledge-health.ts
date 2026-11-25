@@ -670,6 +670,41 @@ const newerOf = (pair: FactPair, confirmed: Map<string, string>): 'a' | 'b' | nu
   return null;
 };
 
+/** What a rule says it ended: "moved from Grafana to Datadog", "the changelog is replaced by", "OAuth login was removed". */
+const ENDED = [
+  /\b(?:moved|migrated|switched|changed)\s+from\s+((?:[\w/-]+\s+){0,2}?[\w/-]+)\s+to\b/gi,
+  /((?:[\w/-]+\s+){0,2}[\w/-]+)\s+(?:is|was|are|were|has been|have been)\s+(?:now\s+)?(?:replaced|removed|retired|switched off|turned off|deprecated|dropped|discontinued)\b/gi,
+];
+/** A word in more facts than this is too common to say which older rule a change ended. */
+const ENDED_MAX_FACTS = 3;
+
+/**
+ * Pairs of a newer rule that says something ended and an older rule, on a page confirmed earlier, that still names it:
+ * "The public changelog is replaced by a monthly digest" against "Every change gets a changelog entry". No day or
+ * number differs, so `findOverlaps` can't see these. The older rule is matched on the ended thing's rarest word.
+ */
+const endedRules = (facts: Fact[], confirmed: Map<string, string>): FactPair[] => {
+  const seen = new Map<string, number>();
+  for (const fact of facts) for (const word of fact.words) seen.set(word, (seen.get(word) ?? 0) + 1);
+  return facts.flatMap((fact) => {
+    const date = confirmed.get(fact.page) ?? '';
+    if (!DATE.test(date)) return [];
+    const keys = new Set(ENDED.flatMap((pattern) => [...fact.text.matchAll(pattern)].flatMap((match) => {
+      const terms = words(match[1]!).filter((word) => !CHANGE_WORDS.has(word));
+      // A word the rule also says outside the ended part is its subject ("login" in "Dashboard login moved to SSO;
+      // OAuth login was removed"); what's left names the ended thing, by its last word ("changelog", not "public").
+      const rest = new Set(words(fact.text.replace(match[0], ' ')));
+      const own = terms.filter((word) => !rest.has(word));
+      const key = (own.length > 0 ? own : terms).at(-1);
+      return key !== undefined && (seen.get(key) ?? 0) - 1 <= ENDED_MAX_FACTS ? [key] : [];
+    })));
+    if (keys.size === 0) return [];
+    return facts.filter((old) => old.page !== fact.page && [...keys].some((key) => old.words.has(key))
+      && DATE.test(confirmed.get(old.page) ?? '') && confirmed.get(old.page)! < date)
+      .map((old) => ({ a: { page: fact.page, text: fact.text }, b: { page: old.page, text: old.text }, similarity: 0 }));
+  });
+};
+
 /**
  * The index with a note on each row whose page a worker should weigh with care: `(draft: not confirmed)` or
  * `(confirmed 2026-08-01; may be out of date)`. Rows of fresh pages are left as they are.
@@ -685,17 +720,21 @@ export const markIndexRows = (index: string, files: KnowledgeFile[], now: Date):
   // Two current rules that disagree: the worker is told which, so it says which it followed instead of picking one silently.
   const pages = describePages(files, index, now);
   const areaOf = new Map(pages.map((page) => [page.path, page.area]));
-  const { conflicts } = findOverlaps(files.filter((file) => isPage(file.path)).flatMap((file) => pageFacts(file.path, file.text)), (a, b) => samePageSubject(a, b, areaOf));
+  const facts = files.filter((file) => isPage(file.path)).flatMap((file) => pageFacts(file.path, file.text));
+  const { conflicts } = findOverlaps(facts, (a, b) => samePageSubject(a, b, areaOf));
   const confirmed = new Map(files.map((file) => [file.path, frontmatter(file.text)?.get('verified')?.trim() ?? '']));
+  // A rule that says what it ended is the current one by its own words.
+  const said = new Set(conflicts.map((pair) => [pair.a.text, pair.b.text].sort().join('\n')));
+  const ended = endedRules(facts, confirmed).filter((pair) => !said.has([pair.a.text, pair.b.text].sort().join('\n')));
   // Each conflicted row gets a short mark; the two rules and what to do are said once, below the index.
-  const listed = conflicts.slice(0, 12);
+  const listed = [...conflicts, ...ended].slice(0, 16);
   for (const pair of listed) for (const path of new Set([pair.a.page, pair.b.page])) add(path, 'two rules disagree: see below');
   const where = (page: string): string => `\`${page}\`, confirmed ${confirmed.get(page) || 'never'}`;
   const detail = listed.length === 0 ? '' : [
     '', '', 'Rules that disagree. Follow the current one and say the other is out of date; ask the owner only where it says Serra can\'t tell.',
     ...listed.map((pair) => {
       // When the dates or the words settle it, say which rule is current, so the worker doesn't have to weigh it.
-      const newer = newerOf(pair, confirmed);
+      const newer = ended.includes(pair) ? 'a' : newerOf(pair, confirmed);
       if (newer) {
         const [current, old] = newer === 'a' ? [pair.a, pair.b] : [pair.b, pair.a];
         return `- Current: "${short(current.text, 90)}" (${where(current.page)}). It replaces "${short(old.text, 90)}"${old.page === current.page ? ' on the same page' : ` (${where(old.page)})`}.`;

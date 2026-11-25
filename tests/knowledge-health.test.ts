@@ -256,6 +256,17 @@ test('the index tells the worker when two rules disagree, so it never picks one 
   assert.match(tie, /can't tell which is newer\.$/);
 });
 
+test('a newer rule that says what it ended replaces the older rules still naming it', () => {
+  const page = (date: string, body: string): string => `---\ntype: product\ndescription: Notes\nwritten: ${date}\nverified: ${date}\nsources:\n  - Owner\n---\n${body}\n`;
+  const marked = markIndexRows('| a | `product/auth.md` | a |\n| b | `product/q4.md` | b |\n| c | `product/status.md` | c |', [
+    { path: 'product/auth.md', text: page('2026-11-02', '- Merchants use secret keys; dashboards use OAuth.') },
+    { path: 'product/status.md', text: page('2026-11-02', '- Incidents go on the public status page.') },
+    { path: 'product/q4.md', text: page('2026-11-19', '- Dashboard login moved to SSO through Okta; OAuth login was removed.\n- The public changelog is replaced by a monthly digest.') },
+  ], NOW);
+  assert.match(marked, /- Current: "Dashboard login moved to SSO through Okta; OAuth login was removed\." \(`product\/q4\.md`, confirmed 2026-11-19\)\. It replaces "Merchants use secret keys; dashboards use OAuth\." \(`product\/auth\.md`, confirmed 2026-11-02\)\./);
+  assert.doesNotMatch(marked, /status page/, 'a shared common word ("public") is no reason to pair two rules');
+});
+
 test('a rule is compared wherever it is written, and two people with alike cards are never merged', () => {
   const page = (type: string, description: string, body: string): string => `---\ntype: ${type}\ndescription: ${description}\nwritten: 2026-11-01\nverified: 2026-11-20\nsources:\n  - Owner\n---\n${body}\n`;
   const index = '| a | `owner/style.md` | a |\n| b | `workflows/release.md` | b |\n| c | `people/ana.md` | c |\n| d | `people/bruno.md` | d |';
