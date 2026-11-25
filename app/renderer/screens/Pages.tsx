@@ -118,9 +118,9 @@ const PageList = ({ pages, selected, onSelect }: { pages: KnowledgePage[]; selec
 
 /**
  * Rules on this page that disagree with or repeat another, shown as they read. Overview's To do keeps one in a click
- * where it can; here the owner edits, so a rule inside a sentence of prose is never a dead end.
+ * where it can; here the page's own Edit settles it, so a rule inside a sentence of prose is never a dead end.
  */
-const RulesNote = ({ issues, onEdit }: { issues: KnowledgeOverview['health']['issues']; onEdit?: () => void }) => {
+const RulesNote = ({ issues }: { issues: KnowledgeOverview['health']['issues'] }) => {
   const pairs = issues.filter((issue) => (issue.kind === 'conflict' || issue.kind === 'duplicate') && (issue.facts?.length ?? 0) === 2);
   if (pairs.length === 0) return null;
   return (
@@ -131,7 +131,6 @@ const RulesNote = ({ issues, onEdit }: { issues: KnowledgeOverview['health']['is
           {issue.facts!.map((fact) => <p key={fact.text} className="border-l-2 border-line pl-2 text-xs text-muted" title={fact.page}>{fact.text}</p>)}
         </div>
       ))}
-      {onEdit && <Button size="sm" className="self-start" onClick={onEdit}>Edit</Button>}
     </section>
   );
 };
@@ -400,7 +399,7 @@ export const Pages = () => {
             {page && state && (
               <>
                 <AudiencePicker text={draft} disabled={saving} onChange={setDraft} />
-                <RulesNote issues={pairs} {...(editing ? {} : { onEdit: () => setEditing(true) })} />
+                <RulesNote issues={pairs} />
                 {!editing && !state.dirty && (
                   <div className="flex flex-col gap-3">
                     <div className="rounded-lg border border-line bg-panel"><PageBody text={pageBody(draft)} onOpen={(href) => void serra()?.app.openExternal(href)} /></div>
