@@ -271,11 +271,13 @@ export const createMeetingRuns = ({
     if (brief.length > BRIEF_MAX_CHARS) throw new Error('That transcript is too long for one T3 run. Split it, or send the meeting\'s summary instead.');
     if (contents().length) log(`Serra's meetings folder had files in it, left by an earlier run. Moved them to ${moveAside()}.`);
     const opened: { session: Promise<T3Session> | null } = { session: null };
+    let started: string | null = null;
     const session = (): Promise<T3Session> => (opened.session ??= t3.session());
     try {
       await t3.ensureProject(workspace, PROJECT_TITLE, t3Bin);
       const input: FolderThreadInput = { project: workspace, title, brief, ...(provider ? { provider } : {}), ...(model ? { model } : {}) };
       const threadId = guarded ? await launchGuarded(await session(), title, brief) : await t3.startFolderThread(input, t3Bin);
+      if (guarded) started = threadId;
       const deadline = now() + timeoutMs;
       let detail: T3ThreadDetail;
       for (;;) {
@@ -294,6 +296,14 @@ export const createMeetingRuns = ({
       if (!answer) throw new Error(`The T3 run ended without an answer (status: ${detail.thread.status}).`);
       return await use({ threadId, runId, answer, session });
     } finally {
+      // A guarded run is Serra's own housekeeping: once its answer is read it's settled, so T3's thread list stays the
+      // owner's. Settling is reversible. A run that is still going (given up on) is stopped above first.
+      if (started && opened.session) {
+        const threadId = started;
+        await opened.session.then((open) => open.call('t3_thread_organize', { threadId, action: 'settle' }), () => null).catch((error: unknown) => {
+          log(`Couldn't settle T3 run ${threadId}: ${error instanceof Error ? error.message : String(error)}`);
+        });
+      }
       if (opened.session) await opened.session.then((open) => open.close(), () => {});
     }
   };

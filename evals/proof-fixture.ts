@@ -1,6 +1,6 @@
 // The proof's invented owner: Robin's fixture eight months on, with rules that changed, newer pages the question
 // doesn't point to, stale pages and distractors. Used by evals/kb-proof.ts and evals/kb-review-demo.ts.
-import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -40,8 +40,13 @@ const ROWS: [string, string, string][] = [
 ];
 
 /** A scratch profile with Robin's knowledge as it is now (or none), for one run. */
-export const proofProfile = (withKnowledge: boolean, project: string): { dir: string; profileDir: string } => {
-  const dir = mkdtempSync(join(tmpdir(), 'serra-kb-proof-'));
+/**
+ * `scratchRoot`: where the scratch profile goes. Inside the eval project's folder, a worker in T3's approval-required
+ * mode reads the pages without asking, so eval threads stay in a mode Serra can settle.
+ */
+export const proofProfile = (withKnowledge: boolean, project: string, scratchRoot = tmpdir()): { dir: string; profileDir: string } => {
+  mkdirSync(scratchRoot, { recursive: true });
+  const dir = mkdtempSync(join(scratchRoot, 'serra-kb-proof-'));
   const profileDir = join(dir, 'profile');
   const knowledge = join(profileDir, 'knowledge');
   cpSync(join(root, 'evals/fixture/knowledge'), knowledge, { recursive: true });

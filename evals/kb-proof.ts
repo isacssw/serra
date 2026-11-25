@@ -18,8 +18,8 @@ import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { takeKnowledgeUsed } from '../src/knowledge-usage.ts';
-import { ensureProject, showThread, startFolderThread } from '../src/t3.ts';
-import { isRecord } from '../src/lib/guards.ts';
+import { ensureProject } from '../src/t3.ts';
+import { createEvalRunner, MAX_RUNNING } from './t3-hygiene.ts';
 import type { EvalCase } from './capture.ts';
 import { proofProfile } from './proof-fixture.ts';
 
@@ -33,7 +33,7 @@ const { values: args } = parseArgs({
     provider: { type: 'string' },
     model: { type: 'string' },
     only: { type: 'string' },
-    concurrency: { type: 'string', default: '8' },
+    concurrency: { type: 'string', default: '3' },
     out: { type: 'string' },
     regrade: { type: 'boolean', default: false },
   },
@@ -52,37 +52,14 @@ const cases = (JSON.parse(readFileSync(join(root, 'evals/proof-cases.json'), 'ut
 const sleep = (ms: number): Promise<void> => new Promise((done) => { setTimeout(done, ms); });
 
 /** One T3 run of `brief`, followed to its end; its final answer, and what it ran on. Provider failures throw. */
-const runT3 = async (title: string, brief: string): Promise<{ answer: string; ranOn: string; link: string }> => {
-  const threadId = await startFolderThread({ project, title, brief, ...(args.provider ? { provider: args.provider } : {}), ...(args.model ? { model: args.model } : {}) }, t3Bin);
-  const deadline = Date.now() + 8 * 60_000;
-  for (;;) {
-    await sleep(5000);
-    const { thread } = await showThread(threadId, t3Bin, 2);
-    if (thread.status === 'failed') throw new Error(`T3 run failed (provider error): ${thread.link}`);
-    if ((thread.pendingRequestCount ?? 0) > 0) return { answer: '(the run stopped to ask a question instead of answering)', ranOn: ranOnOf(threadId), link: thread.link };
-    if (thread.activeRunId === null && thread.latestRunId !== null) {
-      // Wait until the run's last message stops changing: some providers post a preamble before the answer.
-      let last = '';
-      for (let tries = 0; tries < 6; tries += 1) {
-        await sleep(2500);
-        const { messages } = await showThread(threadId, t3Bin, 30);
-        const text = messages.findLast((message) => message.role === 'assistant' && message.runId === thread.latestRunId)?.text ?? '';
-        if (text && text === last) break;
-        last = text;
-      }
-      return { answer: last, ranOn: ranOnOf(threadId), link: thread.link };
-    }
-    if (Date.now() > deadline) throw new Error(`T3 run timed out: ${thread.link}`);
-  }
-};
+// Every thread goes through the self-settling runner: approval-required, at most three at once, settled once its
+// answer is saved (also on failure), and swept at the end (evals/t3-hygiene.ts).
+const runner = createEvalRunner({ bin: t3Bin, project, ...(args.provider ? { provider: args.provider } : {}), ...(args.model ? { model: args.model } : {}) });
 
-const ranOnOf = (threadId: string): string => {
-  try {
-    const raw = execFileSync(t3Bin, ['thread', 'show', '--json', threadId], { encoding: 'utf8' });
-    const value: unknown = JSON.parse(raw.slice(raw.indexOf('{')));
-    const thread = isRecord(value) && isRecord(value.thread) ? value.thread : null;
-    return thread && typeof thread.providerInstanceId === 'string' ? `${thread.providerInstanceId} ${typeof thread.model === 'string' ? thread.model : ''}`.trim() : 'unknown';
-  } catch { return 'unknown'; }
+/** One T3 run of `brief`: its final answer, and what it ran on. A worker that stopped to ask answers with that fact. */
+const runT3 = async (title: string, brief: string): Promise<{ answer: string; ranOn: string; link: string }> => {
+  const run = await runner.run(title, brief);
+  return { answer: run.asked ? '(the run stopped to ask a question instead of answering)' : run.answer, ranOn: run.ranOn, link: run.link };
 };
 
 /** Three grader runs, majority wins (the middle score): one grader's off answer can't fail a right reply. */
@@ -141,7 +118,7 @@ const save = (result: Result, brief: string): void => {
 };
 
 const runOne = async (item: Case, arm: Arm, run: number): Promise<Result> => {
-  const { dir, profileDir } = proofProfile(arm !== 'none', project);
+  const { dir, profileDir } = proofProfile(arm !== 'none', project, join(project, 'runs'));
   let brief = '';
   const base = { id: item.id, category: item.category, arm, run, pass: false, regex: false, score: null, reply: '', ranOn: 'unknown' };
   try {
@@ -199,6 +176,11 @@ await Promise.all(Array.from({ length: Number(args.concurrency) }, async () => {
 }));
 }
 
+// Nothing left behind: every thread this run made is settled, and any leftover in the project too.
+const swept = await runner.sweep();
+runner.close();
+process.stderr.write(`T3 hygiene: ${swept.settled} leftover thread(s) settled at the end; ${swept.left} unsettled in the evals project.\n`);
+
 const pct = (part: number, whole: number): string => (whole ? `${Math.round((100 * part) / whole)}%` : '–');
 const done = (arm: Arm, filter: (result: Result) => boolean = () => true) => results.filter((result) => result.arm === arm && !result.error && filter(result));
 const categories = [...new Set(cases.map((item) => item.category))];
@@ -213,6 +195,7 @@ const wilson = (passes: number, runs: number): string => {
 const cites = (arm: Arm) => done(arm, (result) => (result.cited?.length ?? 0) > 0);
 const lines = [
   `# Knowledge before/after proof: ${args.label}`, '',
+  `T3 hygiene: every eval thread ran approval-required, at most ${MAX_RUNNING} at once, and was settled once its answer was saved; ${swept.left} unsettled thread(s) left in the evals project at the end.`, '',
   args.regrade ? `Replies from the original run (its code is in summary.md); graded again at ${commit(root)} with three grader runs per rubric, every arm alike.` : `Code: after = ${commit(root)}${arms.includes('before') ? `, before = ${commit(resolve(args.before!))}` : ''}.`, '',
   `${new Date().toISOString().slice(0, 10)}. Through Serra's T3 layer on ${[...new Set(results.map((result) => result.ranOn))].join(', ')}. ${cases.length} cases × ${args.runs} runs per arm. ${results.filter((result) => result.error).length} run(s) failed in the harness and are left out (listed in the arm folders).`, '',
   `| Arm | Runs | Pass | 95% interval | Worst case (errors count as fails) | ${categories.join(' | ')} | Named the answer's page |`, `|---|---|---|---|---|${categories.map(() => '---').join('|')}|---|`,

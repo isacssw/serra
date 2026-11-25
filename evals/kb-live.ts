@@ -8,15 +8,15 @@
 //
 // Needs T3 Code running. Runs are read-only by brief, in one scratch project folder Serra makes once
 // (~/.local/share/serra-evals/kb-live). Results go to evals/results/<label>.{md,json} (git-ignored).
-import { execFileSync } from 'node:child_process';
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { homedir, tmpdir } from 'node:os';
+import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { parseArgs } from 'node:util';
 import { buildBrief, type EvalCase } from './capture.ts';
 import { simulateGrowth } from './kb-growth-sim.ts';
 import { takeKnowledgeUsed } from '../src/knowledge-usage.ts';
-import { ensureProject, showThread, startFolderThread } from '../src/t3.ts';
+import { ensureProject } from '../src/t3.ts';
+import { createEvalRunner, MAX_RUNNING } from './t3-hygiene.ts';
 import { openT3Session } from '../src/t3-session.ts';
 import { listQuestions } from '../src/t3-questions.ts';
 import { isRecord } from '../src/lib/guards.ts';
@@ -29,7 +29,7 @@ const { values: args } = parseArgs({
     provider: { type: 'string' },
     model: { type: 'string' },
     only: { type: 'string' },
-    concurrency: { type: 'string', default: '4' },
+    concurrency: { type: 'string', default: '3' },
     timeout: { type: 'string', default: '420' },
     set: { type: 'string', default: 'owners' },
     judge: { type: 'boolean', default: false },
@@ -97,7 +97,9 @@ interface Result {
 }
 
 const scratch = (fixture: string): { dir: string; profileDir: string } => {
-  const dir = mkdtempSync(join(tmpdir(), 'serra-kb-live-'));
+  // Inside the eval project, so a worker in approval-required mode reads the pages without asking.
+  mkdirSync(join(project, 'runs'), { recursive: true });
+  const dir = mkdtempSync(join(project, 'runs', 'serra-kb-live-'));
   const profileDir = join(dir, 'profile');
   if (fixture === 'messy') {
     for (const file of messyStage!.files) {
@@ -142,22 +144,14 @@ const openedPages = async (threadId: string, runId: string, pages: string[]): Pr
   } finally { await session.close(); }
 };
 
+
 /**
- * The run's final answer. Some providers (Codex) post a short "I'll check…" before their tools and the answer after,
- * and the thread can show the run as done a moment before the answer lands: wait until the run's last assistant
- * message stops changing, reading enough messages to see all of the run's.
+ * A second T3 run reads the case's rubric, the question and the reply, and scores it 0–2: whether the answer is right,
+ * not only whether it has the right words. Same T3 layer and provider as the reply.
  */
-const finalAnswer = async (threadId: string, runId: string): Promise<string | null> => {
-  let last: string | null = null;
-  for (let tries = 0; tries < 6; tries += 1) {
-    await new Promise((resolve) => { setTimeout(resolve, 2500); });
-    const { messages } = await showThread(threadId, t3Bin, 30);
-    const text = messages.findLast((message) => message.role === 'assistant' && message.runId === runId)?.text ?? null;
-    if (text !== null && text === last) return text;
-    last = text;
-  }
-  return last;
-};
+// Every thread goes through the self-settling runner (evals/t3-hygiene.ts): approval-required, at most three at once,
+// settled once its answer is saved, also on failure; the project is swept at the end.
+const runner = createEvalRunner({ bin: t3Bin, project, ...(args.provider ? { provider: args.provider } : {}), ...(args.model ? { model: args.model } : {}) });
 
 /**
  * A second T3 run reads the case's rubric, the question and the reply, and scores it 0–2: whether the answer is right,
@@ -165,28 +159,14 @@ const finalAnswer = async (threadId: string, runId: string): Promise<string | nu
  */
 const judge = async (rubric: string, question: string, reply: string): Promise<number | null> => {
   const prompt = `You grade one reply from an assistant. Don't open any file or run anything. Answer with one line: SCORE: 0, 1 or 2.\n\nRubric: ${rubric}\n\nQuestion:\n${question}\n\nReply:\n${reply}`;
-  const threadId = await startFolderThread({ project, title: 'Serra KB eval: grade', brief: prompt, ...(args.provider ? { provider: args.provider } : {}), ...(args.model ? { model: args.model } : {}) }, t3Bin);
-  for (let tries = 0; tries < 60; tries += 1) {
-    await new Promise((resolve) => { setTimeout(resolve, 4000); });
-    const { thread, messages } = await showThread(threadId, t3Bin, 2);
-    if (thread.activeRunId === null && thread.latestRunId !== null) {
-      const text = await finalAnswer(threadId, thread.latestRunId) ?? messages.findLast((message) => message.role === 'assistant')?.text ?? '';
-      const score = /SCORE:\s*([012])/i.exec(text)?.[1];
-      return score === undefined ? null : Number(score);
-    }
-  }
-  return null;
+  const { answer } = await runner.run('Serra KB eval: grade', prompt);
+  const score = /SCORE:\s*([012])/i.exec(answer)?.[1];
+  return score === undefined ? null : Number(score);
 };
 
-/** "claudeAgent claude-opus-5-5": what T3 says the thread ran on, so a report never says only "the default". */
-const ranOnOf = (threadId: string): string | undefined => {
-  try {
-    const raw = execFileSync(t3Bin, ['thread', 'show', '--json', threadId], { encoding: 'utf8' });
-    const value: unknown = JSON.parse(raw.slice(raw.indexOf('{')));
-    const thread = isRecord(value) && isRecord(value.thread) ? value.thread : null;
-    return thread && typeof thread.providerInstanceId === 'string' ? `${thread.providerInstanceId} ${typeof thread.model === 'string' ? thread.model : ''}`.trim() : undefined;
-  } catch { return undefined; }
-};
+/** What a worker that stopped is asking: its questions and their options, as text to grade. */
+const questionText = async (threadId: string): Promise<string> => (await listQuestions(threadId, t3Bin))
+  .flatMap((request) => request.questions.map((question) => [question.question, ...question.options.map((option) => `${option.label} ${option.description}`)].join(' '))).join('\n');
 
 const runOne = async (item: Case & { fixture: string }, arm: Result['arm'], run: number): Promise<Result> => {
   const started = Date.now();
@@ -203,37 +183,20 @@ const runOne = async (item: Case & { fixture: string }, arm: Result['arm'], run:
       // The control arm must really lack the notes, or the comparison means nothing.
       if (/two rules disagree|Rules that disagree/.test(brief)) throw new Error('the no-notes brief still has a conflict note');
     } else if (arm === 'notes' && item.category === 'conflict' && !brief.includes('two rules disagree')) throw new Error('the notes brief has no conflict note');
-    const threadId = await startFolderThread({ project, title: `Serra KB eval: ${item.id} (${arm})`, brief, ...(args.provider ? { provider: args.provider } : {}), ...(args.model ? { model: args.model } : {}) }, t3Bin);
-    const deadline = Date.now() + Number(args.timeout) * 1000;
-    for (;;) {
-      await new Promise((resolve) => { setTimeout(resolve, 5000); });
-      const { thread, messages } = await showThread(threadId, t3Bin, 3);
-      // A run the provider refused (a usage limit, an outage) says nothing about the brief: a harness error, not a fail.
-      if (thread.status === 'failed') throw new Error(`the T3 run failed (provider error, e.g. a usage limit): ${thread.link}`);
-      if ((thread.pendingRequestCount ?? 0) > 0) {
-        // The worker stopped to ask the owner a question: for two rules that disagree, that is a right answer. The
-        // question's text is graded as the reply, then the run is stopped.
-        const asked = await listQuestions(threadId, t3Bin).catch(() => []);
-        const text = asked.flatMap((request) => request.questions.map((question) => [question.question, ...question.options.map((option) => `${option.label} ${option.description}`)].join(' '))).join('\n');
-        if (!text) throw new Error(`stopped for approval: ${thread.link}`);
-        const session = await openT3Session({ bin: t3Bin });
-        try { await session.call('t3_thread_interrupt', { threadId, stop: true, reason: 'Eval graded the question.' }); } catch { /* the eval only reads it */ } finally { await session.close(); }
-        const pass = (item.include ?? []).every((pattern) => new RegExp(pattern, 'iu').test(text));
-        const score = args.judge && item.judge ? await judge(item.judge, item.text, `(The assistant stopped to ask the owner:) ${text}`).catch(() => null) : null;
-        return { ...base, pass, asked: true, named: [], opened: [], hinted, carried, reply: `(asked) ${text}`, ...(score === null ? {} : { score }), seconds: (Date.now() - started) / 1000 };
-      }
-      if (thread.activeRunId === null && thread.latestRunId !== null) {
-        const text = await finalAnswer(threadId, thread.latestRunId) ?? messages.findLast((message) => message.role === 'assistant' && message.runId === thread.latestRunId)?.text ?? '';
-        const { reply, cited } = takeKnowledgeUsed(text);
-        const pages = readFileSync(join(profileDir, 'knowledge/index.md'), 'utf8').match(/`[^`\s]+\.md`/g)?.map((path) => path.slice(1, -1)) ?? [];
-        const opened = await openedPages(threadId, thread.latestRunId, pages);
-        const ranOn = ranOnOf(threadId);
-        const pass = (item.include ?? []).every((pattern) => new RegExp(pattern, 'iu').test(reply)) && !(item.exclude ?? []).some((pattern) => new RegExp(pattern, 'iu').test(reply));
-        const score = args.judge && item.judge ? await judge(item.judge, item.text, reply).catch(() => null) : null;
-        return { ...base, pass, named: cited, opened, hinted, carried, reply, ...(ranOn ? { ranOn } : {}), ...(score === null ? {} : { score }), seconds: (Date.now() - started) / 1000 };
-      }
-      if (Date.now() > deadline) throw new Error(`timed out: ${thread.link}`);
+    const run = await runner.run(`Serra KB eval: ${item.id} (${arm})`, brief, { timeoutMs: Number(args.timeout) * 1000, readAsk: questionText });
+    if (run.asked) {
+      // The worker stopped to ask the owner: for two rules that disagree, that is a right answer. Its question is graded.
+      if (!run.answer) throw new Error(`stopped for approval: ${run.link}`);
+      const pass = (item.include ?? []).every((pattern) => new RegExp(pattern, 'iu').test(run.answer));
+      const score = args.judge && item.judge ? await judge(item.judge, item.text, `(The assistant stopped to ask the owner:) ${run.answer}`).catch(() => null) : null;
+      return { ...base, pass, asked: true, named: [], opened: [], hinted, carried, reply: `(asked) ${run.answer}`, ranOn: run.ranOn, ...(score === null ? {} : { score }), seconds: (Date.now() - started) / 1000 };
     }
+    const { reply, cited } = takeKnowledgeUsed(run.answer);
+    const pages = readFileSync(join(profileDir, 'knowledge/index.md'), 'utf8').match(/`[^`\s]+\.md`/g)?.map((path) => path.slice(1, -1)) ?? [];
+    const opened = await openedPages(run.threadId, run.runId, pages);
+    const pass = (item.include ?? []).every((pattern) => new RegExp(pattern, 'iu').test(reply)) && !(item.exclude ?? []).some((pattern) => new RegExp(pattern, 'iu').test(reply));
+    const score = args.judge && item.judge ? await judge(item.judge, item.text, reply).catch(() => null) : null;
+    return { ...base, pass, named: cited, opened, hinted, carried, reply, ranOn: run.ranOn, ...(score === null ? {} : { score }), seconds: (Date.now() - started) / 1000 };
   } catch (error) {
     return { ...base, error: error instanceof Error ? error.message : String(error), seconds: (Date.now() - started) / 1000 };
   } finally {
@@ -258,6 +221,10 @@ await Promise.all(Array.from({ length: Number(args.concurrency) }, async () => {
   }
 }));
 
+const swept = await runner.sweep();
+runner.close();
+process.stderr.write(`T3 hygiene: ${swept.settled} leftover thread(s) settled at the end; ${swept.left} unsettled in the evals project.\n`);
+
 const pct = (part: number, whole: number): string => (whole ? `${Math.round((100 * part) / whole)}%` : '–');
 const summary = (arm: Result['arm'], fixture?: string) => {
   const done = results.filter((result) => result.arm === arm && !result.error && (!fixture || result.fixture === fixture));
@@ -273,6 +240,7 @@ const summary = (arm: Result['arm'], fixture?: string) => {
 };
 const lines = [
   `# Knowledge live eval: ${args.label}`, '',
+  `T3 hygiene: every eval thread ran approval-required, at most ${MAX_RUNNING} at once, and was settled once its answer was saved; ${swept.left} unsettled thread(s) left in the evals project at the end.`, '',
   `Through Serra's T3 layer, on ${[...new Set(results.flatMap((result) => (result.ranOn ? [result.ranOn] : [])))].join(', ') || (args.provider ? `${args.provider} ${args.model ?? ''}` : "T3's default provider")}, ${args.runs} run(s) of ${cases.length} cases per arm, ${new Date().toISOString().slice(0, 10)}. ${results.filter((result) => result.error).length} run(s) failed in the harness and are left out.`, '',
   '| Arm | Owner | Runs | Answer right | Named pages used | Named pages were opened or in About me | Named an expected page | Opened a page | Opened a hinted page | Asked the owner | Judge 0–2 (cases with a rubric) |', '|---|---|---|---|---|---|---|---|---|---|---|',
   ...ARMS.flatMap((arm) => (args.set === 'messy' ? ['messy'] : [undefined, ...SETS.map((set) => set.fixture)]).map((fixture) => {
