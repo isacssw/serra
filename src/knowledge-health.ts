@@ -688,7 +688,7 @@ export const markIndexRows = (index: string, files: KnowledgeFile[], now: Date):
   const { conflicts } = findOverlaps(files.filter((file) => isPage(file.path)).flatMap((file) => pageFacts(file.path, file.text)), (a, b) => samePageSubject(a, b, areaOf));
   const confirmed = new Map(files.map((file) => [file.path, frontmatter(file.text)?.get('verified')?.trim() ?? '']));
   // Each conflicted row gets a short mark; the two rules and what to do are said once, below the index.
-  const listed = conflicts.slice(0, 6);
+  const listed = conflicts.slice(0, 12);
   for (const pair of listed) for (const path of new Set([pair.a.page, pair.b.page])) add(path, 'two rules disagree: see below');
   const where = (page: string): string => `\`${page}\`, confirmed ${confirmed.get(page) || 'never'}`;
   const detail = listed.length === 0 ? '' : [

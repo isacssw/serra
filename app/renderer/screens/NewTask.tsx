@@ -2,7 +2,7 @@
 // knowledge, exactly as the daemon does for a Slack request. The job then shows in Jobs. The worker's replies are read
 // in T3: nobody posts them to Slack, since the task never came from there.
 import { useState } from 'react';
-import { useNavigate } from 'react-router';
+import { useNavigate, useSearchParams } from 'react-router';
 import { ArrowUp, Eye, GitBranch, Layers, ListChecks, LoaderCircle, User } from 'lucide-react';
 import type { StartedTask } from '../../../src/tasks.ts';
 import { serra } from '../bridge.ts';
@@ -18,7 +18,9 @@ type Preview = { state: 'closed' } | { state: 'loading' } | { state: 'ready'; te
 export const NewTask = () => {
   const navigate = useNavigate();
   const toast = useToast();
-  const [request, setRequest] = useState('');
+  // Overview's "Tell it" opens here with the start of a "remember" request filled in, for the owner to finish.
+  const [search] = useSearchParams();
+  const [request, setRequest] = useState(() => search.get('text') ?? '');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [started, setStarted] = useState<StartedTask | null>(null);

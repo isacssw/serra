@@ -1,6 +1,7 @@
 // Overview's "This week": the weekly knowledge review's digest. What the knowledge did for the bot, one real request
 // answered with and without the page that answered it, and what it needed and no page had. Its fixes are in To do.
 import { useState } from 'react';
+import { useNavigate } from 'react-router';
 import { RefreshCw, Sparkles } from 'lucide-react';
 import type { KnowledgeReview, ReviewSuggestion } from '../../../../src/knowledge-review-store.ts';
 import { serra } from '../../bridge.ts';
@@ -31,6 +32,7 @@ export const settle = async (suggestion: ReviewSuggestion): Promise<string | nul
 
 export const WeekDigest = ({ review, weekly, onChanged }: { review: KnowledgeReview | null; weekly: boolean; onChanged: () => void }) => {
   const toast = useToast();
+  const navigate = useNavigate();
   const [running, setRunning] = useState(false);
 
   const run = async () => {
@@ -96,9 +98,14 @@ export const WeekDigest = ({ review, weekly, onChanged }: { review: KnowledgeRev
         <div className="flex flex-col gap-1">
           <p className="text-xs font-medium text-muted">Your bot needed, and no note had</p>
           <ul className="flex flex-col gap-0.5 text-[13px]">
-            {review.missing.map((item) => <li key={item.topic}>{item.topic}{item.count > 1 ? <span className="text-muted"> · asked {item.count}×</span> : null}</li>)}
+            {review.missing.map((item) => (
+              <li key={item.topic} className="flex items-start gap-3">
+                <span className="min-w-0 flex-1">{item.topic}{item.count > 1 ? <span className="text-muted"> · asked {item.count}×</span> : null}</span>
+                <Button size="sm" variant="ghost" onClick={() => void navigate(`/jobs/new?text=${encodeURIComponent(`Remember this for my notes. ${item.topic}: `)}`)}>Tell it</Button>
+              </li>
+            ))}
           </ul>
-          <p className="text-xs text-faint">Tell it in Slack: “remember …”, and approve the proposal.</p>
+          <p className="text-xs text-faint">Tell it the answer; it writes a proposal for you to approve.</p>
         </div>
       )}
 

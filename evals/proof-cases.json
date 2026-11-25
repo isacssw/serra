@@ -1,5 +1,5 @@
 {
-  "about": "Before/after proof (evals/kb-proof.ts). Robin's fixture, eight months on: 45 pages, a rule that changed on the same page, a newer rule on a page the question doesn't point to, a stale page with a newer one beside it, and 15 distractor pages. Every case is something a model can't guess without Robin's notes. `include`: regexes the reply must match (case-insensitive). `exclude`: must not match. `judge`: a rubric a second T3 run scores 0-2. A case passes when every regex holds and the judge, if any, gives 2. Version 2 (round 7): the `friday` case no longer depends on today's real weekday (v1 asked as if it were Friday, and workers corrected it from the clock); four more changed rules were added to the fixture, which also changed the right answers of `flags` and `payload-retention`. No case was changed to fit a result. v1 results stay in ~/serra-notes/kb-growth/evals/proof-r6-claude/. Grading fix after the round-7 run, applied to every arm alike: `payload-retention` lost an `exclude` regex that failed replies which named the old 30 days as out of date, and each rubric is now scored by three grader runs, majority wins (one grader run scored correct Friday answers 0). After round 8: the `friday` rubric now states Robin's real hours (graders were marking the right hours as invented), applied to every arm alike by --regrade. Round 7 added five held-out changed-rule cases (category `held-out`), written after the detector was frozen for them; nothing was tuned on them.",
+  "about": "Before/after proof (evals/kb-proof.ts). Robin's fixture, eight months on: 45 pages, a rule that changed on the same page, a newer rule on a page the question doesn't point to, a stale page with a newer one beside it, and 15 distractor pages. Every case is something a model can't guess without Robin's notes. `include`: regexes the reply must match (case-insensitive). `exclude`: must not match. `judge`: a rubric a second T3 run scores 0-2. A case passes when every regex holds and the judge, if any, gives 2. Version 2 (round 7): the `friday` case no longer depends on today's real weekday (v1 asked as if it were Friday, and workers corrected it from the clock); four more changed rules were added to the fixture, which also changed the right answers of `flags` and `payload-retention`. No case was changed to fit a result. v1 results stay in ~/serra-notes/kb-growth/evals/proof-r6-claude/. Grading fix after the round-7 run, applied to every arm alike: `payload-retention` lost an `exclude` regex that failed replies which named the old 30 days as out of date, and each rubric is now scored by three grader runs, majority wins (one grader run scored correct Friday answers 0). After round 8: the `friday` rubric now states Robin's real hours (graders were marking the right hours as invented), applied to every arm alike by --regrade. Round 7 added five held-out changed-rule cases (category `held-out`), written after the detector was frozen for them; nothing was tuned on them. Round 8: `pr-size` and `priya-style` passed with no notes at all, so their regexes now need what only Robin's notes say (400 lines; send trade-offs).",
   "cases": [
     {
       "id": "priorities",
@@ -206,7 +206,7 @@
       "user": "UJONAS0001",
       "text": "I've got a 900-line PR. good to merge as one?",
       "include": [
-        "400|split"
+        "\\b400\\b"
       ]
     },
     {
@@ -226,7 +226,8 @@
       "user": "UROBIN0001",
       "text": "how does Priya like to get updates?",
       "include": [
-        "written|async|note"
+        "written|async|note",
+        "trade-?offs?"
       ]
     },
     {
