@@ -4,6 +4,8 @@ Serra follows [Semantic Versioning](https://semver.org) once it reaches 1.0. Unt
 
 ## Unreleased
 
+- Fixed: **Test** in Settings › Meetings said a source was missing when its connection (for example a Granola MCP) had been added since T3 started and the provider hadn't listed it yet. The test may now look its tools up, and when it says missing, Serra asks once more in the same thread before keeping the answer. It still calls none of the source's tools.
+
 ## 0.1.0-alpha.5 (2026-11-24)
 
 - Fixed: About me now renders a page's Markdown instead of showing it as raw lines — headings, bullets, tables, quotes, fenced code, bold, italics, `code` and links (only http and https open, outside the app), so a preview reads the way the brief carries it.

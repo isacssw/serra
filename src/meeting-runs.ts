@@ -8,9 +8,10 @@
 // - Every run starts in Serra's own meetings folder, a T3 project of its own: never the team's repository, never a
 //   worktree, never the profile folder. T3 resolves the deepest project, so a parent project can't claim it.
 // - Every brief asks for read-only work: no files, no commands, no web, no changes anywhere, and the transcript is untrusted.
-// - An extraction and a Test need no tools, so they run in T3's `approval-required` mode: any tool the provider
-//   tries stops for approval, Serra sees that and stops the run. A link fetch needs one read tool of the meeting
-//   source's connection without asking, so it runs in T3's default mode, like any thread the CLI starts.
+// - An extraction and a Test need no tools (a Test may only look its tools up), so they run in T3's
+//   `approval-required` mode: any tool the provider tries that needs approval stops, Serra sees that and stops the
+//   run. A link fetch needs one read tool of the meeting source's connection without asking, so it runs in T3's
+//   default mode, like any thread the CLI starts.
 // - A link's transcript is the tool's own result, read from T3's record of the run (SERRA-72): never the model's copy.
 // - The folder must be empty before a run and still empty after it. A run that wrote anything is thrown away. Files
 //   left there are moved aside to a folder next to it, never deleted, so one stray write can't block later runs.
@@ -120,7 +121,8 @@ const checkBrief = (provider: MeetingProvider): string => {
   const spec = PROVIDERS[provider];
   return [
     READ_ONLY,
-    '- Do not call any tool. Only look at which tools you have.',
+    `- Do not call any ${spec.label} tool, or any other tool that reads or changes data. You may only search for or load tools`,
+    '  (a tool search), to see which you have: a connection added recently may still be starting, or not listed until you search.',
     '',
     `Task: say whether you could read a ${spec.label} meeting transcript. ${spec.read('<an ID>')}`,
     'Answer with exactly one of these, and nothing else:',
@@ -181,6 +183,15 @@ const CHECK_STATES: Record<string, Pick<ProviderStatus, 'state'> & { detail: (pr
   missing: { state: 'missing', detail: (provider) => PROVIDERS[provider].setup },
 };
 
+/**
+ * The second look a Test takes, in the same thread, when the first said missing or didn't say. A provider can list a
+ * connection added since T3 started only once it has finished starting, or after a tool search: a later turn sees it.
+ */
+const recheckBrief = (provider: MeetingProvider): string => [
+  `Look once more: a ${PROVIDERS[provider].label} connection can finish starting after your first answer. Search for or load its tools if you can,`,
+  'but call none of them. Same rules, same answer format: exactly one <meeting-source> tag.',
+].join('\n');
+
 const parseCheckAnswer = (answer: string, provider: MeetingProvider): ProviderStatus => {
   const found = CHECK_STATES[tag(answer, 'meeting-source')?.trim().toLowerCase() ?? ''];
   return found
@@ -189,7 +200,14 @@ const parseCheckAnswer = (answer: string, provider: MeetingProvider): ProviderSt
 };
 
 /** A run that ended, for the step that reads its result. */
-interface FinishedRun { threadId: string; runId: string; answer: string; session: () => Promise<T3Session> }
+interface FinishedRun {
+  threadId: string;
+  runId: string;
+  answer: string;
+  session: () => Promise<T3Session>;
+  /** Sends one more message in the same thread, waits for that run like the first, and gives its answer. */
+  ask: (message: string) => Promise<string>;
+}
 
 const tilde = (path: string): string => path.replace(homedir(), '~');
 
@@ -267,6 +285,30 @@ export const createMeetingRuns = ({
   const withRun = <T>(title: string, brief: string, guarded: boolean, use: (run: FinishedRun) => Promise<T>): Promise<T> =>
     oneAtATime(workspace, () => runIn(title, brief, guarded, use));
 
+  /**
+   * Follows a thread until a run other than `after` has ended, checks it wrote nothing, and gives its answer. A run
+   * that asks for approval or takes too long is stopped.
+   */
+  const finish = async (session: () => Promise<T3Session>, threadId: string, after: string | null): Promise<{ runId: string; answer: string }> => {
+    const deadline = now() + timeoutMs;
+    let detail: T3ThreadDetail;
+    for (;;) {
+      await sleep(pollMs);
+      detail = await t3.showThread(threadId, t3Bin, 3);
+      const { thread } = detail;
+      if ((thread.pendingRequestCount ?? 0) > 0) {
+        throw new Error(`The T3 run stopped to ask for approval or a question, which a meeting run never needs. ${await stop(session, threadId, thread.link)}`);
+      }
+      if (thread.activeRunId === null && thread.latestRunId !== null && thread.latestRunId !== after) break;
+      if (now() > deadline) throw new Error(`The T3 run took too long. ${await stop(session, threadId, thread.link)}`);
+    }
+    if (contents().length) throw new Error(`The T3 run wrote files in Serra's meetings folder, so its answer was thrown away. Serra moved them to ${tilde(moveAside())}.`);
+    const runId = detail.thread.latestRunId ?? '';
+    const answer = detail.messages.findLast((message) => message.role === 'assistant' && message.runId === runId)?.text;
+    if (!answer) throw new Error(`The T3 run ended without an answer (status: ${detail.thread.status}).`);
+    return { runId, answer };
+  };
+
   const runIn = async <T>(title: string, brief: string, guarded: boolean, use: (run: FinishedRun) => Promise<T>): Promise<T> => {
     if (brief.length > BRIEF_MAX_CHARS) throw new Error('That transcript is too long for one T3 run. Split it, or send the meeting\'s summary instead.');
     if (contents().length) log(`Serra's meetings folder had files in it, left by an earlier run. Moved them to ${moveAside()}.`);
@@ -276,23 +318,13 @@ export const createMeetingRuns = ({
       await t3.ensureProject(workspace, PROJECT_TITLE, t3Bin);
       const input: FolderThreadInput = { project: workspace, title, brief, ...(provider ? { provider } : {}), ...(model ? { model } : {}) };
       const threadId = guarded ? await launchGuarded(await session(), title, brief) : await t3.startFolderThread(input, t3Bin);
-      const deadline = now() + timeoutMs;
-      let detail: T3ThreadDetail;
-      for (;;) {
-        await sleep(pollMs);
-        detail = await t3.showThread(threadId, t3Bin, 3);
-        const { thread } = detail;
-        if ((thread.pendingRequestCount ?? 0) > 0) {
-          throw new Error(`The T3 run stopped to ask for approval or a question, which a meeting run never needs. ${await stop(session, threadId, thread.link)}`);
-        }
-        if (thread.activeRunId === null && thread.latestRunId !== null) break;
-        if (now() > deadline) throw new Error(`The T3 run took too long. ${await stop(session, threadId, thread.link)}`);
-      }
-      if (contents().length) throw new Error(`The T3 run wrote files in Serra's meetings folder, so its answer was thrown away. Serra moved them to ${tilde(moveAside())}.`);
-      const runId = detail.thread.latestRunId ?? '';
-      const answer = detail.messages.findLast((message) => message.role === 'assistant' && message.runId === runId)?.text;
-      if (!answer) throw new Error(`The T3 run ended without an answer (status: ${detail.thread.status}).`);
-      return await use({ threadId, runId, answer, session });
+      const first = await finish(session, threadId, null);
+      const ask = async (message: string): Promise<string> => {
+        await (await session()).call('t3_thread_send', { threadId, message, mode: 'queue' });
+        return (await finish(session, threadId, first.runId)).answer;
+      };
+      const { runId, answer } = first;
+      return await use({ threadId, runId, answer, session, ask });
     } finally {
       if (opened.session) await opened.session.then((open) => open.close(), () => {});
     }
@@ -348,7 +380,12 @@ export const createMeetingRuns = ({
     extract: (prompt: string): Promise<string> => withRun('Serra meeting: pick out decisions', extractBrief(prompt), true, async ({ answer }) => answer),
     /** The owner's Test button: ask a guarded T3 run whether it could read this source. Only ever on that button. */
     checkSource: (source: MeetingProvider): Promise<ProviderStatus> =>
-      withRun(`Serra meeting: check ${PROVIDERS[source].label}`, checkBrief(source), true, async ({ answer }) => parseCheckAnswer(answer, source)),
+      withRun(`Serra meeting: check ${PROVIDERS[source].label}`, checkBrief(source), true, async ({ answer, ask }) => {
+        const first = parseCheckAnswer(answer, source);
+        if (first.state === 'ready' || first.state === 'needs-sign-in') return first;
+        const second = parseCheckAnswer(await ask(recheckBrief(source)), source);
+        return second.state === 'unknown' ? first : second;
+      }),
   };
 };
 
