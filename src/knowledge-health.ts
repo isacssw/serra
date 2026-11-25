@@ -656,21 +656,21 @@ export const similarPages = (proposal: string, files: KnowledgeFile[], { limit =
 };
 
 /**
- * The index with a note on each row whose page a worker should weigh with care: `(draft: not confirmed)` or
- * `(confirmed 2026-08-01; may be out of date)`. Rows of fresh pages are left as they are.
- */
-/**
  * Which of two disagreeing rules is newer: the one saying "now", or "since"/"as of" a date, else the one on the page
  * confirmed later. Null when nothing tells them apart.
  */
 const newerOf = (pair: FactPair, confirmed: Map<string, string>): 'a' | 'b' | null => {
-  const fresh = (text: string): boolean => /\bnow\b/i.test(text) || /\b(since|as of|starting|from)\s+(\d{4}-\d{2}|\d{1,2}\s+)?(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec|\d{4}-\d{2})/i.test(text);
+  const fresh = (text: string): boolean => /\bnow\b/i.test(text) || /\b(since|as of|starting|from)\s+(\d{4}-\d{2}|\d{1,2}\s+)?(jan(uary)?|feb(ruary)?|mar(ch)?|apr(il)?|may|june?|july?|aug(ust)?|sep(t(ember)?)?|oct(ober)?|nov(ember)?|dec(ember)?|\d{4}-\d{2})\b/i.test(text);
   if (fresh(pair.a.text) !== fresh(pair.b.text)) return fresh(pair.a.text) ? 'a' : 'b';
   const [a, b] = [confirmed.get(pair.a.page) ?? '', confirmed.get(pair.b.page) ?? ''];
   if (pair.a.page !== pair.b.page && DATE.test(a) && DATE.test(b) && a !== b) return a > b ? 'a' : 'b';
   return null;
 };
 
+/**
+ * The index with a note on each row whose page a worker should weigh with care: `(draft: not confirmed)` or
+ * `(confirmed 2026-08-01; may be out of date)`. Rows of fresh pages are left as they are.
+ */
 export const markIndexRows = (index: string, files: KnowledgeFile[], now: Date): string => {
   const notes = new Map<string, string[]>();
   const add = (path: string, note: string): void => { notes.set(path, [...(notes.get(path) ?? []), note]); };

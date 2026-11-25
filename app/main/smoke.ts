@@ -165,7 +165,10 @@ const layoutProfile = (): string => {
   ];
   writeFileSync(join(directory, 'logs', 'knowledge-usage.jsonl'), uses.map(([cited, request, reply], at) =>
     JSON.stringify({ at: new Date(Date.now() - (at + 1) * 86_400_000).toISOString(), runId: `smoke-${at}`, visibility: 'team', cited, offered: 4, request, reply })).join('\n') + '\n');
-  // A weekly review, as the T3 run would have written it, so Overview shows its digest.
+  // A weekly review, as the T3 run would have written it, with the rewrite it proposed, so Overview shows its digest.
+  mkdirSync(join(knowledge, 'proposals', 'from-review', new Date().toISOString().slice(0, 10)), { recursive: true });
+  writeFileSync(join(knowledge, 'proposals', 'from-review', new Date().toISOString().slice(0, 10), `${new Date().toISOString().slice(0, 10)}-owner-working-style.md`),
+    page('How the owner decides', ['verified: no', 'audience: team', 'target: owner/working-style.md'], '# How I work\n\n- Risky releases ship on Thursday now.\n- A bug fix starts with a failing test.\n\n## Replaced\n\n- Until 2026-11-18: Risky releases ship on Tuesday.'));
   mkdirSync(join(directory, 'knowledge-reviews'), { recursive: true });
   const today = new Date().toISOString().slice(0, 10);
   writeFileSync(join(directory, 'knowledge-reviews', `${today}.json`), JSON.stringify({
@@ -175,10 +178,9 @@ const layoutProfile = (): string => {
     used: [{ page: 'owner/working-style.md', title: 'How the owner decides', uses: 3 }, { page: 'owner/role.md', title: "The owner's role", uses: 2 }],
     missing: [{ topic: 'who approves refunds over 500 EUR', count: 2 }],
     suggestions: [
-      { id: 'confirm:owner/role.md', kind: 'confirm', page: 'owner/role.md', title: "The owner's role", why: 'Used twice this week. Still true?' },
-      { id: 'retire:owner/notes.md', kind: 'retire', page: 'owner/notes.md', title: 'Private notes', why: 'No reply used it in a month.' },
+      { id: 'replace:owner/working-style.md', kind: 'replace', page: 'owner/working-style.md', title: 'How the owner decides', why: 'Keeps Thursday, the newer rule, and moves Tuesday under Replaced.', proposal: `from-review/${today}/${today}-owner-working-style.md` },
     ],
-    examples: [{ page: 'owner/working-style.md', title: 'How the owner decides', request: 'can we ship the refunds change on Thursday?', withPage: 'Yes: risky releases ship on Thursday now. Run the smoke suite first.', without: "I don't know your release days. Check with the team before shipping anything risky." }],
+    examples: [{ page: 'owner/working-style.md', title: 'How the owner decides', request: 'can we ship the refunds change on Thursday?', withPage: 'Yes, Thursday works: risky releases ship on Thursday now. Run the smoke suite first.', without: "I don't know which day risky releases ship. Check with the owner before shipping anything risky." }],
   }));
   writeFileSync(join(knowledge, 'proposals/2026-11-19-role.md'), page("The owner's role", ['verified: no', 'target: owner/role.md'], 'Owns the API and reviews every PR.'));
   // A correction that repeats a page the owner has, so Proposals shows where it belongs.
@@ -410,7 +412,7 @@ const runThemeChecks = async (window: BrowserWindow): Promise<string[]> => {
           writeFileSync(join(shots, `${theme}-${route}.png`), (await window.webContents.capturePage()).toPNG());
           // Pages with a page open, and its Retire dialog.
           if (route === 'pages') {
-            await run(`(async () => { location.hash = '#/knowledge/pages?page=owner%2Fworking-style.md'; await new Promise((r) => setTimeout(r, 400)); document.querySelector('[data-serra-main] textarea')?.scrollIntoView({ block: 'center' }); await new Promise((r) => setTimeout(r, 150)); })()`);
+            await run(`(async () => { location.hash = '#/knowledge/pages?page=owner%2Fworking-style.md'; await new Promise((r) => setTimeout(r, 400)); (document.querySelector('[data-serra-main] section[aria-label="Rules to settle"]') ?? document.querySelector('[data-serra-main] textarea'))?.scrollIntoView({ block: 'start' }); await new Promise((r) => setTimeout(r, 150)); })()`);
             writeFileSync(join(shots, `${theme}-pages-detail.png`), (await window.webContents.capturePage()).toPNG());
             await run(`(async () => { [...document.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Retire…')?.click(); await new Promise((r) => setTimeout(r, 300)); })()`);
             writeFileSync(join(shots, `${theme}-pages-retire.png`), (await window.webContents.capturePage()).toPNG());

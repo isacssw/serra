@@ -111,12 +111,11 @@ const dayLabel = (day: string, now: Date): string => {
 /** The button that settles a review suggestion. */
 const suggestionAction = (kind: 'replace' | 'retire' | 'confirm'): string => ({ replace: 'Approve', retire: 'Retire', confirm: 'Still true' })[kind];
 
-/** "12 replies · 9 used your notes · health 72 → 84 · 18 → 22 facts": the week in one line. */
-export const weekLine = (review: { replies: number; withKnowledge: number; score: { before: number | null; now: number }; facts: { before: number | null; now: number } }): string => [
+/** "12 replies · 9 used your notes · 18 → 22 facts": the week in one line. */
+export const weekLine = (review: { replies: number; withKnowledge: number; facts: { before: number | null; now: number } }): string => [
   `${review.replies} repl${review.replies === 1 ? 'y' : 'ies'}`,
   `${review.withKnowledge} used your notes`,
-  review.score.before === null ? `health ${review.score.now}` : `health ${review.score.before} → ${review.score.now}`,
-  review.facts.before === null ? `${review.facts.now} facts` : `${review.facts.before} → ${review.facts.now} facts`,
+  review.facts.before === null || review.facts.before === review.facts.now ? `${review.facts.now} facts` : `${review.facts.before} → ${review.facts.now} facts`,
 ].join(' · ');
 
 /** What a page did, in two words, for the value list. */

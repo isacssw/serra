@@ -13,7 +13,8 @@ export const ValueList = ({ value, days, replies, onOpen, onChanged }: { value: 
   const [all, setAll] = useState(false);
   const earning = value.filter((page) => page.state === 'earns' || page.state === 'some' || page.state === 'carried').length;
   const idle = value.filter((page) => page.state === 'idle');
-  const shown = all ? value : value.slice(0, 6);
+  // Pages no reply used are always in view, with Retire: the dead weight is the point of this list as much as the value.
+  const shown = all ? value : [...value.filter((page) => page.state !== 'idle').slice(0, 5), ...idle];
   const retire = async (page: PageValue) => {
     try {
       await settle({ id: `retire:${page.path}`, kind: 'retire', page: page.path, title: page.title, why: '' });
@@ -42,7 +43,7 @@ export const ValueList = ({ value, days, replies, onOpen, onChanged }: { value: 
             {page.state === 'idle' && <Button size="sm" variant="ghost" onClick={() => void retire(page)}>Retire</Button>}
           </li>
         ))}
-        {value.length > 6 && (
+        {(all || value.length > shown.length) && (
           <li className="px-4 py-2">
             <button type="button" onClick={() => setAll(!all)} className="text-xs text-muted underline underline-offset-2 hover:text-ink focus-visible:outline-2 focus-visible:outline-focus">{all ? 'Show fewer' : `Show all ${value.length}`}</button>
           </li>

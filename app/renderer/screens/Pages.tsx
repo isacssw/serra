@@ -7,10 +7,11 @@ import { useSearchParams } from 'react-router';
 import type { KnowledgePage } from '../../../src/contracts.ts';
 import type { KnowledgeOverview } from '../../../src/knowledge-overview.ts';
 import { serra } from '../bridge.ts';
-import { frontmatter, setHeaderField } from '../../../src/knowledge-rules.ts';
+import { frontmatter, pageBody, setHeaderField } from '../../../src/knowledge-rules.ts';
 import { pageAudience } from '../../../src/owner-model.ts';
 import { AudienceChoice } from './AudienceChoice.tsx';
 import { DiffView } from './proposals/DiffView.tsx';
+import { PageBody } from './PageBody.tsx';
 import { Badge, Button, cx, Dialog, Page, useToast } from '../ui/index.ts';
 import {
   badgeCounts, badgeLabel, currentRules, keepRule, newerRule, badgeTitle, badgeTone, editorState, filterPages, groupByArea, keepSelection, localDate, markVerified,
@@ -187,6 +188,8 @@ export const Pages = () => {
   /** A page the owner clicked while the draft had unsaved changes; the discard dialog asks first. */
   const [pendingSelect, setPendingSelect] = useState<string | null>(null);
   const [retiring, setRetiring] = useState(false);
+  /** Pages open as they read; the Markdown, header and all, only when the owner chooses to edit. */
+  const [editing, setEditing] = useState(false);
   /** Rules on the open page that disagree with or repeat another, as saved. */
   const [pairs, setPairs] = useState<KnowledgeOverview['health']['issues']>([]);
   const [drifted, setDrifted] = useState<Drifted[]>([]);
@@ -237,6 +240,7 @@ export const Pages = () => {
       (error) => { if (live) setReadError(message(error)); },
     );
     setPairs([]);
+    setEditing(false);
     bridge.pages.issues(selected).then((found) => { if (live) setPairs(found); }, () => undefined);
     return () => { live = false; };
   }, [selected, readVersion]);
@@ -289,6 +293,19 @@ export const Pages = () => {
     } finally {
       setSaving(false);
     }
+  };
+
+  /** The page still holds: its confirmed date becomes today, saved straight away. */
+  const confirmToday = async () => {
+    const bridge = serra();
+    if (!bridge || !selected || saved === null || saving) return;
+    setSaving(true);
+    try {
+      await bridge.pages.save(selected, markVerified(saved, localDate(new Date())), saved);
+      setReadVersion((version) => version + 1);
+      await reload();
+      toast({ message: 'Marked as still true today.', tone: 'success' });
+    } catch (error) { toast({ message: message(error), tone: 'error' }); } finally { setSaving(false); }
   };
 
   /** Takes the open page out of what the bot knows: it moves to archive/, its index row goes, and undo brings it back. */
@@ -398,6 +415,17 @@ export const Pages = () => {
               <>
                 <AudiencePicker text={draft} disabled={saving} onChange={setDraft} />
                 {pairs.length > 0 && <RulePairs page={selected!} pairs={pairs} draft={draft} disabled={saving} onKeep={(drop) => setDraft((text) => keepRule(text, drop, localDate(new Date())))} onOpen={(path) => { if (state?.dirty) setPendingSelect(path); else setSelected(path); }} />}
+                {!editing && !state.dirty && (
+                  <div className="flex flex-col gap-3">
+                    <div className="rounded-lg border border-line bg-panel"><PageBody text={pageBody(draft)} onOpen={(href) => void serra()?.app.openExternal(href)} /></div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Button variant="primary" onClick={() => setEditing(true)}>Edit</Button>
+                      <Button disabled={saving} title="It still holds: mark it confirmed today." onClick={() => void confirmToday()}>Still true</Button>
+                      <Button variant="ghost" disabled={saving} title="Stop using this page. It moves to the archive; you can undo." onClick={() => setRetiring(true)}>Retire…</Button>
+                    </div>
+                  </div>
+                )}
+                {(editing || state.dirty) && <>
                 <textarea
                   value={draft}
                   onChange={(event) => setDraft(event.target.value)}
@@ -440,8 +468,10 @@ export const Pages = () => {
                   <Button variant="ghost" disabled={saving || state.dirty} title={state.dirty ? 'Save or revert your edits first.' : 'Stop using this page. It moves to archive/; you can undo.'} onClick={() => setRetiring(true)}>
                     Retire…
                   </Button>
+                  {!state.dirty && <Button variant="ghost" onClick={() => setEditing(false)}>Done</Button>}
                   <span className={cx('ml-auto text-xs tabular-nums', state.overCap ? 'text-down' : 'text-muted')}>{state.linesLabel}</span>
                 </div>
+                </>}
               </>
             )}
           </div>
