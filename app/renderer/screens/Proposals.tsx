@@ -21,7 +21,7 @@ import { useSearchParams } from 'react-router';
 import { registerActions } from '../commands/registry.ts';
 import {
   defaultFolder, folderChoices, swapRule, folderLabel, groupByDate, interviewStartedText, nextSelection, PROPOSAL_PARAM, promoteProposalAction, proposalBody,
-  proposalTitle, withoutTarget, diffRows, diffStats,
+  proposalTitle, withoutTarget, diffRows, diffStats, changeSummary,
 } from './proposals.logic.ts';
 
 const unregister = registerActions([promoteProposalAction]);
@@ -299,7 +299,13 @@ export const Proposals = () => {
                     <Button size="sm" disabled={busy} onClick={() => { setMergeTarget(similar[0]!.path); setMergeOpen(true); }}>Merge into it…</Button>
                   </div>
                 )}
-                <RuleDiff current={landing(diff, folder)} proposed={asWritten(diff, folder, picked)} />
+                <ChangeSummary current={landing(diff, folder)} proposed={asWritten(diff, folder, picked)} />
+                <details className="group">
+                  <summary className="flex w-fit cursor-pointer list-none items-center gap-1 text-xs text-muted hover:text-ink focus-visible:outline-2 focus-visible:outline-focus [&::-webkit-details-marker]:hidden">
+                    <ChevronRight size={13} aria-hidden className="transition-transform group-open:rotate-90" />See change
+                  </summary>
+                  <div className="mt-2"><RuleDiff current={landing(diff, folder)} proposed={asWritten(diff, folder, picked)} /></div>
+                </details>
                 {/* A rewrite of a page goes where the page is; only a new page asks where. */}
                 {diff.proposal.target ? null : folders.length > 0 ? (
                   <Select
@@ -406,6 +412,26 @@ const sourcesOf = (text: string): string[] => {
     items.push(item[1]!.trim());
   }
   return items;
+};
+
+/** The change in a few lines: + what it adds, ↺ what it replaces, − what it drops. */
+const ChangeSummary = ({ current, proposed }: { current: string | null; proposed: string }) => {
+  const lines = changeSummary(current, proposed);
+  if (lines.length === 0) return <p className="text-[13px] text-muted">No rule changes</p>;
+  const shown = lines.slice(0, 4);
+  const mark = { adds: '+', replaces: '↺', removes: '−' } as const;
+  const label = { adds: 'Adds', replaces: 'Replaces', removes: 'Removes' } as const;
+  return (
+    <ul className="flex flex-col gap-1 text-[13px]">
+      {shown.map((line) => (
+        <li key={`${line.kind}${line.text}`} className="flex gap-2">
+          <span aria-label={label[line.kind]} className={cx('w-3 shrink-0 text-center font-medium', line.kind === 'adds' ? 'text-up' : line.kind === 'removes' ? 'text-down' : 'text-muted')}>{mark[line.kind]}</span>
+          <span className={cx('min-w-0', line.kind === 'adds' ? 'text-ink' : 'text-muted line-through decoration-line-strong')}>{line.text}</span>
+        </li>
+      ))}
+      {lines.length > shown.length && <li className="pl-5 text-xs text-muted">{lines.length - shown.length} more</li>}
+    </ul>
+  );
 };
 
 /** Where the proposal came from, in a few words; its sources on hover. */

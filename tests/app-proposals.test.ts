@@ -8,7 +8,7 @@ import type { HandlerContext } from '../app/main/ipc/context.ts';
 import { memoryPrefs } from '../app/main/prefs.ts';
 import { stoppedStatusSource } from '../app/main/status.ts';
 import {
-  dateLabel, defaultFolder, diffRows, diffStats, folderLabel, folderOf, groupByDate, nextSelection, pendingLabel, proposalBody, proposalTitle,
+  changeSummary, dateLabel, defaultFolder, diffRows, diffStats, folderLabel, folderOf, groupByDate, nextSelection, pendingLabel, proposalBody, proposalTitle,
   withoutTarget,
 } from '../app/renderer/screens/proposals.logic.ts';
 import type { Proposal } from '../src/contracts.ts';
@@ -216,4 +216,15 @@ test('a rule that only moved shows as moved, never as deleted and added', () => 
   const rows = diffRows('- Tuesday.\n- Failing test first.\n- Thursday now.\n', '- Thursday now.\n- Failing test first.\n');
   assert.deepEqual(diffStats(rows), { removed: 1, added: 0, moved: 1 });
   assert.ok(rows.some((row) => row.current?.text === '- Tuesday.' && row.current.kind === 'removed'));
+});
+
+test('a proposal reads as what it adds, replaces and drops, not as a diff', () => {
+  const current = '---\ntype: rule\n---\n# How I work\n\n- Risky releases ship on Tuesday.\n- A bug fix starts with a failing test.\n- Old habit.\n';
+  const proposed = '---\ntype: rule\n---\n# How I work\n\n- Risky releases ship on Thursday now.\n- A bug fix starts with a failing test.\n\n## Replaced\n\n- Until 2026-11-18: Risky releases ship on Tuesday.\n';
+  assert.deepEqual(changeSummary(current, proposed), [
+    { kind: 'adds', text: 'Risky releases ship on Thursday now.' },
+    { kind: 'replaces', text: 'Risky releases ship on Tuesday.' },
+    { kind: 'removes', text: 'Old habit.' },
+  ]);
+  assert.deepEqual(changeSummary(null, '# New\n\n- One rule.\n'), [{ kind: 'adds', text: 'One rule.' }]);
 });

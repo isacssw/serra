@@ -47,7 +47,7 @@ const Problems = ({ problems, dirty }: { problems: string[]; dirty: boolean }) =
   ) : (
     <p className="flex items-center gap-1.5 text-sm text-muted" aria-live="polite">
       <CircleCheck size={15} className="text-up" aria-hidden />
-      {dirty ? 'Placeholders check out. Saving applies to the next job.' : 'Saved. Workers get this from their next job.'}
+      {dirty ? 'Looks good' : 'Saved'}
     </p>
   )
 );
@@ -77,10 +77,6 @@ const Preview = ({ draft }: { draft: Draft }) => {
     <section className="flex flex-col gap-3 rounded-lg border border-line bg-panel px-5 py-4" aria-label="Preview">
       <div className="flex flex-col gap-0.5">
         <h2 className="text-base font-semibold">Preview</h2>
-        <p className="text-sm text-muted">
-          The brief a worker gets for this request from you in a new chat thread, with today's knowledge index.
-          {dirty && ' It uses your unsaved draft.'}
-        </p>
       </div>
       <form className="flex items-end gap-2" onSubmit={(event) => { event.preventDefault(); void run(); }}>
         <Input className="flex-1" label="Sample request" value={request} onChange={(event) => setRequest(event.target.value)} error={error} />
@@ -146,7 +142,6 @@ const ProposedRewrites = ({ names, drafts, onApplied }: { names: string[]; draft
         <h2 className="flex items-center gap-2 text-base font-semibold">
           <Sparkles size={16} className="text-accent" aria-hidden />Proposed rewrites <Badge shape="count">{names.length}</Badge>
         </h2>
-        <p className="text-sm text-muted">Waiting in the profile's proposed/ folder. Compare one with what's saved, then apply it.</p>
       </div>
       <ul className="flex flex-col gap-1">
         {names.map((name) => {
@@ -259,7 +254,7 @@ export const BriefPolicy = () => {
   const current = problems[active];
 
   return (
-    <Page title="Brief & policy" subtitle="What every worker is told before it starts on a request.">
+    <Page title="Brief & policy">
       {loadError ? (
         <p className="flex items-center gap-2 rounded-lg border border-line bg-panel px-5 py-4 text-sm text-down"><CircleAlert size={16} aria-hidden />{loadError}</p>
       ) : (
@@ -275,9 +270,9 @@ export const BriefPolicy = () => {
                 </Button>
               </div>
             </div>
-            <p className="text-sm text-muted">{about.about}</p>
             <textarea
               aria-label={about.file}
+              title={about.about}
               aria-invalid={current.length ? true : undefined}
               spellCheck={false}
               value={draft.text}

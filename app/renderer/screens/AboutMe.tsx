@@ -83,7 +83,7 @@ export const AboutMe = () => {
   const used = about ? Math.min(100, Math.round((100 * about.chars) / ABOUT_MAX_CHARS)) : 0;
 
   return (
-    <Page title="About me">
+    <Page title="About me" subtitle={about ? `In every brief · ${used}% full` : undefined}>
       {error && <p role="alert" className="text-sm text-down">{error}</p>}
       {untagged.length > 0 && (
         <section aria-labelledby="untagged-title" className="flex items-center gap-3 rounded-lg border border-line bg-panel px-4 py-2.5">
@@ -145,20 +145,8 @@ export const AboutMe = () => {
             ))}
           </div>
 
-          <aside aria-label="Size and pages left out" className="flex w-full shrink-0 flex-col gap-4 lg:w-64">
-            <div className="flex flex-col gap-2 rounded-lg border border-line bg-panel p-4">
-              <h2 className="text-sm font-semibold">In every brief</h2>
-              <div
-                role="meter" aria-label="About me size" aria-valuemin={0} aria-valuemax={ABOUT_MAX_CHARS} aria-valuenow={about.chars}
-                className="h-1.5 overflow-hidden rounded-full bg-raised"
-              >
-                <div className="h-full rounded-full bg-accent" style={{ width: `${used}%` }} />
-              </div>
-              <p className="text-xs tabular-nums text-muted" title={`${about.chars.toLocaleString()} of ${ABOUT_MAX_CHARS.toLocaleString()} characters, about ${Math.round(about.chars / 4).toLocaleString()} tokens. Over the limit, the least important pages are left out whole.`}>
-                {Math.round(used)}% full
-              </p>
-            </div>
-            {about.left.length > 0 && (
+          {about.left.length > 0 && (
+          <aside aria-label="Pages left out" className="flex w-full shrink-0 flex-col gap-4 lg:w-64">
               <div className="flex flex-col gap-2 rounded-lg border border-line bg-panel p-4">
                 <h2 className="text-sm font-semibold">Not included</h2>
                 <ul className="flex flex-col gap-2">
@@ -172,8 +160,8 @@ export const AboutMe = () => {
                   ))}
                 </ul>
               </div>
-            )}
           </aside>
+          )}
         </div>
       )}
       <Dialog

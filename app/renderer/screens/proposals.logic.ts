@@ -243,3 +243,23 @@ export const swapRule = (page: string, clash: { page: string; proposal: string }
   const history = replaced ? `${replaced[0]}${old}\n${swapped.slice(replaced.index + replaced[0].length)}` : `## Replaced\n\n${old}\n`;
   return `${head}${extra.length ? `\n${extra.join('\n')}` : ''}\n\n${history.trimEnd()}\n`;
 };
+
+/**
+ * What a proposal does, in at most a few lines a person reads at a glance: rules it adds, rules it replaces (moved under
+ * "## Replaced"), and rules it drops. Headers, headings and blank lines don't count.
+ */
+export const changeSummary = (current: string | null, proposed: string): { kind: 'adds' | 'replaces' | 'removes'; text: string }[] => {
+  const body = (text: string): string => text.replace(/\r\n?/g, '\n').replace(/^---\n[\s\S]*?\n---\n/, '');
+  const rule = (line: string): string => line.trim().replace(/^([-*]|\d+\.)\s+/, '').trim();
+  const split = (text: string): { now: string[]; replaced: string[] } => {
+    const [now = '', old = ''] = body(text).split(/^##\s+Replaced\b.*$/im);
+    const rules = (part: string): string[] => part.split('\n').filter((line) => /^\s*([-*]|\d+\.)\s+/.test(line)).map(rule).filter(Boolean);
+    return { now: rules(now), replaced: rules(old).map((line) => line.replace(/^Until [^:]+:\s*/i, '')) };
+  };
+  const after = split(proposed);
+  const before = current === null ? { now: [], replaced: [] } : split(current);
+  return [
+    ...after.now.filter((line) => !before.now.includes(line)).map((text) => ({ kind: 'adds' as const, text })),
+    ...before.now.filter((line) => !after.now.includes(line)).map((text) => ({ kind: after.replaced.includes(text) ? 'replaces' as const : 'removes' as const, text })),
+  ];
+};
