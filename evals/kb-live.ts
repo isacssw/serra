@@ -73,8 +73,8 @@ const messyCases: (Case & { fixture: string })[] = [
     judge: 'Webhooks retry 5 times over 24 hours with exponential backoff, then the merchant gets an email. 2 = says 5 times (24 hours or backoff a plus); 1 = right count, wrong details; 0 = wrong count.' },
   { id: 'messy-priya', category: 'repeat', via: 'dm', user: OWNER, text: 'how does Priya like to get updates?', include: ['written|summary|numbers'], expected: ['people/priya.md', 'people/priya-nair.md'], fixture: 'messy',
     judge: 'Priya prefers a short written summary before any call and likes numbers in the first line. 2 = says both; 1 = says one; 0 = says something else.' },
-  { id: 'messy-rate-limit', category: 'conflict', via: 'dm', user: OWNER, text: 'a merchant is getting 429s, what is our API rate limit per merchant?', include: ['250'], expected: ['product/quotas.md', 'product/rate-limits.md'], fixture: 'messy',
-    judge: 'Two pages disagree: product/rate-limits.md (confirmed 2026-06-01) says 100 requests per second per merchant; product/quotas.md (confirmed 2026-09-20, newer) says 250. 2 = says 250 is current and notes the older 100 (or asks which holds); 1 = says 250 without noting the other; 0 = says 100.' },
+  { id: 'messy-rate-limit', category: 'conflict', via: 'dm', user: OWNER, text: 'a merchant is getting 429s, what is our API rate limit per merchant?', include: ['250'], expected: ['product/plans.md', 'product/rate-limits.md'], fixture: 'messy',
+    judge: 'Two pages disagree: product/rate-limits.md (confirmed 2026-06-01) says 100 requests per second per merchant; product/plans.md (confirmed 2026-09-20, newer) says 250. 2 = says 250 is current and notes the older 100 (or asks which holds); 1 = says 250 without noting the other; 0 = says 100.' },
 ];
 const cases = args.set === 'messy' ? messyCases.filter((item) => !args.only || args.only.split(',').includes(item.id)) : ownerCases;
 const ARMS = args.set === 'messy' ? (['notes', 'no-notes'] as const) : (['hint', 'no-hint'] as const);
@@ -107,9 +107,11 @@ const scratch = (fixture: string): { dir: string; profileDir: string } => {
     // A limit that changed, written on a second page with no "now" in it: only the dates say which is current.
     const limit = (description: string, date: string, line: string): string => `---\ntype: product\ndescription: ${description}\naudience: team\nwritten: ${date}\nverified: ${date}\nsources:\n  - Owner, ${date}\n---\n\n# ${description}\n\n- ${line}\n- Increases are approved by Alex after a load test.\n`;
     writeFileSync(join(profileDir, 'knowledge/product/rate-limits.md'), limit('API rate limits', '2026-06-01', 'The API rate limit is 100 requests per second per merchant.'));
-    writeFileSync(join(profileDir, 'knowledge/product/quotas.md'), limit('API quotas and plan limits', '2026-09-20', 'The API rate limit is 250 requests per second per merchant.'));
+    // The newer limit sits on a page about plans, whose row doesn't match a rate-limit question: only the conflict
+    // note on the rate-limits row points there.
+    writeFileSync(join(profileDir, 'knowledge/product/plans.md'), limit('Plans and packaging for sales', '2026-09-20', 'The API rate limit is 250 requests per second per merchant.'));
     const index = join(profileDir, 'knowledge/index.md');
-    writeFileSync(index, `${readFileSync(index, 'utf8').trimEnd()}\n| rate limits or 429s | \`product/rate-limits.md\` | API rate limits |\n| plan quotas | \`product/quotas.md\` | API quotas and plan limits |\n`);
+    writeFileSync(index, `${readFileSync(index, 'utf8').trimEnd()}\n| rate limits or 429s | \`product/rate-limits.md\` | API rate limits |\n| pricing plans or packaging | \`product/plans.md\` | Plans and packaging for sales |\n`);
   } else cpSync(join(root, fixture, 'knowledge'), join(profileDir, 'knowledge'), { recursive: true });
   const profile = readFileSync(join(root, fixture === 'messy' ? 'evals/fixture' : fixture, 'profile.json'), 'utf8').replace('PROJECT_PATH', project);
   writeFileSync(join(profileDir, 'profile.json'), fixture === 'messy' ? profile.replaceAll('Robin', 'Alex') : profile);

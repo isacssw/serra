@@ -217,7 +217,11 @@ export const proposalBody = (text: string): string => text.replace(/^---\n[\s\S]
  * proposal says is dropped, so merging it unchanged loses nothing. The old rule moves under `## Replaced`, dated `date`.
  */
 export const swapRule = (page: string, clash: { page: string; proposal: string }, proposal: string, date: string): string => {
-  const swapped = page.replace(clash.page, () => clash.proposal);
+  // The whole line that holds the rule, never a piece of a longer line that happens to contain it.
+  const lines = page.split('\n');
+  const at = lines.findIndex((line) => line.trim().replace(/^([-*]|\d+\.)\s+/, '').trim() === clash.page.trim());
+  if (at !== -1) lines[at] = lines[at]!.replace(clash.page.trim(), () => clash.proposal.trim());
+  const swapped = at === -1 ? page.replace(clash.page, () => clash.proposal) : lines.join('\n');
   const bare = (line: string): string => line.trim().replace(/^([-*]|\d+\.)\s+/, '').trim();
   const have = new Set(swapped.split('\n').map(bare));
   const extra = proposal.split('\n').filter((line) => /^\s*([-*]|\d+\.)\s+/.test(line) && !have.has(bare(line)) && bare(line) !== bare(clash.proposal));

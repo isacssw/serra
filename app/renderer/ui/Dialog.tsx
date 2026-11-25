@@ -20,7 +20,11 @@ export const Dialog = ({ open, onClose, title, description, children, actions }:
   useEffect(() => {
     const dialog = ref.current;
     if (!dialog) return;
-    if (open && !dialog.open) dialog.showModal();
+    if (open && !dialog.open) {
+      dialog.showModal();
+      // The browser focuses the first control (the close button); a dialog can name a safer one with data-autofocus.
+      dialog.querySelector<HTMLElement>('[data-autofocus]')?.focus();
+    }
     if (!open && dialog.open) dialog.close();
   }, [open]);
   return (

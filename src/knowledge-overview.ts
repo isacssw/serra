@@ -4,11 +4,11 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { createJournal } from './knowledge-journal.ts';
 import { assessKnowledge, isPage, knowledgeHistory, type Health, type HistoryPoint, type KnowledgeChange, type KnowledgeEvent, type KnowledgeFile } from './knowledge-health.ts';
-import { ARCHIVE_DIR, PROPOSALS_DIR } from './knowledge-rules.ts';
+import { ARCHIVE_DIR, frontmatter, PROPOSALS_DIR } from './knowledge-rules.ts';
 import { readKnowledgeUse } from './knowledge-usage.ts';
 import { isArrayOf, isRecord, isString, isStringOrNull, isOptional } from './lib/guards.ts';
 
-interface PageUse { path: string; uses: number; last: string }
+interface PageUse { path: string; uses: number; last: string; /** The page's description, the name the screen shows. */ title: string }
 
 interface KnowledgeUsage {
   /** Replies in the window that could use knowledge. */
@@ -94,12 +94,13 @@ export const knowledgeOverview = ({ knowledgeDir, profileDir, backupDir, now = n
   const cutoff = now.getTime() - days * DAY_MS;
   const monthAgo = [...points].reverse().find((point) => Date.parse(point.at) <= cutoff) ?? null;
 
+  const titles = new Map(files.map((file) => [file.path, frontmatter(file.text)?.get('description')?.trim() ?? '']));
   const uses = readKnowledgeUse(profileDir).filter((use) => Date.parse(use.at) >= cutoff);
   const counts = new Map<string, PageUse>();
   for (const use of uses) {
     for (const path of use.cited) {
       const seen = counts.get(path);
-      counts.set(path, { path, uses: (seen?.uses ?? 0) + 1, last: seen && seen.last > use.at ? seen.last : use.at });
+      counts.set(path, { path, uses: (seen?.uses ?? 0) + 1, last: seen && seen.last > use.at ? seen.last : use.at, title: titles.get(path) ?? '' });
     }
   }
   const pages = files.filter((file) => isPage(file.path)).map((file) => file.path);

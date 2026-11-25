@@ -451,7 +451,7 @@ export const Pages = () => {
         description="The bot stops using it. It moves to the archive, and you can undo."
         actions={(
           <>
-            <Button autoFocus onClick={() => setRetiring(false)}>Cancel</Button>
+            <Button data-autofocus onClick={() => setRetiring(false)}>Cancel</Button>
             <Button variant="danger" onClick={() => void retire()}>Retire</Button>
           </>
         )}

@@ -127,7 +127,14 @@ export interface FactPair { a: { page: string; text: string }; b: { page: string
 
 const slots = (text: string): Set<string> => new Set(text.toLowerCase().match(SLOTS) ?? []);
 const SLOT_WORD = /^(always|alway|monday|tuesday|wednesday|thursday|friday|saturday|sunday|weekly|daily|monthly|morning|afternoon|evening|\d+)$/;
-const topic = (set: Set<string>): Set<string> => new Set([...set].filter((word) => !NEGATIONS.has(word) && !SLOT_WORD.test(word)));
+/**
+ * Words that mark a rule as changed ("now", "since", "moved") or only frame it ("keep", "should stay", "day"), rather
+ * than say what it's about: "Release day is Tuesday" and "We now release on Thursday" are one rule.
+ */
+const CHANGE_WORDS = new Set(['now', 'since', 'currently', 'current', 'chang', 'mov', 'updat', 'new', 'as', 'of', 'anymore', 'longer', 'instead',
+  'should', 'stay', 'must', 'we', 'is', 'ar', 'be', 'keep', 'day', 'always', 'alway']);
+const topic = (set: Set<string>): Set<string> => new Set([...set].filter((word) => !NEGATIONS.has(word) && !SLOT_WORD.test(word) && !CHANGE_WORDS.has(word)));
+/** One side's topic words all inside the other's: the same rule, however it's phrased. */
 const nested = (a: Set<string>, b: Set<string>): boolean => [...a].every((word) => b.has(word)) || [...b].every((word) => a.has(word));
 const negated = (set: Set<string>): boolean => [...set].some((word) => NEGATIONS.has(word));
 

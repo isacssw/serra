@@ -107,6 +107,10 @@ test('health: conflicts and repeats are told apart from rules that merely look a
     { a: 'Retry webhooks 5 times.', b: 'Retry invoices 3 times.', is: 'neither' },
     // The same rule, phrased as an order.
     { a: 'Risky releases ship on Tuesday.', b: 'Ship risky releases on Thursday.', is: 'conflict' },
+    // An update in other words.
+    { a: 'API rate limit is 100 requests per minute.', b: 'Rate limit is now 200 requests per minute.', is: 'conflict' },
+    { a: 'Release day is Tuesday.', b: 'We now release on Thursday.', is: 'conflict' },
+    { a: 'Keep pull requests under 400 lines.', b: 'Pull requests should stay under 200 lines.', is: 'conflict' },
   ];
   const found = gold.map((pair) => {
     const { duplicates, conflicts } = findOverlaps([...facts('one.md', [pair.a]), ...facts('two.md', [pair.b])]);
@@ -200,7 +204,7 @@ test('the pages a reply used are recorded once per run and never posted', (t) =>
   recordKnowledgeUse(profile, { at: '2026-11-24T11:00:00Z', runId: 'r2', visibility: 'owner', cited: [], offered: 3 });
   assert.equal(readKnowledgeUse(profile).length, 2, 'a run posted twice counts once');
   const overview = knowledgeOverview({ knowledgeDir: new URL('../evals/fixture/knowledge', import.meta.url).pathname, profileDir: profile, now: NOW });
-  assert.deepEqual(overview.usage.pages, [{ path: 'owner/role.md', uses: 1, last: '2026-11-24T10:00:05Z' }]);
+  assert.deepEqual(overview.usage.pages, [{ path: 'owner/role.md', uses: 1, last: '2026-11-24T10:00:05Z', title: "Robin's role, team, hours and priorities" }]);
   assert.equal(overview.usage.withKnowledge, 1);
   assert.equal(overview.usage.replies, 2);
 });
@@ -306,6 +310,8 @@ test('keeping a rule settles the pair: amounts survive, the kept page reads as s
   assert.deepEqual(currentRules(kept), ['Refunds over $250 need Robin now.']);
   assert.equal(newerRule('Refunds over $100 need Robin.', 'Refunds over $250 need Robin now.'), 1);
   assert.equal(newerRule('Ship on Tuesday.', 'Ship on Thursday.'), null);
+  assert.equal(newerRule('Never deploy on Friday since on-call is thin.', 'Deploy any day.'), null, 'a causal "since" is no date');
+  assert.equal(newerRule('Deploy on Tuesday.', 'Deploy on Thursday since 2026-06-15.'), 1);
   // The page as the owner saves it has nothing left to settle.
   const issues = assessKnowledge([{ path: 'index.md', text: '| a | `owner/refunds.md` | a |' }, { path: 'owner/refunds.md', text: kept }], NOW).issues;
   assert.deepEqual(issues, []);

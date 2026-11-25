@@ -319,7 +319,10 @@ export const Overview = () => {
                 {usage.pages.slice(0, 8).map((page) => (
                   <li key={page.path} className="flex flex-col gap-1">
                     <div className="flex items-baseline justify-between gap-2 text-xs">
-                      <button type="button" onClick={() => open(page.path)} className="truncate font-mono text-ink hover:underline focus-visible:outline-2 focus-visible:outline-focus">{page.path}</button>
+                      <button type="button" onClick={() => open(page.path)} title={page.path} className="flex min-w-0 items-baseline gap-2 text-left hover:underline focus-visible:outline-2 focus-visible:outline-focus">
+                        <span className="truncate text-ink">{page.title || page.path}</span>
+                        {page.title && <span className="truncate font-mono text-[11px] text-faint">{page.path}</span>}
+                      </button>
                       <span className="shrink-0 tabular-nums text-muted">{page.uses} {page.uses === 1 ? 'reply' : 'replies'}</span>
                     </div>
                     <div className="h-1 rounded-full bg-raised"><div className="h-1 rounded-full bg-ink" style={{ width: `${(page.uses / topUse) * 100}%` }} /></div>

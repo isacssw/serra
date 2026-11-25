@@ -283,8 +283,8 @@ export const Proposals = () => {
                       {similar[0].disagrees ? (
                         <>
                           <p className="text-[13px]">Changes a rule on <code className="text-xs">{similar[0].path}</code>. Replace the old rule there, so only one is current.</p>
-                          <p className="truncate border-l-2 border-line pl-2 text-xs text-muted">Now: {similar[0].disagrees.page}</p>
-                          <p className="truncate border-l-2 border-line pl-2 text-xs text-muted">Proposed: {similar[0].disagrees.proposal}</p>
+                          <p className="border-l-2 border-line pl-2 text-xs text-muted">On the page: {similar[0].disagrees.page}</p>
+                          <p className="border-l-2 border-line pl-2 text-xs text-muted">Proposed: {similar[0].disagrees.proposal}</p>
                         </>
                       ) : (
                         <>

@@ -127,9 +127,14 @@ export const currentRules = (text: string): string[] => text.replace(/\r\n?/g, '
   .replace(/^##\s+Replaced\b[\s\S]*?(?=^##\s|(?![\s\S]))/gim, '')
   .split('\n').map((line) => line.trim().replace(/^([-*]|\d+\.)\s+/, '').trim()).filter(Boolean);
 
-/** Which of two disagreeing rules reads as the newer one: the one that says "now", "since" or "from", else neither. */
+/**
+ * Which of two disagreeing rules reads as the newer one: the one that says "now", or "since", "as of" or "starting"
+ * followed by a date or a month ("since 2026-06-15", "as of June"), else neither. A causal "since" ("since on-call is
+ * thin") says nothing about time.
+ */
 export const newerRule = (a: string, b: string): 0 | 1 | null => {
-  const fresh = (text: string): boolean => /\b(now|since|from now|as of|starting)\b/i.test(text);
+  const MONTH = '(?:\\d{4}-\\d{2}|jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)';
+  const fresh = (text: string): boolean => /\bnow\b/i.test(text) || new RegExp(`\\b(?:since|as of|starting|from)\\s+(?:the\\s+)?(?:\\d{1,2}\\s+)?${MONTH}`, 'i').test(text);
   if (fresh(a) === fresh(b)) return null;
   return fresh(a) ? 0 : 1;
 };
