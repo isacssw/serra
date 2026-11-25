@@ -392,11 +392,11 @@ export const Pages = () => {
               <>
                 <div className="flex flex-col gap-1">
                   <div className="flex flex-wrap items-center gap-2">
-                    <h2 className="font-mono text-base font-semibold">{page.path}</h2>
+                    <h2 className="text-base font-semibold">{page.description ?? page.path}</h2>
                     <Badge tone={badgeTone(page.badge)} title={badgeTitle(page)}>{badgeLabel(page.badge)}</Badge>
                     {page.verified && <span className="text-xs text-muted">verified {page.verified}</span>}
                   </div>
-                  {page.description && <p className="text-sm text-muted">{page.description}</p>}
+                  {page.description && <p className="font-mono text-xs text-faint">{page.path}</p>}
                 </div>
                 {(page.warnings.length > 0 || page.problems.length > 0) && (
                   <ul className="flex flex-col gap-1 text-sm">
