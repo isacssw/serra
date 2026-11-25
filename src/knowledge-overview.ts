@@ -2,6 +2,7 @@
 // the files Serra already keeps (the pages, the backups each approval leaves, the usage log); it writes nothing.
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
+import { createJournal } from './knowledge-journal.ts';
 import { assessKnowledge, isPage, knowledgeHistory, type Health, type HistoryPoint, type KnowledgeChange, type KnowledgeEvent, type KnowledgeFile } from './knowledge-health.ts';
 import { ARCHIVE_DIR, PROPOSALS_DIR } from './knowledge-rules.ts';
 import { readKnowledgeUse } from './knowledge-usage.ts';
@@ -32,6 +33,8 @@ export interface KnowledgeOverview {
   usage: KnowledgeUsage;
   /** Proposals waiting for the owner. */
   waiting: number;
+  /** Files changed outside Serra and not reviewed yet: not counted until the owner accepts them in Pages. */
+  unreviewed: number;
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -81,7 +84,10 @@ export const knowledgeOverview = ({ knowledgeDir, profileDir, backupDir, now = n
   knowledgeDir: string; profileDir: string; backupDir?: string; now?: Date; days?: number;
 }): KnowledgeOverview => {
   const root = resolve(knowledgeDir);
-  const files = listKnowledgeFiles(root);
+  // What the bot reads: the owner's approved copy once there is one. An edit waiting for review isn't knowledge yet.
+  const journal = createJournal(root);
+  const files = journal.seeded() ? listKnowledgeFiles(journal.approvedRoot) : listKnowledgeFiles(root);
+  const { changed, removed } = journal.drift();
   const health = assessKnowledge(files, now);
   const changes = readChanges(resolve(backupDir ?? join(dirname(root), 'backups', 'knowledge')));
   const { points, events } = knowledgeHistory(files, changes, now);
@@ -98,7 +104,7 @@ export const knowledgeOverview = ({ knowledgeDir, profileDir, backupDir, now = n
   }
   const pages = files.filter((file) => isPage(file.path)).map((file) => file.path);
   return {
-    health, monthAgo, points, events: events.slice(0, 80), waiting: countProposals(join(root, PROPOSALS_DIR)),
+    health, monthAgo, points, events: events.slice(0, 80), waiting: countProposals(join(root, PROPOSALS_DIR)), unreviewed: changed.length + removed.length,
     usage: {
       replies: uses.length, withKnowledge: uses.filter((use) => use.cited.length > 0).length, days,
       pages: [...counts.values()].filter((use) => pages.includes(use.path)).sort((a, b) => b.uses - a.uses || b.last.localeCompare(a.last)),

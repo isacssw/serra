@@ -2,7 +2,7 @@
 // finds the mess a real owner's knowledge picks up (and nothing on clean fixtures), whether the history rebuilt from
 // backups shows it, and whether the pages a reply used are recorded and never posted. Fixtures only; no model.
 import assert from 'node:assert/strict';
-import { mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
+import { cpSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -13,6 +13,7 @@ import {
 } from '../src/knowledge-health.ts';
 import { readKnowledgeUse, recordKnowledgeUse, takeKnowledgeUsed } from '../src/knowledge-usage.ts';
 import { knowledgeOverview } from '../src/knowledge-overview.ts';
+import { createJournal } from '../src/knowledge-journal.ts';
 import { changeText, groupByDay, scoreChart, scoreWord } from '../app/renderer/screens/overview.logic.ts';
 
 const NOW = new Date('2026-11-25T12:00:00Z');
@@ -190,4 +191,24 @@ test('the pages a reply used are recorded once per run and never posted', (t) =>
   assert.deepEqual(overview.usage.pages, [{ path: 'owner/role.md', uses: 1, last: '2026-11-24T10:00:05Z' }]);
   assert.equal(overview.usage.withKnowledge, 1);
   assert.equal(overview.usage.replies, 2);
+});
+
+test('a rule pasted twice on one page counts as a repeat', () => {
+  const text = '---\ntype: rule\ndescription: How I work\nwritten: 2026-11-01\nverified: 2026-11-20\nsources:\n  - Owner\n---\n# How I work\n\n- A bug fix starts with a failing test.\n- Keep PRs small.\n- A bug fix starts with a failing test.\n';
+  const health = assessKnowledge([{ path: 'index.md', text: '| a | `owner/work.md` | b |' }, { path: 'owner/work.md', text }], NOW);
+  assert.deepEqual(health.issues.map((issue) => issue.kind), ['duplicate']);
+});
+
+test('Overview counts what the bot reads: a hand edit waits for review before it changes the score', (t) => {
+  const profile = mkdtempSync(join(tmpdir(), 'serra-overview-'));
+  t.after(() => rmSync(profile, { recursive: true, force: true }));
+  const knowledge = join(profile, 'knowledge');
+  cpSync(new URL('../evals/fixture/knowledge', import.meta.url).pathname, knowledge, { recursive: true });
+  createJournal(knowledge).seed();
+  const before = knowledgeOverview({ knowledgeDir: knowledge, profileDir: profile, now: NOW });
+  const role = join(knowledge, 'owner/working-style.md');
+  writeFileSync(role, `${readFileSync(role, 'utf8').trimEnd()}\n- Risky releases ship on Monday.\n`);
+  const after = knowledgeOverview({ knowledgeDir: knowledge, profileDir: profile, now: NOW });
+  assert.equal(after.health.score, before.health.score, 'an unreviewed conflict is not the bot\'s knowledge yet');
+  assert.equal(after.unreviewed, 1);
 });

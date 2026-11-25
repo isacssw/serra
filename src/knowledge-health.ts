@@ -232,7 +232,7 @@ const PART_KEYS: readonly (keyof HealthParts)[] = ['fresh', 'organised', 'unique
 
 export const HEALTH_WEIGHTS: Record<keyof HealthParts, number> = { fresh: 0.25, organised: 0.2, unique: 0.15, consistent: 0.25, coverage: 0.15 };
 
-interface AreaSummary { area: Area; label: string; pages: number; confirmed: number; facts: number; latest: string | null; headline: string | null }
+interface AreaSummary { area: Area; label: string; pages: number; confirmed: number; facts: number; latest: string | null; headline: string | null; conflicts: number }
 
 export interface Health {
   score: number;
@@ -296,6 +296,7 @@ export const assessKnowledge = (files: KnowledgeFile[], now: Date): Health => {
     return {
       area, label: AREA_LABELS[area], pages: mine.length, confirmed: confirmed.length, facts: mine.reduce((sum, page) => sum + page.facts, 0),
       latest: confirmed.map((page) => page.verified!).sort().at(-1) ?? null, headline: headline ? short(headline, 120) : null,
+      conflicts: conflicts.filter((pair) => areaOf.get(pair.a.page) === area || areaOf.get(pair.b.page) === area).length,
     };
   }).filter((area) => area.area !== 'other' || area.pages > 0);
   const parts: HealthParts = pages.length === 0

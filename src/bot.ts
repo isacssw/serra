@@ -504,6 +504,7 @@ export const createBot = ({
         ...(byWorker ? { statusTs: recovered } : { statusTs: undefined }), lastActivityAt: new Date(now()).toISOString() }));
       await finishLoading(key, job);
       logger.info(`The reply to ${runId} in ${key} was posted before a restart; not posting it again.`);
+      recordUse();
       events('reply', { ...measured, kind: byWorker ? 'status_posted' : 'reply', recovered: true });
       return;
     }

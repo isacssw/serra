@@ -149,6 +149,15 @@ export const Overview = () => {
 
   return (
     <Page title="Overview" subtitle="How well your bot knows you, and how that changes.">
+      {overview.unreviewed > 0 && (
+        <div className="flex items-start gap-2 text-[13px] text-muted">
+          <AlertTriangle size={15} aria-hidden className="mt-0.5 shrink-0 text-warn" />
+          <p>
+            {overview.unreviewed === 1 ? 'A file changed outside Serra isn’t counted until you review it in ' : `${overview.unreviewed} files changed outside Serra aren’t counted until you review them in `}
+            <button type="button" onClick={() => void navigate('/knowledge/pages')} className="text-ink underline underline-offset-2 hover:no-underline focus-visible:outline-2 focus-visible:outline-focus">Pages</button>.
+          </p>
+        </div>
+      )}
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         <Tile label="Health" value={String(health.score)} unit="/ 100" note={`${word.word}${monthAgo ? ` · ${changeText(health.score, monthAgo.score, monthAgo.at) ?? ''}` : ''}`} noteTone={word.tone} />
         <Tile label="Knows" value={String(health.facts)} unit="facts" note={[`${health.pages} page${health.pages === 1 ? '' : 's'}`, monthAgo ? changeText(health.facts, monthAgo.facts, monthAgo.at) : null].filter(Boolean).join(' · ')} />
@@ -170,18 +179,25 @@ export const Overview = () => {
 
       <Section title="What your bot knows about you">
         <ul className="divide-y divide-line-subtle rounded-lg border border-line bg-panel">
-          {health.areas.map((area) => (
+          {health.areas.map((area) => {
+            // An area holding rules that disagree isn't settled, whatever else it has.
+            const disputed = area.conflicts > 0;
+            return (
             <li key={area.area} className="flex items-start gap-3 px-4 py-2.5">
-              {area.confirmed > 0
-                ? <CircleCheck size={15} aria-hidden className="mt-0.5 shrink-0 text-up" />
-                : <CircleDot size={15} aria-hidden className="mt-0.5 shrink-0 text-faint" />}
+              {disputed
+                ? <AlertTriangle size={15} aria-label="Has rules that disagree" className="mt-0.5 shrink-0 text-warn" />
+                : area.confirmed > 0
+                  ? <CircleCheck size={15} aria-label="Confirmed" className="mt-0.5 shrink-0 text-up" />
+                  : <CircleDot size={15} aria-label="Nothing yet" className="mt-0.5 shrink-0 text-faint" />}
               <div className="flex min-w-0 flex-1 flex-col">
                 <p className="text-[13px] font-medium">{area.label}</p>
                 <p className="truncate text-xs text-muted">{area.headline ?? (area.pages > 0 ? 'Only drafts so far' : 'Nothing yet')}</p>
+                {disputed && <p className="text-xs text-warn">{area.conflicts === 1 ? 'Two rules disagree' : `${area.conflicts} pairs of rules disagree`}. See Needs tidying.</p>}
               </div>
               <p className="shrink-0 text-xs tabular-nums text-muted">{area.pages === 0 ? '' : `${area.facts} fact${area.facts === 1 ? '' : 's'} · ${area.pages} page${area.pages === 1 ? '' : 's'}`}</p>
             </li>
-          ))}
+            );
+          })}
         </ul>
       </Section>
 
