@@ -271,7 +271,7 @@ interface FakeRunOptions {
  * a session on T3's tool endpoint (`t3_thread_launch`, `t3_thread_read`, `t3_thread_interrupt`). Like real T3, a
  * session can stop an `approval-required` thread and is refused for a full-access one (what the CLI starts).
  */
-const fakeT3 = (t: TestContext, answer: (brief: string) => string, { pending = false, write = false, running = 0, tool, page = 20_000 }: FakeRunOptions = {}) => {
+const fakeT3 = (t: TestContext, answer: (brief: string, sent: readonly string[]) => string, { pending = false, write = false, running = 0, tool, page = 20_000 }: FakeRunOptions = {}) => {
   const workspace = mkdtempSync(join(tmpdir(), 'serra-meeting-runs-'));
   t.after(() => rmSync(workspace, { recursive: true, force: true }));
   t.after(() => rmSync(`${workspace}-leftovers`, { recursive: true, force: true }));
@@ -281,6 +281,8 @@ const fakeT3 = (t: TestContext, answer: (brief: string) => string, { pending = f
   const events: string[] = [];
   const sessions = { opened: 0, closed: 0 };
   const shows: Record<string, number> = {};
+  /** Messages Serra sent into each thread after its brief, each starting one more run. */
+  const sent: Record<string, string[]> = {};
   const brief = (threadId: string): string => started[Number(threadId.split('-')[1]) - 1]!.input.brief;
   const begin = (input: FolderThreadInput, bin: string, mode: 'full-access' | 'approval-required'): string => {
     started.push({ input, bin, mode });
@@ -313,6 +315,13 @@ const fakeT3 = (t: TestContext, answer: (brief: string) => string, { pending = f
           if (args.itemId) return { items: items.map((item) => paged(item, Number(args.textOffset))) };
           return { items: [{ position: 0, itemId: 'user', runId: 'run-1', type: 'user_message', text: brief(threadId) }, ...items.map((item) => paged(item, 0))], hasMore: false, nextPosition: 3 };
         }
+        if (name === 't3_thread_send') {
+          const threadId = String(args.threadId);
+          (sent[threadId] ??= []).push(String(args.message));
+          events.push(`send ${threadId}`);
+          shows[threadId] = 0;
+          return { threadId, status: 'queued' };
+        }
         if (name === 't3_thread_interrupt') {
           const threadId = String(args.threadId);
           // Real T3: a session the CLI issues is capped at approval-required, and can't stop a full-access thread.
@@ -333,16 +342,20 @@ const fakeT3 = (t: TestContext, answer: (brief: string) => string, { pending = f
       events.push(`show ${threadId}`);
       await new Promise((resolve) => { setImmediate(resolve); });
       const busy = shows[threadId]! <= running;
+      const later = sent[threadId] ?? [];
+      const runId = `run-${later.length + 1}`;
+      const turns = [{ role: 'user', runId: 'run-1', text: brief(threadId) }, { role: 'assistant', runId: 'run-1', text: 'working on it' }, { role: 'assistant', runId: 'run-1', text: answer(brief(threadId), []) }];
+      later.forEach((message, n) => { turns.push({ role: 'user', runId: `run-${n + 2}`, text: message }, { role: 'assistant', runId: `run-${n + 2}`, text: answer(brief(threadId), later.slice(0, n + 1)) }); });
       return {
-        thread: { threadId, link: `https://app.t3.codes/threads/${threadId}`, status: busy ? 'running' : 'idle', latestRunId: 'run-1', activeRunId: busy ? 'run-1' : null, pendingRequestCount: pending ? 1 : 0 },
-        messages: [{ role: 'user', runId: 'run-1', text: brief(threadId) }, { role: 'assistant', runId: 'run-1', text: 'working on it' }, { role: 'assistant', runId: 'run-1', text: answer(brief(threadId)) }],
+        thread: { threadId, link: `https://app.t3.codes/threads/${threadId}`, status: busy ? 'running' : 'idle', latestRunId: runId, activeRunId: busy ? runId : null, pendingRequestCount: pending ? 1 : 0 },
+        messages: turns,
       };
     },
     session,
   };
   const logs: string[] = [];
   const runs = (over: Partial<MeetingRunOptions> = {}) => createMeetingRuns({ t3Bin: '/Users/you/.t3/bin/t3', workspace, t3, pollMs: 0, sleep: async () => {}, log: (line) => logs.push(line), ...over });
-  return { workspace, projects, started, interrupted, events, sessions, logs, runs };
+  return { workspace, projects, started, interrupted, events, sessions, logs, runs, sent };
 };
 
 /** A tool call as T3 records it in a run's activity: the item's text is JSON of the tool's name, input and output. */
@@ -486,7 +499,7 @@ test('a run Serra gives up on is stopped in T3: one that asks for approval or a 
   assert.match(fetching.logs.join('\n'), /Couldn't stop meeting run thread-1/);
 });
 
-test('Test asks one guarded T3 run about a source without calling a tool; its answer becomes a status with what to do', async (t) => {
+test('Test asks a guarded T3 run about a source, letting it look tools up but call none; its answer becomes a status with what to do', async (t) => {
   for (const [answer, state, detail] of [
     ['<meeting-source>ready</meeting-source>', 'ready', /Business and Enterprise/],
     ['<meeting-source>missing</meeting-source>', 'missing', /Connect Granola in the AI provider you use in T3/],
@@ -497,9 +510,49 @@ test('Test asks one guarded T3 run about a source without calling a tool; its an
     const status = await f.runs().checkSource('granola');
     assert.equal(status.state, state);
     assert.match(status.detail, detail);
-    assert.match(f.started[0]!.input.brief, /Do not call any tool/);
+    assert.match(f.started[0]!.input.brief, /Do not call any Granola tool, or any other tool that reads or changes data/);
+    assert.match(f.started[0]!.input.brief, /search for or load tools/);
     assert.equal(f.started[0]!.mode, 'approval-required');
+    assert.equal(f.started.length, 1, 'one thread per Test, even when it asks twice');
   }
+});
+
+test('Test sees a connection added after T3 started: a first "missing" is asked again in the same thread', async (t) => {
+  // Like a provider whose new Granola MCP is still connecting on the first turn, and listed by the next one.
+  const f = fakeT3(t, (_brief, sent) => (sent.length ? '<meeting-source>ready</meeting-source>' : '<meeting-source>missing</meeting-source>'));
+  const status = await f.runs().checkSource('granola');
+  assert.equal(status.state, 'ready');
+  assert.equal(f.started.length, 1);
+  assert.equal(f.sent['thread-1']?.length, 1, 'asked once more');
+  assert.match(f.sent['thread-1']![0]!, /Granola connection can finish starting.*\n.*call none of them/s);
+  assert.deepEqual(f.interrupted, []);
+  assert.equal(f.sessions.opened, f.sessions.closed);
+});
+
+test('Test keeps "ready" and "sign-in" from the first answer, and a source still missing after the second look stays missing', async (t) => {
+  for (const first of ['<meeting-source>ready</meeting-source>', '<meeting-source>sign-in</meeting-source>']) {
+    const f = fakeT3(t, () => first);
+    await f.runs().checkSource('google-meet');
+    assert.equal(f.sent['thread-1'], undefined, `no second look after ${first}`);
+  }
+  const missing = fakeT3(t, () => '<meeting-source>missing</meeting-source>');
+  assert.equal((await missing.runs().checkSource('granola')).state, 'missing');
+  assert.equal(missing.sent['thread-1']?.length, 1);
+  // A second look that doesn't say keeps the first answer.
+  const vague = fakeT3(t, (_brief, sent) => (sent.length ? 'hmm' : '<meeting-source>missing</meeting-source>'));
+  assert.equal((await vague.runs().checkSource('granola')).state, 'missing');
+});
+
+test('Test\'s second look is guarded like the first: a run that writes a file has its answer thrown away', async (t) => {
+  let workspace = '';
+  const f = fakeT3(t, (_brief, sent) => {
+    if (!sent.length) return '<meeting-source>missing</meeting-source>';
+    writeFileSync(join(workspace, 'second.md'), 'written by the second run');
+    return '<meeting-source>ready</meeting-source>';
+  });
+  workspace = f.workspace;
+  await assert.rejects(f.runs().checkSource('granola'), /wrote files in Serra's meetings folder/);
+  assert.deepEqual(readdirSync(f.workspace), []);
 });
 
 test('who runs meetings is read from the profile and T3\'s settings, never from a model call', () => {

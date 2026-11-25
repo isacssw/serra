@@ -12,6 +12,7 @@ Serra follows [Semantic Versioning](https://semver.org) once it reaches 1.0. Unt
 - Pages has **Retire…**: a page moves to `knowledge/archive/`, its index row goes, and Undo brings it back, so a duplicate page can finally leave. Proposals says when a new proposal repeats a page you have, with **Merge into it…**.
 - When two current rules disagree, Pages shows both with a button that names the rule to keep ("Keep Thursday"): it saves at once with Undo and moves the other under a dated `## Replaced`. The worker's index marks both rows and names the current rule.
 - Workers now see which index rows are drafts or out of date, get the three pages closest to the request as a hint, and end a reply with a line naming the pages they used. Serra removes that line before posting and records it in `logs/knowledge-usage.jsonl`, with any T3 provider.
+- Fixed: **Test** in Settings › Meetings said a source was missing when its connection (for example a Granola MCP) had been added since T3 started and the provider hadn't listed it yet. The test may now look its tools up, and when it says missing, Serra asks once more in the same thread before keeping the answer. It still calls none of the source's tools.
 
 ## 0.1.0-alpha.5 (2026-11-24)
 
