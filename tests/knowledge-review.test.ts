@@ -9,6 +9,7 @@ import { reviewDue, runKnowledgeReview } from '../src/knowledge-review.ts';
 import { latestReview, setReviewWeekly } from '../src/knowledge-review-store.ts';
 import { recordKnowledgeUse } from '../src/knowledge-usage.ts';
 import { createProposals } from '../src/proposals.ts';
+import { knowledgeOverview } from '../src/knowledge-overview.ts';
 
 const NOW = new Date('2026-11-25T12:00:00Z');
 
@@ -76,6 +77,12 @@ test('the weekly review writes a checked rewrite as a proposal, a before/after e
   assert.ok(!asked[2]!.includes('ship on Tuesday, never Thursday'), 'the "without" run never sees the page it is answering without');
   assert.ok(asked[0]!.includes('two rules that disagree') && asked[0]!.includes('<page path="owner/working-style.md">'));
   assert.deepEqual(latestReview(dir), review);
+
+  // Overview offers the one-click Approve only while the page is as the review saw it.
+  assert.equal(knowledgeOverview({ knowledgeDir: knowledge, profileDir: dir, now: NOW }).review?.suggestions.some((item) => item.kind === 'replace'), true);
+  const style = join(knowledge, 'owner/working-style.md');
+  writeFileSync(style, `${readFileSync(style, 'utf8').trimEnd()}\n- A new rule the owner just added.\n`);
+  assert.equal(knowledgeOverview({ knowledgeDir: knowledge, profileDir: dir, now: NOW }).review?.suggestions.some((item) => item.kind === 'replace'), false, 'a rewrite never lands over a page that changed since');
 });
 
 test('a review whose model run fails still saves what plain code found', async (t) => {

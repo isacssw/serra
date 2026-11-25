@@ -1,5 +1,6 @@
 // Knowledge › Overview: how healthy the owner's knowledge is, how it grew, and what the bot's replies used. Read from
 // the files Serra already keeps (the pages, the backups each approval leaves, the usage log); it writes nothing.
+import { createHash } from 'node:crypto';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { createJournal } from './knowledge-journal.ts';
@@ -82,7 +83,12 @@ const openSuggestions = (review: KnowledgeReview | null, root: string, now: Date
   if (!review) return null;
   const today = now.toISOString().slice(0, 10);
   const open = review.suggestions.filter((item) => {
-    if (item.kind === 'replace') return item.proposal !== undefined && existsSync(join(root, PROPOSALS_DIR, item.proposal));
+    if (item.kind === 'replace') {
+      // A rewrite of a page that changed since the review (an edit, "Keep Thursday" on the page) would undo that
+      // change: it leaves To do, and its proposal waits in Proposals to be looked at with the new text beside it.
+      if (item.proposal === undefined || !existsSync(join(root, PROPOSALS_DIR, item.proposal))) return false;
+      return !item.base || !existsSync(join(root, item.page)) || createHash('sha256').update(readFileSync(join(root, item.page), 'utf8')).digest('hex') === item.base;
+    }
     if (!existsSync(join(root, item.page))) return false;
     if (item.kind === 'confirm') {
       const verified = frontmatter(readFileSync(join(root, item.page), 'utf8'))?.get('verified')?.trim() ?? '';

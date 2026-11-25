@@ -5,6 +5,7 @@
 //
 // The model work runs through T3 (`ask`, a guarded read-only run in Serra's own empty folder, on the worker's provider
 // and model), so it works with every T3 provider. Everything else here is plain code over files Serra keeps.
+import { createHash } from 'node:crypto';
 import { mkdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { writeFileAtomic } from './config.ts';
@@ -37,8 +38,12 @@ const weekUses = (profileDir: string, now: Date): KnowledgeUse[] =>
 /** At most `count` sentences and `max` characters, cut at a sentence end where it can be. */
 const sentences = (text: string, count: number, max: number): string => {
   const parts = text.match(/[^.!?]+[.!?]+(\s|$)/g) ?? [text];
-  const kept = parts.slice(0, count).join('').trim();
-  return kept.length <= max ? kept : short(kept, max);
+  // As many whole sentences as fit; a word is only ever cut when even the first one is too long.
+  for (let take = count; take >= 1; take -= 1) {
+    const kept = parts.slice(0, take).join('').trim();
+    if (kept.length <= max) return kept;
+  }
+  return short(parts[0]!.trim(), max);
 };
 
 /** Two answers that say the same thing in nearly the same words: the page didn't change it. */
@@ -209,7 +214,7 @@ export const runKnowledgeReview = async ({ profileDir, knowledgeDir, ask, now = 
       mkdirSync(folder, { recursive: true, mode: 0o700 });
       writeFileAtomic(join(folder, name), withTarget, { mode: 0o600 });
       writeFileAtomic(join(folder, '.from.json'), `${JSON.stringify({ who: 'Weekly review', owner: false, via: 'app' }, null, 2)}\n`, { mode: 0o600 });
-      suggest('replace', rewrite.page, isString(rewrite.why) ? short(rewrite.why, 200) : 'Settles rules that disagree or repeat.', { proposal: `${REVIEW_FOLDER}/${date}/${name}` });
+      suggest('replace', rewrite.page, isString(rewrite.why) ? short(rewrite.why, 200) : 'Settles rules that disagree or repeat.', { proposal: `${REVIEW_FOLDER}/${date}/${name}`, base: createHash('sha256').update(current).digest('hex') });
     }
     // Before and after: the week's most used pages, each with one request it answered, answered again without it.
     // Up to two pages, each with its own request, and only where the page changed the answer.

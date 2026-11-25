@@ -289,7 +289,7 @@ export const Proposals = () => {
               <>
                 <div className="flex flex-col gap-1">
                   <h2 className="text-lg font-semibold tracking-tight">{title}</h2>
-                  {diff.proposal.description && <p className="text-sm text-muted">{diff.proposal.description}</p>}
+                  {diff.proposal.description && diff.proposal.description !== title && <p className="text-sm text-muted">{diff.proposal.description}</p>}
                   {diff.proposal.target && <p className="text-xs text-muted">Changes <code>{diff.proposal.target}</code></p>}
                   <Sources text={diff.proposed} from={diff.proposal.from} />
                 </div>

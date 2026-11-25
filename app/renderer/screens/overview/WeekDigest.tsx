@@ -11,6 +11,9 @@ import { shortDate, weekLine } from '../overview.logic.ts';
 
 const message = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
+const sha256 = async (text: string): Promise<string> =>
+  [...new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text)))].map((byte) => byte.toString(16).padStart(2, '0')).join('');
+
 /**
  * Settle one suggestion the way its button says: approve the rewrite, retire the page, or confirm it still holds.
  * Returns the change's undo ID, so the toast can offer Undo where the click happened.
@@ -20,6 +23,10 @@ export const settle = async (suggestion: ReviewSuggestion): Promise<string | nul
   if (!bridge) throw new Error('The Serra bridge is missing.');
   if (suggestion.kind === 'replace' && suggestion.proposal) {
     const { proposed, current, proposal } = await bridge.proposals.diff(suggestion.proposal);
+    // Never over a page that changed since the review saw it: that would undo the newer edit without a word.
+    if (suggestion.base && current !== null && await sha256(current) !== suggestion.base) {
+      throw new Error('The page changed since the review. Look at the rewrite in Proposals, beside the page as it is now.');
+    }
     return (await bridge.proposals.promote(suggestion.proposal, undefined, { proposal: proposed, path: proposal.target, page: current })).undoId;
   }
   if (suggestion.kind === 'retire') return (await bridge.proposals.retire(suggestion.page, await bridge.pages.read(suggestion.page))).undoId;
@@ -97,7 +104,7 @@ export const WeekDigest = ({ review, weekly, onChanged }: { review: KnowledgeRev
 
       {review.missing.length > 0 && (
         <div className="flex flex-col gap-1">
-          <p className="text-xs font-medium text-muted">Your bot needed, and no note had</p>
+          <p className="text-xs font-medium text-muted">Missing from your notes</p>
           <ul className="flex flex-col gap-0.5 text-[13px]">
             {review.missing.map((item) => (
               <li key={item.topic} className="flex items-start gap-3">

@@ -15,6 +15,8 @@ export interface ReviewSuggestion {
   why: string;
   /** For `replace`: the proposal written for it, relative to `knowledge/proposals/`. */
   proposal?: string;
+  /** SHA-256 of the page as the review saw it: a page changed since is never overwritten by the suggestion. */
+  base?: string;
 }
 
 /** A request from the week answered again without the page that answered it, next to the real reply. */
@@ -56,7 +58,7 @@ export const setReviewWeekly = (profileDir: string, weekly: boolean): void => {
 };
 
 const isSuggestion = (value: unknown): value is ReviewSuggestion => isRecord(value) && isString(value.id) && isOneOf('replace', 'retire', 'confirm')(value.kind)
-  && isString(value.page) && isString(value.title) && isString(value.why) && isOptional(isString)(value.proposal);
+  && isString(value.page) && isString(value.title) && isString(value.why) && isOptional(isString)(value.proposal) && isOptional(isString)(value.base);
 const isReview = (value: unknown): value is KnowledgeReview => isRecord(value) && isString(value.id) && isString(value.at) && isString(value.summary)
   && isArrayOf(isSuggestion)(value.suggestions) && Array.isArray(value.examples) && Array.isArray(value.used) && Array.isArray(value.missing);
 

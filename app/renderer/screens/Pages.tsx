@@ -425,8 +425,11 @@ export const Pages = () => {
                 <div className="flex flex-col gap-1">
                   <div className="flex flex-wrap items-center gap-2">
                     <h2 className="text-base font-semibold">{page.description ?? page.path}</h2>
-                    <Badge tone={badgeTone(page.badge)} title={badgeTitle(page)}>{badgeLabel(page.badge)}</Badge>
-                    {page.verified && <span className="text-xs text-muted">verified {page.verified}</span>}
+                    {/* A page whose rules disagree isn't settled, however recently it was confirmed. */}
+                    {pairs.some((issue) => issue.kind === 'conflict')
+                      ? <Badge tone="warn">Rules disagree</Badge>
+                      : <Badge tone={badgeTone(page.badge)} title={badgeTitle(page)}>{badgeLabel(page.badge)}</Badge>}
+                    {page.verified && <span className="text-xs text-muted">confirmed {page.verified}</span>}
                   </div>
                   {page.description && <p className="font-mono text-xs text-faint">{page.path}</p>}
                 </div>
