@@ -105,9 +105,6 @@ const dayLabel = (day: string, now: Date): string => {
   return new Date(`${day}T00:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: days > 300 ? 'numeric' : undefined, timeZone: 'UTC' });
 };
 
-
-
-
 /** The button that settles a review suggestion. */
 const suggestionAction = (kind: 'replace' | 'retire' | 'confirm'): string => ({ replace: 'Approve', retire: 'Retire', confirm: 'Still true' })[kind];
 
@@ -117,6 +114,21 @@ export const weekLine = (review: { replies: number; withKnowledge: number; facts
   `${review.withKnowledge} used your notes`,
   ...(review.facts.before !== null && review.facts.now > review.facts.before ? [`${review.facts.now - review.facts.before} new fact${review.facts.now - review.facts.before === 1 ? '' : 's'}`] : []),
 ].join(' · ');
+
+/**
+ * The value list's one line: "3 of 4 pages helped in the last 30 days · 2 always in the brief · 1 not used". Pages that
+ * ride in every brief are counted apart: their use is never measured, so they never count as having helped.
+ */
+export const valueSummary = (states: ('earns' | 'some' | 'carried' | 'idle' | 'unknown')[], days: number): string => {
+  const carried = states.filter((state) => state === 'carried').length;
+  const helped = states.filter((state) => state === 'earns' || state === 'some').length;
+  const idle = states.filter((state) => state === 'idle').length;
+  return [
+    `${helped} of ${states.length - carried} page${states.length - carried === 1 ? '' : 's'} helped in the last ${days} days`,
+    ...(carried ? [`${carried} always in the brief`] : []),
+    ...(idle ? [`${idle} not used`] : []),
+  ].join(' · ');
+};
 
 /** What a page did, in two words, for the value list. */
 export const valueLabel = (state: 'earns' | 'some' | 'carried' | 'idle' | 'unknown', uses: number): string => ({

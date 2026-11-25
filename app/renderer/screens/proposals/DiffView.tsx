@@ -7,9 +7,10 @@ const cellTone: Record<DiffCell['kind'], string> = {
   same: '',
   removed: 'bg-down/15',
   added: 'bg-up/15',
+  moved: '',
 };
 
-const marker: Record<DiffCell['kind'], string> = { same: ' ', removed: '-', added: '+' };
+const marker: Record<DiffCell['kind'], string> = { same: ' ', removed: '-', added: '+', moved: '~' };
 
 /** One side of one row: its line number, marker and text, which wraps instead of scrolling. */
 const Cell = ({ cell }: { cell: DiffCell | null }) => (
@@ -31,7 +32,7 @@ export const DiffView = ({ current, proposed, labels = ['Current', 'Proposed'], 
   return (
     <div className="flex flex-col gap-2">
       <p className="text-xs text-muted">
-        {current === null ? `New page, ${stats.added} lines.` : `${stats.removed} lines removed, ${stats.added} added.`}
+        {current === null ? `New page, ${stats.added} lines.` : `${stats.removed} lines removed, ${stats.added} added${stats.moved ? `, ${stats.moved} moved` : ''}.`}
       </p>
       <div className="@container">
         {/* Narrow: one column, removed lines above the lines that replace them, so nothing wraps mid-word. */}

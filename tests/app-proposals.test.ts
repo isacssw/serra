@@ -86,7 +86,7 @@ test('diff: a changed line sits next to its replacement, unchanged lines line up
     'r2 Retry once after 5 min. | a2 Retry twice after 2 min.',
     's3 Check the run log. | s3 Check the run log.',
   ]);
-  assert.deepEqual(diffStats(rows), { removed: 1, added: 1 });
+  assert.deepEqual(diffStats(rows), { removed: 1, added: 1, moved: 0 });
 });
 
 test('diff: added and removed runs of different lengths leave the shorter side empty, numbers stay per side', () => {
@@ -104,8 +104,8 @@ test('diff: added and removed runs of different lengths leave the shorter side e
 test('diff: a new page has only proposed lines; identical texts have no changes; CRLF is the same as LF', () => {
   const rows = diffRows(null, 'one\ntwo\n');
   assert.deepEqual(show(rows), ['· | a1 one', '· | a2 two']);
-  assert.deepEqual(diffStats(diffRows('same\ntext\n', 'same\ntext\n')), { removed: 0, added: 0 });
-  assert.deepEqual(diffStats(diffRows('a\r\nb\r\n', 'a\nb\n')), { removed: 0, added: 0 });
+  assert.deepEqual(diffStats(diffRows('same\ntext\n', 'same\ntext\n')), { removed: 0, added: 0, moved: 0 });
+  assert.deepEqual(diffStats(diffRows('a\r\nb\r\n', 'a\nb\n')), { removed: 0, added: 0, moved: 0 });
   assert.deepEqual(diffRows('', ''), []);
 });
 
@@ -210,4 +210,10 @@ test('the merge dialog starts from the proposal as a page, or from its text unde
   const proposal = '---\ntype: preference\ndescription: Releases\ntarget: owner/role.md\nverified: no\n---\n# Robin\n\n- Ship on Tuesday.\n';
   assert.equal(withoutTarget(proposal), '---\ntype: preference\ndescription: Releases\nverified: no\n---\n# Robin\n\n- Ship on Tuesday.\n');
   assert.equal(proposalBody(proposal), '# Robin\n\n- Ship on Tuesday.');
+});
+
+test('a rule that only moved shows as moved, never as deleted and added', () => {
+  const rows = diffRows('- Tuesday.\n- Failing test first.\n- Thursday now.\n', '- Thursday now.\n- Failing test first.\n');
+  assert.deepEqual(diffStats(rows), { removed: 1, added: 0, moved: 1 });
+  assert.ok(rows.some((row) => row.current?.text === '- Tuesday.' && row.current.kind === 'removed'));
 });

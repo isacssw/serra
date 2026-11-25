@@ -15,8 +15,8 @@ import { readKnowledgeUse, recordKnowledgeUse, takeKnowledgeUsed } from '../src/
 import { knowledgeOverview } from '../src/knowledge-overview.ts';
 import { createJournal } from '../src/knowledge-journal.ts';
 import { createKnowledge } from '../src/knowledge.ts';
-import { changeText, fixItems, groupByDay, scoreChart, scoreWord, valueLabel, weekLine } from '../app/renderer/screens/overview.logic.ts';
-import { currentRules, groupByArea, keepLabel, keepRule, newerRule } from '../app/renderer/screens/pages.logic.ts';
+import { changeText, fixItems, groupByDay, scoreChart, scoreWord, valueLabel, valueSummary, weekLine } from '../app/renderer/screens/overview.logic.ts';
+import { currentRules, groupByArea, keepLabel, keepRule, newerRule, replacedOn } from '../app/renderer/screens/pages.logic.ts';
 import { swapRule } from '../app/renderer/screens/proposals.logic.ts';
 
 const NOW = new Date('2026-11-25T12:00:00Z');
@@ -386,4 +386,15 @@ test('two rules to settle get buttons that say which', () => {
   assert.equal(keepLabel('Keep PRs under 300 changed lines now.', 'Keep PRs under 400 changed lines.'), 'Keep 300');
   assert.equal(keepLabel('Payments bugs go to #payments-bugs.', 'Payments bugs go to #ledgerline-triage.'), 'Keep #payments-bugs');
   assert.equal(keepLabel('ship it later', 'ship it sooner'), 'Keep this one');
+});
+
+test('the value line never counts pages that ride in every brief as having helped', () => {
+  assert.equal(valueSummary(['earns', 'earns', 'some', 'carried', 'carried'], 30), '3 of 3 pages helped in the last 30 days · 2 always in the brief');
+  assert.equal(valueSummary(['earns', 'idle', 'unknown'], 30), '1 of 3 pages helped in the last 30 days · 1 not used');
+});
+
+test('an old rule is replaced from the date the kept rule gives, as the weekly review writes it, else today', () => {
+  assert.equal(replacedOn('Risky releases ship on Thursday since 2026-10-01.', '2026-11-25'), '2026-10-01');
+  assert.equal(replacedOn('Risky releases ship on Thursday now.', '2026-11-25'), '2026-11-25');
+  assert.equal(replacedOn('From 2027-01-01 releases ship on Monday.', '2026-11-25'), '2026-11-25', 'a plan, not a start');
 });

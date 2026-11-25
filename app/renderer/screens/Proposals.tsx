@@ -428,7 +428,7 @@ const Sources = ({ text, from }: { text: string; from?: ProposalSource }) => {
       ) : (
         <p className="text-muted">Where this came from wasn&rsquo;t recorded.</p>
       )}
-      <p className="text-muted">{sources.length ? <>The worker&rsquo;s sources: {sources.join('; ')}.</> : 'The worker gave no sources.'}</p>
+      <p className="text-muted">{from?.via === 'review' ? `Sources: ${sources.join('; ') || 'your pages'}.` : sources.length ? <>The worker&rsquo;s sources: {sources.join('; ')}.</> : 'The worker gave no sources.'}</p>
     </div>
   );
 };

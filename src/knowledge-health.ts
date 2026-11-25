@@ -724,10 +724,6 @@ export const relevanceNote = (request: string, cards: PageCard[], ignore: string
 };
 
 /**
- * Whether another page confirmed after `verified` talks about the same thing as `page`: one of its facts shares at
- * least two words, and half of the shorter one's, with a fact on `page`.
- */
-/**
  * Pairs of facts, one on `page` and one on a page confirmed after `verified`, that talk about the same thing: at least
  * two shared words, and half of the shorter one's. The newer one may have changed the older, even where no day or
  * number shows it. Used to hold back "Still true" and to hand the weekly review's model the pairs to look at.

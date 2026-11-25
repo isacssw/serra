@@ -124,6 +124,15 @@ export const markVerified = (text: string, date: string): string => setHeaderFie
  * `date`, so `keep` is the one current rule. The bot never reads what's under that heading. Unchanged when `drop` isn't
  * a line of the page.
  */
+/**
+ * The date an old rule stopped holding, for its "Until" line: the date the kept rule gives itself ("since 2026-10-01"),
+ * the same one the weekly review writes, else today. A date after today is a plan, not a start, so today wins.
+ */
+export const replacedOn = (kept: string, today: string): string => {
+  const date = /\b(\d{4}-\d{2}-\d{2})\b/.exec(kept)?.[1];
+  return date && date <= today ? date : today;
+};
+
 export const keepRule = (text: string, drop: string, date: string): string => {
   const lines = text.replace(/\r\n?/g, '\n').split('\n');
   const at = lines.findIndex((line) => line.trim().replace(/^([-*]|\d+\.)\s+/, '').trim() === drop.trim());

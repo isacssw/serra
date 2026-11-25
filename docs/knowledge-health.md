@@ -6,14 +6,14 @@
 
 Once a week (when the bot replied at least three times that week) Serra looks back at the week's replies and writes a short digest at the top of Overview:
 
-- **What your notes changed:** a real request from the week, answered twice from the same notes, once with the page that answered it and once without it, so the only difference is that page.
-- **Your bot needed, and no note had:** what replies said they were missing. Tell the bot in Slack, "remember …", and approve the proposal.
+- **What your notes changed:** a real request from the week, answered twice from the same notes, once with the page that answered it and once without it, so the only difference is that page. It is shown only where the page clearly helped: not when both answers say the same, when the answer with the page hedges, or when a newer page may have overtaken it.
+- **Missing from your notes:** what replies said they were missing. **Tell it** opens a task with "Remember this…" filled in; approve the proposal it writes.
 Its fixes go into **To do**, Overview's one list of everything to tidy, each with one button:
 
-- **Approve** a rewrite that settles rules that disagree or repeat. **See change** shows the page before and after. Serra refuses a rewrite that drops any rule the page had.
-- **Retire** a page another one covers (it asks first; Undo brings it back).
+- **Approve** a rewrite that settles rules that disagree or repeat. **See change** shows the page before and after. Serra refuses a rewrite that drops any rule the page had. Approved, the page keeps its own confirmed date, so a rule the review left alone never looks newer than a later page that changed it.
+- **Retire** a page another one covers, only when that page holds every rule it has (it asks first; Undo brings it back).
 - **Still true** for a page not confirmed in 60 days.
-- **Settle** or **Open** for what needs your judgement; the page opens with the two rules and **Keep this one**.
+- **Settle** or **Open** for what needs your judgement; the page opens with the two rules and **Keep Thursday** (it names the rule), which saves at once with Undo and dates the old rule from the day the kept one gives.
 
 **Do all** runs every one-click fix together. A fix done once stays done.
 
@@ -21,7 +21,7 @@ The model part runs as a read-only T3 run in Serra's own empty folder, on the wo
 
 ## What your notes do
 
-Every page with what it did in the last 30 days: **Used in N replies** with a request it answered, **Always in the brief** (About me pages), **Used once**, or **Not used** once there were enough replies to tell, with **Retire** next to it. Pages lists pages by topic, the same areas as Overview, under their descriptions; file names are small and secondary. A page opens as it reads, with **Edit**, **Still true** and **Retire…**; the Markdown and its header only show when you edit. Everything on it is worked out on your Mac from files Serra already keeps: your pages, the backup each approval or edit leaves in `backups/knowledge/`, and `logs/knowledge-usage.jsonl`. No model is asked and nothing is sent anywhere.
+Every page with what it did in the last 30 days: **Used in N replies** with a request it answered, **Always in the brief** (About me pages, counted apart: their use isn't measured, so they never count as having helped), **Used once**, or **Not used** once there were enough replies to tell, with **Retire** next to it. Pages lists pages by topic, the same areas as Overview, under their descriptions; file names are small and secondary. A page opens as it reads, with **Edit**, **Still true** and **Retire…**; the Markdown and its header only show when you edit. Everything on it is worked out on your Mac from files Serra already keeps: your pages, the backup each approval or edit leaves in `backups/knowledge/`, and `logs/knowledge-usage.jsonl`. No model is asked and nothing is sent anywhere.
 
 ## The health score
 

@@ -169,7 +169,8 @@ const layoutProfile = (): string => {
   mkdirSync(join(knowledge, 'proposals', 'from-review', new Date().toISOString().slice(0, 10)), { recursive: true });
   writeFileSync(join(knowledge, 'proposals', 'from-review', new Date().toISOString().slice(0, 10), '.from.json'), JSON.stringify({ who: 'Weekly review', owner: false, via: 'review' }));
   writeFileSync(join(knowledge, 'proposals', 'from-review', new Date().toISOString().slice(0, 10), `${new Date().toISOString().slice(0, 10)}-owner-working-style.md`),
-    page('How the owner decides', ['verified: no', 'audience: team', 'target: owner/working-style.md'], '# How I work\n\n- Risky releases ship on Thursday now.\n- A bug fix starts with a failing test.\n\n## Replaced\n\n- Until 2026-11-18: Risky releases ship on Tuesday.'));
+    page('How the owner decides', ['verified: no', 'audience: team', 'target: owner/working-style.md'], '# How I work\n\n- Risky releases ship on Thursday now.\n- A bug fix starts with a failing test.\n\n## Replaced\n\n- Until 2026-11-18: Risky releases ship on Tuesday.')
+      .replace('  - Owner interview, 2026-11-19\n', `  - Owner interview, 2026-11-19\n  - Weekly review, ${new Date().toISOString().slice(0, 10)}\n`));
   mkdirSync(join(directory, 'knowledge-reviews'), { recursive: true });
   const today = new Date().toISOString().slice(0, 10);
   writeFileSync(join(directory, 'knowledge-reviews', `${today}.json`), JSON.stringify({

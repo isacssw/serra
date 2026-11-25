@@ -4,7 +4,7 @@ import { useState } from 'react';
 import type { PageValue } from '../../../../src/knowledge-overview.ts';
 import { Badge, Button, Dialog, useToast } from '../../ui/index.ts';
 import { serra } from '../../bridge.ts';
-import { valueLabel } from '../overview.logic.ts';
+import { valueLabel, valueSummary } from '../overview.logic.ts';
 import { settle } from './WeekDigest.tsx';
 
 const TONE = { earns: 'up', some: 'neutral', carried: 'accent', idle: 'warn', unknown: 'neutral' } as const;
@@ -12,7 +12,6 @@ const TONE = { earns: 'up', some: 'neutral', carried: 'accent', idle: 'warn', un
 export const ValueList = ({ value, days, replies, onOpen, onChanged }: { value: PageValue[]; days: number; replies: number; onOpen: (path: string) => void; onChanged: () => void }) => {
   const toast = useToast();
   const [all, setAll] = useState(false);
-  const earning = value.filter((page) => page.state === 'earns' || page.state === 'some' || page.state === 'carried').length;
   const idle = value.filter((page) => page.state === 'idle');
   // Pages no reply used are always in view, with Retire: the dead weight is the point of this list as much as the value.
   const shown = all ? value : [...value.filter((page) => page.state !== 'idle').slice(0, 5), ...idle];
@@ -32,7 +31,7 @@ export const ValueList = ({ value, days, replies, onOpen, onChanged }: { value: 
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <h2 id="value-title" className="text-sm font-semibold">What your notes do</h2>
         <p className="text-xs text-muted">
-          {replies === 0 ? 'No replies yet' : `${earning} of ${value.length} pages helped in the last ${days} days${idle.length ? ` · ${idle.length} not used` : ''}`}
+          {replies === 0 ? 'No replies yet' : valueSummary(value.map((page) => page.state), days)}
         </p>
       </div>
       <ul className="divide-y divide-line-subtle rounded-lg border border-line bg-panel">

@@ -14,7 +14,7 @@ import { RuleDiff } from './proposals/RuleDiff.tsx';
 import { PageBody } from './PageBody.tsx';
 import { Badge, Button, cx, Dialog, Page, useToast } from '../ui/index.ts';
 import {
-  badgeCounts, badgeLabel, currentRules, keepLabel, keepRule, newerRule, badgeTitle, badgeTone, editorState, filterPages, groupByArea, keepSelection, localDate, markVerified,
+  badgeCounts, badgeLabel, currentRules, keepLabel, keepRule, newerRule, replacedOn, badgeTitle, badgeTone, editorState, filterPages, groupByArea, keepSelection, localDate, markVerified,
   pageName, pagesSummary, type PageFilter,
 } from './pages.logic.ts';
 
@@ -311,7 +311,8 @@ export const Pages = () => {
     if (!bridge || !path || saved === null || saving) return;
     if (state?.dirty) { setDraft((text) => keepRule(text, drop, localDate(new Date()))); return; }
     const before = saved;
-    const next = keepRule(before, drop, localDate(new Date()));
+    const kept = pairs.map((issue) => issue.facts ?? []).find((facts) => facts.some((fact) => fact.text === drop))?.find((fact) => fact.text !== drop)?.text ?? '';
+    const next = keepRule(before, drop, replacedOn(kept, localDate(new Date())));
     if (next === before) return;
     setSaving(true);
     try {

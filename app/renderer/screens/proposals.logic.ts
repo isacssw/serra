@@ -80,7 +80,8 @@ export const nextSelection = (proposals: readonly Proposal[], removed: string): 
 // Diff line model
 // ---------------------------------------------------------------------------------------------------------------
 
-type DiffKind = 'same' | 'removed' | 'added';
+/** `moved`: a line that left one place and came back in another, unchanged (a rule kept, only reordered). */
+type DiffKind = 'same' | 'removed' | 'added' | 'moved';
 
 /** One side of a diff row: a line number (1-based in its own text), the line and whether it changed. */
 export interface DiffCell { number: number; text: string; kind: DiffKind }
@@ -158,13 +159,22 @@ export const diffRows = (current: string | null, proposed: string): DiffRow[] =>
       });
     }
   }
+  // A line both removed and added, word for word, only moved: shown as kept, so a reordered rule never looks deleted.
+  const key = (text: string): string => text.trim();
+  const gone = new Set(rows.flatMap((row) => (row.current?.kind === 'removed' && key(row.current.text) ? [key(row.current.text)] : [])));
+  const came = new Set(rows.flatMap((row) => (row.proposed?.kind === 'added' && key(row.proposed.text) ? [key(row.proposed.text)] : [])));
+  for (const row of rows) {
+    if (row.current?.kind === 'removed' && came.has(key(row.current.text))) row.current = { ...row.current, kind: 'moved' };
+    if (row.proposed?.kind === 'added' && gone.has(key(row.proposed.text))) row.proposed = { ...row.proposed, kind: 'moved' };
+  }
   return rows;
 };
 
 /** How many lines each side changed, for the diff header. */
-export const diffStats = (rows: readonly DiffRow[]): { removed: number; added: number } => ({
+export const diffStats = (rows: readonly DiffRow[]): { removed: number; added: number; moved: number } => ({
   removed: rows.filter((row) => row.current?.kind === 'removed').length,
   added: rows.filter((row) => row.proposed?.kind === 'added').length,
+  moved: rows.filter((row) => row.proposed?.kind === 'moved').length,
 });
 
 /** The toast once the knowledge interview started (APP-26). */

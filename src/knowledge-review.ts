@@ -47,6 +47,9 @@ const sentences = (text: string, count: number, max: number): string => {
 };
 
 /** Two answers that say the same thing in nearly the same words: the page didn't change it. */
+/** An answer that hedges or doubts its notes: "probably", "one of the pages is out of date", "check with". */
+const HEDGE = /\b(probably|not sure|i don'?t know|out of date|outdated|check with|confirm (which|with)|may be wrong|unclear|conflict)/i;
+
 const sameAnswer = (a: string, b: string): boolean => {
   const set = (text: string): Set<string> => new Set(text.toLowerCase().match(/[a-z0-9]+/g) ?? []);
   const [x, y] = [set(a), set(b)];
@@ -165,10 +168,19 @@ export const runKnowledgeReview = async ({ profileDir, knowledgeDir, ask, now = 
     if (counts.has(page) && !confirmHeldBack(page, files, health)) suggest('confirm', page, `Used ${counts.get(page)}× this week, last confirmed ${age ?? '?'} days ago.`);
   }
   for (const issue of health.issues.filter((item) => item.kind === 'overlap')) {
-    // Two pages on one topic: the one fewer replies used can go once the other holds everything.
+    // Two pages on one topic: the one fewer replies used can go, but only when the other holds every rule it has
+    // (each of its facts shares three in four of its words with one there). Otherwise retiring would lose a rule.
     const [a, b] = issue.pages;
     if (!a || !b) continue;
     const drop = (counts.get(a) ?? 0) >= (counts.get(b) ?? 0) ? b : a;
+    const keep = drop === a ? b : a;
+    const kept = pageFacts(keep, texts.get(keep) ?? '');
+    const held = pageFacts(drop, texts.get(drop) ?? '').every((fact) => kept.some((other) => {
+      let shared = 0;
+      for (const word of fact.words) if (other.words.has(word)) shared += 1;
+      return shared >= 0.75 * fact.words.size;
+    }));
+    if (!held) continue;
     suggest('retire', drop, `Covers the same topic as ${title(drop === a ? b : a)}.`);
   }
 
@@ -227,7 +239,7 @@ export const runKnowledgeReview = async ({ profileDir, knowledgeDir, ask, now = 
       if (moved.some((pair) => !flat(currentText(proposed)).includes(flat(pair.newer.text)))) continue;
       if (pageAudience(frontmatter(proposed)) !== pageAudience(frontmatter(current))) continue;
       // Where it came from, written by Serra, not the model: today, and the weekly review that proposed it.
-      const stamped = addSource(setHeaderField(setHeaderField(proposed, 'written', date), 'verified', 'no'), `Weekly review, ${date}${newer[0] ? `, settled with ${newer[0].page}` : ''}`);
+      const stamped = addSource(setHeaderField(setHeaderField(proposed, 'written', date), 'verified', 'no'), `Weekly review, ${date}${newer.length ? `, settled with ${[...new Set(newer.map((fact) => fact.page))].join(' and ')}` : ''}`);
       const withTarget = stamped.replace(/^---\n/, `---\ntarget: ${rewrite.page}\n`);
       const name = `${date}-${rewrite.page.replace(/\.md$/, '').replace(/[^\w-]+/g, '-')}.md`;
       mkdirSync(folder, { recursive: true, mode: 0o700 });
@@ -252,7 +264,8 @@ export const runKnowledgeReview = async ({ profileDir, knowledgeDir, ask, now = 
       const notes = use.cited.filter((path) => texts.has(path) && isPage(path)).map((path) => ({ path, text: texts.get(path)! }));
       const withPage = (await ask('Serra knowledge: answer with the page', withoutPrompt(use.request!, notes))).trim();
       const without = (await ask('Serra knowledge: answer without one page', withoutPrompt(use.request!, notes.filter((note) => note.path !== page)))).trim();
-      if (sameAnswer(withPage, without)) continue;
+      // Only where the page clearly helped: the same answer either way, or a hedge with the page, shows nothing.
+      if (sameAnswer(withPage, without) || HEDGE.test(withPage)) continue;
       examples.push({ page, title: title(page), request: use.request!, withPage: short(withPage, 400), without: short(without, 400) });
     }
   } catch (failure) {

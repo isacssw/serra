@@ -272,6 +272,17 @@ export const createProposals = ({ knowledgeDir, backupDir, now = () => new Date(
     };
   };
 
+  /**
+   * The `verified` date an approved page gets: today, except for a weekly-review rewrite of an existing page. That
+   * rewrite only moved rules the owner's pages already held, so the page keeps its own date: re-dating it would let a
+   * rule the review left alone look newer than a later page that changed it.
+   */
+  const approvedOn = (id: string, current: string | null, at: string): string => {
+    if (describe(id).from?.via !== 'review' || current === null) return at;
+    const date = frontmatter(current)?.get('verified')?.trim() ?? '';
+    return DATE.test(date) ? date : at;
+  };
+
   const proposalIds = (relativeDir = ''): string[] => {
     const dir = join(proposalsRoot, relativeDir);
     if (!existsSync(dir)) return [];
@@ -387,7 +398,7 @@ export const createProposals = ({ knowledgeDir, backupDir, now = () => new Date(
     const at = today(now());
     // The text the owner reviewed, which checkReviewed found unchanged: not a second read that could differ.
     const proposed = reviewed.proposal;
-    const verifiedPage = removeHeaderField(setHeaderField(proposed, 'verified', at), 'target');
+    const verifiedPage = removeHeaderField(setHeaderField(proposed, 'verified', approvedOn(id, current, at)), 'target');
     // Replacing a page never quietly changes who may hear it: the owner's pick, else the page's own, else (a new page)
     // the proposal's. A proposal can ask for a wider audience, but only the owner grants it.
     const page = withAudience(verifiedPage, audience, proposed, current);
@@ -441,7 +452,7 @@ export const createProposals = ({ knowledgeDir, backupDir, now = () => new Date(
     const page = text ?? removeHeaderField(proposed, 'target');
     // The page keeps where every rule came from: the old page's sources, then the new text's and the proposal's.
     const sources = [...new Set([...sourceItems(current), ...sourceItems(page), ...sourceItems(proposed)])];
-    const withSources = setHeaderField(addSources(withoutSources(page.endsWith('\n') ? page : `${page}\n`), sources), 'verified', at);
+    const withSources = setHeaderField(addSources(withoutSources(page.endsWith('\n') ? page : `${page}\n`), sources), 'verified', approvedOn(id, current, at));
     // A merge never quietly changes who may hear the page: the owner's pick, else the page's own, else the merged text's.
     const merged = withAudience(withSources, audience, proposed, current);
     const budget = isOfflimits(target, frontmatter(merged)) ? offlimitsBudgetAfter(root, target, merged) : null;

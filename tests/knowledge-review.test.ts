@@ -14,13 +14,15 @@ import { knowledgeOverview } from '../src/knowledge-overview.ts';
 const NOW = new Date('2026-11-25T12:00:00Z');
 
 /** Robin's fixture, with a rule that disagrees on the release page and a week of replies. */
-const profile = (t: TestContext) => {
+/** `extra` writes more pages before the approved copy is taken, so the review reads them. */
+const profile = (t: TestContext, extra?: (knowledge: string) => void) => {
   const dir = mkdtempSync(join(tmpdir(), 'serra-review-'));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   const knowledge = join(dir, 'knowledge');
   cpSync(new URL('../evals/fixture/knowledge', import.meta.url).pathname, knowledge, { recursive: true });
   const style = join(knowledge, 'owner/working-style.md');
   writeFileSync(style, readFileSync(style, 'utf8').replace('- A bug fix starts with a failing test.', '- A bug fix starts with a failing test.\n- Risky releases ship on Thursday now.'));
+  extra?.(knowledge);
   createJournal(knowledge).seed();
   const reply = (day: number, cited: string[], request: string, reply: string, missing?: string[]) => recordKnowledgeUse(dir, {
     at: new Date(NOW.getTime() - day * 86_400_000).toISOString(), runId: `r${day}-${request}`, visibility: 'team', cited, offered: 30, request, reply, ...(missing ? { missing } : {}),
@@ -83,6 +85,15 @@ test('the weekly review writes a checked rewrite as a proposal, a before/after e
   const style = join(knowledge, 'owner/working-style.md');
   writeFileSync(style, `${readFileSync(style, 'utf8').trimEnd()}\n- A new rule the owner just added.\n`);
   assert.equal(knowledgeOverview({ knowledgeDir: knowledge, profileDir: dir, now: NOW }).review?.suggestions.some((item) => item.kind === 'replace'), false, 'a rewrite never lands over a page that changed since');
+
+  // Approved, the rewrite keeps the page's own confirmed date: dating it today would make every rule the review left
+  // alone look newer than a later page that changed it.
+  writeFileSync(style, page);
+  const before = readFileSync(style, 'utf8').match(/^verified: (.+)$/m)?.[1];
+  const shown = proposals.readProposal(listed[0]!.path);
+  proposals.promoteProposal(listed[0]!.path, { folder: 'owner', reviewed: { proposal: shown.proposed, path: 'owner/working-style.md', page: shown.current } });
+  assert.equal(readFileSync(style, 'utf8').match(/^verified: (.+)$/m)?.[1], before);
+  assert.match(before ?? '', /^\d{4}-\d{2}-\d{2}$/);
 });
 
 test('a review whose model run fails still saves what plain code found', async (t) => {
@@ -176,12 +187,12 @@ test('a change the detector can\'t see goes to the model as a question, and its 
 });
 
 test('a page a newer page may have overtaken is never a before/after example', async (t) => {
-  const { dir, knowledge } = profile(t);
-  writeFileSync(join(knowledge, 'product/plans.md'), [
+  const { dir, knowledge } = profile(t, (knowledge) => writeFileSync(join(knowledge, 'product/plans.md'), [
     '---', 'type: product', 'description: Plans and limits', 'audience: team', 'written: 2026-11-20', 'verified: 2026-11-20', 'sources:', '  - Owner interview, 2026-11-20', '---',
     '# Plans and limits', '', '- 250 requests per second per merchant, burst 400.', '',
-  ].join('\n'));
-  createJournal(knowledge).seed();
+  ].join('\n')));
+  // The week's most used page, so only the overtaken check keeps it out of the examples.
+  for (const day of [5, 6]) recordKnowledgeUse(dir, { at: new Date(NOW.getTime() - day * 86_400_000).toISOString(), runId: `limit-${day}`, visibility: 'team', cited: ['product/rate-limits.md'], offered: 30, request: `what is our rate limit? (${day})`, reply: '100 per second.' });
   const asked: string[] = [];
   const ask = async (title: string): Promise<string> => {
     asked.push(title);
@@ -192,4 +203,19 @@ test('a page a newer page may have overtaken is never a before/after example', a
   assert.ok(review.used.some((item) => item.page === 'product/rate-limits.md'), 'the page was used this week');
   assert.ok(!review.examples.some((item) => item.page === 'product/rate-limits.md'), 'but a newer page says otherwise, so it proves nothing');
   assert.ok(review.examples.some((item) => item.page === 'owner/working-style.md'));
+});
+
+test('the review offers Retire for a page on the same topic only when the other page holds every rule it has', async (t) => {
+  const page = (rules: string[]) => ['---', 'type: product', 'description: Sandbox reset schedule', 'audience: team', 'written: 2026-11-01', 'verified: 2026-11-01', 'sources:', '  - Owner interview, 2026-11-01', '---', '# Sandbox', '', ...rules.map((rule) => `- ${rule}`), ''].join('\n');
+  const run = async (cite: string) => {
+    const { dir, knowledge } = profile(t, (knowledge) => {
+      writeFileSync(join(knowledge, 'product/sandbox-a.md'), page(['The sandbox is wiped every Sunday at 02:00 UTC.']));
+      writeFileSync(join(knowledge, 'product/sandbox-b.md'), page(['The sandbox is wiped every Sunday at 02:00 UTC.', 'Ask Jonas to skip a reset before a demo.']));
+    });
+    recordKnowledgeUse(dir, { at: new Date(NOW.getTime() - 86_400_000).toISOString(), runId: `sandbox-${cite}`, visibility: 'team', cited: [cite], offered: 30, request: 'when is the sandbox wiped?', reply: 'Sunday 02:00 UTC.' });
+    const review = await runKnowledgeReview({ profileDir: dir, knowledgeDir: knowledge, ask: async () => JSON.stringify({ summary: 'A quiet week.', rewrites: [] }), now: NOW });
+    return review.suggestions.filter((item) => item.kind === 'retire').map((item) => item.page);
+  };
+  assert.deepEqual(await run('product/sandbox-b.md'), ['product/sandbox-a.md'], 'the smaller page says nothing the other does not');
+  assert.deepEqual(await run('product/sandbox-a.md'), [], 'retiring the bigger page would lose the demo rule');
 });

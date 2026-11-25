@@ -47,8 +47,10 @@ const arms = args.arms!.split(',') as Arm[];
 if (arms.includes('before') && !args.before) throw new Error('--before <checkout of main> is needed for the "before" arm');
 
 interface Case extends EvalCase { id: string; category: string; include: string[]; exclude?: string[]; judge?: string }
-const cases = (JSON.parse(readFileSync(join(root, 'evals/proof-cases.json'), 'utf8')) as { cases: Case[] }).cases
-  .filter((item) => !args.only || args.only.split(',').includes(item.id));
+const allCases = (JSON.parse(readFileSync(join(root, 'evals/proof-cases.json'), 'utf8')) as { cases: Case[] }).cases;
+const cases = allCases.filter((item) => !args.only || args.only.split(',').includes(item.id));
+// A regrade with --only grades those cases again and keeps every other result as it was; the summary shows them all.
+const shown = args.regrade ? allCases : cases;
 
 // --- Runs through T3 ------------------------------------------------------------------------------------------
 const sleep = (ms: number): Promise<void> => new Promise((done) => { setTimeout(done, ms); });
@@ -207,7 +209,7 @@ process.stderr.write(`T3 hygiene: ${swept.settled} leftover thread(s) settled at
 
 const pct = (part: number, whole: number): string => (whole ? `${Math.round((100 * part) / whole)}%` : '–');
 const done = (arm: Arm, filter: (result: Result) => boolean = () => true) => results.filter((result) => result.arm === arm && !result.error && filter(result));
-const categories = [...new Set(cases.map((item) => item.category))];
+const categories = [...new Set(shown.map((item) => item.category))];
 const commit = (code: string): string => { try { return execFileSync('git', ['-C', code, 'rev-parse', '--short', 'HEAD'], { encoding: 'utf8' }).trim(); } catch { return 'unknown'; } };
 /** A 95% Wilson interval for a pass rate, so a small gap reads as what it is. */
 const wilson = (passes: number, runs: number): string => {
@@ -222,11 +224,11 @@ const lines = [
   `Runs that stopped for a tool approval (harness errors, left out): ${arms.map((arm) => `${arm} ${results.filter((result) => result.arm === arm && result.error?.startsWith('stopped for a tool approval')).length}`).join(', ')}.`, '',
   `T3 hygiene: every eval thread ran approval-required, at most ${MAX_RUNNING} at once, and was settled once its answer was saved; ${swept.left} unsettled thread(s) left in the evals project at the end.`, '',
   args.regrade ? `Replies from the original run (its code is in summary.md); graded again at ${commit(root)} with three grader runs per rubric, every arm alike.` : `Code: after = ${commit(root)}${arms.includes('before') ? `, before = ${commit(resolve(args.before!))}` : ''}.`, '',
-  `${new Date().toISOString().slice(0, 10)}. Through Serra's T3 layer on ${[...new Set(results.map((result) => result.ranOn))].join(', ')}. ${cases.length} cases × ${args.runs} runs per arm. ${results.filter((result) => result.error).length} run(s) failed in the harness and are left out (listed in the arm folders).`, '',
-  `| Arm | Runs | Pass | 95% interval | Worst case (errors count as fails) | ${categories.join(' | ')} | Named the answer's page |`, `|---|---|---|---|---|${categories.map(() => '---').join('|')}|---|`,
-  ...arms.map((arm) => `| ${arm} | ${done(arm).length} | ${pct(done(arm, (result) => result.pass).length, done(arm).length)} | ${wilson(done(arm, (result) => result.pass).length, done(arm).length)} | ${pct(done(arm, (result) => result.pass).length, results.filter((result) => result.arm === arm).length)} | ${categories.map((category) => pct(done(arm, (result) => result.category === category && result.pass).length, done(arm, (result) => result.category === category).length)).join(' | ')} | ${arm === 'before' || arm === 'none' ? '–' : pct(cites(arm).filter((result) => result.cited!.some((path) => (ANSWER_PAGE[result.id] ?? []).includes(path))).length, cites(arm).length)} |`),
+  `${new Date().toISOString().slice(0, 10)}. Through Serra's T3 layer on ${[...new Set(results.map((result) => result.ranOn))].join(', ')}. ${shown.length} cases × ${args.runs} runs per arm. ${results.filter((result) => result.error).length} run(s) failed in the harness and are left out (listed in the arm folders).`, '',
+  `| Arm | Runs | Pass | 95% interval | Worst case (errors count as fails) | ${categories.join(' | ')} | Named the answer's page (of all runs) |`, `|---|---|---|---|---|${categories.map(() => '---').join('|')}|---|`,
+  ...arms.map((arm) => `| ${arm} | ${done(arm).length} | ${pct(done(arm, (result) => result.pass).length, done(arm).length)} | ${wilson(done(arm, (result) => result.pass).length, done(arm).length)} | ${pct(done(arm, (result) => result.pass).length, results.filter((result) => result.arm === arm).length)} | ${categories.map((category) => pct(done(arm, (result) => result.category === category && result.pass).length, done(arm, (result) => result.category === category).length)).join(' | ')} | ${arm === 'before' || arm === 'none' ? '–' : pct(cites(arm).filter((result) => result.cited!.some((path) => (ANSWER_PAGE[result.id] ?? []).includes(path))).length, done(arm).length)} |`),
   '', '| Case | ' + arms.join(' | ') + ' |', '|---|' + arms.map(() => '---').join('|') + '|',
-  ...cases.map((item) => `| ${item.id} | ${arms.map((arm) => {
+  ...shown.map((item) => `| ${item.id} | ${arms.map((arm) => {
     const runs = results.filter((result) => result.id === item.id && result.arm === arm).sort((a, b) => a.run - b.run);
     return runs.map((result) => (result.error ? 'err' : result.pass ? '✓' : '✗')).join(' ');
   }).join(' | ')} |`),
