@@ -166,7 +166,7 @@ const RulePairs = ({ page, pairs, draft, disabled, onKeep, onOpen }: {
               </div>
             ))}
             {wholeLines
-              ? <p className="text-xs text-faint">The other moves under “Replaced”, dated today. Save to keep it.</p>
+              ? <p className="text-xs text-faint">Saves at once; the other moves under “Replaced”, dated today. You can undo.</p>
               : here && <p className="text-xs text-faint">Edit the page below so only the current rule is left.</p>}
           </div>
         );

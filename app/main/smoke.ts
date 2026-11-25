@@ -318,6 +318,8 @@ const contrastScript = (route: string): string => `(async () => {
   const wait = async (check) => { for (let i = 0; i < 80 && !check(); i++) await new Promise((r) => setTimeout(r, 50)); return check(); };
   ${route.startsWith('#') ? `location.hash = '${route}'; await new Promise((r) => setTimeout(r, 100));` : `document.querySelector('[data-serra-sidebar] a[data-route="${route}"]')?.click();`}
   await wait(() => document.querySelector('[data-serra-main] h1, [data-serra-main] [data-screen-label]'));
+  // With a profile, the sidebar counts load a moment later; the capture should show them.
+  ${route.startsWith('#') ? '' : "window.dispatchEvent(new Event('serra:refresh-counts')); await wait(() => document.querySelector('[data-serra-sidebar] a[data-route=pages] span[aria-label]'));"}
   await new Promise((r) => setTimeout(r, 400));
   const ctx = document.createElement('canvas').getContext('2d', { willReadFrequently: true });
   const rgba = (css) => {
