@@ -34,19 +34,22 @@ const profile = (t: TestContext) => {
 test('the weekly review writes a checked rewrite as a proposal, a before/after example, and the week in numbers', async (t) => {
   const { dir, knowledge } = profile(t);
   const asked: string[] = [];
-  const fixed = readFileSync(join(knowledge, 'owner/working-style.md'), 'utf8')
-    .replace('- Risky releases (anything touching money movement or webhooks) ship on Tuesday, never Thursday or Friday, so there\'s a week to fix them.\n', '')
-    .trimEnd() + '\n\n## Replaced\n\n- Until 2026-11-20: Risky releases shipped on Tuesday.\n';
+  const tuesday = '- Risky releases (anything touching money movement or webhooks) ship on Tuesday, never Thursday or Friday, so there\'s a week to fix them.\n';
+  const page = readFileSync(join(knowledge, 'owner/working-style.md'), 'utf8');
+  const fixed = page.replace(tuesday, '').trimEnd() + `\n\n## Replaced\n\n- Until 2026-11-20: ${tuesday.slice(2)}`;
+  // A rewrite that quietly drops a rule (the failing-test one) is refused.
+  const lossy = fixed.replace('- A bug fix starts with a failing test.\n', '');
   const ask = async (title: string, prompt: string): Promise<string> => {
     asked.push(prompt);
     if (title.includes('weekly review')) {
       return `Here you go: ${JSON.stringify({ summary: 'Your notes answered 3 of 4 replies. Settle the release day.', rewrites: [
+        { page: 'owner/working-style.md', text: lossy, why: 'drops a rule' },
         { page: 'owner/working-style.md', text: fixed, why: 'Keeps Thursday, the newer rule.' },
         { page: 'owner/role.md', text: 'not a page', why: 'invalid' },
         { page: 'product/sdks.md', text: 'never asked for', why: 'not a page to fix' },
       ] })}`;
     }
-    return 'I don\'t know which day risky releases ship.';
+    return title.includes('with the page') ? 'Keep it under 400 changed lines.' : 'I don\'t know which day risky releases ship.';
   };
   const review = await runKnowledgeReview({ profileDir: dir, knowledgeDir: knowledge, ask, now: NOW });
 
@@ -67,9 +70,10 @@ test('the weekly review writes a checked rewrite as a proposal, a before/after e
   // The before/after: the week's most used page, its latest request, the real reply and the answer without it.
   assert.equal(review.examples[0]?.page, 'owner/working-style.md');
   assert.equal(review.examples[0]?.request, 'how big can my PR be?');
-  assert.equal(review.examples[0]?.withPage, 'Under 400 changed lines.');
+  assert.equal(review.examples[0]?.withPage, 'Keep it under 400 changed lines.', 'both answers come from the same prompt, one page apart');
   assert.equal(review.examples[0]?.without, 'I don\'t know which day risky releases ship.');
-  assert.ok(!asked[1]!.includes('ship on Tuesday, never Thursday'), 'the "without" run never sees the page it is answering without');
+  assert.ok(asked[1]!.includes('ship on Tuesday, never Thursday'), 'the "with" run sees the page');
+  assert.ok(!asked[2]!.includes('ship on Tuesday, never Thursday'), 'the "without" run never sees the page it is answering without');
   assert.ok(asked[0]!.includes('two rules that disagree') && asked[0]!.includes('<page path="owner/working-style.md">'));
   assert.deepEqual(latestReview(dir), review);
 });

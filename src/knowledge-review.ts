@@ -9,7 +9,7 @@ import { mkdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { writeFileAtomic } from './config.ts';
 import { createJournal } from './knowledge-journal.ts';
-import { assessKnowledge, isPage, type KnowledgeFile } from './knowledge-health.ts';
+import { assessKnowledge, isPage, pageFacts, type KnowledgeFile } from './knowledge-health.ts';
 import { knowledgeOverview, listKnowledgeFiles } from './knowledge-overview.ts';
 import { DATE, daysSince, frontmatter, pageBody, PROPOSALS_DIR, saveProblems } from './knowledge-rules.ts';
 import { readKnowledgeUse, type KnowledgeUse } from './knowledge-usage.ts';
@@ -83,7 +83,7 @@ const reviewPrompt = (week: { uses: KnowledgeUse[]; missing: { topic: string; co
   ...week.pages.map((page) => `<page path="${page.path}">\n${short(page.text, 4000)}\n</page>`),
 ].join('\n');
 
-/** The same request, answered without one page: what the bot would have had to go on otherwise. */
+/** A request answered from the given notes only: run once with a page and once without it. */
 const withoutPrompt = (request: string, others: KnowledgeFile[]): string => [
   'You are an assistant answering a request for your owner. Answer in at most three short sentences, plainly.',
   'Use only what the notes below say. If they don\'t say, answer that you don\'t know rather than guess.',
@@ -154,6 +154,9 @@ export const runKnowledgeReview = async ({ profileDir, knowledgeDir, ask, now = 
       // Serra checks what the model wrote: a whole valid page, for the same audience, and nothing quietly widened.
       const proposed = `${rewrite.text.replace(/\r\n?/g, '\n').trimEnd()}\n`;
       if (saveProblems(rewrite.page, proposed).length > 0) continue;
+      // Nothing the page says may be dropped: every current rule is still there, as it was or under "## Replaced".
+      const flat = (text: string): string => text.replace(/\s+/g, ' ').toLowerCase();
+      if (pageFacts(rewrite.page, current).some((fact) => !flat(proposed).includes(flat(fact.text)))) continue;
       if (pageAudience(frontmatter(proposed)) !== pageAudience(frontmatter(current))) continue;
       const withTarget = proposed.replace(/^---\n/, `---\ntarget: ${rewrite.page}\n`).replace(/^verified:.*$/m, 'verified: no');
       const name = `${date}-${rewrite.page.replace(/\.md$/, '').replace(/[^\w-]+/g, '-')}.md`;
@@ -166,9 +169,12 @@ export const runKnowledgeReview = async ({ profileDir, knowledgeDir, ask, now = 
     for (const { page } of used.slice(0, 2)) {
       const use = [...uses].reverse().find((item) => item.cited.includes(page) && item.request && item.reply);
       if (!use) continue;
-      const others = use.cited.filter((path) => path !== page && texts.has(path) && isPage(path)).map((path) => ({ path, text: texts.get(path)! }));
-      const without = (await ask('Serra knowledge: answer without one page', withoutPrompt(use.request!, others))).trim();
-      examples.push({ page, title: title(page), request: use.request!, withPage: use.reply!, without: short(without, 400) });
+      // Asked twice the same way, with the notes that reply used and then without this one page: the only
+      // difference between the two answers is the page.
+      const notes = use.cited.filter((path) => texts.has(path) && isPage(path)).map((path) => ({ path, text: texts.get(path)! }));
+      const withPage = (await ask('Serra knowledge: answer with the page', withoutPrompt(use.request!, notes))).trim();
+      const without = (await ask('Serra knowledge: answer without one page', withoutPrompt(use.request!, notes.filter((note) => note.path !== page)))).trim();
+      examples.push({ page, title: title(page), request: use.request!, withPage: short(withPage, 400), without: short(without, 400) });
     }
   } catch (failure) {
     error = failure instanceof Error ? failure.message : String(failure);

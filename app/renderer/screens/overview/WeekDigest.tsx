@@ -1,12 +1,12 @@
 // Overview's "This week": the weekly knowledge review's digest. What the knowledge did for the bot, one real request
-// answered with and without the page that answered it, what it needed and no page had, and the fixes, each one click.
+// answered with and without the page that answered it, and what it needed and no page had. Its fixes are in To do.
 import { useState } from 'react';
-import { Check, RefreshCw, Sparkles } from 'lucide-react';
+import { RefreshCw, Sparkles } from 'lucide-react';
 import type { KnowledgeReview, ReviewSuggestion } from '../../../../src/knowledge-review-store.ts';
 import { serra } from '../../bridge.ts';
-import { Button, cx, Dialog, useToast } from '../../ui/index.ts';
+import { Button, cx, useToast } from '../../ui/index.ts';
 import { localDate, markVerified } from '../pages.logic.ts';
-import { shortDate, suggestionAction, weekLine } from '../overview.logic.ts';
+import { shortDate, weekLine } from '../overview.logic.ts';
 
 const message = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
@@ -28,9 +28,6 @@ export const settle = async (suggestion: ReviewSuggestion): Promise<void> => {
 export const WeekDigest = ({ review, weekly, onChanged }: { review: KnowledgeReview | null; weekly: boolean; onChanged: () => void }) => {
   const toast = useToast();
   const [running, setRunning] = useState(false);
-  const [done, setDone] = useState<Set<string>>(new Set());
-  const [busy, setBusy] = useState<string | null>(null);
-  const [confirmAll, setConfirmAll] = useState(false);
 
   const run = async () => {
     const bridge = serra();
@@ -38,7 +35,6 @@ export const WeekDigest = ({ review, weekly, onChanged }: { review: KnowledgeRev
     setRunning(true);
     try {
       const next = await bridge.pages.runReview();
-      setDone(new Set());
       toast({ message: next.error ? `Review saved, but the model part failed: ${next.error}` : 'This week’s review is ready.', tone: next.error ? 'error' : 'success' });
       onChanged();
     } catch (failure) { toast({ message: message(failure), tone: 'error' }); } finally { setRunning(false); }
@@ -46,21 +42,6 @@ export const WeekDigest = ({ review, weekly, onChanged }: { review: KnowledgeRev
   const toggleWeekly = async () => {
     try { await serra()?.pages.setReviewWeekly(!weekly); onChanged(); } catch (failure) { toast({ message: message(failure), tone: 'error' }); }
   };
-  const apply = async (items: ReviewSuggestion[]) => {
-    for (const item of items) {
-      setBusy(item.id);
-      try {
-        await settle(item);
-        setDone((set) => new Set([...set, item.id]));
-      } catch (failure) {
-        toast({ message: `${item.title}: ${message(failure)}`, tone: 'error' });
-        break;
-      }
-    }
-    setBusy(null);
-    onChanged();
-  };
-
   if (!review) {
     return (
       <section aria-label="This week" className="flex flex-col gap-3 rounded-lg border border-line bg-panel px-4 py-3.5">
@@ -74,7 +55,6 @@ export const WeekDigest = ({ review, weekly, onChanged }: { review: KnowledgeRev
     );
   }
 
-  const open = review.suggestions.filter((item) => !done.has(item.id));
   return (
     <section aria-labelledby="week-title" className="flex flex-col gap-4 rounded-lg border border-line bg-panel px-4 py-3.5">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
@@ -118,43 +98,7 @@ export const WeekDigest = ({ review, weekly, onChanged }: { review: KnowledgeRev
         </div>
       )}
 
-      {review.suggestions.length > 0 && (
-        <div className="flex flex-col gap-2">
-          <div className="flex items-baseline justify-between gap-2">
-            <p className="text-xs font-medium text-muted">Suggested fixes</p>
-            {open.length > 1 && <Button size="sm" disabled={busy !== null} onClick={() => setConfirmAll(true)}>Approve all {open.length}</Button>}
-          </div>
-          <ul className="divide-y divide-line-subtle rounded-md border border-line">
-            {review.suggestions.map((item) => {
-              const settled = done.has(item.id);
-              return (
-                <li key={item.id} className="flex items-start gap-3 px-3 py-2">
-                  <div className="flex min-w-0 flex-1 flex-col">
-                    <p className="text-[13px]">{item.title}</p>
-                    <p className="text-xs text-muted">{item.why}</p>
-                  </div>
-                  {settled
-                    ? <span className="flex shrink-0 items-center gap-1 text-xs text-up"><Check size={13} aria-hidden />Done</span>
-                    : <Button size="sm" disabled={busy !== null} onClick={() => void apply([item])}>{busy === item.id ? 'Working…' : suggestionAction(item.kind)}</Button>}
-                </li>
-              );
-            })}
-          </ul>
-        </div>
-      )}
       {review.error && <p className="text-xs text-warn">The model part didn’t run: {review.error}</p>}
-      <Dialog
-        open={confirmAll}
-        onClose={() => setConfirmAll(false)}
-        title={`Approve all ${open.length} fixes?`}
-        description="Rewrites are approved as written, pages are retired, and stale pages are marked as still true. Each can be undone from its page."
-        actions={(
-          <>
-            <Button data-autofocus onClick={() => setConfirmAll(false)}>Cancel</Button>
-            <Button variant="primary" onClick={() => { setConfirmAll(false); void apply(open); }}>Approve all</Button>
-          </>
-        )}
-      />
     </section>
   );
 };

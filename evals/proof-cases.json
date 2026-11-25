@@ -1,25 +1,246 @@
 {
-  "about": "Before/after proof (evals/kb-proof.ts). Robin's fixture, eight months on: 45 pages, a rule that changed on the same page, a newer rule on a page the question doesn't point to, a stale page with a newer one beside it, and 15 distractor pages. Every case is something a model can't guess without Robin's notes. `include`: regexes the reply must match (case-insensitive). `exclude`: must not match. `judge`: a rubric a second T3 run scores 0-2. A case passes when every regex holds and the judge, if any, gives 2. Written before any arm was run; never edited to fit a result.",
+  "about": "Before/after proof (evals/kb-proof.ts). Robin's fixture, eight months on: 45 pages, a rule that changed on the same page, a newer rule on a page the question doesn't point to, a stale page with a newer one beside it, and 15 distractor pages. Every case is something a model can't guess without Robin's notes. `include`: regexes the reply must match (case-insensitive). `exclude`: must not match. `judge`: a rubric a second T3 run scores 0-2. A case passes when every regex holds and the judge, if any, gives 2. Version 2 (round 7): the `friday` case no longer depends on today's real weekday (v1 asked as if it were Friday, and workers corrected it from the clock); four more changed rules were added to the fixture, which also changed the right answers of `flags` and `payload-retention`. No case was changed to fit a result. v1 results stay in ~/serra-notes/kb-growth/evals/proof-r6-claude/.",
   "cases": [
-    { "id": "priorities", "category": "owner", "via": "dm", "user": "UROBIN0001", "text": "what are my two priorities this quarter?", "include": ["multi-?currency", "duplicate webhook"] },
-    { "id": "friday", "category": "owner", "via": "channel", "user": "UPRIYA0001", "text": "is Robin likely to answer if I ping now? it's Friday afternoon in Lisbon", "include": ["Friday|focus"], "judge": "Says Robin is unlikely to reply quickly because Fridays are Robin's focus days (no meetings, slow replies). 2 = says this; 1 = vague; 0 = says Robin will answer, or invents other hours." },
-    { "id": "signoff", "category": "people", "via": "channel", "user": "UPRIYA0001", "text": "who needs to sign off before we deploy the refunds release?", "include": ["Jonas"] },
-    { "id": "scope", "category": "people", "via": "channel", "user": "UJONAS0001", "text": "who gets to decide whether we support JPY refunds, product or eng?", "include": ["Priya"], "judge": "Priya (product) decides scope; Robin decides how. 2 = says Priya decides whether; 1 = names Priya without the split; 0 = says eng or Robin decides." },
-    { "id": "release-steps", "category": "process", "via": "channel", "user": "UPRIYA0001", "text": "I've never cut a Ledgerline release. what are the steps?", "include": ["release:prepare", "Jonas"] },
-    { "id": "incident", "category": "process", "via": "channel", "user": "UPRIYA0001", "text": "payments look down for everyone right now, what do I do first?", "include": ["Jonas|PagerDuty"] },
-    { "id": "discount", "category": "owner", "via": "dm", "user": "UROBIN0001", "text": "how much discount can I offer Brightmoor again?", "include": ["12"] },
-    { "id": "invoice-numbers", "category": "product", "via": "channel", "user": "UJONAS0001", "text": "what format do our invoice numbers use?", "include": ["INV-"] },
-    { "id": "payload-retention", "category": "product", "via": "channel", "user": "UJONAS0001", "text": "how long do we keep webhook payloads?", "include": ["30 days"] },
-    { "id": "sandbox-reset", "category": "product", "via": "channel", "user": "UJONAS0001", "text": "when does the sandbox get wiped?", "include": ["Sunday"] },
-    { "id": "flags", "category": "product", "via": "channel", "user": "UJONAS0001", "text": "how fast should I roll out a new feature flag?", "include": ["5\\s?%", "25\\s?%"] },
-    { "id": "jpy", "category": "product", "via": "channel", "user": "UPRIYA0001", "text": "can merchants get refunds in yen?", "include": ["\\bno\\b|not (planned|supported)|isn'?t|aren'?t|can'?t"], "judge": "JPY is not planned (no minor-unit handling); live currencies are EUR and GBP, USD next. 2 = says no and why or which are live; 1 = says no only; 0 = says yes." },
-    { "id": "release-day", "category": "changed", "via": "dm", "user": "UROBIN0001", "text": "which day do risky releases ship these days?", "include": ["Thursday"], "judge": "The working-style page says risky releases used to ship on Tuesday and, since 2026-10-01, ship on Thursday. 2 = says Thursday is current (may mention the old Tuesday rule); 1 = gives both without picking or asks; 0 = says Tuesday." },
-    { "id": "rate-limit", "category": "changed", "via": "channel", "user": "UJONAS0001", "text": "a merchant is getting 429s, what is our API rate limit per merchant?", "include": ["250"], "judge": "An older page (confirmed 2026-06-01) says 100 requests per second; a newer page on plans (confirmed 2026-10-20) says 250. 2 = says 250 is the current limit; 1 = gives both without picking, or asks; 0 = says 100." },
-    { "id": "handover", "category": "changed", "via": "channel", "user": "UJONAS0001", "text": "when is the on-call handover now?", "include": ["Tuesday", "09:00|9 ?am|9:00"], "judge": "The rota page (confirmed 2026-05-01) says Monday 10:00; a newer note (confirmed 2026-11-10) says the handover moved to Tuesday at 09:00. 2 = Tuesday 09:00 as current; 1 = both without picking, or asks; 0 = Monday 10:00." },
-    { "id": "friday-release", "category": "changed", "via": "channel", "user": "UPRIYA0001", "text": "can we ship the risky webhook change this Friday?", "include": ["\\bno\\b|not on (a )?Friday|never (on )?Friday|Thursday"], "exclude": ["\\byes, (ship|go)"], "judge": "Risky releases never ship on Friday (Thursday is the day). 2 = says no and points to Thursday; 1 = says no without a day; 0 = says yes." },
-    { "id": "pr-size", "category": "owner", "via": "channel", "user": "UJONAS0001", "text": "I've got a 900-line PR. good to merge as one?", "include": ["400|split"] },
-    { "id": "dana", "category": "people", "via": "dm", "user": "UROBIN0001", "text": "remind me who Dana is again?", "include": ["Brightmoor"] },
-    { "id": "priya-style", "category": "people", "via": "dm", "user": "UROBIN0001", "text": "how does Priya like to get updates?", "include": ["written|async|note"] },
-    { "id": "pdf-cache", "category": "product", "via": "channel", "user": "UJONAS0001", "text": "how long are invoice PDFs cached?", "include": ["24 ?h"] }
+    {
+      "id": "priorities",
+      "category": "owner",
+      "via": "dm",
+      "user": "UROBIN0001",
+      "text": "what are my two priorities this quarter?",
+      "include": [
+        "multi-?currency",
+        "duplicate webhook"
+      ]
+    },
+    {
+      "id": "friday",
+      "category": "owner",
+      "via": "channel",
+      "user": "UPRIYA0001",
+      "text": "if I ping Robin on a Friday afternoon, will they answer quickly?",
+      "include": [
+        "Friday|focus"
+      ],
+      "judge": "Robin's Fridays are focus days (no meetings, slow replies). 2 = says replies will be slow because Friday is a focus day; 1 = vague; 0 = says Robin will answer quickly, or invents other hours."
+    },
+    {
+      "id": "signoff",
+      "category": "people",
+      "via": "channel",
+      "user": "UPRIYA0001",
+      "text": "who needs to sign off before we deploy the refunds release?",
+      "include": [
+        "Jonas"
+      ]
+    },
+    {
+      "id": "scope",
+      "category": "people",
+      "via": "channel",
+      "user": "UJONAS0001",
+      "text": "who gets to decide whether we support JPY refunds, product or eng?",
+      "include": [
+        "Priya"
+      ],
+      "judge": "Priya (product) decides scope; Robin decides how. 2 = says Priya decides whether; 1 = names Priya without the split; 0 = says eng or Robin decides."
+    },
+    {
+      "id": "release-steps",
+      "category": "process",
+      "via": "channel",
+      "user": "UPRIYA0001",
+      "text": "I've never cut a Ledgerline release. what are the steps?",
+      "include": [
+        "release:prepare",
+        "Jonas"
+      ]
+    },
+    {
+      "id": "incident",
+      "category": "process",
+      "via": "channel",
+      "user": "UPRIYA0001",
+      "text": "payments look down for everyone right now, what do I do first?",
+      "include": [
+        "Jonas|PagerDuty"
+      ]
+    },
+    {
+      "id": "discount",
+      "category": "owner",
+      "via": "dm",
+      "user": "UROBIN0001",
+      "text": "how much discount can I offer Brightmoor again?",
+      "include": [
+        "12"
+      ]
+    },
+    {
+      "id": "invoice-numbers",
+      "category": "product",
+      "via": "channel",
+      "user": "UJONAS0001",
+      "text": "what format do our invoice numbers use?",
+      "include": [
+        "INV-"
+      ]
+    },
+    {
+      "id": "payload-retention",
+      "category": "changed",
+      "via": "channel",
+      "user": "UJONAS0001",
+      "text": "how long do we keep webhook payloads?",
+      "include": [
+        "14 days"
+      ],
+      "exclude": [
+        "\\b30 days\\b(?![^.]*(old|used to|before|replac|no longer|out of date))"
+      ],
+      "judge": "An older page (confirmed 2026-04-01) says webhook payloads are kept 30 days; a newer page (confirmed 2026-11-12) says 14 days. 2 = says 14 days is current; 1 = both without picking, or asks; 0 = says 30 days."
+    },
+    {
+      "id": "sandbox-reset",
+      "category": "product",
+      "via": "channel",
+      "user": "UJONAS0001",
+      "text": "when does the sandbox get wiped?",
+      "include": [
+        "Sunday"
+      ]
+    },
+    {
+      "id": "flags",
+      "category": "changed",
+      "via": "channel",
+      "user": "UJONAS0001",
+      "text": "how fast should I roll out a new feature flag?",
+      "include": [
+        "10\\s?%",
+        "50\\s?%"
+      ],
+      "judge": "An older page (confirmed 2026-05-01) says flags roll out 5%, 25%, 100% over three days; a newer page (confirmed 2026-11-05) says 10%, 50%, 100% over two days. 2 = gives 10/50/100 as current; 1 = both without picking, or asks; 0 = gives 5/25/100."
+    },
+    {
+      "id": "jpy",
+      "category": "product",
+      "via": "channel",
+      "user": "UPRIYA0001",
+      "text": "can merchants get refunds in yen?",
+      "include": [
+        "\\bno\\b|not (planned|supported)|isn'?t|aren'?t|can'?t"
+      ],
+      "judge": "JPY is not planned (no minor-unit handling); live currencies are EUR and GBP, USD next. 2 = says no and why or which are live; 1 = says no only; 0 = says yes."
+    },
+    {
+      "id": "release-day",
+      "category": "changed",
+      "via": "dm",
+      "user": "UROBIN0001",
+      "text": "which day do risky releases ship these days?",
+      "include": [
+        "Thursday"
+      ],
+      "judge": "The working-style page says risky releases used to ship on Tuesday and, since 2026-10-01, ship on Thursday. 2 = says Thursday is current (may mention the old Tuesday rule); 1 = gives both without picking or asks; 0 = says Tuesday."
+    },
+    {
+      "id": "rate-limit",
+      "category": "changed",
+      "via": "channel",
+      "user": "UJONAS0001",
+      "text": "a merchant is getting 429s, what is our API rate limit per merchant?",
+      "include": [
+        "250"
+      ],
+      "judge": "An older page (confirmed 2026-06-01) says 100 requests per second; a newer page on plans (confirmed 2026-10-20) says 250. 2 = says 250 is the current limit; 1 = gives both without picking, or asks; 0 = says 100."
+    },
+    {
+      "id": "handover",
+      "category": "changed",
+      "via": "channel",
+      "user": "UJONAS0001",
+      "text": "when is the on-call handover now?",
+      "include": [
+        "Tuesday",
+        "09:00|9 ?am|9:00"
+      ],
+      "judge": "The rota page (confirmed 2026-05-01) says Monday 10:00; a newer note (confirmed 2026-11-10) says the handover moved to Tuesday at 09:00. 2 = Tuesday 09:00 as current; 1 = both without picking, or asks; 0 = Monday 10:00."
+    },
+    {
+      "id": "friday-release",
+      "category": "changed",
+      "via": "channel",
+      "user": "UPRIYA0001",
+      "text": "can we ship the risky webhook change this Friday?",
+      "include": [
+        "\\bno\\b|not on (a )?Friday|never (on )?Friday|Thursday"
+      ],
+      "exclude": [
+        "\\byes, (ship|go)"
+      ],
+      "judge": "Risky releases never ship on Friday (Thursday is the day). 2 = says no and points to Thursday; 1 = says no without a day; 0 = says yes."
+    },
+    {
+      "id": "pr-limit",
+      "category": "changed",
+      "via": "channel",
+      "user": "UJONAS0001",
+      "text": "what's the max PR size these days?",
+      "include": [
+        "300"
+      ],
+      "judge": "The working-style page says PRs under 400 changed lines, and a newer line on the same page (since 2026-09-15) says under 300. 2 = says 300 is current; 1 = both without picking, or asks; 0 = says 400."
+    },
+    {
+      "id": "fx-time",
+      "category": "changed",
+      "via": "channel",
+      "user": "UJONAS0001",
+      "text": "what time do FX rates update each day?",
+      "include": [
+        "05:00|5 ?am|5:00"
+      ],
+      "judge": "An older page says FX rates come from the treasury feed at 06:00 UTC; a newer page (confirmed 2026-10-30) says 05:00 UTC. 2 = 05:00 UTC as current; 1 = both without picking, or asks; 0 = 06:00."
+    },
+    {
+      "id": "pr-size",
+      "category": "owner",
+      "via": "channel",
+      "user": "UJONAS0001",
+      "text": "I've got a 900-line PR. good to merge as one?",
+      "include": [
+        "400|split"
+      ]
+    },
+    {
+      "id": "dana",
+      "category": "people",
+      "via": "dm",
+      "user": "UROBIN0001",
+      "text": "remind me who Dana is again?",
+      "include": [
+        "Brightmoor"
+      ]
+    },
+    {
+      "id": "priya-style",
+      "category": "people",
+      "via": "dm",
+      "user": "UROBIN0001",
+      "text": "how does Priya like to get updates?",
+      "include": [
+        "written|async|note"
+      ]
+    },
+    {
+      "id": "pdf-cache",
+      "category": "product",
+      "via": "channel",
+      "user": "UJONAS0001",
+      "text": "how long are invoice PDFs cached?",
+      "include": [
+        "24 ?h"
+      ]
+    }
   ]
 }

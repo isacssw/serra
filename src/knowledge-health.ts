@@ -131,8 +131,8 @@ const SLOT_WORD = /^(always|alway|monday|tuesday|wednesday|thursday|friday|satur
  * Words that mark a rule as changed ("now", "since", "moved") or only frame it ("keep", "should stay", "day"), rather
  * than say what it's about: "Release day is Tuesday" and "We now release on Thursday" are one rule.
  */
-const CHANGE_WORDS = new Set(['now', 'since', 'currently', 'current', 'chang', 'mov', 'updat', 'new', 'as', 'of', 'anymore', 'longer', 'instead',
-  'should', 'stay', 'must', 'we', 'is', 'ar', 'be', 'keep', 'day', 'always', 'alway']);
+const CHANGE_WORDS = new Set(['now', 'since', 'currently', 'current', 'change', 'moved', 'updated', 'new', 'as', 'of', 'anymore', 'longer', 'instead',
+  'should', 'stay', 'must', 'we', 'is', 'are', 'be', 'keep', 'day', 'always', 'every', 'per', 'theres', 'there'].map((word) => stem(word)));
 const topic = (set: Set<string>): Set<string> => new Set([...set].filter((word) => !NEGATIONS.has(word) && !SLOT_WORD.test(word) && !CHANGE_WORDS.has(word)));
 const negated = (set: Set<string>): boolean => [...set].some((word) => NEGATIONS.has(word));
 
@@ -183,15 +183,22 @@ export const findOverlaps = (facts: Fact[], comparable: (a: string, b: string) =
       // towards whether they're about the same thing.
       const similarity = common / (mine.size + theirs.size - common);
       // One side's words all inside the other's: the same rule, however much longer one says it.
-      const sameSubject = common === mine.size || common === theirs.size;
-      if (similarity < CONFLICT_AT && !(sameSubject && Math.min(mine.size, theirs.size) >= 2)) continue;
+      const onlyMine = mine.size - common;
+      const onlyTheirs = theirs.size - common;
+      const nestedTopics = onlyMine === 0 || onlyTheirs === 0;
+      // Nearly the same subject: most of the shorter rule's words are in the other, and the two don't just swap one
+      // subject word each ("webhooks retry 5 times" / "invoices retry 3 times" swap one; "100 requests per second,
+      // burst 200" / "the API rate limit is 250 requests per second" don't).
+      const nearlyNested = common >= 2 && common / Math.min(mine.size, theirs.size) >= 0.75 && !(onlyMine === 1 && onlyTheirs === 1);
+      const sameSubject = nestedTopics;
+      if (similarity < CONFLICT_AT && !((nestedTopics || nearlyNested) && Math.min(mine.size, theirs.size) >= 2)) continue;
       if (fact.page !== that.page && !comparable(fact.page, that.page)) continue;
       const pair = { a: { page: fact.page, text: fact.text }, b: { page: that.page, text: that.text }, similarity: Math.round(similarity * 100) / 100 };
       const slotClash = mine.slots.size > 0 && theirs.slots.size > 0 && [...mine.slots].some((slot) => !theirs.slots.has(slot)) && [...theirs.slots].some((slot) => !mine.slots.has(slot));
       const negationClash = mine.negated !== theirs.negated;
       // Two rules about different things ("Retry webhooks 5 times", "Retry invoices 3 times") each have a word the
       // other lacks, so they're never the same subject. "Never Thursday" against "Thursday now" is a conflict too.
-      if (sameSubject && (slotClash || negationClash)) conflicts.push(pair);
+      if ((sameSubject && (slotClash || negationClash)) || (nearlyNested && slotClash)) conflicts.push(pair);
       // A repeat about a different subject has to be near word for word.
       else if (similarity >= DUPLICATE_AT && (sameSubject || similarity >= 0.85)) duplicates.push(pair);
     }
@@ -233,7 +240,7 @@ const overlappingPages = (pages: PageInfo[], same: (a: string, b: string) => boo
 // Health
 // ---------------------------------------------------------------------------------------------------------------
 
-export type IssueKind = 'conflict' | 'duplicate' | 'overlap' | 'stale' | 'draft' | 'unstructured' | 'long' | 'unindexed' | 'index-full';
+type IssueKind = 'conflict' | 'duplicate' | 'overlap' | 'stale' | 'draft' | 'unstructured' | 'long' | 'unindexed' | 'index-full';
 
 interface Issue {
   kind: IssueKind;

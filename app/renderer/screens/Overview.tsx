@@ -2,20 +2,20 @@
 // what the bot knows per area, what needs tidying, what it learned lately and what replies used. Read-only: every
 // fix happens in Pages or Proposals, one click away.
 import { useCallback, useEffect, useId, useState } from 'react';
-import { AlertTriangle, ArrowUpRight, CircleCheck, CircleDot, Copy, Sparkles } from 'lucide-react';
+import { AlertTriangle, CircleCheck, CircleDot, Sparkles } from 'lucide-react';
 import { useNavigate } from 'react-router';
 import type { KnowledgeOverview } from '../../../src/knowledge-overview.ts';
 import { serra } from '../bridge.ts';
+import { FixList } from './overview/FixList.tsx';
 import { ValueList } from './overview/ValueList.tsx';
-import { settle, WeekDigest } from './overview/WeekDigest.tsx';
+import { WeekDigest } from './overview/WeekDigest.tsx';
 import { Button, cx, EmptyState, Page } from '../ui/index.ts';
 import {
-  changeText, EVENT_LABELS, factsChart, shortDate, groupByDay, ISSUE_LABELS, ISSUE_TONES, PART_LABELS, PART_ORDER, scoreChart, scoreWord, usedShare, type Tone,
+  changeText, EVENT_LABELS, factsChart, shortDate, groupByDay, scoreChart, scoreWord,
 } from './overview.logic.ts';
 
 const message = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
-const TONE_TEXT: Record<Tone, string> = { up: 'text-up', warn: 'text-warn', down: 'text-down', neutral: 'text-muted' };
 
 const Section = ({ title, aside, children, className }: { title: string; aside?: React.ReactNode; children: React.ReactNode; className?: string }) => {
   const id = useId();
@@ -30,13 +30,6 @@ const Section = ({ title, aside, children, className }: { title: string; aside?:
   );
 };
 
-const Tile = ({ label, value, unit, note, noteTone = 'neutral' }: { label: string; value: string; unit?: string; note?: string | null; noteTone?: Tone }) => (
-  <div className="flex min-w-0 flex-col gap-1 rounded-lg border border-line bg-panel px-4 py-3">
-    <p className="text-xs text-muted">{label}</p>
-    <p className="flex items-baseline gap-1"><span className="text-[28px] leading-8 font-semibold tracking-tight tabular-nums">{value}</span>{unit && <span className="text-sm text-muted">{unit}</span>}</p>
-    {note && <p className={cx('text-xs', TONE_TEXT[noteTone])}>{note}</p>}
-  </div>
-);
 
 /** An axis label in HTML over the chart, so it stays a readable size however wide the chart is drawn. */
 const Label = ({ x, y, width, height, align, children }: { x: number; y: number; width: number; height: number; align: 'start' | 'middle' | 'end'; children: React.ReactNode }) => (
@@ -125,21 +118,11 @@ const ScoreChart = ({ overview }: { overview: KnowledgeOverview }) => {
   );
 };
 
-/** One part of the score as a thin meter with its number. */
-const Meter = ({ label, value }: { label: string; value: number }) => (
-  <div className="flex min-w-0 flex-col gap-1.5">
-    <div className="flex items-baseline justify-between gap-2 text-xs"><span className="truncate text-muted">{label}</span><span className="tabular-nums text-ink">{value}</span></div>
-    <div className="h-1 rounded-full bg-raised" role="meter" aria-label={label} aria-valuemin={0} aria-valuemax={100} aria-valuenow={value}>
-      <div className="h-1 rounded-full bg-ink" style={{ width: `${value}%` }} />
-    </div>
-  </div>
-);
 
 export const Overview = () => {
   const navigate = useNavigate();
   const [overview, setOverview] = useState<KnowledgeOverview | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [allIssues, setAllIssues] = useState(false);
 
   const load = useCallback(async () => {
     const bridge = serra();
@@ -175,9 +158,11 @@ export const Overview = () => {
   }
 
   const word = scoreWord(health.score, health.pages);
-  const issues = allIssues ? health.issues : health.issues.slice(0, 5);
-  const days = groupByDay(overview.events, now);
-  const share = usedShare(usage.replies, usage.withKnowledge);
+  const growthLine = [
+    `Health ${health.score} · ${word.word.toLowerCase()}${monthAgo ? ` (${changeText(health.score, monthAgo.score, monthAgo.at) ?? ''})` : ''}`,
+    `${health.facts} facts${monthAgo ? ` (${changeText(health.facts, monthAgo.facts, monthAgo.at) ?? ''})` : ''}`,
+  ].join(' · ');
+  const days = groupByDay(overview.events, now, 5);
 
   return (
     <Page title="Overview" subtitle="How well your bot knows you, and how that changes.">
@@ -191,92 +176,22 @@ export const Overview = () => {
         </div>
       )}
       <WeekDigest review={overview.review} weekly={overview.reviewWeekly} onChanged={() => void load()} />
+      <FixList overview={overview} onOpen={open} onChanged={() => void load()} />
       <ValueList value={overview.value} days={usage.days} replies={usage.replies} onOpen={open} onChanged={() => void load()} />
 
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <Tile label="Health" value={String(health.score)} unit="/ 100" note={`${word.word}${monthAgo ? ` · ${changeText(health.score, monthAgo.score, monthAgo.at) ?? ''}` : ''}`} noteTone={word.tone} />
-        <Tile label="Knows" value={String(health.facts)} unit="facts" note={[`${health.pages} page${health.pages === 1 ? '' : 's'}`, monthAgo ? changeText(health.facts, monthAgo.facts, monthAgo.at, ' facts') : null].filter(Boolean).join(' · ')} />
-        <Tile
-          label="Used in replies"
-          value={share === null ? '–' : `${share}%`}
-          note={share === null ? `No replies in the last ${usage.days} days` : `${usage.withKnowledge} of ${usage.replies} replies named a page · last ${usage.days} days`}
-        />
-      </div>
-
-      {overview.points.length > 1 && (
-        <Section title="Health over time" aside={`${health.fresh} of ${health.pages} pages confirmed in the last 60 days`}>
-          <div className="rounded-lg border border-line bg-panel px-3 pt-3 pb-1"><ScoreChart overview={overview} /></div>
-          <div className="grid grid-cols-2 gap-x-6 gap-y-3 md:grid-cols-3 xl:grid-cols-5">
-            {PART_ORDER.map((part) => <Meter key={part} label={PART_LABELS[part]} value={health.parts[part]} />)}
-          </div>
-        </Section>
-      )}
-
-      <Section title="What your bot knows about you">
-        <ul className="divide-y divide-line-subtle rounded-lg border border-line bg-panel">
-          {health.areas.map((area) => {
-            // An area holding rules that disagree isn't settled, whatever else it has.
-            const disputed = area.conflicts > 0;
-            return (
-            <li key={area.area} className="flex items-start gap-3 px-4 py-2.5">
-              {disputed
-                ? <AlertTriangle size={15} aria-label="Has rules that disagree" className="mt-0.5 shrink-0 text-warn" />
-                : area.confirmed > 0
-                  ? <CircleCheck size={15} aria-label="Confirmed" className="mt-0.5 shrink-0 text-up" />
-                  : <CircleDot size={15} aria-label="Nothing yet" className="mt-0.5 shrink-0 text-faint" />}
-              <div className="flex min-w-0 flex-1 flex-col">
-                <p className="text-[13px] font-medium">{area.label}</p>
-                <p className="truncate text-xs text-muted">{area.headline ?? (area.pages > 0 ? 'Only drafts so far' : 'Nothing yet')}</p>
-                {disputed && <p className="text-xs text-warn">{area.conflicts === 1 ? 'Two rules disagree' : `${area.conflicts} pairs of rules disagree`}. See Needs tidying.</p>}
-              </div>
-              <p className="shrink-0 text-xs tabular-nums text-muted">{area.pages === 0 ? '' : `${area.facts} fact${area.facts === 1 ? '' : 's'} · ${area.pages} page${area.pages === 1 ? '' : 's'}`}</p>
+      <Section title="How it’s growing" aside={growthLine}>
+        {overview.points.length > 1 && <div className="rounded-lg border border-line bg-panel px-3 pt-3 pb-1"><ScoreChart overview={overview} /></div>}
+        <ul className="flex flex-wrap gap-1.5" aria-label="What your bot knows about you, by area">
+          {health.areas.map((area) => (
+            <li key={area.area} title={area.headline ?? undefined} className={cx('flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs', area.conflicts > 0 ? 'border-warn/40 text-ink' : 'border-line text-ink')}>
+              {area.conflicts > 0
+                ? <AlertTriangle size={12} aria-label="Has rules that disagree" className="text-warn" />
+                : area.confirmed > 0 ? <CircleCheck size={12} aria-label="Covered" className="text-up" /> : <CircleDot size={12} aria-label="Nothing yet" className="text-faint" />}
+              {area.label}
+              <span className="tabular-nums text-muted">{area.facts}</span>
             </li>
-            );
-          })}
+          ))}
         </ul>
-      </Section>
-
-      <Section title="Needs tidying" aside={health.issues.length > 0 ? `${health.issues.length} item${health.issues.length === 1 ? '' : 's'}` : undefined}>
-        {health.issues.length === 0
-          ? <p className="flex items-center gap-2 rounded-lg border border-line bg-panel px-4 py-3 text-[13px] text-muted"><CircleCheck size={15} aria-hidden className="text-up" />Nothing to tidy. No conflicts, repeats or stale pages.</p>
-          : (
-            <ul className="divide-y divide-line-subtle rounded-lg border border-line bg-panel">
-              {issues.map((issue, at) => (
-                <li key={`${issue.kind}-${issue.pages.join()}-${at}`} className="flex items-start gap-3 px-4 py-2.5">
-                  {ISSUE_TONES[issue.kind] === 'neutral'
-                    ? <CircleDot size={15} aria-hidden className="mt-0.5 shrink-0 text-faint" />
-                    : issue.kind === 'duplicate' || issue.kind === 'overlap'
-                      ? <Copy size={15} aria-hidden className={cx('mt-0.5 shrink-0', TONE_TEXT[ISSUE_TONES[issue.kind]])} />
-                      : <AlertTriangle size={15} aria-hidden className={cx('mt-0.5 shrink-0', TONE_TEXT[ISSUE_TONES[issue.kind]])} />}
-                  <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-                    <p className="text-[13px]"><span className="font-medium">{ISSUE_LABELS[issue.kind]}.</span> <span className="text-muted">{issue.text}</span></p>
-                    {issue.detail?.map((line) => <p key={line} className="truncate border-l-2 border-line pl-2 text-xs text-muted">{line}</p>)}
-                  </div>
-                  <div className="flex shrink-0 flex-col items-end gap-0.5">
-                    {issue.kind === 'stale' && (
-                      // A stale page the owner knows still holds is one click, not an edit.
-                      <Button size="sm" onClick={() => void settle({ id: `confirm:${issue.pages[0]!}`, kind: 'confirm', page: issue.pages[0]!, title: issue.pages[0]!, why: '' }).then(load, (failure: unknown) => setError(message(failure)))}>Still true</Button>
-                    )}
-                    {issue.pages[0] === 'index.md'
-                      ? <Button size="sm" variant="ghost" onClick={() => void navigate('/knowledge/pages')} icon={<ArrowUpRight size={13} aria-hidden />}>Pages</Button>
-                      : issue.pages.map((page) => (
-                        // Each page the item names opens on its own, so a conflict across two pages can be fixed from either.
-                        <Button key={page} size="sm" variant="ghost" onClick={() => open(page)} aria-label={`Open ${page}`} icon={<ArrowUpRight size={13} aria-hidden />}>
-                          {issue.pages.length > 1 ? (page.split('/').pop() ?? page) : 'Open'}
-                        </Button>
-                      ))}
-                  </div>
-                </li>
-              ))}
-              {health.issues.length > 5 && (
-                <li className="px-4 py-2">
-                  <button type="button" onClick={() => setAllIssues(!allIssues)} className="text-xs text-muted underline underline-offset-2 hover:text-ink focus-visible:outline-2 focus-visible:outline-focus">
-                    {allIssues ? 'Show fewer' : `Show all ${health.issues.length}`}
-                  </button>
-                </li>
-              )}
-            </ul>
-          )}
       </Section>
 
       <div className="flex flex-col gap-6">

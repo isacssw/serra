@@ -15,7 +15,7 @@ import { readKnowledgeUse, recordKnowledgeUse, takeKnowledgeUsed } from '../src/
 import { knowledgeOverview } from '../src/knowledge-overview.ts';
 import { createJournal } from '../src/knowledge-journal.ts';
 import { createKnowledge } from '../src/knowledge.ts';
-import { changeText, groupByDay, scoreChart, scoreWord } from '../app/renderer/screens/overview.logic.ts';
+import { changeText, fixItems, groupByDay, scoreChart, scoreWord } from '../app/renderer/screens/overview.logic.ts';
 import { currentRules, keepRule, newerRule } from '../app/renderer/screens/pages.logic.ts';
 import { swapRule } from '../app/renderer/screens/proposals.logic.ts';
 
@@ -111,6 +111,9 @@ test('health: conflicts and repeats are told apart from rules that merely look a
     { a: 'API rate limit is 100 requests per minute.', b: 'Rate limit is now 200 requests per minute.', is: 'conflict' },
     { a: 'Release day is Tuesday.', b: 'We now release on Thursday.', is: 'conflict' },
     { a: 'Keep pull requests under 400 lines.', b: 'Pull requests should stay under 200 lines.', is: 'conflict' },
+    // The proof fixture's own changed rules, as written.
+    { a: 'Risky releases (anything touching money movement or webhooks) ship on Tuesday, never Thursday or Friday, so there\'s a week to fix them.', b: 'Risky releases ship on Thursday now (since 2026-10-01), never Friday.', is: 'conflict' },
+    { a: '100 requests per second per merchant, burst 200.', b: 'The API rate limit is 250 requests per second per merchant on every plan.', is: 'conflict' },
   ];
   const found = gold.map((pair) => {
     const { duplicates, conflicts } = findOverlaps([...facts('one.md', [pair.a]), ...facts('two.md', [pair.b])]);
@@ -345,4 +348,19 @@ test('a year of history on a full knowledge base is worked out in well under the
   const history = knowledgeHistory(all, changes, NOW);
   assert.ok(history.points.length > 300);
   assert.ok(performance.now() - started < 3000, `${Math.round(performance.now() - started)} ms for ${all.length} files and 400 changes`);
+});
+
+test('To do puts every organising job in one list, one-click review fixes first, a page never listed twice', () => {
+  const overview = {
+    value: [{ path: 'owner/style.md', title: 'How I decide', area: 'How you work', uses: 3, last: null, state: 'earns' as const, examples: [] }],
+    review: { suggestions: [{ id: 'replace:owner/style.md', kind: 'replace' as const, page: 'owner/style.md', title: 'How I decide', why: 'Keeps Thursday.', proposal: 'from-review/x.md' }] },
+    health: { issues: [
+      { kind: 'conflict' as const, pages: ['owner/style.md'], text: '', detail: ['Tuesday', 'Thursday'] },
+      { kind: 'stale' as const, pages: ['product/old.md'], text: '' },
+      { kind: 'unindexed' as const, pages: ['product/lost.md'], text: '' },
+    ] },
+  } as unknown as Parameters<typeof fixItems>[0];
+  const items = fixItems(overview);
+  assert.deepEqual(items.map((item) => [item.title, item.action]), [['How I decide', 'Approve'], ['product/old.md', 'Still true'], ['product/lost.md', 'Open']]);
+  assert.equal(items[1]!.suggestion?.kind, 'confirm', 'a stale page is one click too');
 });

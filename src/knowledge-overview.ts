@@ -70,6 +70,25 @@ const missingTopics = (uses: { missing?: string[] }[]): { topic: string; count: 
   return [...counts].sort((a, b) => b[1] - a[1]).slice(0, 8).map(([topic, count]) => ({ topic, count }));
 };
 
+/**
+ * The review with the suggestions already settled taken out, whatever settled them: an approved or discarded
+ * proposal, a retired page, a page confirmed since. So a fix done once never comes back after a restart.
+ */
+const openSuggestions = (review: KnowledgeReview | null, root: string, now: Date): KnowledgeReview | null => {
+  if (!review) return null;
+  const today = now.toISOString().slice(0, 10);
+  const open = review.suggestions.filter((item) => {
+    if (item.kind === 'replace') return item.proposal !== undefined && existsSync(join(root, PROPOSALS_DIR, item.proposal));
+    if (!existsSync(join(root, item.page))) return false;
+    if (item.kind === 'confirm') {
+      const verified = frontmatter(readFileSync(join(root, item.page), 'utf8'))?.get('verified')?.trim() ?? '';
+      return verified < review.id && verified !== today;
+    }
+    return true;
+  });
+  return { ...review, suggestions: open };
+};
+
 const pageAreaOf = (path: string, files: KnowledgeFile[]): string => {
   const type = frontmatter(files.find((file) => file.path === path)?.text ?? '')?.get('type')?.trim() ?? '';
   return AREA_LABELS[pageArea(path, type)];
@@ -166,7 +185,7 @@ export const knowledgeOverview = ({ knowledgeDir, profileDir, backupDir, now = n
     return { path, title: titles.get(path) || path, area: pageAreaOf(path, files), uses: count, last: counts.get(path)?.last ?? null, state, examples: examples.get(path) ?? [] };
   }).sort((a, b) => b.uses - a.uses || a.title.localeCompare(b.title));
   return {
-    value, missing: missingTopics(uses), review: latestReview(profileDir), reviewWeekly: reviewSettings(profileDir).weekly,
+    value, missing: missingTopics(uses), review: openSuggestions(latestReview(profileDir), root, now), reviewWeekly: reviewSettings(profileDir).weekly,
     health, monthAgo, points, events: events.slice(0, 80), waiting: countProposals(join(root, PROPOSALS_DIR)), unreviewed: changed.length + removed.length,
     usage: {
       replies: uses.length, withKnowledge: uses.filter((use) => use.cited.length > 0).length, days,

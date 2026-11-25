@@ -69,6 +69,9 @@ const DISTRACTORS: [string, string, string][] = [
 const ROWS: [string, string, string][] = [
   ['pricing plans or packaging', 'product/plans.md', 'Plans and packaging for sales'],
   ['rota changes', 'workflows/rota-changes.md', 'Changes to how the team works'],
+  ['announcing changes to merchants', 'product/release-policy.md', 'How changes reach merchants'],
+  ['settlement or money movement', 'product/treasury.md', 'Treasury and money movement'],
+  ['merchant privacy promises', 'product/privacy.md', 'Privacy commitments to merchants'],
   ...DISTRACTORS.map(([name, description]): [string, string, string] => [description.toLowerCase(), `product/${name}.md`, description]),
 ];
 
@@ -87,6 +90,14 @@ const scratch = (withKnowledge: boolean): { dir: string; profileDir: string } =>
     writeFileSync(style, readFileSync(style, 'utf8').replace('- A bug fix starts with a failing test.', '- A bug fix starts with a failing test.\n- Risky releases ship on Thursday now (since 2026-10-01), never Friday.'));
     const oncall = join(knowledge, 'product/oncall.md');
     writeFileSync(oncall, readFileSync(oncall, 'utf8').replace(/^verified: .*$/m, 'verified: 2026-05-01'));
+    writeFileSync(style, readFileSync(style, 'utf8').replace('- Keep PRs under 400 changed lines; split bigger ones.', '- Keep PRs under 400 changed lines; split bigger ones.\n- Keep PRs under 300 changed lines now (since 2026-09-15).'));
+    for (const [page, date] of [['product/feature-flags.md', '2026-05-01'], ['product/data-retention.md', '2026-04-01'], ['product/currencies.md', '2026-05-01']] as const) {
+      const file = join(knowledge, page);
+      writeFileSync(file, readFileSync(file, 'utf8').replace(/^verified: .*$/m, `verified: ${date}`));
+    }
+    writeFileSync(join(knowledge, 'product/release-policy.md'), `${header('product', 'How changes reach merchants', '2026-11-05')}# Rollouts\n\n- Feature flags roll out 10%, 50%, 100% over two days.\n- Every rollout is announced in #ledgerline-releases.\n`);
+    writeFileSync(join(knowledge, 'product/treasury.md'), `${header('product', 'Treasury and money movement', '2026-10-30')}# Treasury\n\n- FX rates come from the treasury feed at 05:00 UTC.\n- Settlement batches close at 16:00 UTC.\n`);
+    writeFileSync(join(knowledge, 'product/privacy.md'), `${header('product', 'Privacy commitments to merchants', '2026-11-12')}# Privacy\n\n- Webhook payloads are kept 14 days.\n- Merchants can ask for an export of their data at any time.\n`);
     const limits = join(knowledge, 'product/rate-limits.md');
     writeFileSync(limits, readFileSync(limits, 'utf8').replace(/^verified: .*$/m, 'verified: 2026-06-01'));
     writeFileSync(join(knowledge, 'product/plans.md'), `${header('product', 'Plans and packaging for sales', '2026-10-20')}# Plans\n\n- Standard and Plus plans; Plus adds priority support.\n- The API rate limit is 250 requests per second per merchant on every plan.\n`);
@@ -146,7 +157,16 @@ const judge = async (rubric: string, question: string, reply: string): Promise<n
 };
 
 // --- One run ----------------------------------------------------------------------------------------------------
-interface Result { id: string; category: string; arm: Arm; run: number; pass: boolean; regex: boolean; score: number | null; reply: string; ranOn: string; error?: string }
+interface Result { id: string; category: string; arm: Arm; run: number; pass: boolean; regex: boolean; score: number | null; reply: string; ranOn: string; cited?: string[]; missing?: string[]; error?: string }
+
+/** The page that holds each case's answer: a reply naming it shows its "used" line can be trusted. */
+const ANSWER_PAGE: Record<string, string[]> = {
+  priorities: ['owner/role.md'], friday: ['owner/role.md'], signoff: ['people/jonas.md', 'workflows/release.md'], scope: ['people/priya.md'],
+  'release-steps': ['workflows/release.md'], incident: ['workflows/incident.md'], discount: ['owner/private-notes.md'], 'invoice-numbers': ['product/invoices.md'],
+  'payload-retention': ['product/privacy.md'], 'sandbox-reset': ['product/sandbox.md'], flags: ['product/release-policy.md'], jpy: ['product/currencies.md'],
+  'release-day': ['owner/working-style.md'], 'rate-limit': ['product/plans.md'], handover: ['workflows/rota-changes.md'], 'friday-release': ['owner/working-style.md'],
+  'pr-limit': ['owner/working-style.md'], 'fx-time': ['product/treasury.md'], 'pr-size': ['owner/working-style.md'], dana: ['people/dana.md'], 'priya-style': ['people/priya.md'], 'pdf-cache': ['product/invoices.md'],
+};
 
 const builders = new Map<string, (profileDir: string, item: EvalCase) => Promise<string>>();
 const builder = async (arm: Arm): Promise<(profileDir: string, item: EvalCase) => Promise<string>> => {
@@ -173,12 +193,12 @@ const runOne = async (item: Case, arm: Arm, run: number): Promise<Result> => {
   try {
     brief = await (await builder(arm))(profileDir, item);
     const { answer, ranOn } = await runT3(`Serra KB proof: ${item.id} (${arm})`, brief);
-    const { reply } = takeKnowledgeUsed(answer);
+    const { reply, cited, missing } = takeKnowledgeUsed(answer);
     const regex = item.include.every((pattern) => new RegExp(pattern, 'iu').test(reply)) && !(item.exclude ?? []).some((pattern) => new RegExp(pattern, 'iu').test(reply));
     const score = item.judge ? await judge(item.judge, item.text, reply).catch(() => null) : null;
     // A grader run that failed says nothing about the reply: a harness error, not a fail.
     if (item.judge && score === null) throw new Error('the grading run failed');
-    const result = { ...base, regex, score, reply, ranOn, pass: regex && (item.judge ? score === 2 : true) };
+    const result = { ...base, regex, score, reply, ranOn, cited, missing, pass: regex && (item.judge ? score === 2 : true) };
     save(result, brief);
     return result;
   } catch (error) {
@@ -209,11 +229,21 @@ await Promise.all(Array.from({ length: Number(args.concurrency) }, async () => {
 const pct = (part: number, whole: number): string => (whole ? `${Math.round((100 * part) / whole)}%` : '–');
 const done = (arm: Arm, filter: (result: Result) => boolean = () => true) => results.filter((result) => result.arm === arm && !result.error && filter(result));
 const categories = [...new Set(cases.map((item) => item.category))];
+const commit = (code: string): string => { try { return execFileSync('git', ['-C', code, 'rev-parse', '--short', 'HEAD'], { encoding: 'utf8' }).trim(); } catch { return 'unknown'; } };
+/** A 95% Wilson interval for a pass rate, so a small gap reads as what it is. */
+const wilson = (passes: number, runs: number): string => {
+  if (runs === 0) return '–';
+  const z = 1.96; const p = passes / runs; const d = 1 + (z * z) / runs;
+  const centre = (p + (z * z) / (2 * runs)) / d; const half = (z * Math.sqrt((p * (1 - p)) / runs + (z * z) / (4 * runs * runs))) / d;
+  return `${Math.round(100 * Math.max(0, centre - half))}–${Math.round(100 * Math.min(1, centre + half))}%`;
+};
+const cites = (arm: Arm) => done(arm, (result) => (result.cited?.length ?? 0) > 0);
 const lines = [
   `# Knowledge before/after proof: ${args.label}`, '',
+  `Code: after = ${commit(root)}${arms.includes('before') ? `, before = ${commit(resolve(args.before!))}` : ''}.`, '',
   `${new Date().toISOString().slice(0, 10)}. Through Serra's T3 layer on ${[...new Set(results.map((result) => result.ranOn))].join(', ')}. ${cases.length} cases × ${args.runs} runs per arm. ${results.filter((result) => result.error).length} run(s) failed in the harness and are left out (listed in the arm folders).`, '',
-  `| Arm | Runs | Pass | ${categories.join(' | ')} |`, `|---|---|---|${categories.map(() => '---').join('|')}|`,
-  ...arms.map((arm) => `| ${arm} | ${done(arm).length} | ${pct(done(arm, (result) => result.pass).length, done(arm).length)} | ${categories.map((category) => pct(done(arm, (result) => result.category === category && result.pass).length, done(arm, (result) => result.category === category).length)).join(' | ')} |`),
+  `| Arm | Runs | Pass | 95% interval | ${categories.join(' | ')} | Named the answer's page |`, `|---|---|---|---|${categories.map(() => '---').join('|')}|---|`,
+  ...arms.map((arm) => `| ${arm} | ${done(arm).length} | ${pct(done(arm, (result) => result.pass).length, done(arm).length)} | ${wilson(done(arm, (result) => result.pass).length, done(arm).length)} | ${categories.map((category) => pct(done(arm, (result) => result.category === category && result.pass).length, done(arm, (result) => result.category === category).length)).join(' | ')} | ${arm === 'before' || arm === 'none' ? '–' : pct(cites(arm).filter((result) => result.cited!.some((path) => (ANSWER_PAGE[result.id] ?? []).includes(path))).length, cites(arm).length)} |`),
   '', '| Case | ' + arms.join(' | ') + ' |', '|---|' + arms.map(() => '---').join('|') + '|',
   ...cases.map((item) => `| ${item.id} | ${arms.map((arm) => {
     const runs = results.filter((result) => result.id === item.id && result.arm === arm).sort((a, b) => a.run - b.run);

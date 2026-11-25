@@ -1,6 +1,8 @@
 // Knowledge › Overview, the pure half: chart geometry, the words for a score and its change, and the timeline
 // grouped by day. Tested in tests/knowledge-health.test.ts; Overview.tsx draws it.
-import type { EventKind, HealthParts, HistoryPoint, IssueKind, KnowledgeEvent } from '../../../src/knowledge-health.ts';
+import type { EventKind, HistoryPoint, KnowledgeEvent } from '../../../src/knowledge-health.ts';
+import type { KnowledgeOverview } from '../../../src/knowledge-overview.ts';
+import type { ReviewSuggestion } from '../../../src/knowledge-review-store.ts';
 
 export type Tone = 'up' | 'warn' | 'down' | 'neutral';
 
@@ -103,24 +105,11 @@ const dayLabel = (day: string, now: Date): string => {
   return new Date(`${day}T00:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: days > 300 ? 'numeric' : undefined, timeZone: 'UTC' });
 };
 
-export const ISSUE_TONES: Record<IssueKind, Tone> = {
-  conflict: 'down', 'index-full': 'down', duplicate: 'warn', overlap: 'warn', unindexed: 'warn', stale: 'neutral', draft: 'neutral', long: 'neutral', unstructured: 'neutral',
-};
 
-export const ISSUE_LABELS: Record<IssueKind, string> = {
-  conflict: 'Conflict', 'index-full': 'Index nearly full', duplicate: 'Repeated', overlap: 'Same topic', unindexed: 'Not indexed',
-  stale: 'Stale', draft: 'Draft', long: 'Long page', unstructured: 'Hard to scan',
-};
 
-/** The parts of the score, in the words the screen uses. */
-export const PART_LABELS: Record<keyof HealthParts, string> = { fresh: 'Recently confirmed', consistent: 'No conflicts', unique: 'No repeats', organised: 'Organised', coverage: 'Areas covered' };
-export const PART_ORDER: readonly (keyof HealthParts)[] = ['fresh', 'consistent', 'unique', 'organised', 'coverage'];
-
-/** Share of replies that used knowledge, as a whole percent, or null with no replies. */
-export const usedShare = (replies: number, withKnowledge: number): number | null => (replies === 0 ? null : Math.round((withKnowledge / replies) * 100));
 
 /** The button that settles a review suggestion. */
-export const suggestionAction = (kind: 'replace' | 'retire' | 'confirm'): string => ({ replace: 'Approve', retire: 'Retire', confirm: 'Still true' })[kind];
+const suggestionAction = (kind: 'replace' | 'retire' | 'confirm'): string => ({ replace: 'Approve', retire: 'Retire', confirm: 'Still true' })[kind];
 
 /** "12 replies · 9 used your notes · health 72 → 84 · 18 → 22 facts": the week in one line. */
 export const weekLine = (review: { replies: number; withKnowledge: number; score: { before: number | null; now: number }; facts: { before: number | null; now: number } }): string => [
@@ -134,3 +123,42 @@ export const weekLine = (review: { replies: number; withKnowledge: number; score
 export const valueLabel = (state: 'earns' | 'some' | 'carried' | 'idle' | 'unknown', uses: number): string => ({
   earns: `Used in ${uses} replies`, some: 'Used once', carried: 'Always in the brief', idle: 'Not used', unknown: 'Not used yet',
 })[state];
+
+/** One row of "To do": what it's about, why, the lines in question, and its one action. */
+export interface FixItem {
+  id: string;
+  title: string;
+  why: string;
+  lines: string[];
+  pages: string[];
+  action: string;
+  /** Set when the action is one click (a review fix); otherwise the action opens the page. */
+  suggestion?: ReviewSuggestion;
+}
+
+const FIX_RANK: Record<string, number> = { replace: 0, conflict: 1, 'index-full': 2, duplicate: 3, overlap: 4, retire: 5, confirm: 6, stale: 7, unindexed: 8, draft: 9, long: 10, unstructured: 11 };
+
+/**
+ * Every organising job in one list, worst first: the weekly review's fixes (one click) and what the health check finds
+ * now, without repeating a page a review fix already covers. Names pages by their description, not their file.
+ */
+export const fixItems = (overview: Pick<KnowledgeOverview, 'review' | 'health' | 'value'>): FixItem[] => {
+  const title = (path: string): string => overview.value.find((page) => page.path === path)?.title ?? path;
+  const fromReview: FixItem[] = (overview.review?.suggestions ?? []).map((suggestion) => ({
+    id: suggestion.id, title: suggestion.title, why: suggestion.why, lines: [], pages: [suggestion.page],
+    action: suggestionAction(suggestion.kind), suggestion,
+  }));
+  const covered = new Set(fromReview.map((item) => `${item.suggestion!.kind === 'replace' ? 'conflict' : item.suggestion!.kind === 'confirm' ? 'stale' : 'overlap'}:${item.pages[0]}`));
+  const fromHealth: FixItem[] = overview.health.issues.flatMap((issue) => {
+    const page = issue.pages[0]!;
+    if (covered.has(`${issue.kind === 'duplicate' ? 'conflict' : issue.kind}:${page}`) || issue.pages.some((path) => covered.has(`conflict:${path}`))) return [];
+    const why = ({ conflict: 'Two rules disagree', duplicate: 'A rule is written twice', overlap: 'Two pages on one topic', stale: 'Not confirmed in over 60 days', draft: 'Not confirmed yet', unindexed: 'Not in the index, so never used', long: 'Near the page size limit', unstructured: 'Long prose, hard for the bot to scan', 'index-full': 'The index is nearly full' } as const)[issue.kind];
+    const stale: ReviewSuggestion | undefined = issue.kind === 'stale' ? { id: `confirm:${page}`, kind: 'confirm', page, title: title(page), why } : undefined;
+    return [{
+      id: `${issue.kind}:${issue.pages.join(',')}`, title: page === 'index.md' ? 'Knowledge index' : issue.pages.map(title).join(' and '), why, lines: issue.detail ?? [],
+      pages: issue.pages, action: stale ? 'Still true' : issue.kind === 'conflict' || issue.kind === 'duplicate' ? 'Settle' : 'Open', ...(stale ? { suggestion: stale } : {}),
+    }];
+  });
+  const kind = (item: FixItem): string => item.suggestion?.kind === 'confirm' && !overview.review?.suggestions.some((suggestion) => suggestion.id === item.id) ? 'stale' : item.suggestion?.kind ?? item.id.split(':')[0]!;
+  return [...fromReview, ...fromHealth].sort((a, b) => (FIX_RANK[kind(a)] ?? 20) - (FIX_RANK[kind(b)] ?? 20));
+};
