@@ -20,6 +20,7 @@ import { parseArgs } from 'node:util';
 import { takeKnowledgeUsed } from '../src/knowledge-usage.ts';
 import { ensureProject } from '../src/t3.ts';
 import { createEvalRunner, MAX_RUNNING } from './t3-hygiene.ts';
+import { listQuestions } from '../src/t3-questions.ts';
 import type { EvalCase } from './capture.ts';
 import { proofProfile } from './proof-fixture.ts';
 
@@ -57,11 +58,23 @@ const sleep = (ms: number): Promise<void> => new Promise((done) => { setTimeout(
 // answer is saved (also on failure), and swept at the end (evals/t3-hygiene.ts).
 const runner = createEvalRunner({ bin: t3Bin, project, ...(args.provider ? { provider: args.provider } : {}), ...(args.model ? { model: args.model } : {}) });
 
-/** One T3 run of `brief`: its final answer, and what it ran on. A worker that stopped to ask answers with that fact. */
+/** What a worker that stopped is asking: its questions as text, or nothing when it stopped for a tool approval. */
+const questionText = async (threadId: string): Promise<string> => (await listQuestions(threadId, t3Bin))
+  .flatMap((request) => request.questions.map((question) => [question.question, ...question.options.map((option) => `${option.label} ${option.description}`)].join(' '))).join('\n');
+
+/**
+ * One T3 run of `brief`: its final answer, and what it ran on. A worker that stops to ask the owner a question answers
+ * with that question (graded like any reply). One that stops for a tool approval says nothing about its brief: eval
+ * threads run approval-required, so that is a harness error, never a fail, in every arm alike.
+ */
 const runT3 = async (title: string, brief: string): Promise<{ answer: string; ranOn: string; link: string }> => {
-  const run = await runner.run(title, brief);
-  return { answer: run.asked ? '(the run stopped to ask a question instead of answering)' : run.answer, ranOn: run.ranOn, link: run.link };
+  const run = await runner.run(title, brief, { readAsk: questionText });
+  if (run.asked && !run.answer) throw new Error(`stopped for a tool approval: ${run.link}`);
+  return { answer: run.asked ? `(asked the owner) ${run.answer}` : run.answer, ranOn: run.ranOn, link: run.link };
 };
+
+/** Every arm's brief gets the same line: eval threads can read files but run no commands, so none waits on approval. */
+const EVAL_NOTE = '\n\n(Eval note, the same in every run: read files with your file tools only; run no shell commands, and change nothing.)\n';
 
 /** Three grader runs, majority wins (the middle score): one grader's off answer can't fail a right reply. */
 const judge = async (rubric: string, question: string, reply: string): Promise<number | null> => {
@@ -123,7 +136,7 @@ const runOne = async (item: Case, arm: Arm, run: number): Promise<Result> => {
   let brief = '';
   const base = { id: item.id, category: item.category, arm, run, pass: false, regex: false, score: null, reply: '', ranOn: 'unknown' };
   try {
-    brief = await (await builder(arm))(profileDir, item);
+    brief = `${await (await builder(arm))(profileDir, item)}${EVAL_NOTE}`;
     const { answer, ranOn } = await runT3(`Serra KB proof: ${item.id} (${arm})`, brief);
     const { reply, cited, missing } = takeKnowledgeUsed(answer);
     const regex = item.include.every((pattern) => new RegExp(pattern, 'iu').test(reply)) && !(item.exclude ?? []).some((pattern) => new RegExp(pattern, 'iu').test(reply));
@@ -168,7 +181,9 @@ if (!existsSync(project)) {
 await ensureProject(project, 'Serra KB evals', t3Bin);
 // Results are saved as they come (partial.json), so a run cut short loses nothing; --resume carries on from there.
 const partial = join(outDir, 'partial.json');
-const earlier: Result[] = args.resume && existsSync(partial) ? (JSON.parse(readFileSync(partial, 'utf8')) as { results: Result[] }).results.filter((result) => !result.error) : [];
+const earlier: Result[] = args.resume && existsSync(partial) ? (JSON.parse(readFileSync(partial, 'utf8')) as { results: Result[] }).results
+  // Runs that stopped for an approval were once counted as fails: they run again.
+  .filter((result) => !result.error && !result.reply.startsWith('(the run stopped')) : [];
 results.push(...earlier);
 const jobs = cases.flatMap((item) => arms.flatMap((arm) => Array.from({ length: Number(args.runs) }, (_, run) => run + 1)
   .filter((run) => !earlier.some((result) => result.id === item.id && result.arm === arm && result.run === run))
@@ -204,6 +219,7 @@ const wilson = (passes: number, runs: number): string => {
 const cites = (arm: Arm) => done(arm, (result) => (result.cited?.length ?? 0) > 0);
 const lines = [
   `# Knowledge before/after proof: ${args.label}`, '',
+  `Runs that stopped for a tool approval (harness errors, left out): ${arms.map((arm) => `${arm} ${results.filter((result) => result.arm === arm && result.error?.startsWith('stopped for a tool approval')).length}`).join(', ')}.`, '',
   `T3 hygiene: every eval thread ran approval-required, at most ${MAX_RUNNING} at once, and was settled once its answer was saved; ${swept.left} unsettled thread(s) left in the evals project at the end.`, '',
   args.regrade ? `Replies from the original run (its code is in summary.md); graded again at ${commit(root)} with three grader runs per rubric, every arm alike.` : `Code: after = ${commit(root)}${arms.includes('before') ? `, before = ${commit(resolve(args.before!))}` : ''}.`, '',
   `${new Date().toISOString().slice(0, 10)}. Through Serra's T3 layer on ${[...new Set(results.map((result) => result.ranOn))].join(', ')}. ${cases.length} cases × ${args.runs} runs per arm. ${results.filter((result) => result.error).length} run(s) failed in the harness and are left out (listed in the arm folders).`, '',
