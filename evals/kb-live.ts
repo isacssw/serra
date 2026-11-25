@@ -178,7 +178,11 @@ const runOne = async (item: Case & { fixture: string }, arm: Result['arm'], run:
     const hinted = /closest to this request, best first: ([^\n]*)/.exec(brief)?.[1]?.match(/`[^`]+`/g)?.map((path) => path.slice(1, -1)) ?? [];
     const carried = [...brief.matchAll(/^From ([\w/.-]+\.md) \(confirmed/gm)].map((match) => match[1]!);
     if (arm === 'no-hint') brief = brief.replace(HINT, '\n\n');
-    if (arm === 'no-notes') brief = brief.replace(/;? ?two rules disagree: .*?or ask the owner/g, '').replace(/ \(\s*;?\s*\)/g, '').replace(/\(; /g, '(');
+    if (arm === 'no-notes') {
+      brief = brief.replace(/;? ?two rules disagree: .*?ask the owner only when you can't tell/g, '').replace(/ \(\s*;?\s*\)/g, '').replace(/\(; /g, '(');
+      // The control arm must really lack the notes, or the comparison means nothing.
+      if (brief.includes('two rules disagree')) throw new Error('the no-notes brief still has a conflict note');
+    } else if (arm === 'notes' && item.category === 'conflict' && !brief.includes('two rules disagree')) throw new Error('the notes brief has no conflict note');
     const threadId = await startFolderThread({ project, title: `Serra KB eval: ${item.id} (${arm})`, brief, ...(args.provider ? { provider: args.provider } : {}), ...(args.model ? { model: args.model } : {}) }, t3Bin);
     const deadline = Date.now() + Number(args.timeout) * 1000;
     for (;;) {

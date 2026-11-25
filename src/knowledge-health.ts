@@ -128,7 +128,7 @@ export interface FactPair { a: { page: string; text: string }; b: { page: string
 const slots = (text: string): Set<string> => new Set(text.toLowerCase().match(SLOTS) ?? []);
 const SLOT_WORD = /^(always|alway|monday|tuesday|wednesday|thursday|friday|saturday|sunday|weekly|daily|monthly|morning|afternoon|evening|\d+)$/;
 const topic = (set: Set<string>): Set<string> => new Set([...set].filter((word) => !NEGATIONS.has(word) && !SLOT_WORD.test(word)));
-const subject = (text: string): string => words(text).find((word) => !NEGATIONS.has(word) && !SLOT_WORD.test(word)) ?? '';
+const nested = (a: Set<string>, b: Set<string>): boolean => [...a].every((word) => b.has(word)) || [...b].every((word) => a.has(word));
 const negated = (set: Set<string>): boolean => [...set].some((word) => NEGATIONS.has(word));
 
 /** Above this, two facts say the same thing. */
@@ -167,9 +167,9 @@ export const findOverlaps = (facts: Fact[], comparable: (a: string, b: string) =
         const theirs = slots(that.text);
         const slotClash = mine.size > 0 && theirs.size > 0 && [...mine].some((slot) => !theirs.has(slot)) && [...theirs].some((slot) => !mine.has(slot));
         const negationClash = negated(fact.words) !== negated(that.words);
-        // Two rules about different things ("Webhooks retry 5 times", "Invoices retry 3 times") start differently:
-        // a conflict needs the same subject, the first word that isn't a day, a number or a "never".
-        const sameSubject = subject(fact.text) === subject(that.text);
+        // Two rules about different things ("Retry webhooks 5 times", "Retry invoices 3 times") each have a word the
+        // other lacks. One rule about one thing, however it's phrased, has one side's words inside the other's.
+        const sameSubject = nested(topic(fact.words), topic(that.words));
         if (sameSubject && similarity >= CONFLICT_AT && (slotClash || (negationClash && similarity >= 0.5))) conflicts.push(pair);
         // A repeat about a different subject has to be near word for word.
         else if (similarity >= DUPLICATE_AT && (sameSubject || similarity >= 0.85)) duplicates.push(pair);

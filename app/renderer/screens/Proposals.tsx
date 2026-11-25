@@ -20,7 +20,7 @@ import { approvalAudience, pageAudience, type Audience } from '../../../src/owne
 import { useSearchParams } from 'react-router';
 import { registerActions } from '../commands/registry.ts';
 import {
-  defaultFolder, folderChoices, folderLabel, groupByDate, interviewStartedText, nextSelection, pendingLabel, PROPOSAL_PARAM, promoteProposalAction, proposalBody,
+  defaultFolder, folderChoices, swapRule, folderLabel, groupByDate, interviewStartedText, nextSelection, pendingLabel, PROPOSAL_PARAM, promoteProposalAction, proposalBody,
   proposalTitle, withoutTarget, diffRows, diffStats,
 } from './proposals.logic.ts';
 
@@ -197,7 +197,7 @@ export const Proposals = () => {
         if (!live) return;
         // A proposal that changes one rule on this page starts as the page with that rule swapped, ready to merge.
         const clash = similar.find((page) => page.path === mergeTarget)?.disagrees;
-        const swapped = clash && current.includes(clash.page) ? current.replace(clash.page, clash.proposal) : null;
+        const swapped = clash && current.includes(clash.page) ? swapRule(current, clash, proposalBody(diff.proposed), new Date().toISOString().slice(0, 10)) : null;
         const start = swapped ?? `${current.trimEnd()}\n\n${proposalBody(diff.proposed)}\n`;
         setMergeBase(current); setMergeText(start); setMergeStart(swapped ? null : start); setMergeAudience(approvalAudience(diff.proposed, current).audience);
       },

@@ -17,6 +17,7 @@ import { createJournal } from '../src/knowledge-journal.ts';
 import { createKnowledge } from '../src/knowledge.ts';
 import { changeText, groupByDay, scoreChart, scoreWord } from '../app/renderer/screens/overview.logic.ts';
 import { currentRules, keepRule, newerRule } from '../app/renderer/screens/pages.logic.ts';
+import { swapRule } from '../app/renderer/screens/proposals.logic.ts';
 
 const NOW = new Date('2026-11-25T12:00:00Z');
 
@@ -103,6 +104,9 @@ test('health: conflicts and repeats are told apart from rules that merely look a
     // Same shape, different subjects: two true facts, not a conflict.
     { a: 'Webhooks retry 5 times over 24 hours.', b: 'Invoices retry 3 times over 24 hours.', is: 'neither' },
     { a: 'The API rate limit is 100 requests per minute.', b: 'The dashboard rate limit is 20 requests per minute.', is: 'neither' },
+    { a: 'Retry webhooks 5 times.', b: 'Retry invoices 3 times.', is: 'neither' },
+    // The same rule, phrased as an order.
+    { a: 'Risky releases ship on Tuesday.', b: 'Ship risky releases on Thursday.', is: 'conflict' },
   ];
   const found = gold.map((pair) => {
     const { duplicates, conflicts } = findOverlaps([...facts('one.md', [pair.a]), ...facts('two.md', [pair.b])]);
@@ -305,4 +309,10 @@ test('keeping a rule settles the pair: amounts survive, the kept page reads as s
   // The page as the owner saves it has nothing left to settle.
   const issues = assessKnowledge([{ path: 'index.md', text: '| a | `owner/refunds.md` | a |' }, { path: 'owner/refunds.md', text: kept }], NOW).issues;
   assert.deepEqual(issues, []);
+});
+
+test('merging a proposal that changes a rule swaps it and keeps everything else the proposal adds', () => {
+  const page = '---\ntype: rule\n---\n# How I work\n\n- Risky releases ship on Tuesday.\n- A bug fix starts with a failing test.\n\n## Replaced\n\n- Until 2026-01-01: Releases on Monday.\n';
+  const merged = swapRule(page, { page: 'Risky releases ship on Tuesday.', proposal: 'Risky releases ship on Thursday.' }, '- Risky releases ship on Thursday.\n- Every release has a rollback plan.\n', '2026-11-25');
+  assert.equal(merged, '---\ntype: rule\n---\n# How I work\n\n- Risky releases ship on Thursday.\n- A bug fix starts with a failing test.\n- Every release has a rollback plan.\n\n## Replaced\n\n- Until 2026-11-25: Risky releases ship on Tuesday.\n- Until 2026-01-01: Releases on Monday.\n');
 });

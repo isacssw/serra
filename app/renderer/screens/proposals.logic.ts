@@ -210,3 +210,20 @@ export const withoutTarget = (text: string): string => text.replace(/^(---\n[\s\
 
 /** A proposal's text without its header, to place under a page the owner is merging it into. */
 export const proposalBody = (text: string): string => text.replace(/^---\n[\s\S]*?\n---\n/, '').trim();
+
+/**
+ * The page with one rule changed as a proposal asks (`clash.page` → `clash.proposal`), and every other line the
+ * proposal adds that the page doesn't have yet, below the page's current rules (above any `## Replaced`). Nothing the
+ * proposal says is dropped, so merging it unchanged loses nothing. The old rule moves under `## Replaced`, dated `date`.
+ */
+export const swapRule = (page: string, clash: { page: string; proposal: string }, proposal: string, date: string): string => {
+  const swapped = page.replace(clash.page, () => clash.proposal);
+  const bare = (line: string): string => line.trim().replace(/^([-*]|\d+\.)\s+/, '').trim();
+  const have = new Set(swapped.split('\n').map(bare));
+  const extra = proposal.split('\n').filter((line) => /^\s*([-*]|\d+\.)\s+/.test(line) && !have.has(bare(line)) && bare(line) !== bare(clash.proposal));
+  const replaced = /^##\s+Replaced\b[^\n]*\n(?:\n)?/im.exec(swapped);
+  const head = (replaced ? swapped.slice(0, replaced.index) : swapped).trimEnd();
+  const old = `- Until ${date}: ${clash.page.trim()}`;
+  const history = replaced ? `${replaced[0]}${old}\n${swapped.slice(replaced.index + replaced[0].length)}` : `## Replaced\n\n${old}\n`;
+  return `${head}${extra.length ? `\n${extra.join('\n')}` : ''}\n\n${history.trimEnd()}\n`;
+};
