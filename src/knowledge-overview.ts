@@ -38,6 +38,8 @@ export interface KnowledgeOverview {
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+/** The last history worked out, for the profile and day it was for. */
+const historyCache = new Map<string, ReturnType<typeof knowledgeHistory>>();
 /** Replies before "never used" means anything. */
 const UNUSED_AFTER = 10;
 
@@ -90,7 +92,14 @@ export const knowledgeOverview = ({ knowledgeDir, profileDir, backupDir, now = n
   const { changed, removed } = journal.drift();
   const health = assessKnowledge(files, now);
   const changes = readChanges(resolve(backupDir ?? join(dirname(root), 'backups', 'knowledge')));
-  const { points, events } = knowledgeHistory(files, changes, now);
+  // History only changes with a new change, a new day, or new text: opening Overview again reuses it.
+  const key = `${root}|${now.toISOString().slice(0, 10)}|${changes.length}|${changes.map((change) => `${change.id}${change.undoneAt ?? ''}`).sort().at(-1) ?? ''}|${files.map((file) => `${file.path}:${file.text.length}`).join(',')}|${health.score}`;
+  const cached = historyCache.get(key);
+  const { points, events } = cached ?? knowledgeHistory(files, changes, now);
+  if (!cached) {
+    historyCache.clear();
+    historyCache.set(key, { points, events });
+  }
   const cutoff = now.getTime() - days * DAY_MS;
   const monthAgo = [...points].reverse().find((point) => Date.parse(point.at) <= cutoff) ?? null;
 

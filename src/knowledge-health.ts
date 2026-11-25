@@ -134,8 +134,6 @@ const SLOT_WORD = /^(always|alway|monday|tuesday|wednesday|thursday|friday|satur
 const CHANGE_WORDS = new Set(['now', 'since', 'currently', 'current', 'chang', 'mov', 'updat', 'new', 'as', 'of', 'anymore', 'longer', 'instead',
   'should', 'stay', 'must', 'we', 'is', 'ar', 'be', 'keep', 'day', 'always', 'alway']);
 const topic = (set: Set<string>): Set<string> => new Set([...set].filter((word) => !NEGATIONS.has(word) && !SLOT_WORD.test(word) && !CHANGE_WORDS.has(word)));
-/** One side's topic words all inside the other's: the same rule, however it's phrased. */
-const nested = (a: Set<string>, b: Set<string>): boolean => [...a].every((word) => b.has(word)) || [...b].every((word) => a.has(word));
 const negated = (set: Set<string>): boolean => [...set].some((word) => NEGATIONS.has(word));
 
 /** Above this, two facts say the same thing. */
@@ -149,40 +147,55 @@ const CONFLICT_AT = 0.4;
  * sharing a word are compared, so this stays fast on a full knowledge base.
  */
 export const findOverlaps = (facts: Fact[], comparable: (a: string, b: string) => boolean = () => true): { duplicates: FactPair[]; conflicts: FactPair[] } => {
+  // Everything about one fact is worked out once; pairs are found by counting shared topic words, so no set is built
+  // per pair. A knowledge base at its caps (60 pages of 120 lines) stays well under a second.
+  const info = facts.map((fact) => {
+    const topics = topic(fact.words);
+    return { topics, size: topics.size, slots: slots(fact.text), negated: negated(fact.words) };
+  });
   const byWord = new Map<string, number[]>();
-  facts.forEach((fact, at) => {
-    for (const word of topic(fact.words)) {
+  info.forEach(({ topics }, at) => {
+    for (const word of topics) {
       const list = byWord.get(word);
       if (list) list.push(at); else byWord.set(word, [at]);
     }
   });
-  const seen = new Set<string>();
   const duplicates: FactPair[] = [];
   const conflicts: FactPair[] = [];
-  facts.forEach((fact, at) => {
-    for (const word of topic(fact.words)) {
-      for (const other of byWord.get(word) ?? []) {
-        if (other <= at || seen.has(`${at}:${other}`)) continue;
-        seen.add(`${at}:${other}`);
-        const that = facts[other]!;
-        if (fact.page !== that.page && !comparable(fact.page, that.page)) continue;
-        // The words that can differ between two versions of one rule (a day, a number, a "never") don't count
-        // towards whether they're about the same thing.
-        const similarity = jaccard(topic(fact.words), topic(that.words));
-        const pair = { a: { page: fact.page, text: fact.text }, b: { page: that.page, text: that.text }, similarity: Math.round(similarity * 100) / 100 };
-        const mine = slots(fact.text);
-        const theirs = slots(that.text);
-        const slotClash = mine.size > 0 && theirs.size > 0 && [...mine].some((slot) => !theirs.has(slot)) && [...theirs].some((slot) => !mine.has(slot));
-        const negationClash = negated(fact.words) !== negated(that.words);
-        // Two rules about different things ("Retry webhooks 5 times", "Retry invoices 3 times") each have a word the
-        // other lacks. One rule about one thing, however it's phrased, has one side's words inside the other's.
-        const sameSubject = nested(topic(fact.words), topic(that.words));
-        if (sameSubject && similarity >= CONFLICT_AT && (slotClash || (negationClash && similarity >= 0.5))) conflicts.push(pair);
-        // A repeat about a different subject has to be near word for word.
-        else if (similarity >= DUPLICATE_AT && (sameSubject || similarity >= 0.85)) duplicates.push(pair);
+  const shared = new Int32Array(facts.length);
+  const touched: number[] = [];
+  for (let at = 0; at < facts.length; at += 1) {
+    for (const word of info[at]!.topics) {
+      for (const other of byWord.get(word)!) {
+        if (other <= at) continue;
+        if (shared[other] === 0) touched.push(other);
+        shared[other] = shared[other]! + 1;
       }
     }
-  });
+    const fact = facts[at]!;
+    const mine = info[at]!;
+    for (const other of touched) {
+      const common = shared[other]!;
+      shared[other] = 0;
+      const that = facts[other]!;
+      const theirs = info[other]!;
+      // The words that can differ between two versions of one rule (a day, a number, a "never") don't count
+      // towards whether they're about the same thing.
+      const similarity = common / (mine.size + theirs.size - common);
+      if (similarity < CONFLICT_AT) continue;
+      if (fact.page !== that.page && !comparable(fact.page, that.page)) continue;
+      const pair = { a: { page: fact.page, text: fact.text }, b: { page: that.page, text: that.text }, similarity: Math.round(similarity * 100) / 100 };
+      const slotClash = mine.slots.size > 0 && theirs.slots.size > 0 && [...mine.slots].some((slot) => !theirs.slots.has(slot)) && [...theirs.slots].some((slot) => !mine.slots.has(slot));
+      const negationClash = mine.negated !== theirs.negated;
+      // Two rules about different things ("Retry webhooks 5 times", "Retry invoices 3 times") each have a word the
+      // other lacks. One rule about one thing, however it's phrased, has one side's words inside the other's.
+      const sameSubject = common === mine.size || common === theirs.size;
+      if (sameSubject && (slotClash || (negationClash && similarity >= 0.5))) conflicts.push(pair);
+      // A repeat about a different subject has to be near word for word.
+      else if (similarity >= DUPLICATE_AT && (sameSubject || similarity >= 0.85)) duplicates.push(pair);
+    }
+    touched.length = 0;
+  }
   const order = (a: FactPair, b: FactPair): number => b.similarity - a.similarity;
   return { duplicates: duplicates.sort(order), conflicts: conflicts.sort(order) };
 };
@@ -270,12 +283,63 @@ const percent = (value: number): number => Math.round(Math.max(0, Math.min(1, va
 const short = (text: string, max = 90): string => (text.length > max ? `${text.slice(0, max - 1).trimEnd()}…` : text);
 
 /** The health of a knowledge folder as it is: its score, what it's made of, and what needs tidying, worst first. */
-export const assessKnowledge = (files: KnowledgeFile[], now: Date): Health => {
+/**
+ * What history keeps between assessments: each page's facts by its text, and the overlaps of each pair of pages by
+ * both texts. One change touches one or two pages, so the next point only compares those again.
+ */
+interface OverlapCache { facts: Map<string, Fact[]>; pairs: Map<string, ReturnType<typeof findOverlaps>> }
+
+const textKey = (text: string): string => {
+  let hash = 2166136261;
+  for (let at = 0; at < text.length; at += 1) hash = Math.imul(hash ^ text.charCodeAt(at), 16777619);
+  return `${text.length}:${(hash >>> 0).toString(36)}`;
+};
+
+/** Every overlap between the pages, built pair by pair from the cache. Same result as one `findOverlaps` over all. */
+const cachedOverlaps = (pages: KnowledgeFile[], cache: OverlapCache, comparable: (a: string, b: string) => boolean): ReturnType<typeof findOverlaps> => {
+  const keyed = pages.map((file) => {
+    const key = `${file.path}#${textKey(file.text)}`;
+    const facts = cache.facts.get(key) ?? pageFacts(file.path, file.text);
+    cache.facts.set(key, facts);
+    return { key, path: file.path, facts };
+  });
+  const duplicates: FactPair[] = [];
+  const conflicts: FactPair[] = [];
+  for (let i = 0; i < keyed.length; i += 1) {
+    for (let j = i; j < keyed.length; j += 1) {
+      const [x, y] = [keyed[i]!, keyed[j]!];
+      const key = `${x.key}|${y.key}`;
+      let found = cache.pairs.get(key);
+      if (!found) {
+        const own = (pair: FactPair): boolean => (i === j ? true : pair.a.page !== pair.b.page);
+        const all = i === j ? findOverlaps(x.facts, comparable) : comparable(x.path, y.path) ? findOverlaps([...x.facts, ...y.facts], comparable) : { duplicates: [], conflicts: [] };
+        found = { duplicates: all.duplicates.filter(own), conflicts: all.conflicts.filter(own) };
+        cache.pairs.set(key, found);
+      }
+      duplicates.push(...found.duplicates);
+      conflicts.push(...found.conflicts);
+    }
+  }
+  const order = (a: FactPair, b: FactPair): number => b.similarity - a.similarity;
+  return { duplicates: duplicates.sort(order), conflicts: conflicts.sort(order) };
+};
+
+export const assessKnowledge = (files: KnowledgeFile[], now: Date, cache?: OverlapCache): Health => {
   const index = files.find((file) => file.path === 'index.md')?.text ?? '';
   const pages = describePages(files, index, now);
-  const facts = files.filter((file) => isPage(file.path)).flatMap((file) => pageFacts(file.path, file.text));
+  const facts = files.filter((file) => isPage(file.path)).flatMap((file) => {
+    if (!cache) return pageFacts(file.path, file.text);
+    const key = `${file.path}#${textKey(file.text)}`;
+    const found = cache.facts.get(key) ?? pageFacts(file.path, file.text);
+    cache.facts.set(key, found);
+    return found;
+  });
   const areaOf = new Map(pages.map((page) => [page.path, page.area]));
-  const { duplicates, conflicts } = findOverlaps(facts, (a, b) => samePageSubject(a, b, areaOf));
+  const same = (a: string, b: string): boolean => samePageSubject(a, b, areaOf);
+  const found = cache ? cachedOverlaps(files.filter((file) => isPage(file.path)), cache, same) : findOverlaps(facts, same);
+  // A list to work through, not an inventory: the worst 40 of each kind are plenty to act on.
+  const conflicts = found.conflicts.slice(0, 40);
+  const duplicates = found.duplicates.slice(0, 40);
   const overlaps = overlappingPages(pages, (a, b) => samePageSubject(a, b, areaOf));
   const issues: Issue[] = [];
   for (const pair of conflicts) {
@@ -424,8 +488,9 @@ export const knowledgeHistory = (files: KnowledgeFile[], changes: KnowledgeChang
     .sort((a, b) => b.at.localeCompare(a.at));
   const state = new Map(files.map((file) => [file.path, file.text]));
   const set = (path: string, text: string | null): void => { if (text === null) state.delete(path); else state.set(path, text); };
+  const cache: OverlapCache = { facts: new Map(), pairs: new Map() };
   const snapshot = (at: Date): HistoryPoint => {
-    const health = assessKnowledge([...state].map(([path, text]) => ({ path, text })), at);
+    const health = assessKnowledge([...state].map(([path, text]) => ({ path, text })), at, cache);
     return {
       at: at.toISOString(), score: health.score, pages: health.pages, facts: health.facts,
       conflicts: health.issues.filter((issue) => issue.kind === 'conflict').length,
@@ -454,15 +519,19 @@ export const knowledgeHistory = (files: KnowledgeFile[], changes: KnowledgeChang
   const weekly = (until: number): void => {
     for (let at = last + WEEK_MS; at < until; at += WEEK_MS) add(snapshot(new Date(at)));
   };
-  for (const change of [...order].reverse()) {
+  const forward = [...order].reverse();
+  forward.forEach((change, at) => {
     weekly(Date.parse(change.at));
     for (const file of change.files) set(file.path, file.after);
     const day = change.at.slice(0, 10);
     dayEvents.set(day, [...(dayEvents.get(day) ?? []), ...eventsOf(change)]);
-    const label = dayLabel(dayEvents.get(day)!);
-    add({ ...snapshot(new Date(change.at)), ...(label ? { change: label } : {}) });
+    // One point per day: the folder after the day's last change.
+    if (forward[at + 1]?.at.slice(0, 10) !== day) {
+      const label = dayLabel(dayEvents.get(day)!);
+      add({ ...snapshot(new Date(change.at)), ...(label ? { change: label } : {}) });
+    }
     last = Date.parse(change.at);
-  }
+  });
   weekly(now.getTime());
   // Today's point is the folder as it is, whatever the backups know: an edit accepted before Serra recorded those
   // still counts. It keeps what changed today.
@@ -595,19 +664,22 @@ export const markIndexRows = (index: string, files: KnowledgeFile[], now: Date):
   const areaOf = new Map(pages.map((page) => [page.path, page.area]));
   const { conflicts } = findOverlaps(files.filter((file) => isPage(file.path)).flatMap((file) => pageFacts(file.path, file.text)), (a, b) => samePageSubject(a, b, areaOf));
   const confirmed = new Map(files.map((file) => [file.path, frontmatter(file.text)?.get('verified')?.trim() ?? '']));
-  for (const pair of conflicts.slice(0, 6)) {
-    const where = pair.a.page === pair.b.page ? '' : ` (on \`${pair.a.page}\`, confirmed ${confirmed.get(pair.a.page) || 'never'}, and \`${pair.b.page}\`, confirmed ${confirmed.get(pair.b.page) || 'never'})`;
-    const note = `two rules disagree: "${short(pair.a.text, 70)}" and "${short(pair.b.text, 70)}"${where}; if one is clearly newer (a later date, or it says "now" or "since"), follow it and say the other looks out of date; ask the owner only when you can't tell`;
-    for (const path of new Set([pair.a.page, pair.b.page])) add(path, note.replace(/\|/g, '\\|'));
-  }
+  // Each conflicted row gets a short mark; the two rules and what to do are said once, below the index.
+  const listed = conflicts.slice(0, 6);
+  for (const pair of listed) for (const path of new Set([pair.a.page, pair.b.page])) add(path, 'two rules disagree: see below');
+  const where = (page: string): string => `\`${page}\`, confirmed ${confirmed.get(page) || 'never'}`;
+  const detail = listed.length === 0 ? '' : [
+    '', '', 'Rules that disagree. If one is clearly newer (a later date, or it says "now" or "since"), follow it and say the other looks out of date; ask the owner only when you can\'t tell.',
+    ...listed.map((pair) => `- "${short(pair.a.text, 90)}" (${where(pair.a.page)}) and "${short(pair.b.text, 90)}"${pair.a.page === pair.b.page ? ' (same page)' : ` (${where(pair.b.page)})`}`),
+  ].join('\n');
   if (notes.size === 0) return index;
   return index.split('\n').map((line) => {
     const page = rowPage(line);
-    const note = page === null ? undefined : notes.get(page)?.join('; ');
+    const note = page === null ? undefined : [...new Set(notes.get(page))].join('; ');
     if (!note) return line;
     const end = line.trimEnd();
     return end.endsWith('|') ? `${end.slice(0, -1).trimEnd()} (${note}) |` : `${end} (${note})`;
-  }).join('\n');
+  }).join('\n') + detail;
 };
 
 /** What the brief adds after the index: the pages that look closest to the request, and how to say which were used. */

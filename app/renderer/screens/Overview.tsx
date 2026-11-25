@@ -195,7 +195,7 @@ export const Overview = () => {
         <Tile
           label="Used in replies"
           value={share === null ? '–' : `${share}%`}
-          note={share === null ? `No replies in the last ${usage.days} days` : `${usage.withKnowledge} of ${usage.replies} replies · last ${usage.days} days`}
+          note={share === null ? `No replies in the last ${usage.days} days` : `${usage.withKnowledge} of ${usage.replies} replies named a page · last ${usage.days} days`}
         />
       </div>
 

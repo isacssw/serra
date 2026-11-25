@@ -236,8 +236,9 @@ test('the index tells the worker when two rules disagree, so it never picks one 
     { path: 'owner/working-style.md', text: page('- Risky releases ship on Tuesday.\n- Risky releases ship on Thursday now.') },
     { path: 'owner/voice.md', text: page('- Lead with the answer.') },
   ], NOW);
-  assert.match(marked, /`owner\/working-style\.md` \| How I decide \(two rules disagree: "Risky releases ship on Tuesday\." and "Risky releases ship on Thursday now\."; if one is clearly newer .*follow it and say the other looks out of date; ask the owner only when you can't tell\) \|$/m);
+  assert.match(marked, /`owner\/working-style\.md` \| How I decide \(two rules disagree: see below\) \|/);
   assert.match(marked, /\| voice \| `owner\/voice\.md` \| How I write \|$/m, 'a settled page is left alone');
+  assert.match(marked, /Rules that disagree\. If one is clearly newer .*ask the owner only when you can't tell\.\n- "Risky releases ship on Tuesday\." \(`owner\/working-style\.md`, confirmed 2026-11-20\) and "Risky releases ship on Thursday now\." \(same page\)$/);
 });
 
 test('a rule is compared wherever it is written, and two people with alike cards are never merged', () => {
@@ -321,4 +322,17 @@ test('merging a proposal that changes a rule swaps it and keeps everything else 
   const page = '---\ntype: rule\n---\n# How I work\n\n- Risky releases ship on Tuesday.\n- A bug fix starts with a failing test.\n\n## Replaced\n\n- Until 2026-01-01: Releases on Monday.\n';
   const merged = swapRule(page, { page: 'Risky releases ship on Tuesday.', proposal: 'Risky releases ship on Thursday.' }, '- Risky releases ship on Thursday.\n- Every release has a rollback plan.\n', '2026-11-25');
   assert.equal(merged, '---\ntype: rule\n---\n# How I work\n\n- Risky releases ship on Thursday.\n- A bug fix starts with a failing test.\n- Every release has a rollback plan.\n\n## Replaced\n\n- Until 2026-11-25: Risky releases ship on Tuesday.\n- Until 2026-01-01: Releases on Monday.\n');
+});
+
+test('a year of history on a full knowledge base is worked out in well under the time a screen may block', () => {
+  const files = tree(new URL('../evals/fixture/knowledge', import.meta.url).pathname);
+  const all = [...files, ...files.filter((file) => file.path.includes('/')).map((file) => ({ path: file.path.replace('.md', '-2.md'), text: file.text.replace(/^- /gm, '- Also, ') }))];
+  const changes = Array.from({ length: 400 }, (_, at) => {
+    const page = all[1 + (at % (all.length - 1))]!;
+    return { id: `c${at}`, action: 'edit', at: new Date(Date.parse('2025-11-25T00:00:00Z') + at * 21.9 * 3600e3).toISOString(), files: [{ path: page.path, before: `${page.text}- An older line.\n`, after: page.text }] };
+  });
+  const started = performance.now();
+  const history = knowledgeHistory(all, changes, NOW);
+  assert.ok(history.points.length > 300);
+  assert.ok(performance.now() - started < 3000, `${Math.round(performance.now() - started)} ms for ${all.length} files and 400 changes`);
 });
