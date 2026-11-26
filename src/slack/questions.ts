@@ -55,7 +55,9 @@ export const questionMessage = (state: QuestionCard, recipient: string): Questio
   const instruction = !question.options.length ? 'Reply in this thread with your answer.' : custom
     ? 'Choose an option or reply in this thread with your own answer.'
     : 'Choose an option, or reply in this thread with its label or number.';
-  blocks.push({ type: 'context', elements: [plain(`${instruction} Only the requester or bot owner can answer.`)] });
+  // An agent's tool approval (src/agent/acp.ts) is the owner's alone (src/bot.ts).
+  const who = question.id === 'permission' ? 'Only the bot owner can answer.' : 'Only the requester or bot owner can answer.';
+  blocks.push({ type: 'context', elements: [plain(`${instruction} ${who}`)] });
   return { text: question.question, blocks };
 };
 

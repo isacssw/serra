@@ -923,8 +923,11 @@ test('an agent\'s tool approval goes to the owner, and only the owner can allow 
   await choose(f, 0, SAM);
   assert.equal(f.answered.length, 0, 'the requester can\'t allow it');
   assert.equal(f.posts.at(-1)!.text, 'Only the bot\u2019s owner can allow this.');
+  assert.match(f.posts[0]!.blocks, /Only the bot owner can answer\./);
   await f.say(SAM, 'Allow');
   assert.equal(f.answered.length, 0, 'nor by typing');
+  assert.equal(f.posts.at(-1)!.text, 'Only the bot\u2019s owner can allow this.');
+  assert.equal(f.sends.length, 0, 'and it isn\'t queued as the next message');
   await choose(f, 0, OWNER);
   assert.deepEqual(f.answered, [{ threadId: 't3-1', requestId: 'approval-1', answers: { permission: 'yes' } }]);
 });

@@ -1017,6 +1017,11 @@ export const createBot = ({
     const job = getJob(key);
     if (job?.answeredQuestionMessages?.includes(msg.messageTs)) return;
     const card = job ? cardOf(job) : undefined;
+    // A requester's reply to the owner's approval card isn't an answer, nor a next message the agent would get after it.
+    if (job && card && isApproval(card) && said !== 'others' && msg.user === job.requester && msg.user !== config.owner && allowed) {
+      await questionFeedback(job, 'owner-only');
+      return;
+    }
     if (job && card && mayAnswer(job, msg.user, card) && said !== 'others' && !msg.files?.length) {
       const answer = typedAnswer(card.questions[card.index]!, await toReadable(msg.text));
       if (answer === null) await questionFeedback(job, 'invalid-answer');
