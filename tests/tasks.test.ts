@@ -307,3 +307,14 @@ test('an index pushed over its cap outside the app still lets the daemon and a t
   await startTask(profileDir, REQUEST, { fetchBase: noFetch, now: () => NOW });
   assert.match(recorded()[0]!.input, /topic 69 \|/);
 });
+
+test('after a rollback moved a T3 task to another thread, the task follows that thread', (t) => {
+  const profileDir = mkdtempSync(join(tmpdir(), 'serra-tasks-rollback-'));
+  t.after(() => rmSync(profileDir, { recursive: true, force: true }));
+  const base = { title: 'Fix it', branch: 'friday/fix-it', requester: 'Alex', createdAt: '2026-11-18T09:00:00Z' };
+  writeFileSync(join(profileDir, 'tasks.json'), JSON.stringify([
+    { ...base, threadId: 'old', t3ThreadId: 'new' },
+    { ...base, threadId: 'session-1', backend: 'acp:claude' },
+  ]));
+  assert.deepEqual(readTasks(profileDir).map((task) => task.threadId), ['new', 'session-1']);
+});

@@ -15,6 +15,7 @@ import { codeRoot, loadConfig, writeFileAtomic, type Config } from './config.ts'
 import { createKnowledge } from './knowledge.ts';
 import { parseJson } from './lib/guards.ts';
 import { APP_PROPOSALS_FOLDER, stampProposalsFolder } from './proposals.ts';
+import { threadOf } from './state.ts';
 import { worktreeRun, type AgentBackend } from './agent/backend.ts';
 import { createT3Backend } from './agent/t3.ts';
 import { jobThreadInput, run, showThread, startThread, threadPullRequest } from './t3.ts';
@@ -64,7 +65,7 @@ export const tasksPath = (profileDir: string): string => join(resolve(profileDir
 const taskFrom = (value: unknown): AppTask | null => {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return null;
   const task = value as Record<string, unknown>;
-  const threadId = typeof task.threadId === 'string' ? task.threadId : typeof task.t3ThreadId === 'string' ? task.t3ThreadId : '';
+  const threadId = threadOf(task) ?? '';
   if (!threadId || !['title', 'branch', 'requester', 'createdAt'].every((key) => typeof task[key] === 'string')) return null;
   return {
     threadId, title: task.title as string, branch: task.branch as string, requester: task.requester as string, createdAt: task.createdAt as string,

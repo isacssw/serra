@@ -189,3 +189,20 @@ test('[JOBS-002] a "__proto__" key in a saved job cannot change the job object',
   assert.equal(Object.getPrototypeOf(job), Object.prototype);
   assert.equal((job as unknown as { polluted?: boolean }).polluted, undefined);
 });
+
+test('after a rollback moved a T3 job to another thread, the re-upgraded build follows that thread, not the stale threadId', (t) => {
+  const dir = folder(t);
+  const file = join(dir, 'state.json');
+  // This build wrote both; alpha.5, after a rollback, moved the job to a new T3 thread and only knew `t3ThreadId`.
+  const { runSeen: _runSeen, ...job } = alpha3Job;
+  writeFileSync(file, JSON.stringify({
+    'C1:1.1': { ...job, threadTs: '1.1', threadId: 'thr_old', t3ThreadId: 'thr_new' },
+    'C1:2.2': { ...job, threadTs: '2.2', threadId: 'session-1', backend: 'acp:claude', t3ThreadId: 'thr_other' },
+    'C1:3.3': { ...job, threadTs: '3.3', threadId: 'thr_same', t3ThreadId: 'thr_same' },
+  }));
+  const { jobs, repaired } = readState(file);
+  assert.equal(jobs['C1:1.1']!.threadId, 'thr_new', 'a T3 job follows the thread the older build moved it to');
+  assert.equal(jobs['C1:2.2']!.threadId, 'session-1', 'an ACP job keeps its own session');
+  assert.equal(jobs['C1:3.3']!.threadId, 'thr_same');
+  assert.ok(repaired.includes('C1:1.1'));
+});

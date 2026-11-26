@@ -111,17 +111,28 @@ const phaseFromFlags = (value: Record<string, unknown>, now: number): Phase => {
 };
 
 /**
+ * A saved job's or task's thread: `threadId`, or for a T3 one, `t3ThreadId` when the two differ (an older build,
+ * after a rollback, only updates `t3ThreadId`). Null when there's none.
+ */
+export const threadOf = (value: Record<string, unknown>): string | null => {
+  const legacy = isString(value.t3ThreadId) ? value.t3ThreadId : null;
+  if (!isString(value.threadId)) return legacy;
+  return (value.backend === undefined || value.backend === 't3') && legacy !== null ? legacy : value.threadId;
+};
+
+/**
  * Reads one saved job, migrating what older builds wrote: a field an older build didn't write gets its neutral
  * default, and an optional field of the wrong shape is dropped. Only a value with no thread to follow is no job.
  * `repaired` says whether anything was filled in or dropped.
  */
 const migrateJob = (key: string, value: unknown, now: number): { job: Job; repaired: boolean } | null => {
-  // Before agent backends a job's thread was `t3ThreadId`, always a T3 thread.
-  const threadId = isRecord(value) ? (isString(value.threadId) ? value.threadId : isString(value.t3ThreadId) ? value.t3ThreadId : null) : null;
+  // Before agent backends a job's thread was `t3ThreadId`, always a T3 thread. A T3 job writes both; when they differ,
+  // an older build ran after a rollback and moved the job to another thread, so its `t3ThreadId` is the current one.
+  const threadId = isRecord(value) ? threadOf(value) : null;
   if (!isRecord(value) || threadId === null) return null;
   const split = key.indexOf(':');
   const [keyChannel, keyThread] = split === -1 ? [key, key] : [key.slice(0, split), key.slice(split + 1)];
-  let repaired = !isString(value.threadId);
+  let repaired = value.threadId !== threadId;
   const pick = <T>(field: string, guard: (x: unknown) => x is T, fallback: T): T => {
     const found = value[field];
     if (guard(found)) return found;
