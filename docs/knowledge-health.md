@@ -89,3 +89,17 @@ It writes `summary.md`, `results.json` and every reply under `none/`, `before/` 
 `node evals/kb-health.ts` prints the numbers: how often the hint's top three hold a right page for 60 requests on two invented owners, how often it stays quiet on 8 requests no page helps with, the health of those owners' pages, and six months of an invented owner whose knowledge picks up conflicts, repeats and stale pages and is then tidied, all through Serra's real approval code. `tests/knowledge-health.test.ts` holds the same checks as tests.
 
 `node evals/kb-live.ts [--set messy] [--judge] [--provider <T3 instance> --model <model>]` runs the live comparison through T3 (T3 Code must be running). It costs a few dollars and about 15 minutes per arm set; results go to `evals/results/` (git-ignored).
+
+## Graph
+
+**Knowledge › Graph** draws the pages the bot reads (your approved copy, as Overview does) as a map. Each area from Overview is an island; an area with no page yet is an empty, dashed one. A dot's size is how many replies used the page in the last 30 days. The lines come from files Serra already keeps, worked out on your Mac:
+
+- **Mentions:** a page names another page's path (`people/ana-silva.md`, or a Markdown link to it), or a person by their page's heading or first name.
+- **Same source:** two pages list the same meeting, interview or thread under `sources:`.
+- **Used together:** one reply used both pages (`logs/knowledge-usage.jsonl`).
+- **Disagrees** (red, dashed): two rules that disagree, the same check Overview's To do uses.
+
+The first time you open it, your pages arrive in the order they were written. After that, only pages that are new since your last visit arrive; **Replay** plays the whole story again. With reduced motion on, the finished map shows at once.
+
+Click a page, find it by name, or use the arrow keys (Enter opens it, Escape clears) to light it and its links. Its card opens the page and, when two rules disagree, offers **Keep** for each, saved at once with Undo, as in To do. Click an island to zoom to it; `0` fits the map again, and `+` and `-` zoom.
+

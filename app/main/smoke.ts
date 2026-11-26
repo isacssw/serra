@@ -3,11 +3,14 @@
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { nativeTheme, type BrowserWindow } from 'electron';
+import { fileURLToPath } from 'node:url';
+import { BrowserWindow, nativeTheme } from 'electron';
 import type { Theme } from './bridge.ts';
 import { codeRoot } from '../../src/config.ts';
 import { createJournal } from '../../src/knowledge-journal.ts';
 import { createProfile } from '../../src/setup.ts';
+import { writeGraphFixture } from './graph-fixture.ts';
+import { windowOptions } from './window-options.ts';
 import { missingRuntimeFiles } from './runtime-files.ts';
 
 interface PageReport {
@@ -496,6 +499,202 @@ const runThemeChecks = async (window: BrowserWindow): Promise<string[]> => {
   return failures;
 };
 
+/** A throwaway profile holding the graph fixture: about sixty realistic pages, or `size`. */
+const graphProfile = (size?: number): string => {
+  const directory = join(mkdtempSync(join(tmpdir(), 'serra-smoke-graph-')), 'profile');
+  createProfile(directory, {
+    version: 1, bot: { id: 'smoke', name: 'Smoke' }, owner: { name: 'Smoke Owner', slackUserId: 'U0123456789', githubLogin: 'smoke' },
+    project: { path: codeRoot, remote: 'origin', baseRef: 'origin/main', githubRepo: 'acme/project' }, allowedUsers: [], repositories: [],
+  });
+  writeGraphFixture(directory, size ? { size } : {});
+  return directory;
+};
+
+interface GraphReport { replayed: boolean; pages: string | null; rested: boolean; frameMs: string | null; arrowCard: string | null; disagrees: string | null; keeps: string[] }
+
+/** Opens Knowledge › Graph as on a first visit, waits for the replay to end, then drives it with the keyboard. */
+const graphScript = `(async () => {
+  const wait = async (ok, ms = 30000) => { const end = Date.now() + ms; while (Date.now() < end) { if (ok()) return true; await new Promise((r) => setTimeout(r, 50)); } return false; };
+  const canvas = () => document.querySelector('[data-serra-main] canvas');
+  const card = () => document.querySelector('[data-serra-main] aside');
+  const button = (text) => [...document.querySelectorAll('[data-serra-main] button')].find((b) => b.textContent.trim() === text);
+  localStorage.removeItem('serra.graph.seen');
+  location.hash = '#/knowledge/graph';
+  await wait(() => canvas());
+  const replayed = await wait(() => button('Skip'), 4000);
+  const rested = await wait(() => button('Replay') && canvas()?.dataset.settled === 'true');
+  const frameMs = canvas()?.dataset.frameMs ?? null;
+  const pages = document.querySelector('[data-serra-main] .tabular-nums')?.textContent ?? null;
+  canvas().focus();
+  canvas().dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+  await wait(() => card());
+  const arrowCard = card()?.querySelector('h2')?.textContent ?? null;
+  const find = document.querySelector('[data-serra-main] input[placeholder="Find a page"]');
+  Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(find, 'Release days');
+  find.dispatchEvent(new Event('input', { bubbles: true }));
+  await wait(() => card()?.querySelector('h2')?.textContent === 'Release days');
+  await new Promise((r) => setTimeout(r, 700));
+  const disagrees = [...(card()?.querySelectorAll('p') ?? [])].find((p) => p.textContent.startsWith('Disagrees'))?.textContent ?? null;
+  const keeps = [...(card()?.querySelectorAll('button') ?? [])].map((b) => b.textContent.trim()).filter((t) => t.startsWith('Keep'));
+  return { replayed, pages, rested, frameMs, arrowCard, disagrees, keeps };
+})()`;
+
+/**
+ * SERRA-93: Knowledge › Graph on a realistic profile, through the real backend. The first visit replays and comes to
+ * rest; the arrow keys select a page; the card names the disagreement and "Keep Thursday" settles it on disk; Enter
+ * opens the page; the next visit doesn't replay. `SERRA_SMOKE_SHOTS` also saves the graph in both themes (and the
+ * frames of a replay with `SERRA_SMOKE_FRAMES=1`), plus an 800-page run's frame cost.
+ */
+const runGraphChecks = async (main: BrowserWindow): Promise<string[]> => {
+  const failures: string[] = [];
+  const shots = process.env.SERRA_SMOKE_SHOTS;
+  // Screenshots come from a second app window, offscreen at a common laptop size, so a tiling window manager can't
+  // resize it; it has the same preload and bridge. Without screenshots the checks run in the main window.
+  let window = main;
+  if (shots) {
+    const options = windowOptions(join(fileURLToPath(new URL('..', import.meta.url)), 'out/preload.cjs'), { width: 1440, height: 900, maximized: false });
+    window = new BrowserWindow({ ...options, webPreferences: { ...options.webPreferences, offscreen: true } });
+    window.webContents.setFrameRate(60);
+    await window.loadURL(main.webContents.getURL().replace(/#.*$/, ''));
+  }
+  const run = async <T>(script: string): Promise<T> => await window.webContents.executeJavaScript(script) as T;
+  const useProfile = (dir: string | null): Promise<unknown> => run(`(async () => {
+    await window.serra.app.setPrefs({ profileDir: ${JSON.stringify(dir)} });
+    window.dispatchEvent(new Event('serra:setup-changed'));
+    await new Promise((r) => setTimeout(r, 300));
+  })()`);
+  const shot = async (name: string): Promise<void> => {
+    if (shots) writeFileSync(join(shots, `graph-${name}.png`), (await window.webContents.capturePage()).toPNG());
+  };
+  const directory = graphProfile();
+  // The replay follows the system's reduced-motion setting, which differs between Macs (CI's runner asks for reduced
+  // motion). Both ways are checked, each set here rather than taken from the machine.
+  const { debugger: devtools } = window.webContents;
+  if (!devtools.isAttached()) devtools.attach('1.3');
+  const motion = async (reduce: boolean): Promise<void> => {
+    await devtools.sendCommand('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: reduce ? 'reduce' : 'no-preference' }] });
+  };
+  try {
+    await useProfile(directory);
+    await motion(false);
+    for (const theme of shots ? ['dark', 'light'] as const : ['light'] as const) {
+      await run(themeControlScript(theme));
+      let frames: Promise<void> | null = null;
+      if (shots && process.env.SERRA_SMOKE_FRAMES) {
+        // A replay, frame by frame, for a GIF: every 50 ms for 12 s.
+        const folder = join(shots, `graph-frames-${theme}`);
+        mkdirSync(folder, { recursive: true });
+        frames = (async () => {
+          await new Promise((r) => setTimeout(r, 150));
+          for (let f = 0; f < 240; f++) {
+            const started = Date.now();
+            writeFileSync(join(folder, `f${String(f).padStart(4, '0')}.png`), (await window.webContents.capturePage()).toPNG());
+            await new Promise((r) => setTimeout(r, Math.max(0, 50 - (Date.now() - started))));
+          }
+        })();
+      }
+      const report = await run<GraphReport>(graphScript);
+      await frames;
+      console.log(`[serra] smoke graph (${theme}):`, JSON.stringify(report));
+      if (!report.replayed) failures.push(`${theme}: the graph did not replay on its first visit`);
+      if (!report.rested) failures.push(`${theme}: the graph did not come to rest with Replay after its replay`);
+      if (report.pages !== '58') failures.push(`${theme}: the graph counts ${String(report.pages)} pages, not the fixture's 58`);
+      if (!report.arrowCard) failures.push(`${theme}: an arrow key on the graph selected no page`);
+      if (report.disagrees !== 'Disagrees with Thursday releases') failures.push(`${theme}: Release days' card says ${String(report.disagrees)}, not that it disagrees with Thursday releases`);
+      if (!report.keeps.includes('Keep Thursday') || !report.keeps.includes('Keep Tuesday')) failures.push(`${theme}: the card offers ${report.keeps.join(', ') || 'no Keep buttons'}, not Keep Tuesday and Keep Thursday`);
+      await shot(`${theme}-focus`);
+      await run(`(async () => { document.querySelector('[data-serra-main] canvas').dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); await new Promise((r) => setTimeout(r, 900)); })()`);
+      await shot(`${theme}-rest`);
+    }
+    // Reduced motion: even a first visit shows the finished map at once, with no replay and no Replay button.
+    await motion(true);
+    const still = await run<{ count: string | null; skip: boolean; replay: boolean; settled: boolean }>(`(async () => {
+      const wait = async (ok, ms = 8000) => { const end = Date.now() + ms; while (Date.now() < end) { if (ok()) return true; await new Promise((r) => setTimeout(r, 50)); } return false; };
+      const canvas = () => document.querySelector('[data-serra-main] canvas');
+      const button = (text) => [...document.querySelectorAll('[data-serra-main] button')].some((b) => b.textContent.trim() === text);
+      location.hash = '#/knowledge/pages';
+      await wait(() => !canvas());
+      localStorage.removeItem('serra.graph.seen');
+      location.hash = '#/knowledge/graph';
+      await wait(() => canvas());
+      const settled = await wait(() => canvas()?.dataset.settled === 'true');
+      return { count: document.querySelector('[data-serra-main] .tabular-nums')?.textContent ?? null, skip: button('Skip'), replay: button('Replay'), settled };
+    })()`);
+    console.log('[serra] smoke graph (reduced motion):', JSON.stringify(still));
+    if (still.skip || still.count !== '58') failures.push(`with reduced motion the graph replayed (${String(still.count)} pages shown) instead of showing the finished map`);
+    if (still.replay) failures.push('with reduced motion the graph offers Replay');
+    if (!still.settled) failures.push('with reduced motion the graph did not come to rest');
+    await motion(false);
+    // Settle it from the card: Thursday stays, Tuesday moves under Replaced on its page, and the map redraws without it.
+    const kept = await run<{ toast: boolean; after: string | null }>(`(async () => {
+      const wait = async (ok, ms = 8000) => { const end = Date.now() + ms; while (Date.now() < end) { if (ok()) return true; await new Promise((r) => setTimeout(r, 50)); } return false; };
+      const card = () => document.querySelector('[data-serra-main] aside');
+      const find = document.querySelector('[data-serra-main] input[placeholder="Find a page"]');
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(find, 'Release days');
+      find.dispatchEvent(new Event('input', { bubbles: true }));
+      await wait(() => card()?.querySelector('h2')?.textContent === 'Release days');
+      [...card().querySelectorAll('button')].find((b) => b.textContent.trim() === 'Keep Thursday')?.click();
+      const toast = await wait(() => document.querySelector('[data-toast]')?.textContent?.includes('Kept'));
+      await wait(() => !card() || !card().textContent.includes('Disagrees'));
+      await new Promise((r) => setTimeout(r, 600));
+      const find2 = document.querySelector('[data-serra-main] input[placeholder="Find a page"]');
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(find2, 'Release days');
+      find2.dispatchEvent(new Event('input', { bubbles: true }));
+      await wait(() => card()?.querySelector('h2')?.textContent === 'Release days');
+      return { toast, after: card()?.textContent ?? null };
+    })()`);
+    const page = readFileSync(join(directory, 'knowledge', 'owner', 'releases.md'), 'utf8');
+    if (!kept.toast) failures.push('Keep Thursday on the graph showed no "Kept." toast');
+    if (!/## Replaced\n\n- Until \d{4}-\d{2}-\d{2}: Risky releases ship on Tuesday\./.test(page)) failures.push('Keep Thursday did not move Tuesday under Replaced on owner/releases.md');
+    if (kept.after?.includes('Disagrees')) failures.push('after Keep Thursday the card still says Release days disagrees');
+    // Enter opens the selected page; coming back shows the map at rest, with no replay.
+    const opened = await run<{ hash: string; replayedAgain: boolean }>(`(async () => {
+      const wait = async (ok, ms = 8000) => { const end = Date.now() + ms; while (Date.now() < end) { if (ok()) return true; await new Promise((r) => setTimeout(r, 50)); } return false; };
+      document.querySelector('[data-serra-main] canvas').focus();
+      document.querySelector('[data-serra-main] canvas').dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+      await wait(() => location.hash.startsWith('#/knowledge/pages'));
+      const hash = location.hash;
+      location.hash = '#/knowledge/graph';
+      await wait(() => document.querySelector('[data-serra-main] canvas'));
+      await new Promise((r) => setTimeout(r, 800));
+      const replayedAgain = [...document.querySelectorAll('[data-serra-main] button')].some((b) => b.textContent.trim() === 'Skip');
+      return { hash, replayedAgain };
+    })()`);
+    if (opened.hash !== '#/knowledge/pages?page=owner%2Freleases.md') failures.push(`Enter on the graph opened ${opened.hash}, not the Release days page`);
+    if (opened.replayedAgain) failures.push('the graph replayed again on a second visit with no new pages');
+    if (shots) {
+      // 800 pages: what a frame costs while it replays and at rest.
+      const big = graphProfile(800);
+      try {
+        await useProfile(big);
+        await run(themeControlScript('dark'));
+        const perf = await run<{ replaying: string | null; rest: string | null }>(`(async () => {
+          const wait = async (ok, ms = 40000) => { const end = Date.now() + ms; while (Date.now() < end) { if (ok()) return true; await new Promise((r) => setTimeout(r, 50)); } return false; };
+          const canvas = () => document.querySelector('[data-serra-main] canvas');
+          localStorage.removeItem('serra.graph.seen');
+          location.hash = '#/knowledge/graph';
+          await wait(() => canvas());
+          await new Promise((r) => setTimeout(r, 6000));
+          const replaying = canvas()?.dataset.frameMs ?? null;
+          await wait(() => canvas()?.dataset.settled === 'true' && [...document.querySelectorAll('[data-serra-main] button')].some((b) => b.textContent.trim() === 'Replay'));
+          return { replaying, rest: canvas()?.dataset.frameMs ?? null };
+        })()`);
+        console.log('[serra] smoke graph 800 pages, ms per frame:', JSON.stringify(perf));
+        await shot('dark-800');
+      } finally { rmSync(join(big, '..'), { recursive: true, force: true }); }
+    }
+  } finally {
+    await useProfile(null);
+    rmSync(join(directory, '..'), { recursive: true, force: true });
+    if (devtools.isAttached()) {
+      await devtools.sendCommand('Emulation.setEmulatedMedia', { features: [] }).catch(() => {});
+      devtools.detach();
+    }
+    if (window !== main) window.destroy();
+  }
+  return failures;
+};
+
 /**
  * Verifies custom ACP harnesses in the real window: adding one via the Add ACP agent dialog, live reload when
  * `agent-backend.json` is edited on disk without a restart, and removing it from the UI.
@@ -619,6 +818,7 @@ export const runSmokeChecks = async (window: BrowserWindow, resendStatus: () => 
     ...missing.map((path) => `runtime file ${path} is missing under ${codeRoot}`),
     ...await runLayoutChecks(window),
     ...await runThemeChecks(window),
+    ...await runGraphChecks(window),
     ...await runCustomAcpAgentChecks(window),
   ].filter((failure): failure is string => typeof failure === 'string');
   for (const failure of failures) console.error(`[serra] smoke failed: ${failure}`);

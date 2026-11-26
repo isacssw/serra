@@ -12,7 +12,8 @@ import { Button, Dialog, useToast } from '../../ui/index.ts';
 import { DiffView } from '../proposals/DiffView.tsx';
 import { pageBody } from '../../../../src/knowledge-rules.ts';
 import { fixItems, type FixItem } from '../overview.logic.ts';
-import { keepLabel, keepRule, localDate, replacedOn } from '../pages.logic.ts';
+import { keepOne } from '../keep.ts';
+import { keepLabel } from '../pages.logic.ts';
 import { settle } from './WeekDigest.tsx';
 
 const message = (error: unknown): string => (error instanceof Error ? error.message : String(error));
@@ -64,13 +65,11 @@ export const FixList = ({ overview, onOpen, onChanged }: { overview: KnowledgeOv
     if (!bridge) return;
     setBusy(item.id);
     try {
-      const before = await bridge.pages.read(drop.page);
-      const next = keepRule(before, drop.text, replacedOn(kept.text, localDate(new Date())));
+      const result = await keepOne(bridge, kept, drop);
       // A rule that isn't a whole line of its own can't be moved by a click: the page opens instead.
-      if (next === before) { onOpen(drop.page); return; }
-      await bridge.pages.save(drop.page, next, before);
+      if (result === 'open') { onOpen(drop.page); return; }
       setDone((set) => new Set([...set, item.id]));
-      toast({ message: 'Kept.', tone: 'success', action: { label: 'Undo', onClick: () => { void bridge.pages.read(drop.page).then((now) => bridge.pages.save(drop.page, before, now)).then(onChanged, (failure: unknown) => toast({ message: message(failure), tone: 'error' })); } } });
+      toast({ message: 'Kept.', tone: 'success', action: { label: 'Undo', onClick: () => { void result.undo().then(onChanged, (failure: unknown) => toast({ message: message(failure), tone: 'error' })); } } });
       onChanged();
     } catch (failure) { toast({ message: message(failure), tone: 'error' }); } finally { setBusy(null); }
   };
