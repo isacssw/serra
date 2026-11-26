@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { readProfileFile } from '../../../src/config.ts';
 import { createKnowledge, profileRoots, type KnowledgeRoot } from '../../../src/knowledge.ts';
 import { createMeetingStore } from '../../../src/meeting-store.ts';
-import { knowledgeOverview, listKnowledgeFiles } from '../../../src/knowledge-overview.ts';
+import { knowledgeGraph, knowledgeOverview, listKnowledgeFiles } from '../../../src/knowledge-overview.ts';
 import { assessKnowledge, confirmHeldBack } from '../../../src/knowledge-health.ts';
 import { runKnowledgeReview } from '../../../src/knowledge-review.ts';
 import { setReviewWeekly, type KnowledgeReview } from '../../../src/knowledge-review-store.ts';
@@ -86,5 +86,6 @@ export const pagesHandlers = (context: HandlerContext): Handlers<'pages'> => {
       setReviewWeekly(context.profileDir(), weekly);
     },
     overview: () => knowledgeOverview({ knowledgeDir: join(context.profileDir(), 'knowledge'), profileDir: context.profileDir() }),
+    graph: () => knowledgeGraph({ knowledgeDir: join(context.profileDir(), 'knowledge'), profileDir: context.profileDir() }),
   };
 };

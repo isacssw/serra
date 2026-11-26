@@ -8,6 +8,7 @@ import { latestReview, reviewSettings, type KnowledgeReview } from './knowledge-
 import { compileAboutMe } from './owner-model.ts';
 import { AREA_LABELS, confirmHeldBack, pageArea, assessKnowledge, isPage, knowledgeHistory, type Health, type HistoryPoint, type KnowledgeChange, type KnowledgeEvent, type KnowledgeFile } from './knowledge-health.ts';
 import { ARCHIVE_DIR, frontmatter, PROPOSALS_DIR } from './knowledge-rules.ts';
+import { buildKnowledgeGraph, type KnowledgeGraph } from './knowledge-graph.ts';
 import { readKnowledgeUse } from './knowledge-usage.ts';
 import { isArrayOf, isRecord, isString, isStringOrNull, isOptional } from './lib/guards.ts';
 
@@ -218,4 +219,19 @@ export const knowledgeOverview = ({ knowledgeDir, profileDir, backupDir, now = n
       unused: uses.length >= UNUSED_AFTER ? pages.filter((path) => !counts.has(path)).sort() : [],
     },
   };
+};
+
+/**
+ * Knowledge › Graph (SERRA-93): the pages the bot reads (the approved copy, like Overview), linked by what Serra's
+ * own files say: mentions, shared sources, pages used together and rules that disagree. Reads only; writes nothing.
+ */
+export const knowledgeGraph = ({ knowledgeDir, profileDir, backupDir, now = new Date() }: {
+  knowledgeDir: string; profileDir: string; backupDir?: string; now?: Date;
+}): KnowledgeGraph => {
+  const root = resolve(knowledgeDir);
+  const journal = createJournal(root);
+  const files = journal.seeded() ? listKnowledgeFiles(journal.approvedRoot) : listKnowledgeFiles(root);
+  return buildKnowledgeGraph({
+    files, now, uses: readKnowledgeUse(profileDir), changes: readChanges(resolve(backupDir ?? join(dirname(root), 'backups', 'knowledge'))),
+  });
 };

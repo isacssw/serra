@@ -106,6 +106,8 @@ Open **Knowledge › Proposals › Start interview**. A T3 thread interviews you
 
 **Knowledge › Overview** shows, at a glance, how many replies your notes shaped this week, one request answered with and without them, and a short To do when something needs you; the health trend, areas and each page's use are under Details. More: [docs/knowledge-health.md](docs/knowledge-health.md).
 
+**Knowledge › Graph** shows the same knowledge as a map: an island per area, your pages on it, and the links between them. It replays how it grew the first time you open it. More: [docs/knowledge-health.md](docs/knowledge-health.md#graph).
+
 ## Updating
 
 **On v0.1.0-alpha.3 or later:** Serra updates itself from GitHub Releases (pre-releases included while you're on an alpha). It checks on its own every few hours.

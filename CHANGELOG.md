@@ -4,6 +4,8 @@ Serra follows [Semantic Versioning](https://semver.org) once it reaches 1.0. Unt
 
 ## Unreleased
 
+- **Knowledge › Graph:** what your bot knows, as a map. One island per area, pages linked by what they mention, where they came from, which replies used them together, and rules that disagree. The first visit replays how it grew; later visits replay only new pages. Click a page (or use the arrow keys) to see its links, open it, or keep one of two rules that disagree.
+
 ## 0.1.0-alpha.6 (2026-11-26)
 
 - **Agent backends.** T3 stays the default. Jobs, app tasks, the knowledge interview, meetings and the weekly review can now run on an ACP agent instead: Claude Code, Codex, OpenCode, Gemini CLI or your own. Pick it in Settings › Worker › **Agent backend**. See `docs/agent-backends.md`.
