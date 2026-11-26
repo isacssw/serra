@@ -55,7 +55,7 @@ The brief asks the worker to end a reply with one line naming the pages it used,
 ## What the worker sees
 
 - Each index row whose page is a draft or wasn't confirmed in 60 days says so, like `(confirmed 2026-08-01; may be out of date)`.
-- A row whose page holds a rule that disagrees with another says `(two rules disagree: see below)`, and below the index the worker gets both rules with their pages' dates: follow the clearly newer one and say the other looks out of date, ask you only when it can't tell. Only pages that reply's audience may hear are compared.
+- A row whose page holds a rule that disagrees with another says `(two rules disagree: see below)`, and below the index the worker gets both rules with their pages' dates: follow the clearly newer one and say the other looks out of date, ask you only when it can't tell. A newer rule that says what it ended ("moved from Grafana to Datadog", "OAuth login was removed") is listed the same way, against each older rule that still names it. These pairs are for the worker only: the health score and Settle don't count them. Only pages that reply's audience may hear are compared.
 - Under the index, the three pages that look closest to the request, as a hint to open first. It's a word match on each page's path, index row, description, headings and text, not a model.
 
 ## How well it works
