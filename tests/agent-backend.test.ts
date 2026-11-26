@@ -3,7 +3,7 @@
 // a scripted ACP agent on stdio (tests/fakes/acp-agent.ts) that speaks the real protocol through the official SDK.
 import assert from 'node:assert/strict';
 import { execFileSync, spawn, type ChildProcess } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test, { type TestContext } from 'node:test';
@@ -151,7 +151,7 @@ const fakeAcp = (t?: TestContext) => {
   });
   let turn = 0;
   /** The agent ends its next turn with `text`. */
-  const reply = (text: string, at = turn + 1): void => { turn = at; writeFileSync(join(dir, `turn-${at}`), text); };
+  const reply = (text: string, at = turn + 1): void => { turn = at; writeFileSync(join(dir, `turn-${at}.tmp`), text); renameSync(join(dir, `turn-${at}.tmp`), join(dir, `turn-${at}`)); };
   const cleanup = async (): Promise<void> => {
     for (const child of children) if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
     rmSync(dir, { recursive: true, force: true });
@@ -551,4 +551,80 @@ test('followAgentBackend notifies when agent-backend.json changes on disk', asyn
     await new Promise((resolve) => { setTimeout(resolve, 40); });
   }
   assert.ok(changes >= 1, 'watcher fired when agent-backend.json was written');
+});
+
+test('a custom agent with a run going can\'t be removed until the run ends', (t) => {
+  const dir = mkdtempSync(join(tmpdir(), 'serra-remove-live-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  addCustomAcpAgent(dir, { name: 'Antigravity', command: 'agy', args: ['acp'] });
+  mkdirSync(join(dir, 'agent-runs'));
+  const record = { version: 1, agent: 'antigravity', sessionId: 's-1', title: 'x', cwd: dir, access: 'full', createdAt: '', runs: 1, entries: [] };
+  writeFileSync(join(dir, 'agent-runs', 's-1.json'), JSON.stringify({ ...record, active: 'run-1' }));
+  assert.throws(() => removeCustomAcpAgent(dir, 'antigravity'), /^Error: Antigravity has a run going\. Remove it once the run ends\.$/);
+  assert.equal(readAgentBackend(dir).custom.length, 1, 'nothing removed');
+
+  writeFileSync(join(dir, 'agent-runs', 's-1.json'), JSON.stringify({ ...record, active: null, waiting: [{ requestId: 'q', questions: [] }] }));
+  assert.throws(() => removeCustomAcpAgent(dir, 'antigravity'), /has a run going/, 'a question waiting counts too');
+
+  writeFileSync(join(dir, 'agent-runs', 's-1.json'), JSON.stringify({ ...record, active: null, waiting: [] }));
+  assert.equal(removeCustomAcpAgent(dir, 'antigravity').custom.length, 0, 'removed once the run has ended');
+});
+
+test('the pool applies an agent\'s edited command or model to the next job, and leaves a turn going where it is', async (t) => {
+  const dir = mkdtempSync(join(tmpdir(), 'serra-pool-edit-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const t3Fake = createFakeT3();
+  const made: { model?: string; args: string[]; busy: Set<string>; closed: boolean; sent: string[] }[] = [];
+  const stub = (options: Parameters<typeof createAcpBackend>[0]): AgentBackend => {
+    const self = { args: options.agent.args, busy: new Set<string>(), closed: false, sent: [] as string[], ...(options.model ? { model: options.model } : {}) };
+    made.push(self);
+    const n = made.length;
+    return {
+      id: 'acp', key: `acp:${options.agent.id}`, label: options.agent.name,
+      capabilities: { steer: false, worktrees: false, persistentRuns: true, transcriptLink: false, readOnly: true, toolResults: true },
+      start: async () => { self.busy.add(`thread-${n}`); return `thread-${n}`; },
+      send: async (threadId, message) => { self.sent.push(`${threadId}:${message}`); },
+      interrupt: async () => {}, read: async () => { throw new Error('not here'); }, wait: async () => { throw new Error('not here'); },
+      list: async () => [], settle: async () => {},
+      busy: (threadId) => (threadId === undefined ? self.busy.size > 0 : self.busy.has(threadId)),
+      close: async () => { self.closed = true; },
+    };
+  };
+  const pool = createBackendPool({ profileDir: dir, t3: createT3Backend({ bin: '/Users/you/.t3/bin/t3', cli: t3Fake.t3, session: fakeSession([]) }), makeAcp: stub });
+  t.after(() => pool.close());
+  addCustomAcpAgent(dir, { name: 'Harness', command: 'harness', args: ['acp'] });
+  writeAgentBackend(dir, { backend: 'acp', agent: 'harness' });
+
+  const first = await pool.current().start({ workspace: { kind: 'folder', path: dir, name: 'x' }, title: 'one', brief: 'hi' });
+  assert.equal(made.length, 1);
+
+  // A new model, then an edited command: each makes a fresh instance for the next job, with no restart.
+  writeAgentBackend(dir, { backend: 'acp', agent: 'harness', model: 'model-b' });
+  const second = await pool.current().start({ workspace: { kind: 'folder', path: dir, name: 'x' }, title: 'two', brief: 'hi' });
+  assert.equal(made.length, 2);
+  assert.equal(made[1]!.model, 'model-b', 'the next job runs on the new model');
+  assert.equal(made[0]!.closed, false, 'the first turn is still going on the old instance');
+
+  // A follow-up to the first thread goes where its turn runs.
+  await pool.get('acp:harness').send(first, 'more');
+  assert.deepEqual(made[0]!.sent, [`${first}:more`]);
+
+  const file = join(dir, 'agent-backend.json');
+  const raw = JSON.parse(readFileSync(file, 'utf8')) as { agents: { args: string[] }[] };
+  raw.agents[0]!.args = ['acp', '--quiet'];
+  writeFileSync(file, JSON.stringify(raw));
+  await pool.current().start({ workspace: { kind: 'folder', path: dir, name: 'x' }, title: 'three', brief: 'hi' });
+  assert.equal(made.length, 3);
+  assert.deepEqual(made[2]!.args, ['acp', '--quiet'], 'the next job runs the edited command');
+
+  // Once the old turns end, the old instances are closed; the same setup keeps the same instance.
+  made[0]!.busy.clear();
+  made[1]!.busy.clear();
+  await pool.get('acp:harness').send(second, 'again');
+  assert.deepEqual(made[1]!.sent, [], 'an idle thread goes to the newest instance');
+  assert.deepEqual(made[2]!.sent, [`${second}:again`]);
+  assert.equal(made[0]!.closed && made[1]!.closed, true, 'old instances closed once idle');
+  assert.equal(made[2]!.closed, false);
+  pool.current();
+  assert.equal(made.length, 3, 'no new instance while the setup is unchanged');
 });

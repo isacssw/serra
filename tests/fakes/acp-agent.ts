@@ -6,17 +6,19 @@
 // Claude Code's AskUserQuestion and writes the answer to `elicit-<n>`. `session/load` reopens a session (writes
 // `load-<id>`). Images a prompt carries are written to `images-<n>` (their MIME types); `IMAGE_OUT` sends a PNG back.
 // FAKE_ACP_NO_IMAGES: the agent says it takes no images. Run: node tests/fakes/acp-agent.ts
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { Readable, Writable } from 'node:stream';
 import * as acp from '@agentclientprotocol/sdk';
 
 const dir = process.env.FAKE_ACP_DIR ?? '';
+/** Writes a file whole (a temp file, then a rename), so the test never reads it half written. */
+const put = (file: string, text: string): void => { writeFileSync(`${file}.tmp`, text); renameSync(`${file}.tmp`, file); };
 /** Counted in the folder, so turns and sessions are numbered across every agent process a test starts. */
 const next = (name: string): number => {
   const file = join(dir, `count-${name}`);
   const value = (existsSync(file) ? Number(readFileSync(file, 'utf8')) : 0) + 1;
-  writeFileSync(file, String(value));
+  put(file, String(value));
   return value;
 };
 const cancelled = new Set<string>();
@@ -33,18 +35,18 @@ const app = acp.agent({ name: 'fake-acp' })
   .onRequest(acp.methods.agent.initialize, () => ({ protocolVersion: acp.PROTOCOL_VERSION, agentCapabilities: { loadSession: true, promptCapabilities: { image: !process.env.FAKE_ACP_NO_IMAGES } } }))
   .onRequest(acp.methods.agent.session.new, ({ params }) => {
     const session = next('session');
-    writeFileSync(join(dir, `session-${session}`), params.cwd);
+    put(join(dir, `session-${session}`), params.cwd);
     // FAKE_ACP_MODES: the agent's modes as JSON, like Claude Code's (starting in `auto`); a default and a read-only mode otherwise.
     const modes = process.env.FAKE_ACP_MODES ? JSON.parse(process.env.FAKE_ACP_MODES) as acp.SessionModeState : { currentModeId: 'default', availableModes: [{ id: 'default', name: 'Default' }, { id: 'read-only', name: 'Read only' }] };
     return { sessionId: `session-${session}`, modes };
   })
   .onRequest(acp.methods.agent.session.load, ({ params }) => {
-    writeFileSync(join(dir, `load-${params.sessionId}`), params.cwd);
+    put(join(dir, `load-${params.sessionId}`), params.cwd);
     const modes = process.env.FAKE_ACP_MODES ? JSON.parse(process.env.FAKE_ACP_MODES) as acp.SessionModeState : { currentModeId: 'default', availableModes: [{ id: 'default', name: 'Default' }, { id: 'read-only', name: 'Read only' }] };
     return { modes };
   })
   .onRequest(acp.methods.agent.session.setMode, ({ params }) => {
-    writeFileSync(join(dir, `mode-${params.sessionId}`), params.modeId);
+    put(join(dir, `mode-${params.sessionId}`), params.modeId);
     return {};
   })
   .onNotification(acp.methods.agent.session.cancel, ({ params }) => { cancelled.add(params.sessionId); })
@@ -53,7 +55,7 @@ const app = acp.agent({ name: 'fake-acp' })
     cancelled.delete(params.sessionId);
     const text = params.prompt.map((block) => (block.type === 'text' ? block.text : '')).join('');
     const images = params.prompt.flatMap((block) => (block.type === 'image' ? [block.mimeType] : []));
-    if (images.length) writeFileSync(join(dir, `images-${turn}`), images.join(','));
+    if (images.length) put(join(dir, `images-${turn}`), images.join(','));
     if (text.includes('IMAGE_OUT')) {
       // A 1×1 PNG.
       const png = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg==';
@@ -69,7 +71,7 @@ const app = acp.agent({ name: 'fake-acp' })
         toolCall: { toolCallId: `ask-${turn}`, title: `a ${ask} tool`, kind: ask as acp.ToolKind },
         options: [{ optionId: 'yes', name: 'Allow', kind: 'allow_once' }, { optionId: 'no', name: 'Reject', kind: 'reject_once' }],
       });
-      writeFileSync(join(dir, `permission-${turn}`), answer.outcome.outcome === 'selected' ? answer.outcome.optionId : 'cancelled');
+      put(join(dir, `permission-${turn}`), answer.outcome.outcome === 'selected' ? answer.outcome.optionId : 'cancelled');
     }
     if (text.includes('ELICIT')) {
       const answer = await client.request(acp.methods.client.elicitation.create, {
@@ -79,7 +81,7 @@ const app = acp.agent({ name: 'fake-acp' })
           question_0_custom: { type: 'string', title: 'Other' },
         } },
       } as acp.CreateElicitationRequest);
-      writeFileSync(join(dir, `elicit-${turn}`), JSON.stringify(answer));
+      put(join(dir, `elicit-${turn}`), JSON.stringify(answer));
     }
     const tool = /TOOL:([\w-]+)/.exec(text)?.[1] ?? /meeting with ID "([\w-]+)"/.exec(text)?.[1];
     if (tool) {

@@ -7,7 +7,7 @@
 // own: the SDK's and Codex's bundled binaries are left out, see `pnpm.ignoredOptionalDependencies`). OpenCode and
 // Gemini CLI are the agents themselves, offered when their command is on the owner's PATH. Serra never installs one. The owner can add their own in the file (name, command, args, env); env values come from the owner's
 // own file, never from Serra's code, and are never shown or logged.
-import { accessSync, constants, existsSync, readFileSync } from 'node:fs';
+import { accessSync, constants, existsSync, readdirSync, readFileSync } from 'node:fs';
 import { delimiter, dirname, isAbsolute, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { writeFileAtomic } from '../config.ts';
@@ -177,9 +177,32 @@ export const addCustomAcpAgent = (profileDir: string, input: CustomAcpAgentInput
   return readAgentBackend(profileDir);
 };
 
-/** Removes a custom ACP agent from `agent-backend.json`. Falls back to T3 if it was the selected backend. */
+/**
+ * Whether agent `id` has a run going or waiting on a question, by the run records in `agent-runs/` (src/agent/acp.ts
+ * writes them; the daemon reads them to carry a run on after a restart).
+ */
+const hasLiveRun = (profileDir: string, id: string): boolean => {
+  const dir = join(profileDir, 'agent-runs');
+  let names: string[];
+  try { names = readdirSync(dir).filter((name) => name.endsWith('.json')); } catch { return false; }
+  return names.some((name) => {
+    let value: unknown;
+    try { value = parseJson(readFileSync(join(dir, name), 'utf8')); } catch { return false; }
+    return isRecord(value) && value.agent === id
+      && (typeof value.active === 'string' || (Array.isArray(value.waiting) && value.waiting.length > 0));
+  });
+};
+
+/**
+ * Removes a custom ACP agent from `agent-backend.json`. Falls back to T3 if it was the selected backend. Refused
+ * while the agent has a run going: its turn and its restart resume need the agent's command.
+ */
 export const removeCustomAcpAgent = (profileDir: string, id: string): AgentBackendSettings => {
   if (!AGENT_ID.test(id)) throw new Error('Agent ID is missing.');
+  if (hasLiveRun(profileDir, id)) {
+    const name = readAgentBackend(profileDir).custom.find((agent) => agent.id === id)?.name ?? id;
+    throw new Error(`${name} has a run going. Remove it once the run ends.`);
+  }
   const raw = readRawConfig(profileDir);
   const existing = Array.isArray(raw.agents) ? raw.agents : [];
   const agents = existing.filter((entry) => !(isRecord(entry) && entry.id === id));

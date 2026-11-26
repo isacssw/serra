@@ -625,6 +625,8 @@ export const createAcpBackend = ({
         waiting.answer(answers);
       },
     },
+    busy: (threadId) => [...sessions.values()].some((current) => (threadId === undefined || current.sessionId === threadId)
+      && (current.active !== null || current.waiting.size > 0 || current.queue.length > 0)),
     close: async () => {
       for (const current of sessions.values()) for (const waiting of current.waiting.values()) waiting.cancel();
       sessions.clear();

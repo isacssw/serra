@@ -130,6 +130,8 @@ export interface AgentBackend {
   };
   /** Whether the agent can see an image it's sent. Absent: it can (T3's providers open attached files themselves). */
   images?: () => Promise<boolean>;
+  /** Whether `threadId` (or, without one, any thread) has a turn going, a question waiting or messages queued. Absent: never. */
+  busy?: (threadId?: string) => boolean;
   /** Lets go of whatever the backend holds open (a session, an agent process). Never throws. */
   close: () => Promise<void>;
 }

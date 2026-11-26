@@ -1,5 +1,5 @@
-// The agent backends a long-running Serra follows threads on: T3, and each ACP agent the owner picked, one instance
-// each for the life of the process (an ACP agent is one process for all its runs). New work goes to the owner's
+// The agent backends a long-running Serra follows threads on: T3, and each ACP agent the owner picked (an ACP agent
+// is one process for all its runs; an edit to its setup or model starts a new one for the next job). New work goes to the owner's
 // current choice (`agent-backend.json`, read each time); a job or task keeps the backend it started on, by its key
 // (`t3`, `acp:<agent>`), so changing the choice never moves a running job.
 import { readdirSync } from 'node:fs';
@@ -45,19 +45,86 @@ export const createBackendPool = ({ profileDir, t3, log = () => {}, makeAcp = cr
   log?: (message: string) => void;
   makeAcp?: typeof createAcpBackend;
 }): AgentBackends => {
-  const acp = new Map<string, AgentBackend>();
-  const get = (key: string): AgentBackend => {
-    if (key === 't3') return t3;
-    const found = acp.get(key);
-    if (found) return found;
-    const id = key.startsWith('acp:') ? key.slice(4) : '';
+  // Each agent's newest instance, and the setup it was made from. An edit to the agent (command, args, env, name)
+  // or its model in `agent-backend.json` makes a new instance for the next job; the old one is kept for the turns
+  // still going on it, then closed once it has none. A thread goes to the instance whose turn it is, else the newest.
+  const newest = new Map<string, { setup: string; backend: AgentBackend }>();
+  const retired = new Map<string, AgentBackend[]>();
+  const routers = new Map<string, AgentBackend>();
+
+  const sweep = (key: string): void => {
+    const old = retired.get(key) ?? [];
+    const keep = old.filter((backend) => backend.busy?.() === true);
+    for (const backend of old) if (!keep.includes(backend)) void backend.close();
+    if (keep.length) retired.set(key, keep); else retired.delete(key);
+  };
+
+  const latest = (key: string): AgentBackend => {
+    const id = key.slice(4);
     const settings = readAgentBackend(profileDir);
     const agent = acpAgents(settings).find((entry) => entry.id === id);
-    if (!agent) throw new Error(`Serra has no ACP agent "${id}" any more. Add it back in agent-backend.json to carry on its threads.`);
+    const held = newest.get(key);
+    if (!agent) {
+      if (held) return held.backend;
+      throw new Error(`Serra has no ACP agent "${id}" any more. Add it back in agent-backend.json to carry on its threads.`);
+    }
     const model = settings.models[agent.id];
+    const setup = JSON.stringify([agent.name, agent.command, agent.args, agent.env ?? {}, model ?? null]);
+    if (held?.setup === setup) return held.backend;
+    if (held) {
+      retired.set(key, [...retired.get(key) ?? [], held.backend]);
+      log(`${agent.name}'s setup changed: new work starts on it as saved.`);
+    }
     const backend = makeAcp({ agent, env: agentEnv, runsDir: agentRunsDir(profileDir), attachmentsDir: join(profileDir, 'attachments'), log, ...(model ? { model } : {}) });
-    acp.set(key, backend);
+    newest.set(key, { setup, backend });
+    sweep(key);
     return backend;
+  };
+
+  /** The instance thread `threadId` runs on: an older one while its turn is going there, else the newest. */
+  const owner = (key: string, threadId: string): AgentBackend => {
+    sweep(key);
+    return retired.get(key)?.find((backend) => backend.busy?.(threadId) === true) ?? latest(key);
+  };
+
+  const router = (key: string): AgentBackend => {
+    const first = latest(key);
+    const on = (threadId: string): AgentBackend => owner(key, threadId);
+    return {
+      id: first.id,
+      key,
+      get label() { return latest(key).label; },
+      capabilities: first.capabilities,
+      start: (input) => latest(key).start(input),
+      send: (threadId, message, options) => on(threadId).send(threadId, message, options),
+      interrupt: (threadId, reason) => on(threadId).interrupt(threadId, reason),
+      read: (threadId, messages) => on(threadId).read(threadId, messages),
+      wait: (threadId, options) => on(threadId).wait(threadId, options),
+      list: (input) => latest(key).list(input),
+      settle: (threadId) => on(threadId).settle(threadId),
+      toolCall: async (threadId, runId, match) => (await on(threadId).toolCall?.(threadId, runId, match)) ?? null,
+      questions: {
+        list: async (threadId) => (await on(threadId).questions?.list(threadId)) ?? [],
+        answer: async (threadId, requestId, answers) => { await on(threadId).questions?.answer(threadId, requestId, answers); },
+      },
+      images: async () => (await latest(key).images?.()) ?? true,
+      busy: (threadId) => [newest.get(key)?.backend, ...retired.get(key) ?? []].some((backend) => backend?.busy?.(threadId) === true),
+      close: async () => {
+        await Promise.all([newest.get(key)?.backend, ...retired.get(key) ?? []].flatMap((backend) => (backend ? [backend.close()] : [])));
+        newest.delete(key);
+        retired.delete(key);
+        routers.delete(key);
+      },
+    };
+  };
+
+  const get = (key: string): AgentBackend => {
+    if (key === 't3') return t3;
+    const found = routers.get(key);
+    if (found) return found;
+    const made = router(key);
+    routers.set(key, made);
+    return made;
   };
   return {
     current: () => {
@@ -79,8 +146,8 @@ export const createBackendPool = ({ profileDir, t3, log = () => {}, makeAcp = cr
       }
     },
     close: async () => {
-      await Promise.all([...acp.values()].map((backend) => backend.close()));
-      acp.clear();
+      await Promise.all([...routers.values()].map((backend) => backend.close()));
+      routers.clear();
       await t3.close();
     },
   };
