@@ -267,3 +267,43 @@ test('a proposals folder whose .from.json is broken lists its proposals without 
     assert.equal(listed.from, undefined);
   }
 });
+
+test('retire moves a page to archive/ without its index row, Undo puts it back, and Restore brings it back later', (t) => {
+  const { knowledge, read, service } = profile(t);
+  assert.throws(() => service.retirePage('owner/role.md', { reviewed: `${ROLE}edited\n` }), /changed since you looked/);
+  assert.equal(read('owner/role.md'), ROLE, 'a refused retire changes nothing');
+
+  const change = service.retirePage('owner/role.md', { reviewed: ROLE });
+  assert.equal(read('owner/role.md'), null);
+  assert.equal(read('archive/owner/role.md'), ROLE, 'kept word for word');
+  assert.doesNotMatch(read('index.md')!, /owner\/role\.md/);
+  assert.match(read('log.md')!, /retired `owner\/role\.md` to `archive\/owner\/role\.md`/);
+  assert.deepEqual(service.listArchived(), [{ path: 'owner/role.md', description: 'The owner\'s role' }]);
+  // An archived page is no page: the bot never lists or reads it, and nothing can be saved or promoted into archive/.
+  assert.ok(!createKnowledge(knowledge).listPages({ now: NOW }).some((page) => page.path.startsWith('archive/')));
+  assert.throws(() => service.promoteProposal('2026-11-16-deploys.md', { reviewed: shown(service, '2026-11-16-deploys.md'), folder: 'archive' }), /archive/);
+
+  service.undoProposalChange(change.id);
+  assert.equal(read('owner/role.md'), ROLE);
+  assert.equal(read('archive/owner/role.md'), null);
+  assert.equal(read('index.md'), INDEX);
+
+  service.retirePage('owner/role.md', { reviewed: ROLE });
+  service.restorePage('owner/role.md');
+  assert.equal(read('owner/role.md'), ROLE);
+  assert.equal(read('archive/owner/role.md'), null);
+  assert.match(read('index.md')!, /\| The owner's role \| `owner\/role\.md` \| The owner's role \|/);
+  assert.throws(() => service.restorePage('owner/role.md'), /isn't in the archive/);
+});
+
+test('approving a weekly-review rewrite keeps the page\'s own confirmed date; any other approval dates it today', (t) => {
+  const { write, read, service } = profile(t);
+  write('proposals/from-review/2026-11-19/.from.json', JSON.stringify({ who: 'Weekly review', owner: false, via: 'review' }));
+  write('proposals/from-review/2026-11-19/2026-11-19-owner-role.md', page({ description: 'The owner\'s role', target: 'owner/role.md' }, 'Owns the API and the SDKs.'));
+  service.promoteProposal('from-review/2026-11-19/2026-11-19-owner-role.md', { reviewed: shown(service, 'from-review/2026-11-19/2026-11-19-owner-role.md'), folder: 'owner' });
+  assert.match(read('owner/role.md')!, /^verified: 2026-11-10$/m);
+  assert.match(read('owner/role.md')!, /Owns the API and the SDKs\./);
+
+  service.promoteProposal('2026-11-18-reviews.md', { reviewed: shown(service, '2026-11-18-reviews.md'), folder: 'owner' });
+  assert.match(read('owner/role.md')!, /^verified: 2026-11-19$/m);
+});

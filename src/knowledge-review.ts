@@ -46,10 +46,10 @@ const sentences = (text: string, count: number, max: number): string => {
   return short(parts[0]!.trim(), max);
 };
 
-/** Two answers that say the same thing in nearly the same words: the page didn't change it. */
 /** An answer that hedges or doubts its notes: "probably", "one of the pages is out of date", "check with". */
 const HEDGE = /\b(probably|not sure|i don'?t know|out of date|outdated|check with|confirm (which|with)|may be wrong|unclear|conflict)/i;
 
+/** Two answers that say the same thing in nearly the same words: the page didn't change it. */
 const sameAnswer = (a: string, b: string): boolean => {
   const set = (text: string): Set<string> => new Set(text.toLowerCase().match(/[a-z0-9]+/g) ?? []);
   const [x, y] = [set(a), set(b)];

@@ -55,6 +55,8 @@ export const knowledgePagePath = (root: string, relativePath: string, what: stri
   const path = relative(root, insideKnowledge(root, relativePath, what)).split(sep).join('/');
   if (!path.endsWith('.md')) throw new Error(`${what} must be a .md file: ${relativePath}`);
   if (path === PROPOSALS_DIR || path.startsWith(`${PROPOSALS_DIR}/`)) throw new Error(`${what} can't be inside proposals/: ${relativePath}`);
+  // Retired pages live in archive/; one only comes back through Restore, never by saving or promoting into it.
+  if (path === ARCHIVE_DIR || path.startsWith(`${ARCHIVE_DIR}/`)) throw new Error(`${what} can't be inside ${ARCHIVE_DIR}/: ${relativePath}`);
   if (NOT_PAGES.has(path)) throw new Error(`${what} can't be ${path}; that file is not a page.`);
   return path;
 };

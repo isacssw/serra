@@ -15,6 +15,7 @@ Use one private profile per bot, outside the code checkout. `pnpm run setup` cre
 | policy.md | Owner's confirmed workflow choices, read by the generic brief |
 | proposed/ | Brief and policy rewrites waiting for the owner: one folder each, with a brief.md and/or policy.md. The app's Settings › Brief & policy screen compares and applies them |
 | knowledge/ | Indexed owner knowledge, drafts, and proposals. Starts from the empty template in templates/knowledge |
+| knowledge-reviews/ | One JSON digest per weekly knowledge review, named by its date. `knowledge-review.json` says whether it runs weekly |
 | onboarding.md | How to start the knowledge interview |
 | manifest.json | Slack app manifest with the chosen name |
 | state.json | Slack-thread to T3-thread mappings and last posted run IDs |
@@ -28,6 +29,7 @@ Use one private profile per bot, outside the code checkout. `pnpm run setup` cre
 | activation.json | Latest cutover transaction and rollback information |
 | backups/ | Previous plist and settings at cutover; `backups/brief/` keeps the brief and policy replaced by an applied rewrite |
 | logs/bot.log | Background-service output |
+| logs/knowledge-usage.jsonl | One line per posted reply: which knowledge pages it used, the start of the request and reply, and what it said was missing. Read only by the app's Overview and the weekly review |
 
 Profile folders are created with mode 700 and .env with mode 600. Keep profiles out of shared code and include them in your private backups. Never copy a real profile as another engineer's starter.
 
