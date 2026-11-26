@@ -4,7 +4,8 @@
 // (`t3`, `acp:<agent>`), so changing the choice never moves a running job.
 import { readdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { loginEnvironment } from '../shell-path.ts';
+import { passedEnv } from '../exec.ts';
+import { loginEnvironment, type LoginEnvironment } from '../shell-path.ts';
 import { createAcpBackend, readRunRecord } from './acp.ts';
 import { acpAgents, readAgentBackend } from './acp-agents.ts';
 import type { AgentBackend } from './backend.ts';
@@ -33,10 +34,14 @@ export const singleBackend = (backend: AgentBackend): AgentBackends => ({
 /** Where ACP runs are recorded in a profile: their transcripts, and what a restart carries on. */
 export const agentRunsDir = (profileDir: string): string => join(profileDir, 'agent-runs');
 
-/** The login environment an ACP agent runs in: the owner's shell, as T3 gives its providers, with Serra's search PATH. */
-export const agentEnv = async (): Promise<NodeJS.ProcessEnv> => {
-  const login = await loginEnvironment();
-  return { ...(login.env ?? process.env), PATH: login.path };
+/**
+ * The login environment an ACP agent runs in: the owner's shell, as T3 gives its providers, with Serra's search PATH.
+ * Without it (the login shell timed out or failed), only the safe part of Serra's own (home, user, locale, proxies,
+ * config folders), never all of it: the daemon's environment can hold its Slack tokens.
+ */
+export const agentEnv = async (login: () => Promise<LoginEnvironment> = loginEnvironment, source: NodeJS.ProcessEnv = process.env): Promise<NodeJS.ProcessEnv> => {
+  const found = await login();
+  return { ...(found.env ?? passedEnv(source)), PATH: found.path };
 };
 
 export const createBackendPool = ({ profileDir, t3, log = () => {}, makeAcp = createAcpBackend }: {
@@ -81,8 +86,14 @@ export const createBackendPool = ({ profileDir, t3, log = () => {}, makeAcp = cr
     return backend;
   };
 
-  /** The instance thread `threadId` runs on: an older one while its turn is going there, else the newest. */
+  /**
+   * The instance thread `threadId` runs on: the one with its turn going, question waiting or messages queued, else
+   * the newest. The current instance is asked first, before any setup change is looked for, so an edit made while a
+   * thread runs never moves that thread to a new instance (which would start a second turn on it).
+   */
   const owner = (key: string, threadId: string): AgentBackend => {
+    const current = newest.get(key)?.backend;
+    if (current?.busy?.(threadId) === true) return current;
     sweep(key);
     return retired.get(key)?.find((backend) => backend.busy?.(threadId) === true) ?? latest(key);
   };

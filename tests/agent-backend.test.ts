@@ -12,7 +12,7 @@ import {
   addCustomAcpAgent, agentBackendConfigError, agentChoices, ensureAgentBackendFile, KNOWN_ACP_AGENTS, launchFor,
   readAgentBackend, removeCustomAcpAgent, writeAgentBackend, type AcpAgent,
 } from '../src/agent/acp-agents.ts';
-import { createBackendPool } from '../src/agent/pool.ts';
+import { agentEnv, createBackendPool } from '../src/agent/pool.ts';
 import { followAgentBackend } from '../app/main/agent-backend-watch.ts';
 import { createMeetingRuns } from '../src/meeting-runs.ts';
 import { pollUntilSettled, worktreeRun, type AgentBackend, type RunDetail, type WaitOptions } from '../src/agent/backend.ts';
@@ -627,4 +627,68 @@ test('the pool applies an agent\'s edited command or model to the next job, and 
   assert.equal(made[2]!.closed, false);
   pool.current();
   assert.equal(made.length, 3, 'no new instance while the setup is unchanged');
+});
+
+test('a model change while a job runs leaves that job on its instance: reads, follow-ups, answers and stop all reach it', async (t) => {
+  const dir = mkdtempSync(join(tmpdir(), 'serra-pool-running-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const t3Fake = createFakeT3();
+  const made: { model?: string; calls: string[]; busy: Set<string>; closed: boolean }[] = [];
+  const stub = (options: Parameters<typeof createAcpBackend>[0]): AgentBackend => {
+    const self = { calls: [] as string[], busy: new Set<string>(), closed: false, ...(options.model ? { model: options.model } : {}) };
+    made.push(self);
+    const detail: RunDetail = { thread: { threadId: 'thread-1', link: '', status: 'running', latestRunId: 'run-1', activeRunId: 'run-1', pendingRequestCount: 1 }, messages: [] };
+    return {
+      id: 'acp', key: `acp:${options.agent.id}`, label: options.agent.name,
+      capabilities: { steer: false, worktrees: false, persistentRuns: true, transcriptLink: false, readOnly: true, toolResults: true },
+      start: async () => { const id = `thread-${made.indexOf(self) + 1}`; self.busy.add(id); return id; },
+      send: async (threadId, message) => { self.calls.push(`send ${threadId} ${message}`); },
+      interrupt: async (threadId) => { self.calls.push(`stop ${threadId}`); },
+      read: async (threadId) => { self.calls.push(`read ${threadId}`); return detail; },
+      wait: async (threadId) => { self.calls.push(`wait ${threadId}`); return { kind: 'pending', detail }; },
+      list: async () => [], settle: async () => {},
+      questions: {
+        list: async (threadId) => { self.calls.push(`questions ${threadId}`); return []; },
+        answer: async (threadId, requestId) => { self.calls.push(`answer ${threadId} ${requestId}`); },
+      },
+      busy: (threadId) => (threadId === undefined ? self.busy.size > 0 : self.busy.has(threadId)),
+      close: async () => { self.closed = true; },
+    };
+  };
+  const pool = createBackendPool({ profileDir: dir, t3: createT3Backend({ bin: '/Users/you/.t3/bin/t3', cli: t3Fake.t3, session: fakeSession([]) }), makeAcp: stub });
+  t.after(() => pool.close());
+  addCustomAcpAgent(dir, { name: 'Harness', command: 'harness', args: ['acp'] });
+  writeAgentBackend(dir, { backend: 'acp', agent: 'harness', model: 'model-a' });
+  const threadId = await pool.current().start({ workspace: { kind: 'folder', path: dir, name: 'x' }, title: 'job', brief: 'hi' });
+
+  // The owner picks another model while the job runs; no new job starts.
+  writeAgentBackend(dir, { backend: 'acp', agent: 'harness', model: 'model-b' });
+  const backend = pool.get('acp:harness');
+  await backend.read(threadId);
+  await backend.wait(threadId, { after: null, timeoutMs: 1, pollMs: 1, sleep: async () => {}, now: Date.now });
+  await backend.send(threadId, 'more');
+  await backend.questions!.list(threadId);
+  await backend.questions!.answer(threadId, 'q-1', { permission: 'yes' });
+  await backend.interrupt(threadId, 'stop');
+  assert.deepEqual(made[0]!.calls, [`read ${threadId}`, `wait ${threadId}`, `send ${threadId} more`, `questions ${threadId}`, `answer ${threadId} q-1`, `stop ${threadId}`]);
+  assert.equal(made.length, 1, 'no second instance, so no second turn on the running thread');
+  assert.equal(made[0]!.closed, false);
+
+  // The next job gets the new model; the running one stays where it is until it ends.
+  made[0]!.busy.clear();
+  made[0]!.busy.add(threadId);
+  await pool.current().start({ workspace: { kind: 'folder', path: dir, name: 'x' }, title: 'next', brief: 'hi' });
+  assert.equal(made.length, 2);
+  assert.equal(made[1]!.model, 'model-b');
+  await backend.send(threadId, 'again');
+  assert.equal(made[0]!.calls.at(-1), `send ${threadId} again`);
+});
+
+test('an ACP agent never gets the daemon\'s whole environment: without a login shell, only home, user, locale and config folders', async () => {
+  const source = { HOME: '/Users/you', USER: 'you', LANG: 'en_GB.UTF-8', CLAUDE_CONFIG_DIR: '/Users/you/.claude', SLACK_BOT_TOKEN: 'xoxb-1111-2222-fixturevalue', GITHUB_TOKEN: 'fixture', PATH: '/usr/bin' };
+  const timedOut = await agentEnv(async () => ({ env: null, path: '/opt/homebrew/bin:/usr/bin' }), source);
+  assert.deepEqual(timedOut, { HOME: '/Users/you', USER: 'you', LANG: 'en_GB.UTF-8', CLAUDE_CONFIG_DIR: '/Users/you/.claude', PATH: '/opt/homebrew/bin:/usr/bin' });
+  // With the owner's login shell, the agent gets that shell's environment, as T3 gives its providers.
+  const login = await agentEnv(async () => ({ env: { HOME: '/Users/you', EDITOR: 'vi' }, path: '/usr/bin' }), source);
+  assert.deepEqual(login, { HOME: '/Users/you', EDITOR: 'vi', PATH: '/usr/bin' });
 });
