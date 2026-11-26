@@ -11,8 +11,28 @@ Serra runs its work on an agent backend. **T3 Code is the default.** You can swi
 | Gemini CLI | `gemini` on your PATH (`gemini --acp`). |
 
 Serra installs nothing. Each agent keeps its own login; Serra never reads it. Pick a model per agent next to the
-picker, or leave it empty for the agent's own default. Add your own agent in `agent-backend.json` in the profile:
-`{"agents": [{"id": "mine", "name": "My agent", "command": "my-acp", "args": [], "env": {}}]}`.
+picker, or leave it empty for the agent's own default.
+
+## Adding other ACP harnesses
+
+Any CLI that speaks ACP over stdio (such as Antigravity, Muse, Grok or pi) can be added in two ways — both load live in the installed, running app and are picked up by the running daemon on the next job without a restart:
+
+- **In the app:** open Settings › Worker › **Agent backend**, click **Add ACP agent**, enter a name (e.g. `Antigravity`) and command with arguments (e.g. `agy acp` or `pi --acp`), and submit. Custom agents appear in the **Run on** picker and can be removed from the same card.
+- **In the config file:** click **Config file** in the **Agent backend** card (which creates the file if missing and opens it), or edit `~/.local/share/serra/<bot-id>/agent-backend.json` directly:
+
+```json
+{
+  "backend": "acp",
+  "agent": "antigravity",
+  "models": {},
+  "agents": [
+    { "id": "antigravity", "name": "Antigravity", "command": "agy", "args": ["acp"] },
+    { "id": "pi", "name": "pi", "command": "pi", "args": ["--acp"], "env": {} }
+  ]
+}
+```
+
+The running app watches `agent-backend.json` and updates the picker as soon as you save. Optional `env` values live only in your own file and are never shown in the UI or logged.
 
 ## What runs on it
 

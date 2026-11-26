@@ -14,7 +14,10 @@ import { createMeetingRuns, meetingRunner, runnerIdentity } from '../../../src/m
 import { saveSourceTest, sourceStatuses } from '../../../src/meeting-source-tests.ts';
 import { PROVIDER_IDS, type MeetingProvider } from '../../../src/meeting-sources.ts';
 import { readT3Providers } from '../../../src/t3-providers.ts';
-import { agentChoices, readAgentBackend, writeAgentBackend, type AgentBackendView } from '../../../src/agent/acp-agents.ts';
+import {
+  addCustomAcpAgent, agentBackendConfigError, agentBackendPath, agentChoices, ensureAgentBackendFile,
+  readAgentBackend, removeCustomAcpAgent, writeAgentBackend, type AgentBackendView,
+} from '../../../src/agent/acp-agents.ts';
 import { acpRunner, chosenAcpAgent, chosenBackend } from '../../../src/agent/select.ts';
 import { toolSearchPath } from '../../../src/shell-path.ts';
 import type { Handlers } from '../bridge.ts';
@@ -38,19 +41,29 @@ const source = (value: unknown): MeetingProvider => {
   return found;
 };
 
-/** Tests swap the T3 runs and the T3 settings reader. */
+/** Tests swap the T3 runs, T3 settings reader and tool search PATH. */
 export interface MeetingsHandlerOptions {
   runs?: typeof createMeetingRuns;
   readProviders?: typeof readT3Providers;
+  searchPath?: () => Promise<string>;
 }
 
 export const meetingsHandlers = (context: HandlerContext, options: MeetingsHandlerOptions = {}): Handlers<'meetings'> => {
   const makeRuns = options.runs ?? createMeetingRuns;
   const readProviders = options.readProviders ?? readT3Providers;
+  const searchPath = options.searchPath ?? toolSearchPath;
   const worker = () => readProfileFile(context.profileDir()).worker;
   // A new service per call: the profile folder can change while the app runs.
   const store = () => createMeetingStore({ knowledgeDir: join(context.profileDir(), 'knowledge') });
   const settings = () => ({ ...readMeetingSettings(context.profileDir()), notice: MEETING_NOTICE });
+  const backendView = async (profileDir: string, path?: string): Promise<AgentBackendView> => {
+    const current = readAgentBackend(profileDir);
+    return {
+      backend: current.backend, agent: current.agent,
+      agents: agentChoices(current, path ?? await searchPath()), models: current.models,
+      configPath: agentBackendPath(profileDir), configError: agentBackendConfigError(profileDir),
+    };
+  };
   return {
     settings,
     setEnabled: (enabled) => {
@@ -89,19 +102,44 @@ export const meetingsHandlers = (context: HandlerContext, options: MeetingsHandl
         throw new Error(shortError(error));
       });
     },
-    agentBackend: async (): Promise<AgentBackendView> => {
-      const settings = readAgentBackend(context.profileDir());
-      return { backend: settings.backend, agent: settings.agent, agents: agentChoices(settings, await toolSearchPath()), models: settings.models };
-    },
+    agentBackend: async (): Promise<AgentBackendView> => backendView(context.profileDir()),
     setAgentBackend: async (choice): Promise<AgentBackendView> => {
       if (!isRecord(choice) || (choice.backend !== 't3' && choice.backend !== 'acp')) throw new Error('Pick T3 or an ACP agent.');
       const agent = choice.backend === 'acp' ? id(choice.agent, 'ACP agent') : null;
-      const path = await toolSearchPath();
-      const settings = readAgentBackend(context.profileDir());
-      if (agent && !agentChoices(settings, path).some((entry) => entry.id === agent && entry.installed)) throw new Error('That ACP agent isn’t installed on this Mac.');
+      const profileDir = context.profileDir();
+      const path = await searchPath();
+      const current = readAgentBackend(profileDir);
+      if (agent && !agentChoices(current, path).some((entry) => entry.id === agent && entry.installed)) throw new Error('That ACP agent isn’t installed on this Mac.');
       if (choice.model !== undefined && typeof choice.model !== 'string') throw new Error('That isn’t a model name.');
-      const saved = writeAgentBackend(context.profileDir(), { backend: choice.backend, agent, ...(typeof choice.model === 'string' ? { model: choice.model } : {}) });
-      return { backend: saved.backend, agent: saved.agent, agents: agentChoices(saved, path), models: saved.models };
+      writeAgentBackend(profileDir, { backend: choice.backend, agent, ...(typeof choice.model === 'string' ? { model: choice.model } : {}) });
+      return backendView(profileDir, path);
+    },
+    addAcpAgent: async (input): Promise<AgentBackendView> => {
+      if (!isRecord(input) || typeof input.name !== 'string' || typeof input.command !== 'string') {
+        throw new Error('Enter a name and command for the ACP agent.');
+      }
+      if (input.id !== undefined && typeof input.id !== 'string') throw new Error('Invalid agent ID.');
+      if (input.args !== undefined && (!Array.isArray(input.args) || input.args.some((arg) => typeof arg !== 'string'))) {
+        throw new Error('Arguments must be a list of strings.');
+      }
+      const args = Array.isArray(input.args) ? input.args.filter((arg): arg is string => typeof arg === 'string') : [];
+      const profileDir = context.profileDir();
+      addCustomAcpAgent(profileDir, {
+        ...(typeof input.id === 'string' ? { id: input.id } : {}),
+        name: input.name,
+        command: input.command,
+        args,
+      });
+      return backendView(profileDir);
+    },
+    removeAcpAgent: async (agentId): Promise<AgentBackendView> => {
+      const profileDir = context.profileDir();
+      removeCustomAcpAgent(profileDir, id(agentId, 'ACP agent'));
+      return backendView(profileDir);
+    },
+    openAgentBackendConfig: async () => {
+      const file = ensureAgentBackendFile(context.profileDir());
+      await context.openPath(file);
     },
     list: () => store().listMeetings(),
     history: () => store().history(),

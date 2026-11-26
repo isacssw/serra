@@ -8,7 +8,12 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test, { type TestContext } from 'node:test';
 import { createAcpBackend } from '../src/agent/acp.ts';
-import { agentChoices, KNOWN_ACP_AGENTS, launchFor, readAgentBackend, writeAgentBackend, type AcpAgent } from '../src/agent/acp-agents.ts';
+import {
+  addCustomAcpAgent, agentBackendConfigError, agentChoices, ensureAgentBackendFile, KNOWN_ACP_AGENTS, launchFor,
+  readAgentBackend, removeCustomAcpAgent, writeAgentBackend, type AcpAgent,
+} from '../src/agent/acp-agents.ts';
+import { createBackendPool } from '../src/agent/pool.ts';
+import { followAgentBackend } from '../app/main/agent-backend-watch.ts';
 import { createMeetingRuns } from '../src/meeting-runs.ts';
 import { pollUntilSettled, worktreeRun, type AgentBackend, type RunDetail, type WaitOptions } from '../src/agent/backend.ts';
 import { createT3Backend } from '../src/agent/t3.ts';
@@ -450,4 +455,100 @@ test('the agent backend choice: T3 until the owner picks an installed ACP agent;
   assert.deepEqual(writeAgentBackend(dir, { backend: 'acp', agent: 'claude' }).backend, 'acp');
   assert.equal(readAgentBackend(dir).custom.length, 1, 'the owner\'s own agents are kept');
   assert.equal(writeAgentBackend(dir, { backend: 't3' }).backend, 't3');
+});
+
+test('custom ACP agents: add, remove, starter file, validation, and configError without clobbering invalid JSON', (t) => {
+  const dir = mkdtempSync(join(tmpdir(), 'serra-custom-agents-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const bin = join(dir, 'bin');
+  mkdirSync(bin);
+  writeFileSync(join(bin, 'agy'), '#!/bin/sh\n', { mode: 0o755 });
+
+  assert.equal(agentBackendConfigError(dir), null, 'missing file is not an error');
+  const file = ensureAgentBackendFile(dir);
+  assert.equal(file, join(dir, 'agent-backend.json'));
+  assert.equal(existsSync(file), true);
+  assert.equal(agentBackendConfigError(dir), null);
+
+  // Add Antigravity and pi; existing env on another hand-edited agent stays untouched.
+  writeFileSync(file, JSON.stringify({
+    backend: 't3', agent: null, models: {},
+    agents: [{ id: 'muse', name: 'Muse', command: 'muse', args: ['--acp'], env: { MUSE_TOKEN: 'xoxb-1111-2222-fixturevalue' } }],
+  }));
+  addCustomAcpAgent(dir, { name: 'Antigravity', command: 'agy', args: ['acp'] });
+  addCustomAcpAgent(dir, { name: 'pi', command: 'pi', args: ['--acp'] });
+  const choices = agentChoices(readAgentBackend(dir), bin);
+  assert.deepEqual(
+    choices.filter((entry) => entry.custom).map((entry) => [entry.id, entry.name, entry.command, entry.installed]),
+    [['muse', 'Muse', 'muse --acp', false], ['antigravity', 'Antigravity', 'agy acp', true], ['pi', 'pi', 'pi --acp', false]],
+  );
+  assert.equal(readAgentBackend(dir).custom.find((entry) => entry.id === 'muse')?.env?.MUSE_TOKEN, 'xoxb-1111-2222-fixturevalue');
+
+  // Rejects built-in collisions, duplicates, bad commands.
+  assert.throws(() => addCustomAcpAgent(dir, { name: 'Claude', command: 'claude', args: [] }), /built-in/);
+  assert.throws(() => addCustomAcpAgent(dir, { name: 'Antigravity', command: 'agy', args: ['acp'] }), /already added/);
+  assert.throws(() => addCustomAcpAgent(dir, { name: 'Bad', command: '--flag', args: [] }), /hyphen/);
+  assert.throws(() => addCustomAcpAgent(dir, { name: 'Bad', command: 'relative/bin', args: [] }), /absolute path/);
+
+  // Selecting then removing a custom agent falls back cleanly to T3 and drops its model entry.
+  writeAgentBackend(dir, { backend: 'acp', agent: 'antigravity', model: 'gemini-4' });
+  assert.equal(readAgentBackend(dir).backend, 'acp');
+  assert.equal(readAgentBackend(dir).models.antigravity, 'gemini-4');
+  const afterRemove = removeCustomAcpAgent(dir, 'antigravity');
+  assert.equal(afterRemove.backend, 't3');
+  assert.equal(afterRemove.agent, null);
+  assert.equal(afterRemove.models.antigravity, undefined);
+  assert.equal(afterRemove.custom.some((entry) => entry.id === 'antigravity'), false);
+
+  // Invalid JSON surfaces configError and blocks writes so hand edits aren't overwritten.
+  writeFileSync(file, '{ broken json');
+  assert.match(agentBackendConfigError(dir) ?? '', /not valid JSON/);
+  assert.throws(() => addCustomAcpAgent(dir, { name: 'Grok', command: 'grok', args: ['acp'] }), /not valid JSON/);
+  assert.equal(readFileSync(file, 'utf8'), '{ broken json', 'broken file untouched');
+
+  // Malformed entry inside agents array surfaces a plain configError too.
+  writeFileSync(file, JSON.stringify({ agents: [{ id: 'ok', command: 'agy' }, { name: 'Missing id' }] }));
+  assert.match(agentBackendConfigError(dir) ?? '', /missing a valid id or command/);
+});
+
+test('running backend pool picks up a newly added custom ACP agent from agent-backend.json without restart', async (t) => {
+  const fake = fakeAcp(t);
+  const profileDir = join(fake.dir, 'profile');
+  mkdirSync(profileDir, { recursive: true });
+  const t3Fake = createFakeT3();
+  const t3 = createT3Backend({ bin: '/Users/you/.t3/bin/t3', cli: t3Fake.t3, session: fakeSession([]) });
+  const pool = createBackendPool({
+    profileDir, t3,
+    makeAcp: (options) => fake.backend({ ...options, env: async () => process.env, agent: { ...options.agent, env: { ...fake.agent.env, ...options.agent.env } } }),
+  });
+  t.after(() => pool.close());
+
+  assert.equal(pool.current().key, 't3', 'starts on T3 before any custom agent is added');
+  addCustomAcpAgent(profileDir, { name: 'Custom Harness', command: process.execPath, args: [FAKE_AGENT] });
+  writeAgentBackend(profileDir, { backend: 'acp', agent: 'custom-harness' });
+
+  const active = pool.current();
+  assert.equal(active.key, 'acp:custom-harness');
+  assert.equal(active.label, 'Custom Harness');
+  const threadId = await active.start({ workspace: { kind: 'folder', path: fake.dir, name: 'x' }, title: 'live', brief: 'Hello custom harness.' });
+  fake.reply('hello from custom harness');
+  const done = await active.wait(threadId, { ...fast, after: null });
+  assert.ok(done.kind === 'settled' && done.answer === 'hello from custom harness');
+});
+
+test('followAgentBackend notifies when agent-backend.json changes on disk', async (t) => {
+  const dir = mkdtempSync(join(tmpdir(), 'serra-watch-backend-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  let changes = 0;
+  const follower = followAgentBackend(() => { changes += 1; }, { debounceMs: 25 });
+  t.after(() => follower.close());
+  follower.follow(dir);
+  // On macOS, fs.watch can return before its FSEvents stream has attached; write until the stream sees it.
+  const file = join(dir, 'agent-backend.json');
+  const payload = JSON.stringify({ agents: [{ id: 'antigravity', name: 'Antigravity', command: 'agy', args: ['acp'] }] });
+  for (const end = Date.now() + 5_000; changes === 0 && Date.now() < end;) {
+    writeFileSync(file, payload);
+    await new Promise((resolve) => { setTimeout(resolve, 40); });
+  }
+  assert.ok(changes >= 1, 'watcher fired when agent-backend.json was written');
 });

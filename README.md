@@ -29,7 +29,22 @@ Needs [T3 Code](https://github.com/pingdotgg/t3code) running, Node 24+ (or 22.18
 
 Serra is a bridge between your team chat and the coding agents on your Mac. It connects a chat bot to [T3 Code](https://github.com/pingdotgg/t3code), so the agent you already use there (Claude, Codex, …) can take requests from chat. When someone mentions the bot or sends it a DM, Serra starts a T3 thread in a fresh Git worktree of your repository. The agent does the work there (answers a question, fixes a bug, opens a draft PR) and its reply goes back to the chat thread.
 
-T3 is the default. You can run everything on an agent that speaks the [Agent Client Protocol](https://agentclientprotocol.com) instead (Claude Code, Codex, OpenCode, Gemini CLI): Settings › Worker › **Agent backend**. See [docs/agent-backends.md](docs/agent-backends.md).
+T3 is the default. You can run everything on an agent that speaks the [Agent Client Protocol](https://agentclientprotocol.com) instead (Claude Code, Codex, OpenCode, Gemini CLI, or any custom ACP harness such as Antigravity, Muse, Grok or pi): Settings › Worker › **Agent backend**.
+
+To add another ACP harness in the installed, running app (no restart needed):
+
+- **From the UI:** open Settings › Worker › **Agent backend**, click **Add ACP agent**, and enter a display name and its ACP command (for example `Antigravity` and `agy acp`).
+- **From the config file:** click **Config file** in the same card — or edit `~/.local/share/serra/<bot-id>/agent-backend.json` directly — and add entries under `"agents"`. The running app watches the file and reloads the picker automatically:
+
+  ```json
+  {
+    "agents": [
+      { "id": "antigravity", "name": "Antigravity", "command": "agy", "args": ["acp"] }
+    ]
+  }
+  ```
+
+See [docs/agent-backends.md](docs/agent-backends.md) for all fields (including optional per-agent `env`), model pinning, permissions and differences from T3.
 
 Slack is the only chat channel in this alpha; others are planned. Each engineer runs their own bot: their own Slack app, their own Mac, their own GitHub login.
 

@@ -496,6 +496,91 @@ const runThemeChecks = async (window: BrowserWindow): Promise<string[]> => {
   return failures;
 };
 
+/**
+ * Verifies custom ACP harnesses in the real window: adding one via the Add ACP agent dialog, live reload when
+ * `agent-backend.json` is edited on disk without a restart, and removing it from the UI.
+ */
+const runCustomAcpAgentChecks = async (window: BrowserWindow): Promise<string[]> => {
+  const failures: string[] = [];
+  const directory = layoutProfile();
+  const shots = process.env.SERRA_SMOKE_SHOTS;
+  if (shots) mkdirSync(shots, { recursive: true });
+  const run = async <T>(script: string): Promise<T> => await window.webContents.executeJavaScript(script) as T;
+  const setInput = `
+    const setValue = (el, text) => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(el, text);
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+    };
+    const wait = async (check, ticks = 80) => { for (let i = 0; i < ticks && !check(); i++) await new Promise((r) => setTimeout(r, 50)); return check(); };
+  `;
+  try {
+    await run(`(async () => {${setInput}
+      await window.serra.app.setPrefs({ profileDir: ${JSON.stringify(directory)} });
+      window.dispatchEvent(new Event('serra:setup-changed'));
+      await wait(() => !document.querySelector('[data-setup-required]'));
+      document.querySelector('[data-serra-sidebar] a[data-route="settings-worker"]')?.click();
+      await wait(() => document.querySelector('#agent-backend'));
+    })()`);
+
+    // 1. Add via UI button & dialog.
+    const openedDialog = await run<boolean>(`(async () => {${setInput}
+      const btn = [...document.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Add ACP agent');
+      btn?.click();
+      if (!(await wait(() => document.querySelector('dialog[open] input')))) return false;
+      const inputs = [...document.querySelectorAll('dialog[open] input')];
+      setValue(inputs[0], 'Example ACP');
+      setValue(inputs[1], '/bin/echo acp');
+      await new Promise((r) => setTimeout(r, 100));
+      return true;
+    })()`);
+    if (!openedDialog) { failures.push('Add ACP agent dialog did not open'); return failures; }
+    if (shots) writeFileSync(join(shots, 'worker-add-acp-dialog.png'), (await window.webContents.capturePage()).toPNG());
+
+    const addedInUi = await run<{ optionFound: boolean; enabled: boolean }>(`(async () => {${setInput}
+      [...document.querySelectorAll('dialog[open] button')].find((b) => b.textContent.trim() === 'Add agent')?.click();
+      await wait(() => !document.querySelector('dialog[open]'));
+      const found = await wait(() => document.querySelector('#agent-backend option[value="acp:example-acp"]'));
+      const opt = document.querySelector('#agent-backend option[value="acp:example-acp"]');
+      return { optionFound: Boolean(found), enabled: Boolean(opt && !opt.disabled) };
+    })()`);
+    if (!addedInUi.optionFound) failures.push('Example ACP did not appear in the Run on picker after adding via UI');
+    if (!addedInUi.enabled) failures.push('Example ACP (/bin/echo acp) was unexpectedly disabled');
+
+    // 2. Live config-file reload: edit agent-backend.json on disk while the window stays open.
+    const configPath = join(directory, 'agent-backend.json');
+    const saved = JSON.parse(readFileSync(configPath, 'utf8')) as { agents?: unknown[] };
+    if (!Array.isArray(saved.agents) || saved.agents.length !== 1) failures.push('agent-backend.json did not persist the UI-added agent');
+    const updated = JSON.stringify({
+      ...saved,
+      agents: [...(saved.agents ?? []), { id: 'pi', name: 'pi', command: 'pi', args: ['--acp'] }],
+    }, null, 2);
+    let liveReloaded = false;
+    for (let attempt = 0; attempt < 20 && !liveReloaded; attempt += 1) {
+      writeFileSync(configPath, `${updated}\n`);
+      liveReloaded = await run<boolean>(`(async () => {${setInput}
+        return Boolean(await wait(() => document.querySelector('#agent-backend option[value="acp:pi"]'), 8));
+      })()`);
+    }
+    if (!liveReloaded) failures.push('editing agent-backend.json on disk did not live-reload into the open window');
+    if (shots) writeFileSync(join(shots, 'worker-custom-acp-loaded.png'), (await window.webContents.capturePage()).toPNG());
+
+    // 3. Remove via UI button.
+    const removed = await run<boolean>(`(async () => {${setInput}
+      document.querySelector('button[aria-label="Remove Example ACP"]')?.click();
+      return Boolean(await wait(() => !document.querySelector('#agent-backend option[value="acp:example-acp"]')));
+    })()`);
+    if (!removed) failures.push('removing Example ACP from the UI did not update the picker');
+    console.log('[serra] smoke custom ACP agents:', JSON.stringify({ addedInUi, liveReloaded, removed }));
+  } finally {
+    await run(`(async () => {
+      await window.serra.app.setPrefs({ profileDir: null });
+      window.dispatchEvent(new Event('serra:setup-changed'));
+    })()`).catch(() => null);
+    rmSync(join(directory, '..'), { recursive: true, force: true });
+  }
+  return failures;
+};
+
 export const runSmokeChecks = async (window: BrowserWindow, resendStatus: () => void): Promise<boolean> => {
   const timer = setTimeout(resendStatus, 300);
   let report: PageReport;
@@ -534,6 +619,7 @@ export const runSmokeChecks = async (window: BrowserWindow, resendStatus: () => 
     ...missing.map((path) => `runtime file ${path} is missing under ${codeRoot}`),
     ...await runLayoutChecks(window),
     ...await runThemeChecks(window),
+    ...await runCustomAcpAgentChecks(window),
   ].filter((failure): failure is string => typeof failure === 'string');
   for (const failure of failures) console.error(`[serra] smoke failed: ${failure}`);
   if (failures.length === 0) console.log('[serra] smoke passed');

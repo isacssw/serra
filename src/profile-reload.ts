@@ -12,6 +12,7 @@
 import { type FSWatcher, readFileSync, watch } from 'node:fs';
 import { join, sep } from 'node:path';
 import { type Config, type Profile, PROFILE_FILE, validateProfile } from './config.ts';
+import { AGENT_BACKEND_FILE } from './agent/acp-agents.ts';
 import type { ProfileSection } from './contracts.ts';
 import { PROPOSALS_DIR } from './knowledge-rules.ts';
 import { PROFILE_SECTIONS, PROFILE_SETTINGS } from './profile-settings.ts';
@@ -140,3 +141,10 @@ export const watchProfile = (profileDir: string, onChange: () => void, options: 
 export const watchProposals = (knowledgeDir: string, onChange: () => void, options: WatchOptions = {}): ProfileWatcher =>
   watchFolder(knowledgeDir, (filename) => filename === null || filename === PROPOSALS_DIR || filename.startsWith(`${PROPOSALS_DIR}/`),
     onChange, { ...options, recursive: true });
+
+/**
+ * Call `onChange` shortly after `agent-backend.json` in `profileDir` is added, edited or removed, so the app's
+ * Agent backend card picks up hand-edited custom agents live without a restart.
+ */
+export const watchAgentBackend = (profileDir: string, onChange: () => void, options: WatchOptions = {}): ProfileWatcher =>
+  watchFolder(profileDir, (filename) => filename === null || filename === AGENT_BACKEND_FILE, onChange, options);

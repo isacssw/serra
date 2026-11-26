@@ -20,6 +20,7 @@ import { targetScreen } from './notifications.logic.ts';
 import { isAppUrl } from './window-options.ts';
 import { runSmokeChecks } from './smoke.ts';
 import { followProposals, type ProposalsFollower } from './proposals-watch.ts';
+import { followAgentBackend, type AgentBackendFollower } from './agent-backend-watch.ts';
 import { toolPath } from './tool-path.ts';
 import { stopAll as stopToolChecks } from '../../src/exec.ts';
 import { releasesUrl } from '../../src/app-updates.ts';
@@ -55,6 +56,8 @@ let tray: SerraTray | null = null;
 let notifications: SerraNotifications | null = null;
 /** Watches the profile's `knowledge/proposals/` and tells the window (APP-26). */
 let proposals: ProposalsFollower | null = null;
+/** Watches the profile's `agent-backend.json` and tells the window when custom ACP agents change on disk. */
+let agentBackendWatch: AgentBackendFollower | null = null;
 
 const start = async (): Promise<void> => {
   // The saved theme applies to native parts before any window opens, and follows every save (APP-28).
@@ -80,6 +83,7 @@ const start = async (): Promise<void> => {
       if (profileDirOrNull() !== before) notifications?.reset();
       status.follow(profileDirOrNull());
       proposals?.follow(profileDirOrNull());
+      agentBackendWatch?.follow(profileDirOrNull());
       tray?.refresh();
     },
   };
@@ -154,6 +158,8 @@ const start = async (): Promise<void> => {
   };
   proposals = followProposals(() => context.push?.('proposals', null));
   proposals.follow(profileDirOrNull());
+  agentBackendWatch = followAgentBackend(() => context.push?.('agentBackend', null));
+  agentBackendWatch.follow(profileDirOrNull());
   const handlers = createHandlers(context);
   // Stops the app causes itself don't notify; wrapped before registering so the window and menubar share it.
   expectStopsFrom(handlers, () => notifications?.expectStop());
@@ -210,7 +216,7 @@ const start = async (): Promise<void> => {
   app.on('will-quit', () => {
     for (const timer of timers) clearTimeout(timer);
     stopToolChecks();
-    notifications?.stop(); notifications = null; tray?.destroy(); tray = null; proposals?.close(); proposals = null; status.close();
+    notifications?.stop(); notifications = null; tray?.destroy(); tray = null; proposals?.close(); proposals = null; agentBackendWatch?.close(); agentBackendWatch = null; status.close();
   });
   try {
     tray = createTray({
@@ -244,6 +250,7 @@ const start = async (): Promise<void> => {
     notifications?.stop();
     tray?.destroy();
     proposals?.close();
+    agentBackendWatch?.close();
     status.close();
     rmSync(smokeUserData, { recursive: true, force: true });
     app.exit(ok ? 0 : 1);

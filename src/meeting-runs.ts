@@ -71,7 +71,7 @@ export interface MeetingRunOptions {
   backend?: () => AgentBackend;
   pollMs?: number;
   timeoutMs?: number;
-  sleep?: (ms: number) => Promise<void>;
+  sleep?: (ms: number, signal?: AbortSignal) => Promise<void>;
   now?: () => number;
   log?: (message: string) => void;
 }
@@ -233,7 +233,12 @@ const oneAtATime = <T>(workspace: string, work: () => Promise<T>): Promise<T> =>
 
 export const createMeetingRuns = ({
   t3Bin, provider, model, workspace = meetingWorkspace(), t3, backend: makeBackend,
-  pollMs = POLL_MS, timeoutMs = TIMEOUT_MS, sleep = (ms) => new Promise((resolve) => { setTimeout(resolve, ms); }), now = Date.now, log = () => {},
+  pollMs = POLL_MS, timeoutMs = TIMEOUT_MS,
+  sleep = (ms, signal) => new Promise<void>((resolve) => {
+    const timer = setTimeout(resolve, ms);
+    signal?.addEventListener('abort', () => { clearTimeout(timer); resolve(); }, { once: true });
+  }),
+  now = Date.now, log = () => {},
 }: MeetingRunOptions) => {
   const newBackend = makeBackend ?? (() => createT3Backend({ bin: t3Bin, ...(t3 ? { cli: t3, session: t3.session } : {}) }));
 

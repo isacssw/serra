@@ -594,7 +594,17 @@ export const createAcpBackend = ({
       let seen = -1;
       const wake = async (ms: number): Promise<void> => {
         if (version !== seen) { seen = version; return; }
-        await Promise.race([options.sleep(ms), new Promise<void>((resolve) => { waiters.add(resolve); })]);
+        const controller = new AbortController();
+        let onWake: (() => void) | undefined;
+        try {
+          await Promise.race([
+            options.sleep(ms, controller.signal),
+            new Promise<void>((resolve) => { onWake = resolve; waiters.add(resolve); }),
+          ]);
+        } finally {
+          controller.abort();
+          if (onWake) waiters.delete(onWake);
+        }
         seen = version;
       };
       return pollUntilSettled(read, threadId, { ...options, sleep: wake });

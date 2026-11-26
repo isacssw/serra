@@ -81,7 +81,7 @@ export interface WaitOptions {
   after: string | null;
   timeoutMs: number;
   pollMs: number;
-  sleep: (ms: number) => Promise<void>;
+  sleep: (ms: number, signal?: AbortSignal) => Promise<void>;
   now: () => number;
   /** How many recent messages each read takes. */
   messages?: number;

@@ -27,7 +27,7 @@ import type { InterviewPreview, StartedTask } from '../../src/tasks.ts';
 import type { MeetingReviewed, MeetingView } from '../../src/meeting-store.ts';
 import type { MeetingSettings } from '../../src/meeting-settings.ts';
 import type { MeetingRunner } from '../../src/meeting-runs.ts';
-import type { AgentBackendView } from '../../src/agent/acp-agents.ts';
+import type { AgentBackendView, CustomAcpAgentInput } from '../../src/agent/acp-agents.ts';
 import type { RunTranscript } from '../../src/agent/runs-view.ts';
 import type { MeetingProvider, ProviderStatus } from '../../src/meeting-sources.ts';
 import type { DetectedProject, OwnerConfirmed, ProfileDraft, ProfileSummary, SetupProgress, SlackManifest } from '../../src/setup.ts';
@@ -374,10 +374,16 @@ export interface SerraApi {
     discardMeeting(id: string): void;
     /** Remove everything a meeting added, everywhere. Can't be undone. */
     forget(id: string): { pages: string[]; backups: number; snapshots: number };
-    /** Which agent backend meeting runs use (T3 by default), and the ACP agents found on this Mac. Reads files and PATH only. */
+    /** Which agent backend new work uses (T3 by default), and the ACP agents found on this Mac. Reads files and PATH only. */
     agentBackend(): AgentBackendView;
     /** Picks T3, or an installed ACP agent and its model, for new work. */
     setAgentBackend(choice: { backend: 't3' | 'acp'; agent?: string | null; model?: string }): AgentBackendView;
+    /** Adds a custom ACP agent to `agent-backend.json` and returns the refreshed view. */
+    addAcpAgent(input: CustomAcpAgentInput): AgentBackendView;
+    /** Removes a custom ACP agent from `agent-backend.json` and returns the refreshed view. */
+    removeAcpAgent(id: string): AgentBackendView;
+    /** Creates `agent-backend.json` if missing and opens it outside the app for manual editing. */
+    openAgentBackendConfig(): void;
   };
 }
 
@@ -412,6 +418,8 @@ export interface SerraPushes {
   jobs: null;
   /** Slack names just resolved: screens that show people (Settings › People) ask for them again. */
   names: null;
+  /** `agent-backend.json` changed on disk: Settings › Worker rereads its ACP agent list. */
+  agentBackend: null;
 }
 
 export type Unsubscribe = () => void;
@@ -453,10 +461,10 @@ export const bridgeMethods = {
   diagnostics: methods<'diagnostics'>()(['run', 'logTail']),
   people: methods<'people'>()(['add']),
   tasks: methods<'tasks'>()(['preview', 'start', 'previewInterview', 'startInterview']),
-  meetings: methods<'meetings'>()(['settings', 'setEnabled', 'sources', 'testSource', 'list', 'history', 'approve', 'discard', 'discardMeeting', 'forget', 'agentBackend', 'setAgentBackend']),
+  meetings: methods<'meetings'>()(['settings', 'setEnabled', 'sources', 'testSource', 'list', 'history', 'approve', 'discard', 'discardMeeting', 'forget', 'agentBackend', 'setAgentBackend', 'addAcpAgent', 'removeAcpAgent', 'openAgentBackendConfig']),
 } satisfies { [N in Namespace]: readonly (keyof SerraApi[N])[] };
 
-const pushChannels = ['status', 'event', 'releaseLog', 'appUpdate', 'navigate', 'proposals', 'jobs', 'names'] as const satisfies readonly (keyof SerraPushes)[];
+const pushChannels = ['status', 'event', 'releaseLog', 'appUpdate', 'navigate', 'proposals', 'jobs', 'names', 'agentBackend'] as const satisfies readonly (keyof SerraPushes)[];
 
 export const invokeChannel = (namespace: string, method: string): string => `serra:${namespace}.${method}`;
 export const pushChannel = (name: keyof SerraPushes): string => `serra:on.${name}`;
