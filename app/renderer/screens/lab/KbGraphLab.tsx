@@ -3,7 +3,7 @@
 // Options: Web (force-directed), Orbit (radial around one page), Growth (the knowledge base growing over time),
 // Islands (one island per area).
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type MutableRefObject, type ReactNode } from 'react';
-import { Pause, Play, RotateCcw } from 'lucide-react';
+import { CalendarRange, Pause, Play, RotateCcw } from 'lucide-react';
 import { themeStore, useTheme } from '../../theme.ts';
 import { cx } from '../../ui/index.ts';
 import { createController, GraphCanvas, type Controller, type Scene } from './GraphCanvas.tsx';
@@ -217,6 +217,7 @@ const GrowthView = ({ graph, selected, onSelect, controller, islands = false }: 
   const duration = graph.nodes.length > 200 ? 16_000 : 11_000;
   const [playing, setPlaying] = useState(() => !still());
   const [progress, setProgress] = useState(() => (still() ? 1 : 0));
+  const [scrubbing, setScrubbing] = useState(false);
   const live = useRef({ progress: still() ? 1 : 0, playing: !still(), last: 0 });
   const state = useMemo(() => {
     const made = islands ? islandSim(graph) : { sim: createSim(graph, graph.nodes.length > 200 ? { link: 24, charge: 200, gravity: 0.03 } : {}), centres: null };
@@ -230,7 +231,7 @@ const GrowthView = ({ graph, selected, onSelect, controller, islands = false }: 
     const { sim, alpha, pulse, born, centres } = state;
     const active = sim.active!;
     c.scene = { x: sim.x, y: sim.y, alpha, pulse, labelled: (i) => (named ? named.has(i) : graph.nodes[i]!.uses >= 24) };
-    if (centres) c.scene.edgeWeight = (a, b) => (graph.nodes[a]!.area === graph.nodes[b]!.area ? 1 : 0.3);
+    if (centres) c.scene.edgeWeight = (a, b) => (graph.nodes[a]!.area === graph.nodes[b]!.area ? 1 : 0.15);
     c.userMoved = false;
     let frames = 0;
     const apply = (now: number, instant: boolean): boolean => {
@@ -307,6 +308,7 @@ const GrowthView = ({ graph, selected, onSelect, controller, islands = false }: 
     controller.current.invalidate();
   };
   const scrub = (value: number): void => {
+    setScrubbing(true);
     live.current.progress = value;
     live.current.playing = false;
     setPlaying(false);
@@ -341,6 +343,17 @@ const GrowthView = ({ graph, selected, onSelect, controller, islands = false }: 
           </span>
         )}
       </div>
+      {/* At rest after the replay, the timeline folds into one quiet Replay button. */}
+      {!playing && progress >= 1 && !scrubbing ? (
+        <div className="absolute bottom-4 left-4 flex items-center gap-1">
+          <button type="button" onClick={toggle} className="flex h-8 items-center gap-1.5 rounded-lg border border-line bg-panel/90 px-2.5 text-[13px] font-medium text-ink backdrop-blur hover:bg-hover focus-visible:outline-2 focus-visible:outline-focus">
+            <RotateCcw size={14} /> Replay
+          </button>
+          <button type="button" onClick={() => setScrubbing(true)} aria-label="Show the timeline" className="grid size-8 place-items-center rounded-lg text-muted hover:bg-hover hover:text-ink focus-visible:outline-2 focus-visible:outline-focus">
+            <CalendarRange size={15} />
+          </button>
+        </div>
+      ) : (
       <div className="absolute inset-x-4 bottom-4 flex items-center gap-3 rounded-lg border border-line bg-panel/90 px-2 py-1.5 backdrop-blur">
         <button type="button" onClick={toggle} aria-label={playing ? 'Pause' : progress >= 1 ? 'Replay' : 'Play'} className="grid size-7 place-items-center rounded-md text-ink hover:bg-hover focus-visible:outline-2 focus-visible:outline-focus">
           {playing ? <Pause size={15} /> : progress >= 1 ? <RotateCcw size={15} /> : <Play size={15} />}
@@ -365,6 +378,7 @@ const GrowthView = ({ graph, selected, onSelect, controller, islands = false }: 
         </div>
         <span className="text-xs tabular-nums text-muted">{short(last)}</span>
       </div>
+      )}
     </>
   );
 };
@@ -388,7 +402,7 @@ const IslandsView = ({ graph, selected, onSelect, controller }: ViewProps) => {
     c.scene = {
       x: sim.x, y: sim.y, islands: shoresOf(graph, sim, centres),
       labelled: (i) => named.has(i),
-      edgeWeight: (a, b) => (graph.nodes[a]!.area === graph.nodes[b]!.area ? 1 : 0.3),
+      edgeWeight: (a, b) => (graph.nodes[a]!.area === graph.nodes[b]!.area ? 1 : 0.15),
     };
     c.userMoved = false;
     c.tick = () => {

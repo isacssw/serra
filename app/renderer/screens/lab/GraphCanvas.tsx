@@ -166,7 +166,8 @@ export const GraphCanvas = ({ graph, controller, selected, onSelect, onBackgroun
         const a = toScreen(scene.x[edge.a]!, scene.y[edge.a]!);
         const b = toScreen(scene.x[edge.b]!, scene.y[edge.b]!);
         const isLit = focus !== null && (edge.a === focus || edge.b === focus);
-        const path = edge.kind === 'disagrees' ? clash : isLit ? lit : quiet;
+        // A disagreement away from the focused page fades with the rest.
+        const path = edge.kind === 'disagrees' ? (isLit || focus === null ? clash : quiet) : isLit ? lit : quiet;
         const weight = path === quiet && scene.edgeWeight ? scene.edgeWeight(edge.a, edge.b) : 1;
         if ((Math.min(va, vb) < 0.99 || weight < 1) && path === quiet) { faded.push({ a, b, alpha: Math.min(va, vb) * weight }); continue; }
         path.moveTo(a.x, a.y);
