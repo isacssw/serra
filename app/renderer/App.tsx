@@ -19,6 +19,7 @@ import { AboutMe } from './screens/AboutMe.tsx';
 import { Overview } from './screens/Overview.tsx';
 import { NewTask } from './screens/NewTask.tsx';
 import { Pages } from './screens/Pages.tsx';
+import { KbGraphLab } from './screens/lab/KbGraphLab.tsx';
 import { Proposals } from './screens/Proposals.tsx';
 import { Secrets } from './screens/Secrets.tsx';
 import { Alerts } from './screens/settings/Alerts.tsx';
@@ -107,6 +108,8 @@ const Shell = () => {
         <main className="min-h-0 flex-1 overflow-y-auto [scrollbar-gutter:stable]" data-serra-main data-path={pathname}>
           <Routes>
             {routes.map((route) => <Route key={route.id} path={route.path} element={<SetupGate route={route}>{screens[route.id]}</SetupGate>} />)}
+            {/* Graph lab (SERRA-93): a prototype for choosing a knowledge graph view. Dev server only, never in a build. */}
+            {import.meta.env.DEV && <Route path="/dev/kb-graph" element={<KbGraphLab />} />}
             <Route path="*" element={<Navigate to={defaultPath} replace />} />
           </Routes>
         </main>
