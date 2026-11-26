@@ -113,7 +113,7 @@ test('startInterview starts a T3 thread with the interview brief, like a task, a
 
   assert.equal(task.title, INTERVIEW_TITLE);
   assert.equal(task.link, 'https://t3.test/interview-thread');
-  assert.deepEqual(readTasks(profileDir).map((row) => row.t3ThreadId), ['interview-thread']);
+  assert.deepEqual(readTasks(profileDir).map((row) => row.threadId), ['interview-thread']);
 });
 
 test('an interview after an earlier one carries on from its progress notes', (t) => {

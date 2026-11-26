@@ -137,7 +137,8 @@ export interface JobSummary {
   /** What the owner is asked, for a `needs you` row. */
   ownerQuestion?: string;
   /** Links are absent when unknown, never guessed. */
-  links: { slack?: string; t3?: string; pr?: string };
+  /** `transcript`: an ACP run's thread id, opened in the app's transcript view (it has no web link). */
+  links: { slack?: string; t3?: string; pr?: string; transcript?: string };
 }
 
 // ---------------------------------------------------------------------------------------------------------------

@@ -112,7 +112,7 @@ test('owner notifications support both generic and migrated markers, including p
 
 test('state survives restarting the store, and two profiles do not share jobs', (t) => {
   const root = mkdtempSync(join(tmpdir(), 'bots-state-')); t.after(() => rmSync(root, { recursive: true, force: true }));
-  const job: Job = { t3ThreadId: 't3-old', channel: 'C123', threadTs: '123.456', requester: 'U123', pendingReactionTs: null, lastPostedRunId: 'run-1', phase: { state: 'following' }, createdAt: new Date().toISOString(), reviewRequestedPrs: ['https://github.com/acme/project/pull/1'] };
+  const job: Job = { threadId: 't3-old', channel: 'C123', threadTs: '123.456', requester: 'U123', pendingReactionTs: null, lastPostedRunId: 'run-1', phase: { state: 'following' }, createdAt: new Date().toISOString(), reviewRequestedPrs: ['https://github.com/acme/project/pull/1'] };
   createStore(join(root, 'a.json')).putJob('C123:123.456', job);
   assert.deepEqual(createStore(join(root, 'a.json')).getJob('C123:123.456'), job);
   assert.deepEqual(createStore(join(root, 'b.json')).allJobs(), []);

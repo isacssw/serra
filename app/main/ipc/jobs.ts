@@ -4,6 +4,8 @@ import { listJobs, t3ThreadLookup, type ThreadInfo, type ThreadLookup } from '..
 import { slackWorkspace } from '../../../src/secrets.ts';
 import { slackMentions, slackPlainText, type SlackNames } from '../../../src/slack-names.ts';
 import { t3TaskState } from '../../../src/tasks.ts';
+import { acpTranscript } from '../../../src/agent/runs-view.ts';
+import { requestRun } from '../../../src/status-socket.ts';
 import type { Handlers } from '../bridge.ts';
 import type { HandlerContext } from './context.ts';
 import { profileSlackNames, type ProfileNames, type SlackNamesDeps } from './slack-names.ts';
@@ -18,7 +20,14 @@ export interface JobsDeps {
   names?: ProfileNames;
   /** How that cache is made when `names` is absent. Tests pass a fake `ask` or a timeout. */
   slackNames?: SlackNamesDeps;
+  /** The bot, for replies and answers to an ACP run. Tests pass a fake. */
+  daemon?: typeof requestRun;
 }
+
+const runThread = (value: unknown): string => {
+  if (typeof value !== 'string' || !value || value.length > 200) throw new Error('That run is missing.');
+  return value;
+};
 
 /** How long a thread without a PR is remembered before T3 is asked again: its worker may open one any minute. */
 export const THREAD_RECHECK_MS = 30_000;
@@ -77,7 +86,13 @@ const withNames = (rows: Row[], names: SlackNames): Row[] => {
   });
 };
 
-export const jobsHandlers = (context: HandlerContext, { run = runCommand, now = () => new Date(), worktreesRoot, names, slackNames = {} }: JobsDeps = {}): Handlers<'jobs'> => {
+export const jobsHandlers = (context: HandlerContext, { run = runCommand, now = () => new Date(), worktreesRoot, names, slackNames = {}, daemon = requestRun }: JobsDeps = {}): Handlers<'jobs'> => {
+  /** The ACP backend a run is on, from its record. */
+  const backendOf = (threadId: string): string => {
+    const found = acpTranscript(context.profileDir(), threadId);
+    if (!found) throw new Error('Serra has no record of that run.');
+    return `acp:${found.agent}`;
+  };
   const threads = new Map<string, { info: ThreadInfo; until: number }>();
   const namesFor = names ?? profileSlackNames(context, slackNames);
   return {
@@ -94,6 +109,17 @@ export const jobsHandlers = (context: HandlerContext, { run = runCommand, now = 
         ...(t3Bin ? { threads: cachedLookup(threads, t3Bin, run, () => now().getTime()), tasks: t3TaskState(t3Bin, run), runs: t3TaskState(t3Bin, run) } : {}),
       });
       return withNames(jobs, namesFor(profileDir));
+    },
+    transcript: (threadId) => acpTranscript(context.profileDir(), runThread(threadId)),
+    reply: async (threadId, message) => {
+      const id = runThread(threadId);
+      if (typeof message !== 'string' || !message.trim() || message.length > 8_000) throw new Error('Write a reply.');
+      await daemon(context.profileDir(), { op: 'send', backend: backendOf(id), threadId: id, message: message.trim() });
+    },
+    answer: async (threadId, requestId, answers) => {
+      const id = runThread(threadId);
+      if (typeof requestId !== 'string' || typeof answers !== 'object' || answers === null || Array.isArray(answers)) throw new Error('Pick an answer.');
+      await daemon(context.profileDir(), { op: 'answer', backend: backendOf(id), threadId: id, requestId, answers });
     },
     // The dry run never removes anything. Apply runs every check again, so a worktree that changed since is kept.
     cleanupWorktrees: async (options) => {

@@ -1,5 +1,5 @@
 // The AI providers T3 runs jobs with (SER-27), read from T3's own settings: `<T3 home>/userdata/settings.json`,
-// `providerInstances`. Serra never runs a provider itself (T3 is its only agent layer), and never writes these
+// `providerInstances`. Serra never runs a provider itself through T3's settings (T3 is the default agent backend, src/agent/), and never writes these
 // settings. Read-only, and only ids, driver kinds, labels and whether each is on leave this module: an instance's
 // `config` and `environment` can hold paths and keys, and are never read past `enabled`.
 import { readFileSync } from 'node:fs';

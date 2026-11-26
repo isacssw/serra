@@ -4,7 +4,7 @@
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { useNavigate } from 'react-router';
 import {
-  CircleCheck, CircleX, CirclePause, ChevronDown, GitBranch, GitPullRequest, Hash, Layers, LoaderCircle, Radio,
+  CircleCheck, CircleX, CirclePause, ChevronDown, GitBranch, GitPullRequest, Hash, Layers, LoaderCircle, MessageSquareText, Radio,
   ListChecks, Play, Plus, RefreshCw, TriangleAlert,
 } from 'lucide-react';
 import { useSearchParams } from 'react-router';
@@ -15,6 +15,7 @@ import { resumePath } from '../setup/setup.logic.ts';
 import { useSetup } from '../setup/SetupState.tsx';
 import { Button, Dialog, EmptyState, Page, cx, useToast } from '../ui/index.ts';
 import { registerActions } from '../commands/registry.ts';
+import { TranscriptDialog } from './Transcript.tsx';
 import {
   ageLabel, channelChoices, CLEANUP_PARAM, cleanupView, cleanupWorktreesAction, filterJobs, groupJobs, ICON_LABELS,
   linkButtons, rowDetail, rowIcon, rowParts, verdictLabel, type JobRow, type JobSection, type LinkKind, type RowIcon,
@@ -76,6 +77,7 @@ const ROW_ICONS: Record<RowIcon, ReactNode> = {
 const LINK_ICONS: Record<LinkKind, ReactNode> = {
   slack: <Hash size={14} />,
   t3: <Layers size={14} />,
+  transcript: <MessageSquareText size={14} />,
   pr: <GitPullRequest size={14} />,
 };
 
@@ -85,7 +87,7 @@ const open = (url: string, onError: (text: string) => void): void => {
   bridge.app.openExternal(url).catch((error: unknown) => onError(message(error)));
 };
 
-const JobRowView = ({ job, icon, now, onError, focused = false }: { job: JobRow; icon: RowIcon; now: Date; onError: (text: string) => void; focused?: boolean }) => {
+const JobRowView = ({ job, icon, now, onError, onTranscript, focused = false }: { job: JobRow; icon: RowIcon; now: Date; onError: (text: string) => void; onTranscript: (threadId: string, title: string) => void; focused?: boolean }) => {
   const { requester, channel, title, tooltip } = rowParts(job);
   const detail = rowDetail(job);
   return (
@@ -115,9 +117,9 @@ const JobRowView = ({ job, icon, now, onError, focused = false }: { job: JobRow;
               <Button
                 size="sm"
                 icon={LINK_ICONS[link.kind]}
-                disabled={!link.url}
+                disabled={!link.url && !link.transcript}
                 aria-label={`${link.label}: ${link.hint}`}
-                onClick={() => { if (link.url) open(link.url, onError); }}
+                onClick={() => { if (link.transcript) onTranscript(link.transcript, job.title); else if (link.url) open(link.url, onError); }}
               >
                 {link.label}
               </Button>
@@ -290,6 +292,7 @@ export const Jobs = ({ group }: { group: JobGroup }) => {
   const toast = useToast();
   const [channel, setChannel] = useState<string | null>(null);
   const [cleanup, setCleanup] = useState<Cleanup>({ step: 'closed' });
+  const [transcript, setTranscript] = useState<{ threadId: string; title: string } | null>(null);
   const ready = load.state === 'ready';
 
   // `?job=<key>` (a clicked notification, APP-24) opens that job's tab, marks its row and scrolls to it.
@@ -420,13 +423,14 @@ export const Jobs = ({ group }: { group: JobGroup }) => {
                   ))
                 : (
                   <ul className="flex flex-col gap-1.5">
-                    {current.rows.map((job) => <JobRowView key={job.key} job={job} icon={rowIcon(job, status)} now={now} onError={onLinkError} focused={job.key === focusedKey} />)}
+                    {current.rows.map((job) => <JobRowView key={job.key} job={job} icon={rowIcon(job, status)} now={now} onError={onLinkError} onTranscript={(threadId, title) => setTranscript({ threadId, title })} focused={job.key === focusedKey} />)}
                   </ul>
                 )}
             </div>
           </div>
         )}
         <CleanupDialog cleanup={cleanup} onClose={() => setCleanup({ step: 'closed' })} onApply={applyCleanup} />
+        <TranscriptDialog threadId={transcript?.threadId ?? null} title={transcript?.title ?? ''} onClose={() => setTranscript(null)} />
       </Page>
     </div>
   );

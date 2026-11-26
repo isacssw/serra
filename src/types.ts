@@ -24,7 +24,10 @@ export interface T3ThreadDetail {
 
 /** One chat thread the bot owns, keyed `${channel}:${threadTs}` in state.json. */
 export interface Job {
-  t3ThreadId: string;
+  /** The agent thread the job follows: a T3 thread, or an ACP session. Saved as `t3ThreadId` before agent backends. */
+  threadId: string;
+  /** Which backend runs it (`t3`, `acp:<agent>`), as the job started. Absent: T3, like every job before agent backends. */
+  backend?: string;
   channel: string;
   threadTs: string;
   requester: string;

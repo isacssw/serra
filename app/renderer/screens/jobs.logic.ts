@@ -114,7 +114,7 @@ export const rowParts = (job: JobRow): { requester: string; channel: string; tit
   tooltip: job.title ? `${job.title} (${job.key})` : `T3 had no title for this job (${job.key})`,
 });
 
-export type LinkKind = 'slack' | 't3' | 'pr';
+export type LinkKind = 'slack' | 't3' | 'transcript' | 'pr';
 
 export interface LinkButton {
   kind: LinkKind;
@@ -123,11 +123,14 @@ export interface LinkButton {
   url?: string;
   /** Tooltip, saying why a disabled button is disabled. */
   hint: string;
+  /** An ACP run's thread id: the button opens its transcript in the app. */
+  transcript?: string;
 }
 
 const LINK_HINTS: Record<LinkKind, { label: string; open: string; none: string }> = {
   slack: { label: 'Slack', open: 'Open the Slack thread', none: 'No Slack link: check the bot token in Secrets so the app knows the workspace' },
   t3: { label: 'T3', open: 'Open the T3 thread', none: "T3 didn't return a link for this thread" },
+  transcript: { label: 'Transcript', open: 'Open the transcript', none: 'No transcript yet' },
   pr: { label: 'PR', open: 'Open the pull request', none: 'No pull request yet' },
 };
 
@@ -135,8 +138,10 @@ const LINK_HINTS: Record<LinkKind, { label: string; open: string; none: string }
 const safe = (url: string | undefined): string | undefined => (url && /^https:\/\//.test(url) ? url : undefined);
 
 export const linkButtons = (job: JobRow): LinkButton[] =>
-  (['slack', 't3', 'pr'] as const).map((kind) => {
-    const url = safe(job.links[kind]);
+  // An ACP run has no web link: its transcript opens in the app, in the T3 button's place.
+  (job.links.transcript ? (['slack', 'transcript', 'pr'] as const) : (['slack', 't3', 'pr'] as const)).map((kind): LinkButton => {
+    if (kind === 'transcript') return { kind, label: LINK_HINTS.transcript.label, hint: LINK_HINTS.transcript.open, transcript: job.links.transcript! };
+    const url = safe(job.links[kind as 'slack' | 't3' | 'pr']);
     const { label, open, none } = LINK_HINTS[kind];
     const missing = kind === 'slack' && isAppTask(job) ? 'Started in the app: there is no Slack thread' : none;
     return { kind, label, hint: url ? open : missing, ...(url ? { url } : {}) };

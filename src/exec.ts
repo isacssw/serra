@@ -73,15 +73,20 @@ const PASSED_ENV = [
   'CLOUDSDK_CONFIG', 'AZURE_CONFIG_DIR', 'DOCKER_HOST', 'DOCKER_CONTEXT', 'DOCKER_CONFIG', 'FLY_CONFIG_DIR',
 ] as const;
 
+/** Only PASSED_ENV from `source`: home, user, locale, proxies and where tools keep their config. Never a token. */
+export const passedEnv = (source: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv => {
+  const env: NodeJS.ProcessEnv = {};
+  for (const key of PASSED_ENV) if (source[key] !== undefined) env[key] = source[key];
+  return env;
+};
+
 /**
  * The environment for a read-only check: only PASSED_ENV from `source` (so a token Serra resolved never reaches a
  * third-party CLI), the given PATH, no colour, and no telemetry, update checks or prompts where a tool has a switch.
  */
 export const toolEnv = (path: string, source: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv => {
-  const env: NodeJS.ProcessEnv = {};
-  for (const key of PASSED_ENV) if (source[key] !== undefined) env[key] = source[key];
   return {
-    ...env, PATH: path, NO_COLOR: '1', GH_PROMPT_DISABLED: '1', GH_NO_UPDATE_NOTIFIER: '1',
+    ...passedEnv(source), PATH: path, NO_COLOR: '1', GH_PROMPT_DISABLED: '1', GH_NO_UPDATE_NOTIFIER: '1',
     VERCEL_TELEMETRY_DISABLED: '1', AZURE_CORE_COLLECT_TELEMETRY: '0', AZURE_CORE_NO_COLOR: '1', FLY_NO_UPDATE_CHECK: '1',
     // No log files written (or old ones pruned) just because Serra asked for a version.
     AZURE_LOGGING_ENABLE_LOG_FILE: 'false', CLOUDSDK_CORE_DISABLE_FILE_LOGGING: 'true', CLOUDSDK_CORE_DISABLE_USAGE_REPORTING: 'true',

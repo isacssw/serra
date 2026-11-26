@@ -11,7 +11,7 @@ const command: Command = {
     if (flag('--preview')) { log(previewInterview(profileDir).brief); return; }
     const task = await startInterview(profileDir);
     log(`Started ${task.title} on ${task.branch}. Its proposals appear in pnpm bot proposals and the app's Proposals screen.`);
-    log(task.link ?? `T3 thread ${task.t3ThreadId}`);
+    log(task.link ?? `thread ${task.threadId}`);
   },
 };
 export default command;

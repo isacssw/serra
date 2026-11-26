@@ -22,7 +22,7 @@ const isAudience = isOneOf('owner', 'team', 'external');
 /** The fields a job may leave out. */
 type OptionalKeys<T> = { [K in keyof T]-?: undefined extends T[K] ? K : never }[keyof T];
 /** The fields every job has. Listed here so a new required field must be given a default in `migrateJob`. */
-const REQUIRED = ['t3ThreadId', 'channel', 'threadTs', 'requester', 'pendingReactionTs', 'lastPostedRunId', 'phase', 'createdAt'] as const satisfies readonly Exclude<keyof Job, OptionalKeys<Job>>[];
+const REQUIRED = ['threadId', 'channel', 'threadTs', 'requester', 'pendingReactionTs', 'lastPostedRunId', 'phase', 'createdAt'] as const satisfies readonly Exclude<keyof Job, OptionalKeys<Job>>[];
 /** Compiles only while `REQUIRED` lists every required field of `Job`. */
 const requiredComplete: [Exclude<Exclude<keyof Job, OptionalKeys<Job>>, (typeof REQUIRED)[number]>] extends [never] ? true : never = true;
 void requiredComplete;
@@ -42,7 +42,7 @@ const OPTIONAL: { [K in OptionalKeys<Job>]: (value: unknown) => boolean } = {
     && (x.ownerFollows === undefined || isBoolean(x.ownerFollows)) && (x.ownerAskOpen === undefined || isBoolean(x.ownerAskOpen)),
   visibility: isAudience,
   knowledgeRead: (x) => isRecord(x) && Object.values(x).every(isAudience),
-  knowledgeDir: isString, branch: isString, request: isString,
+  knowledgeDir: isString, branch: isString, request: isString, backend: isString,
 };
 
 const isCard = (x: unknown): x is QuestionCard => isRecord(x) && isString(x.ts) && isString(x.requestId) && isString(x.nonce) && Array.isArray(x.questions)
@@ -111,15 +111,28 @@ const phaseFromFlags = (value: Record<string, unknown>, now: number): Phase => {
 };
 
 /**
+ * A saved job's or task's thread: `threadId`, or for a T3 one, `t3ThreadId` when the two differ (an older build,
+ * after a rollback, only updates `t3ThreadId`). Null when there's none.
+ */
+export const threadOf = (value: Record<string, unknown>): string | null => {
+  const legacy = isString(value.t3ThreadId) ? value.t3ThreadId : null;
+  if (!isString(value.threadId)) return legacy;
+  return (value.backend === undefined || value.backend === 't3') && legacy !== null ? legacy : value.threadId;
+};
+
+/**
  * Reads one saved job, migrating what older builds wrote: a field an older build didn't write gets its neutral
- * default, and an optional field of the wrong shape is dropped. Only a value with no T3 thread to follow is no job.
+ * default, and an optional field of the wrong shape is dropped. Only a value with no thread to follow is no job.
  * `repaired` says whether anything was filled in or dropped.
  */
 const migrateJob = (key: string, value: unknown, now: number): { job: Job; repaired: boolean } | null => {
-  if (!isRecord(value) || !isString(value.t3ThreadId)) return null;
+  // Before agent backends a job's thread was `t3ThreadId`, always a T3 thread. A T3 job writes both; when they differ,
+  // an older build ran after a rollback and moved the job to another thread, so its `t3ThreadId` is the current one.
+  const threadId = isRecord(value) ? threadOf(value) : null;
+  if (!isRecord(value) || threadId === null) return null;
   const split = key.indexOf(':');
   const [keyChannel, keyThread] = split === -1 ? [key, key] : [key.slice(0, split), key.slice(split + 1)];
-  let repaired = false;
+  let repaired = value.threadId !== threadId;
   const pick = <T>(field: string, guard: (x: unknown) => x is T, fallback: T): T => {
     const found = value[field];
     if (guard(found)) return found;
@@ -127,7 +140,7 @@ const migrateJob = (key: string, value: unknown, now: number): { job: Job; repai
     return fallback;
   };
   const job: Job = {
-    t3ThreadId: value.t3ThreadId,
+    threadId,
     channel: pick('channel', isString, keyChannel),
     threadTs: pick('threadTs', isString, keyThread),
     requester: pick('requester', isString, ''),
@@ -137,7 +150,7 @@ const migrateJob = (key: string, value: unknown, now: number): { job: Job; repai
     createdAt: pick('createdAt', isString, isString(value.lastActivityAt) ? value.lastActivityAt : ''),
   };
   for (const [field, found] of Object.entries(value)) {
-    if (found === undefined || UNSAFE_KEYS.has(field) || (REQUIRED as readonly string[]).includes(field) || (LEGACY as readonly string[]).includes(field)) continue;
+    if (found === undefined || UNSAFE_KEYS.has(field) || field === 't3ThreadId' || (REQUIRED as readonly string[]).includes(field) || (LEGACY as readonly string[]).includes(field)) continue;
     const guard = (OPTIONAL as Record<string, ((value: unknown) => boolean) | undefined>)[field];
     // A field this build doesn't know (written by a newer one) is kept as it is, so a rollback loses nothing.
     if (!guard || guard(found)) Object.assign(job, { [field]: found });
@@ -146,10 +159,13 @@ const migrateJob = (key: string, value: unknown, now: number): { job: Job; repai
   return { job, repaired };
 };
 
-/** A job as saved: its phase, and the flags older builds read made from it. */
+/**
+ * A job as saved: its phase, and the flags older builds read made from it. A T3 job also keeps `t3ThreadId`, the field
+ * builds before agent backends read, so a rollback still follows it.
+ */
 const toDisk = (job: Job): Record<string, unknown> => {
   const flags = Object.fromEntries(Object.entries(legacyOf(job.phase)).filter(([, value]) => value !== undefined));
-  return { ...job, ...flags };
+  return { ...job, ...flags, ...((job.backend ?? 't3') === 't3' ? { t3ThreadId: job.threadId } : {}) };
 };
 
 export interface SavedState {

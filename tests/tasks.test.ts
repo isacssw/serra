@@ -93,11 +93,12 @@ test('startTask starts the T3 thread through the real startThread, with the brie
   assert.deepEqual(show!.args, ['thread', 'show', '--messages', '1', '--json', 'task-thread']);
 
   assert.deepEqual(task, {
-    t3ThreadId: 'task-thread', title: 'Update the onboarding page for the new pricing and open a PR', branch: start!.args[5],
+    threadId: 'task-thread', title: 'Update the onboarding page for the new pricing and open a PR', branch: start!.args[5],
     requester: 'Alex', createdAt: NOW.toISOString(), link: 'https://t3.test/task-thread',
   });
   const { link: _link, ...recordedTask } = task;
   assert.deepEqual(readTasks(profileDir), [recordedTask]);
+  assert.equal(JSON.parse(readFileSync(join(profileDir, 'tasks.json'), 'utf8'))[0].t3ThreadId, 'task-thread', 'a T3 task keeps t3ThreadId for a rollback');
   assert.equal(readFileSync(join(profileDir, 'state.json'), 'utf8'), stateBefore, "the daemon's state.json is never written");
   assert.ok(!JSON.stringify(task).includes('xoxb') && !readFileSync(tasksPath(profileDir), 'utf8').includes('xoxb'));
 });
@@ -220,7 +221,7 @@ test('IPC: start returns the task without any token, refuses a double start, and
   await assert.rejects(Promise.resolve(handlers.start('another')), /already starting/);
   release();
   const task = await first;
-  assert.equal(task.t3ThreadId, 'task-thread');
+  assert.equal(task.threadId, 'task-thread');
   assert.ok(!JSON.stringify(task).includes('xoxb-fixture') && !JSON.stringify(task).includes('xapp-fixture'));
   await assert.rejects(Promise.resolve().then(() => handlers.start('')), /Write what/);
 
@@ -305,4 +306,15 @@ test('an index pushed over its cap outside the app still lets the daemon and a t
 
   await startTask(profileDir, REQUEST, { fetchBase: noFetch, now: () => NOW });
   assert.match(recorded()[0]!.input, /topic 69 \|/);
+});
+
+test('after a rollback moved a T3 task to another thread, the task follows that thread', (t) => {
+  const profileDir = mkdtempSync(join(tmpdir(), 'serra-tasks-rollback-'));
+  t.after(() => rmSync(profileDir, { recursive: true, force: true }));
+  const base = { title: 'Fix it', branch: 'friday/fix-it', requester: 'Alex', createdAt: '2026-11-18T09:00:00Z' };
+  writeFileSync(join(profileDir, 'tasks.json'), JSON.stringify([
+    { ...base, threadId: 'old', t3ThreadId: 'new' },
+    { ...base, threadId: 'session-1', backend: 'acp:claude' },
+  ]));
+  assert.deepEqual(readTasks(profileDir).map((task) => task.threadId), ['new', 'session-1']);
 });

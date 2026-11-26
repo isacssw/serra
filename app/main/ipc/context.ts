@@ -12,6 +12,11 @@ export interface HandlerContext {
   profilePinned?: boolean;
   /** Asks for a folder in the system's dialog. Null when cancelled. Absent in tests that don't need it. */
   chooseFolder?(options: { title: string; buttonLabel: string; defaultPath?: string }): Promise<string | null>;
+  /**
+   * Asks the owner in a native dialog, outside the window, before something the window asked for runs a command.
+   * True only when they confirm. Absent: nothing that needs it goes ahead.
+   */
+  confirm?(options: { message: string; detail: string; confirmLabel: string }): Promise<boolean>;
   /** Like `profileDir()`, but null instead of throwing. */
   profileDirOrNull(): string | null;
   prefs: PrefsStore;

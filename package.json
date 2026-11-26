@@ -28,8 +28,12 @@
   },
   "packageManager": "pnpm@10.28.2",
   "dependencies": {
+    "@agentclientprotocol/claude-agent-acp": "0.102.0",
+    "@agentclientprotocol/codex-acp": "2.6.0",
+    "@agentclientprotocol/sdk": "2.5.0",
     "@slack/bolt": "^4.4.0",
-    "electron-store": "12.0.0"
+    "electron-store": "12.0.0",
+    "zod": "4.6.7"
   },
   "devDependencies": {
     "@tailwindcss/vite": "4.3.4",
@@ -57,6 +61,10 @@
     ],
     "ignoredBuiltDependencies": [
       "electron-winstaller"
+    ],
+    "ignoredOptionalDependencies": [
+      "@anthropic-ai/claude-agent-sdk-*",
+      "@openai/codex-*"
     ]
   },
   "main": "app/out/main/index.mjs"

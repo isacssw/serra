@@ -8,6 +8,7 @@ import { slackPlainText } from './slack-names.ts';
 import { GITHUB_PR_URL, threadPullRequest } from './t3.ts';
 import { readState } from './state.ts';
 import { APP_TASK_CHANNEL, readTasks, type TaskState, type TaskStateLookup } from './tasks.ts';
+import { acpRunState } from './agent/runs-view.ts';
 
 /** One row of `listJobs`. */
 type JobRow = JobListing['jobs'][number];
@@ -26,7 +27,7 @@ export interface ThreadInfo {
 }
 
 /** Looks a T3 thread up. Resolves null when it can't, so one missing thread never fails the list. */
-export type ThreadLookup = (t3ThreadId: string) => Promise<ThreadInfo | null>;
+export type ThreadLookup = (threadId: string) => Promise<ThreadInfo | null>;
 
 export interface ListJobsOptions {
   /** Only jobs in this Slack channel ID. */
@@ -141,8 +142,9 @@ const idleInT3 = (live: TaskState | null, job: Record<string, unknown>, lastActi
 };
 
 /** A task's group, from what T3 says now. Nothing to read means nothing is known to run: it counts as done. */
-const taskGroup = (live: TaskState | null): Pick<JobRow, 'group' | 'needsYouReason'> => {
-  if (live?.waiting) return { group: 'needs you', needsYouReason: 'waiting in T3' };
+const taskGroup = (live: TaskState | null, acp = false): Pick<JobRow, 'group' | 'needsYouReason'> => {
+  // An ACP task's question is answered in the app's transcript view.
+  if (live?.waiting) return { group: 'needs you', needsYouReason: acp ? 'question' : 'waiting in T3' };
   return { group: live?.running ? 'running' : 'done' };
 };
 
@@ -162,6 +164,8 @@ export const listJobs = async (profileDir: string, {
   const events = lastEvents(readOptional(join(profileDir, 'logs', 'events.jsonl')));
   const today = startOfDay(now);
 
+  /** An ACP run's state, from its record (src/agent/runs-view.ts): the lookups below only know T3. */
+  const onAcp = (backend: string | undefined): boolean => backend !== undefined && backend !== 't3';
   const all = (await Promise.all(Object.entries(state).map(async ([key, value]): Promise<(JobRow & { t3ThreadId?: string })[]> => {
     const job = value;
     const jobChannel = text(job.channel);
@@ -169,40 +173,42 @@ export const listJobs = async (profileDir: string, {
     if (!jobChannel || !createdAt) return [];
     const last = events.get(key);
     const saved = classify(value, last);
-    const t3ThreadId = text(job.t3ThreadId);
-    const live = saved.group === 'running' && runs && t3ThreadId ? await runs(t3ThreadId).catch(() => null) : null;
+    const acp = onAcp(job.backend) ? acpRunState(profileDir, job.threadId) : null;
+    const t3ThreadId = onAcp(job.backend) ? undefined : text(job.threadId);
+    const live = acp ?? (saved.group === 'running' && runs && t3ThreadId ? await runs(t3ThreadId).catch(() => null) : null);
     const lastActivityAt = later(later(createdAt, text(job.lastActivityAt)), last?.at);
     const { group, reason, ownerQuestion, error } = idleInT3(live, { ...job }, lastActivityAt, now) ? { group: 'done' as const } : saved;
     const threadTs = text(job.threadTs);
     const slack = slackUrl && threadTs ? slackThreadLink(slackUrl, jobChannel, threadTs) : undefined;
-    const pr = prLink({ ...job });
+    const pr = prLink({ ...job }) ?? acp?.pr;
     return [{
       key,
       group,
       requester: text(job.requester) ?? '',
       channel: jobChannel,
-      title: '',
+      title: acp ? shortTitle(acp.title) : '',
       createdAt,
       lastActivityAt,
       ...(ownerQuestion ? { ownerQuestion } : {}),
       ...(reason ? { needsYouReason: reason } : {}),
       ...(error ? { error } : {}),
-      links: { ...(slack ? { slack } : {}), ...(pr ? { pr } : {}) },
+      links: { ...(slack ? { slack } : {}), ...(pr ? { pr } : {}), ...(acp ? { transcript: job.threadId } : {}) },
       ...(t3ThreadId ? { t3ThreadId } : {}),
     }];
   }))).flat();
 
   const taskRows = await Promise.all(readTasks(profileDir).map(async (task): Promise<JobRow> => {
-    const live = tasks ? await tasks(task.t3ThreadId).catch(() => null) : null;
+    const acp = onAcp(task.backend) ? acpRunState(profileDir, task.threadId) : null;
+    const live = acp ?? (tasks && !onAcp(task.backend) ? await tasks(task.threadId).catch(() => null) : null);
     return {
-      key: `${APP_TASK_CHANNEL}:${task.t3ThreadId}`,
-      ...taskGroup(live),
+      key: `${APP_TASK_CHANNEL}:${task.threadId}`,
+      ...taskGroup(live, acp !== null),
       requester: task.requester,
       channel: APP_TASK_CHANNEL,
       title: task.title,
       createdAt: task.createdAt,
       lastActivityAt: later(task.createdAt, live?.updatedAt),
-      links: { ...(live?.link ? { t3: live.link } : {}), ...(live?.pr ? { pr: live.pr } : {}) },
+      links: { ...(live?.link ? { t3: live.link } : {}), ...(live?.pr ? { pr: live.pr } : {}), ...(acp ? { transcript: task.threadId } : {}) },
     };
   }));
   all.push(...taskRows);

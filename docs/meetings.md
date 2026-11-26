@@ -42,7 +42,13 @@ Settings › Meetings › Sources shows which T3 provider and model meeting runs
 
 ## How it's read
 
-T3 is Serra's only agent layer: Serra never starts Claude Code, Codex or any other provider itself. Reading a link and picking out decisions are each **one T3 thread**, on the provider and model you picked, so it works with any provider T3 has (Claude, Codex, Cursor, Antigravity and the others).
+By default meeting runs go through T3, and Serra never starts Claude Code, Codex or any other provider itself. Reading a link and picking out decisions are each **one T3 thread**, on the provider and model you picked, so it works with any provider T3 has (Claude, Codex, Cursor, Antigravity and the others).
+
+**Or an ACP agent.** Settings › Worker › **Agent backend** can run meeting runs (and everything else, see [agent-backends.md](agent-backends.md)) on an agent that speaks the [Agent Client Protocol](https://agentclientprotocol.com) instead: Claude Code, Codex, OpenCode (`opencode acp`) or Gemini CLI (`gemini --acp`). Serra ships the ACP adapters for Claude Code and Codex and runs them itself, on your own `claude` or `codex` command and its login (as T3 does), so you only need that CLI installed and signed in. OpenCode and Gemini CLI can be picked when their command is on your PATH. Serra installs nothing. The agent uses its own login, and the model you pick for it (else its own default). With an ACP agent:
+
+- Serra starts the agent on this Mac over stdio (no server), and stops it when the run ends.
+- Every run is moved to a mode where the agent asks before using a tool (Codex's read-only mode, or Claude Code's Manual mode instead of your `auto`). Extraction, Test and the weekly review refuse every request, and Serra then stops the run, as in T3's approval-required mode; a run that can't be put in such a mode doesn't start. A link run may use a read, search or fetch tool once per request; edits, deletes, moves, commands and mode switches are refused.
+- A meeting run lives in Serra's process: if Serra restarts, a run in progress ends (resend the meeting). There's no thread to open and nothing kept in T3's history.
 
 - **Where:** every run starts in Serra's own empty folder, `~/.local/share/serra-meeting-runs`, which Serra adds to T3 as a project of its own ("Serra meetings"). Never your repository, a worktree or the profile folder.
 - **How Serra talks to T3:** through the `t3` command, and through T3's own tool endpoint on this Mac for the two things the command can't do: read a run's tool results, and stop a run. For that, Serra asks `t3` for a session that lasts 30 minutes at most and revokes it when the run is done. It's listed in `t3 auth session list` as "Serra meetings" while it's open.

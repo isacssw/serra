@@ -27,13 +27,14 @@ test('[JOBS-002] a state.json written by alpha.3 reads into a phase, is backed u
   const original = JSON.stringify({ 'C1:1700000000.000100': alpha3Job }, null, 2);
   writeFileSync(file, original);
   const read = readState(file);
-  const { watching: _watching, runSeen: _runSeen, ...rest } = alpha3Job;
-  assert.deepEqual(read, { jobs: { 'C1:1700000000.000100': { ...rest, phase: { state: 'following', run: { id: 'run-1', at: '2026-11-20T10:00:15.000Z' } } } }, invalid: [], repaired: ['C1:1700000000.000100'] });
+  const { watching: _watching, runSeen: _runSeen, t3ThreadId, ...rest } = alpha3Job;
+  // alpha.3's `t3ThreadId` is read as the job's `threadId`, on T3.
+  assert.deepEqual(read, { jobs: { 'C1:1700000000.000100': { ...rest, threadId: t3ThreadId, phase: { state: 'following', run: { id: 'run-1', at: '2026-11-20T10:00:15.000Z' } } } }, invalid: [], repaired: ['C1:1700000000.000100'] });
   const store = createStore(file, { now: () => new Date('2026-11-22T02:00:00Z') });
   store.putJob('C1:1700000000.000100', { ...store.getJob('C1:1700000000.000100')!, nextTurnWaits: true });
   const saved = JSON.parse(readFileSync(file, 'utf8'))['C1:1700000000.000100'];
-  // An older build reading the new file sees what it wrote, plus the phase it keeps as a field it doesn't know.
-  assert.deepEqual(saved, { ...alpha3Job, nextTurnWaits: true, waitingInT3: false, phase: { state: 'following', run: { id: 'run-1', at: '2026-11-20T10:00:15.000Z' } } });
+  // An older build reading the new file sees what it wrote (its `t3ThreadId` too), plus the phase and `threadId` it keeps as fields it doesn't know.
+  assert.deepEqual(saved, { ...alpha3Job, threadId: 'thr_1', nextTurnWaits: true, waitingInT3: false, phase: { state: 'following', run: { id: 'run-1', at: '2026-11-20T10:00:15.000Z' } } });
   assert.equal(readFileSync(join(dir, 'state.json.backup-2026-11-22T02-00-00.000Z'), 'utf8'), original, 'the alpha.3 file is kept before the first rewrite');
   // Read again, nothing needs repairing.
   assert.deepEqual(readState(file).repaired, []);
@@ -43,7 +44,7 @@ test('[JOBS-002] the old flags migrate to one phase: a card is a wait with it, a
   const dir = folder(t);
   const file = join(dir, 'state.json');
   const card = { requestId: 'r1', questions: [], ts: '2.5', nonce: 'n', index: 0, answers: {}, runId: 'run-1' };
-  const base = { t3ThreadId: 'thr', channel: 'C1', requester: 'USAM', pendingReactionTs: null, lastPostedRunId: 'run-1', createdAt: '2026-11-20T10:00:00.000Z' };
+  const base = { threadId: 'thr', channel: 'C1', requester: 'USAM', pendingReactionTs: null, lastPostedRunId: 'run-1', createdAt: '2026-11-20T10:00:00.000Z' };
   writeFileSync(file, JSON.stringify({
     'C1:1.1': { ...base, threadTs: '1.1', watching: true, waitingInT3: true, question: card },
     'C1:2.2': { ...base, threadTs: '2.2', watching: false, waitingInT3: true },
@@ -61,7 +62,7 @@ test('[JOBS-002] the old flags migrate to one phase: a card is a wait with it, a
 test('[JOBS-002] a job older builds stopped looking at stays idle: a run owed weeks ago is not posted from nowhere', (t) => {
   const dir = folder(t);
   const file = join(dir, 'state.json');
-  const quiet = { t3ThreadId: 'thr', channel: 'C1', threadTs: '5.5', requester: 'USAM', pendingReactionTs: null, lastPostedRunId: 'run-6',
+  const quiet = { threadId: 'thr', channel: 'C1', threadTs: '5.5', requester: 'USAM', pendingReactionTs: null, lastPostedRunId: 'run-6',
     createdAt: '2026-10-01T10:00:00.000Z', lastActivityAt: '2026-10-20T10:00:00.000Z', watching: false, runSeen: { runId: 'run-7', at: 'x' } };
   const line = { ts: '9.9', runId: 'run-7', text: '⏳ Still on it' };
   writeFileSync(file, JSON.stringify({ 'C1:5.5': quiet, 'C1:6.6': { ...quiet, threadTs: '6.6', waitingInT3: true }, 'C1:7.7': { ...quiet, threadTs: '7.7', progress: line } }));
@@ -82,7 +83,7 @@ test('[JOBS-002] a file with a phase and none of the old flags is read as it is'
   const dir = folder(t);
   const file = join(dir, 'state.json');
   const phase = { state: 'waiting', run: { id: 'run-1', at: 'x' } };
-  writeFileSync(file, JSON.stringify({ 'C1:1.1': { t3ThreadId: 'thr', channel: 'C1', threadTs: '1.1', requester: 'USAM', pendingReactionTs: null,
+  writeFileSync(file, JSON.stringify({ 'C1:1.1': { threadId: 'thr', channel: 'C1', threadTs: '1.1', requester: 'USAM', pendingReactionTs: null,
     lastPostedRunId: null, createdAt: '2026-11-20T10:00:00.000Z', phase } }));
   const read = readState(file);
   assert.deepEqual(read.jobs['C1:1.1']!.phase, phase);
@@ -93,7 +94,7 @@ test('[JOBS-002] after a rollback, the flags an older build changed win over the
   const dir = folder(t);
   const file = join(dir, 'state.json');
   const store = createStore(file);
-  store.putJob('C1:1.1', { t3ThreadId: 'thr', channel: 'C1', threadTs: '1.1', requester: 'USAM', pendingReactionTs: null, lastPostedRunId: null,
+  store.putJob('C1:1.1', { threadId: 'thr', channel: 'C1', threadTs: '1.1', requester: 'USAM', pendingReactionTs: null, lastPostedRunId: null,
     createdAt: '2026-11-20T10:00:00.000Z', phase: { state: 'following', run: { id: 'run-1', at: 'x' } } });
   // An older build posted run-1 and stopped following: it rewrote its flags and kept `phase` as it was.
   const saved = JSON.parse(readFileSync(file, 'utf8'));
@@ -109,7 +110,7 @@ test('[JOBS-002] an older or damaged job is migrated on read, and the original f
   const file = join(dir, 'state.json');
   const original = JSON.stringify({
     // From before `requester` and `pendingReactions`, with a progress line of the wrong shape.
-    'C1:1.1': { t3ThreadId: 'thr_old', channel: 'C1', threadTs: '1.1', pendingReactionTs: '1.1', lastPostedRunId: 'run-1', watching: false, createdAt: '2026-01-01T00:00:00.000Z', progress: 'still on it' },
+    'C1:1.1': { threadId: 'thr_old', channel: 'C1', threadTs: '1.1', pendingReactionTs: '1.1', lastPostedRunId: 'run-1', watching: false, createdAt: '2026-01-01T00:00:00.000Z', progress: 'still on it' },
     // Not a job at all.
     'C1:2.2': { note: 'hand-edited' },
   });
@@ -157,12 +158,27 @@ test('[INTAKE-008] held requests and the pause are read through guards: a broken
 test('[JOBS-002] a field this build doesn\'t know (from a newer build) survives a read and a write, so a rollback loses nothing', (t) => {
   const dir = folder(t);
   const file = join(dir, 'state.json');
-  const current = { ...alpha3Job, waitingInT3: false, phase: { state: 'following', run: { id: 'run-1', at: '2026-11-20T10:00:15.000Z' } } };
+  const current = { ...alpha3Job, threadId: 'thr_1', waitingInT3: false, phase: { state: 'following', run: { id: 'run-1', at: '2026-11-20T10:00:15.000Z' } } };
   writeFileSync(file, JSON.stringify({ 'C1:1700000000.000100': { ...current, futureField: { kept: 1 } } }));
   const store = createStore(file);
   assert.deepEqual(readState(file).repaired, [], 'not counted as a repair');
   store.putJob('C1:1700000000.000100', { ...store.getJob('C1:1700000000.000100')!, phase: { state: 'idle' } });
   assert.deepEqual(JSON.parse(readFileSync(file, 'utf8'))['C1:1700000000.000100'].futureField, { kept: 1 });
+});
+
+test('a job on an ACP agent saves its backend and no `t3ThreadId`, and a T3 job keeps `t3ThreadId` for a rollback', (t) => {
+  const dir = folder(t);
+  const file = join(dir, 'state.json');
+  const store = createStore(file);
+  const base = { channel: 'C1', requester: 'USAM', pendingReactionTs: null, lastPostedRunId: null, createdAt: '2026-11-20T10:00:00.000Z', phase: { state: 'following' as const } };
+  store.putJob('C1:1.1', { ...base, threadId: 'session-1', threadTs: '1.1', backend: 'acp:claude' });
+  store.putJob('C1:2.2', { ...base, threadId: 'thr_2', threadTs: '2.2' });
+  const saved = JSON.parse(readFileSync(file, 'utf8'));
+  assert.equal(saved['C1:1.1'].t3ThreadId, undefined);
+  assert.equal(saved['C1:1.1'].backend, 'acp:claude');
+  assert.equal(saved['C1:2.2'].t3ThreadId, 'thr_2');
+  assert.deepEqual(readState(file).jobs['C1:1.1'], { ...base, threadId: 'session-1', threadTs: '1.1', backend: 'acp:claude' });
+  assert.deepEqual(readState(file).repaired, []);
 });
 
 test('[JOBS-002] a "__proto__" key in a saved job cannot change the job object', (t) => {
@@ -172,4 +188,21 @@ test('[JOBS-002] a "__proto__" key in a saved job cannot change the job object',
   const job = readState(file).jobs['C1:1700000000.000100']!;
   assert.equal(Object.getPrototypeOf(job), Object.prototype);
   assert.equal((job as unknown as { polluted?: boolean }).polluted, undefined);
+});
+
+test('after a rollback moved a T3 job to another thread, the re-upgraded build follows that thread, not the stale threadId', (t) => {
+  const dir = folder(t);
+  const file = join(dir, 'state.json');
+  // This build wrote both; alpha.5, after a rollback, moved the job to a new T3 thread and only knew `t3ThreadId`.
+  const { runSeen: _runSeen, ...job } = alpha3Job;
+  writeFileSync(file, JSON.stringify({
+    'C1:1.1': { ...job, threadTs: '1.1', threadId: 'thr_old', t3ThreadId: 'thr_new' },
+    'C1:2.2': { ...job, threadTs: '2.2', threadId: 'session-1', backend: 'acp:claude', t3ThreadId: 'thr_other' },
+    'C1:3.3': { ...job, threadTs: '3.3', threadId: 'thr_same', t3ThreadId: 'thr_same' },
+  }));
+  const { jobs, repaired } = readState(file);
+  assert.equal(jobs['C1:1.1']!.threadId, 'thr_new', 'a T3 job follows the thread the older build moved it to');
+  assert.equal(jobs['C1:2.2']!.threadId, 'session-1', 'an ACP job keeps its own session');
+  assert.equal(jobs['C1:3.3']!.threadId, 'thr_same');
+  assert.ok(repaired.includes('C1:1.1'));
 });

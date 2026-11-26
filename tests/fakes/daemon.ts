@@ -74,6 +74,8 @@ export interface DaemonHarnessOptions {
   checkAccess?: DaemonDeps['checkAccess'];
   /** Meeting capture's model and provider seams (SERRA-62). */
   meetings?: DaemonDeps['meetings'];
+  /** Downloads a message's files. None by default. */
+  receive?: DaemonDeps['receive'];
 }
 
 export interface DaemonHarness {
@@ -114,7 +116,7 @@ export const startTestDaemon = async (t: TestContext, options: DaemonHarnessOpti
         t3: gated(t3.t3, alive), questions: gated(t3.questions, alive), fetchBase: async () => {}, share: async (text) => text,
         reviewRequest: async (text) => ({ reply: text, postedFor: null }), ...options.bot,
       },
-      receive: async () => '',
+      receive: options.receive ?? (async () => ''),
       checkAccess: options.checkAccess ?? (async () => {}), lock: () => () => {}, statusSocket: false, watchProfile: false, pid: 4242,
       // Never the real Claude Code: a test that sends a meeting passes its own extractor.
       meetings: { extractor: { extract: async () => { throw new Error('no extractor in this test'); } }, sources: { fetchTranscript: async () => { throw new Error('no sources in this test'); } }, ...options.meetings },

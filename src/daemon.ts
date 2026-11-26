@@ -8,6 +8,10 @@ import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
 import type { App, Logger } from '@slack/bolt';
 import { createBot, type BotDeps } from './bot.ts';
+import { createBackendPool, type AgentBackends } from './agent/pool.ts';
+import { createT3Backend } from './agent/t3.ts';
+import { startInterview, startTask } from './tasks.ts';
+import type { RunRequest } from './status-socket.ts';
 import { createDeliver } from './chat/deliver.ts';
 import { proposeBriefUpdate } from './brief.ts';
 import { systemClock, createTracker, type Clock } from './clock.ts';
@@ -31,6 +35,7 @@ import type { IncomingMessage } from './types.ts';
 import { readAttachmentText } from './slack/attachments.ts';
 import { createMeetingCapture, meetingsFirst, type MeetingCaptureDeps } from './meeting-capture.ts';
 import { createMeetingRuns } from './meeting-runs.ts';
+import { chosenBackend } from './agent/select.ts';
 import { reviewDue, runKnowledgeReview } from './knowledge-review.ts';
 
 const POLL_MS = 15_000;
@@ -50,7 +55,7 @@ export interface DaemonDeps {
   clock?: Clock;
   connection?: ConnectionEvents;
   /** T3, questions, uploads and other bot seams. Production uses the real ones. */
-  bot?: Partial<Pick<BotDeps, 't3' | 'questions' | 'fetchBase' | 'share' | 'reviewRequest' | 'timing'>>;
+  bot?: Partial<Pick<BotDeps, 'agents' | 't3' | 'questions' | 'fetchBase' | 'share' | 'reviewRequest' | 'timing'>>;
   /** Downloads the files people attach. Production uses the real one. */
   receive?: typeof receiveAttachments;
   checkAccess?: (paths: string[]) => Promise<void>;
@@ -75,6 +80,20 @@ export interface Daemon {
   /** Resolves once nothing the daemon or the bot started is still running. For tests. */
   idle(): Promise<void>;
 }
+
+/** Does the app's work on an ACP agent (see `RunRequest`): a task or the interview starts on the owner's current backend. */
+const runForApp = async (request: RunRequest, agents: AgentBackends, profileDir: string): Promise<unknown> => {
+  switch (request.op) {
+    case 'task': return startTask(profileDir, request.request, { agent: agents.current() });
+    case 'interview': return startInterview(profileDir, { agent: agents.current() });
+    case 'send': return agents.get(request.backend).send(request.threadId, request.message);
+    case 'answer': {
+      const questions = agents.get(request.backend).questions;
+      if (!questions) throw new Error('That agent has no questions to answer.');
+      return questions.answer(request.threadId, request.requestId, request.answers);
+    }
+  }
+};
 
 /**
  * Checks access, connects to Slack and starts serving. Rejects before touching Slack when a repository can't be read
@@ -113,8 +132,14 @@ export const startDaemon = async (deps: DaemonDeps): Promise<Daemon> => {
       client, owner: config.owner, botUserId: () => botUserId, botToken: config.botToken, profileDir: config.profileDir, logger, clock,
       ...(deps.receive ? { receive: deps.receive } : {}),
     });
+    // The agent backends jobs run on (src/agent/pool.ts): T3, and the ACP agent the owner picked. Tests that pass a fake
+    // T3 keep the bot's own single-T3 default.
+    const agents = deps.bot?.agents ?? (deps.bot?.t3 ? undefined : createBackendPool({
+      profileDir: config.profileDir, t3: createT3Backend({ bin: config.t3Bin }), log: (message) => logger.info(message),
+    }));
     const bot = createBot({
       ...deps.bot,
+      ...(agents ? { agents } : {}),
       config, chat, deliver: createDeliver(writer, briefKnowledge), store, loadIndex, loadKnowledge: (visibility) => briefKnowledge(visibility), logger, clock,
       // The app sees the same events as events.jsonl, live.
       events: (name, fields) => { logEvent(name, fields); status?.publish(name, fields); },
@@ -151,9 +176,12 @@ export const startDaemon = async (deps: DaemonDeps): Promise<Daemon> => {
 
     // "Remember this meeting" in the owner's DM (SERRA-62): caught before the pause hold and before any job, so a
     // transcript never reaches a job's worker. Off until the owner turns it on in the app. Reading a link and picking
-    // out decisions are T3 runs with a read-only brief in Serra's own empty folder, on the worker's provider and model
-    // (src/meeting-runs.ts): T3 is Serra's only agent layer.
-    const runs = createMeetingRuns({ t3Bin: config.t3Bin, ...(config.workerProvider ? { provider: config.workerProvider } : {}), ...(config.workerModel ? { model: config.workerModel } : {}), log: (message) => logger.warn(message) });
+    // out decisions are runs with a read-only brief in Serra's own empty folder (src/meeting-runs.ts), on the agent
+    // backend the owner picked (src/agent/select.ts, read per run): T3 by default, on the worker's provider and model.
+    const runs = createMeetingRuns({
+      t3Bin: config.t3Bin, ...(config.workerProvider ? { provider: config.workerProvider } : {}), ...(config.workerModel ? { model: config.workerModel } : {}),
+      backend: () => chosenBackend(config.profileDir, { t3Bin: config.t3Bin, log: (message) => logger.info(message) }), log: (message) => logger.warn(message),
+    });
     const extractor = deps.meetings?.extractor ?? { extract: runs.extract };
     const sources = deps.meetings?.sources ?? { fetchTranscript: runs.fetchTranscript };
     const meetings = createMeetingCapture({
@@ -311,6 +339,8 @@ export const startDaemon = async (deps: DaemonDeps): Promise<Daemon> => {
         profileDir: config.profileDir,
         status: () => ({ state: 'up', pid, startedAt, slackConnected, counts: jobCounts(store.allJobs().map(([, job]) => job)) }),
         names: answerNameRequests(slackNames),
+        // The app's tasks, interview, replies and answers on an ACP agent run here, where the agent lives.
+        ...(agents ? { runs: (request) => runForApp(request, agents, config.profileDir) } : {}),
       }).catch((error: unknown) => {
         logger.warn(`Status socket not started: ${errorMessage(error)}`);
         return null;
@@ -330,6 +360,8 @@ export const startDaemon = async (deps: DaemonDeps): Promise<Daemon> => {
     // install) are cleared once, before the first poll, so the Jobs list matches T3.
     void track(bot.reconcile()).catch((error: unknown) => logger.error(`Reconciling jobs failed: ${errorMessage(error)}`))
       .finally(() => status?.refresh());
+    // ACP runs a restart cut off mid-turn carry on now (Slack jobs would on their next poll; app tasks only this way).
+    if (agents?.resume) void track(agents.resume());
     // Requests held while the previous bot was paused for an update start now.
     acknowledge();
     void release();
@@ -374,6 +406,8 @@ export const startDaemon = async (deps: DaemonDeps): Promise<Daemon> => {
         // Messages still waiting for a quiet moment go to their workers now, so a restart loses none.
         await bot.drain();
         await idle();
+        // ACP agents stop with the bot; a turn they were in carries on after the next start.
+        await agents?.close().catch((error: unknown) => logger.warn(`Stopping ACP agents: ${errorMessage(error)}`));
         for (const release of releases.reverse()) release();
       },
     };

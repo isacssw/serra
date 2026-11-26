@@ -76,8 +76,8 @@ const parseThread = (raw: string): ThreadFacts => {
  * state.json, APP-25), whose activity T3's own date covers. state.json is only read, never written.
  */
 const readJobs = (statePath: string): { threadId: string; lastActivity: string }[] => {
-  const jobs = Object.values(readState(statePath).jobs).map((job) => ({ threadId: job.t3ThreadId, lastActivity: job.lastActivityAt ?? job.createdAt }));
-  const tasks = readTasks(dirname(statePath)).map((task) => ({ threadId: task.t3ThreadId, lastActivity: task.createdAt }));
+  const jobs = Object.values(readState(statePath).jobs).map((job) => ({ threadId: job.threadId, lastActivity: job.lastActivityAt ?? job.createdAt }));
+  const tasks = readTasks(dirname(statePath)).map((task) => ({ threadId: task.threadId, lastActivity: task.createdAt }));
   return [...jobs, ...tasks];
 };
 

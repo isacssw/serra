@@ -8,6 +8,7 @@ import { assessKnowledge, confirmHeldBack } from '../../../src/knowledge-health.
 import { runKnowledgeReview } from '../../../src/knowledge-review.ts';
 import { setReviewWeekly, type KnowledgeReview } from '../../../src/knowledge-review-store.ts';
 import { createMeetingRuns } from '../../../src/meeting-runs.ts';
+import { chosenBackend } from '../../../src/agent/select.ts';
 import { profileT3Bin } from '../../../src/cleanup.ts';
 import type { Handlers } from '../bridge.ts';
 import type { HandlerContext } from './context.ts';
@@ -75,7 +76,7 @@ export const pagesHandlers = (context: HandlerContext): Handlers<'pages'> => {
       reviewRun ??= (async () => {
         const profileDir = context.profileDir();
         const worker = readProfileFile(profileDir).worker;
-        const runs = createMeetingRuns({ t3Bin: profileT3Bin(profileDir), ...(worker?.provider ? { provider: worker.provider } : {}), ...(worker?.model ? { model: worker.model } : {}) });
+        const runs = createMeetingRuns({ t3Bin: profileT3Bin(profileDir), ...(worker?.provider ? { provider: worker.provider } : {}), ...(worker?.model ? { model: worker.model } : {}), backend: () => chosenBackend(profileDir, { t3Bin: profileT3Bin(profileDir) }) });
         return runKnowledgeReview({ profileDir, knowledgeDir: join(profileDir, 'knowledge'), ask: runs.ask });
       })().finally(() => { reviewRun = null; });
       return reviewRun;

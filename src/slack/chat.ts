@@ -52,6 +52,7 @@ const QUESTION_HINTS: Record<Extract<Notice, { kind: 'question-hint' }>['hint'],
   'invalid-answer': 'Please choose one of the offered answers, or reply with its label or number.',
   'changed': 'That question changed or was already answered in T3. I’ll check for the next one.',
   'not-sent': 'I couldn’t send that answer to T3. Please try again, or answer in T3.',
+  'owner-only': 'Only the bot\u2019s owner can allow this.',
   'unconfirmed': 'I couldn\u2019t confirm who can see this thread just now, so I haven\u2019t taken that answer. Please answer again in a minute.',
 };
 
@@ -97,8 +98,11 @@ export const createSlackChat = ({ client, owner, botUserId, botToken, profileDir
       case 'unconfirmed': return UNCONFIRMED;
       case 'setup-problem': return `${SETUP_NOTICE_START}: ${notice.problem === 'bad-token' ? 'my Slack app\'s token isn\'t accepted' : 'my Slack app is missing a permission'}. I've told my owner how to fix it, and I'll answer here once it's done.`;
       case 'fresh-session': return 'Some knowledge this thread used has changed, so I\'m carrying on in a fresh session.';
-      case 'waiting-in-t3': return `${mention(owner)} I'm waiting for you in T3: ${notice.link ? `<${notice.link}|answer it there>` : 'answer it there'}. `
+      case 'waiting-in-t3': return notice.where === 'app'
+        ? `${mention(owner)} I'm waiting for you in the Serra app: answer it in Jobs › Transcript. It's a question Slack cannot display. Messages here reach me once it's answered.`
+        : `${mention(owner)} I'm waiting for you in T3: ${notice.link ? `<${notice.link}|answer it there>` : 'answer it there'}. `
         + 'It needs an action there, such as a token, an approval, or a question Slack cannot display. Messages here reach me once it\'s answered.';
+      case 'images-unsupported': return `${notice.agent.replace(/[<>&*_~`|]/g, '')} can't see images, so it only got the file's path.`;
       case 'question-hint': return QUESTION_HINTS[notice.hint];
     }
   };

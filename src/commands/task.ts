@@ -16,7 +16,7 @@ const command: Command = {
     if (flag('--preview')) { log(previewTask(profileDir, request)); return; }
     const task = await startTask(profileDir, request);
     log(`Started ${task.title} on ${task.branch}.`);
-    log(task.link ?? `T3 thread ${task.t3ThreadId}`);
+    log(task.link ?? `thread ${task.threadId}`);
   },
 };
 export default command;

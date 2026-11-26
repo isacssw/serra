@@ -178,7 +178,7 @@ export interface ActivationPreflight {
 export const runningJobs = (directory: string): RunningJob[] => createStore(join(resolve(directory), 'state.json')).allJobs()
   .filter(([, job]) => followed(job.phase))
   .map(([key, job]) => ({
-    key, requester: job.requester, channel: job.channel, t3ThreadId: job.t3ThreadId,
+    key, requester: job.requester, channel: job.channel, t3ThreadId: job.threadId,
     createdAt: job.createdAt, lastActivityAt: job.lastActivityAt ?? job.createdAt,
   }))
   .sort((a, b) => b.lastActivityAt.localeCompare(a.lastActivityAt));

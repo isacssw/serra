@@ -4,6 +4,7 @@
 // default provider and model unless --provider (a T3 instance id) and --model say otherwise.
 //
 //   node evals/meeting.ts --label baseline [--runs 3] [--provider claudeAgent --model claude-sonnet-5-5] [--set all|building|heldout] [--only name,name] [--concurrency 3]
+//   node evals/meeting.ts --label acp-claude --acp claude   (an ACP agent from src/agent/acp-agents.ts instead of T3; on its own default model)
 //
 // Per transcript, runs are averaged first, then pooled, the way compare.ts treats repeated runs as one case.
 // - Recall: gold decisions and constraints kept (up to the cap). Precision: kept items that match a gold item.
@@ -18,6 +19,8 @@ import { dirname, join } from 'node:path';
 import { parseArgs } from 'node:util';
 import { digestText, meetingPages } from '../src/meeting-capture.ts';
 import { checkDigest, extractionPrompt, meetingStamp, parseDigestOutput, type Digest } from '../src/meeting-digest.ts';
+import { createAcpBackend } from '../src/agent/acp.ts';
+import { KNOWN_ACP_AGENTS } from '../src/agent/acp-agents.ts';
 import { createMeetingRuns } from '../src/meeting-runs.ts';
 import { createMeetingStore } from '../src/meeting-store.ts';
 import { parseTranscript } from '../src/meeting-transcript.ts';
@@ -32,6 +35,7 @@ const { values: args } = parseArgs({
     set: { type: 'string', default: 'all' },
     only: { type: 'string' },
     concurrency: { type: 'string', default: '3' },
+    acp: { type: 'string' },
   },
 });
 
@@ -43,9 +47,13 @@ interface RunResult {
 }
 
 const root = new URL('..', import.meta.url).pathname;
+const acpAgent = args.acp ? KNOWN_ACP_AGENTS.find((agent) => agent.id === args.acp) : undefined;
+if (args.acp && !acpAgent) throw new Error(`No ACP agent "${args.acp}". Pick one of: ${KNOWN_ACP_AGENTS.map((agent) => agent.id).join(', ')}.`);
 const extractor = createMeetingRuns({
   t3Bin: process.env.T3_BIN ?? join(homedir(), '.t3/bin/t3'),
   ...(args.provider ? { provider: args.provider } : {}), ...(args.model ? { model: args.model } : {}),
+  // Each run spawns the agent and stops it when the run ends.
+  ...(acpAgent ? { backend: () => createAcpBackend({ agent: acpAgent }) } : {}),
 });
 
 const runOne = async (gold: Gold, run: number): Promise<RunResult> => {

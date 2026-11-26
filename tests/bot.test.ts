@@ -910,6 +910,28 @@ test('only the owner or original requester can answer; forged and stale choices 
   assert.equal(f.answered.length, 1);
 });
 
+test('an agent\'s tool approval goes to the owner, and only the owner can allow it; a requester\'s click or typed reply is not an answer', async (t) => {
+  const f = fixture(t);
+  await f.say(SAM, `<@${BOT}> investigate`, true);
+  f.questionRequests.push({ requestId: 'approval-1', questions: [{
+    id: 'permission', header: 'Permission', question: 'Claude Code wants to: Run npm install',
+    options: [{ label: 'Allow', description: '', value: 'yes' }, { label: 'Deny', description: '', value: 'no' }], allowCustomAnswer: false,
+  }] });
+  f.waitsInT3(1); await f.bot.poll();
+  assert.match(f.posts[0]!.blocks, new RegExp(`<@${OWNER}>`), 'addressed to the owner');
+  assert.doesNotMatch(f.posts[0]!.blocks, /<@USAM>/);
+  await choose(f, 0, SAM);
+  assert.equal(f.answered.length, 0, 'the requester can\'t allow it');
+  assert.equal(f.posts.at(-1)!.text, 'Only the bot\u2019s owner can allow this.');
+  assert.match(f.posts[0]!.blocks, /Only the bot owner can answer\./);
+  await f.say(SAM, 'Allow');
+  assert.equal(f.answered.length, 0, 'nor by typing');
+  assert.equal(f.posts.at(-1)!.text, 'Only the bot\u2019s owner can allow this.');
+  assert.equal(f.sends.length, 0, 'and it isn\'t queued as the next message');
+  await choose(f, 0, OWNER);
+  assert.deepEqual(f.answered, [{ threadId: 't3-1', requestId: 'approval-1', answers: { permission: 'yes' } }]);
+});
+
 test('multiple questions accumulate answers on one card and survive a daemon restart', async (t) => {
   const f = fixture(t);
   await f.say(SAM, `<@${BOT}> investigate`, true);

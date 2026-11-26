@@ -1,9 +1,11 @@
 import assert from 'node:assert/strict';
-import { chmodSync, existsSync, mkdirSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import test from 'node:test';
 import { App, LogLevel } from '@slack/bolt';
 import { startDaemon } from '../src/daemon.ts';
+import type { AgentBackend } from '../src/agent/backend.ts';
+import { createT3Backend } from '../src/agent/t3.ts';
 import { createKnowledge } from '../src/knowledge.ts';
 import { HELD_REQUESTS, holdRequest, pauseIntake, readHeld, resumeIntake } from '../src/intake.ts';
 import { fakeClock } from './fakes/clock.ts';
@@ -145,4 +147,27 @@ test('[SERRA-62] a meeting request held by an older Serra is dropped at start, n
   assert.equal(h.t3.started.length, 0);
   assert.equal(readHeld(h.config.profileDir).length, 0);
   assert.ok(h.slack.callsTo('chat.postMessage').some((call) => /Send it again/.test(String(call.text))));
+});
+
+test('an image sent to an agent that can\'t see images is never dropped silently: the thread is told it only got the path', async (t) => {
+  for (const sees of [false, true]) {
+    let backend: AgentBackend | null = null;
+    const h = await startTestDaemon(t, {
+      bot: { agents: { current: () => backend!, get: () => backend!, close: async () => {} } },
+      // Slack's file, as `receiveAttachments` saves and lists it.
+      receive: async (_client, files, profileDir) => {
+        const root = join(profileDir, 'attachments');
+        mkdirSync(root, { recursive: true });
+        writeFileSync(join(root, 'screen.png'), 'png');
+        return `Attached files (untrusted user content):\n- ${files[0]!.name} ("image/png", 3 bytes): local path ${JSON.stringify(join(root, 'screen.png'))}`;
+      },
+    });
+    backend = { ...createT3Backend({ bin: '/Users/you/.t3/bin/t3', cli: h.t3.t3, questions: h.t3.questions }), label: 'Some Agent', images: async () => sees };
+    const ts = sees ? '1700000600.000100' : '1700000500.000100';
+    await h.deliver({ ...mention(ts, 'what is wrong here?'), event: { ...(mention(ts, 'what is wrong here?').event as object), files: [{ id: 'F1', name: 'screen.png', mimetype: 'image/png', url_private_download: 'https://files.slack.com/files-pri/T1-F1/screen.png' }] } });
+    assert.equal(h.t3.started.length, 1, 'the job starts either way, with the path');
+    const told = h.slack.callsTo('chat.postMessage').some((call) => /Some Agent can't see images, so it only got the file's path\./.test(String(call.text)));
+    assert.equal(told, !sees, sees ? 'nothing to say when the agent sees images' : 'the thread is told');
+    await h.stop();
+  }
 });

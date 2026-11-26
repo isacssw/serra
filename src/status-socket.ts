@@ -5,10 +5,12 @@
  * happens and a new snapshot whenever the status changes. The app runs the client, `subscribeStatus()`, which reports
  * `stopped` while the socket is missing or after it closes, and reconnects when the daemon comes back.
  *
- * Wire format: one JSON `StatusMessage` per line. A client may send one kind of request, a `NamesRequest` line: the
+ * Wire format: one JSON `StatusMessage` per line. A client may send two kinds of request. A `NamesRequest` line: the
  * daemon answers that client only with a `NamesReply`, the Slack names it knows for those IDs (APP-29, SERRA-55), so
- * the app shows names without reading the bot token. Only names cross the socket, never the token. Anything else a
- * client sends is ignored, and a daemon started without a resolver ignores name requests too.
+ * the app shows names without reading the bot token. Only names cross the socket, never the token. A `RunRequest`
+ * line: the app's work on an ACP agent (a task, the interview, a reply or an answer in a transcript), which the daemon
+ * runs because an ACP agent lives in the process that started it; it answers with a `RunReply`. Anything else a client
+ * sends is ignored, and a daemon started without a resolver or a run handler ignores those requests too.
  *
  * This file must stay free of Slack/Bolt imports: the Electron main process bundles `subscribeStatus()` and
  * `requestNames()`. The daemon passes its resolver in (`StatusServerOptions.names`). `slack-names.ts` only lends
@@ -136,7 +138,36 @@ export interface StatusServerOptions {
   now?: () => Date;
   /** Answers `NamesRequest`s. Without it, clients only read, as before. */
   names?: NamesResolver;
+  /** Does `RunRequest`s. Without it, they get no answer. */
+  runs?: RunHandler;
 }
+
+/** The app's work on an ACP agent, which the daemon runs (see the header). `id` matches the reply to the request. */
+export type RunOp =
+  | { op: 'task'; request: string }
+  | { op: 'interview' }
+  | { op: 'send'; backend: string; threadId: string; message: string }
+  | { op: 'answer'; backend: string; threadId: string; requestId: string; answers: Record<string, unknown> };
+export type RunRequest = { type: 'run'; id: string } & RunOp;
+type RunReply = { type: 'run'; id: string } & ({ ok: true; value: unknown } | { ok: false; error: string });
+type RunHandler = (request: RunRequest) => Promise<unknown>;
+
+const short = (value: unknown, max: number): value is string => typeof value === 'string' && value.length > 0 && value.length <= max;
+
+/** A valid `RunRequest` from one client line, or null. */
+const parseRunRequest = (text: string): RunRequest | null => {
+  const value = parseJson(text);
+  if (!isRecord(value) || value.type !== 'run' || !short(value.id, 64)) return null;
+  const base = { type: 'run' as const, id: value.id };
+  if (value.op === 'task' && short(value.request, 8_000)) return { ...base, op: 'task', request: value.request };
+  if (value.op === 'interview') return { ...base, op: 'interview' };
+  if (!short(value.backend, 80) || !short(value.threadId, 200)) return null;
+  if (value.op === 'send' && short(value.message, 8_000)) return { ...base, op: 'send', backend: value.backend, threadId: value.threadId, message: value.message };
+  if (value.op === 'answer' && short(value.requestId, 200) && isRecord(value.answers)) {
+    return { ...base, op: 'answer', backend: value.backend, threadId: value.threadId, requestId: value.requestId, answers: value.answers };
+  }
+  return null;
+};
 
 const unique = (value: unknown, valid: (id: string) => boolean): string[] =>
   Array.isArray(value) ? [...new Set(value.filter((id): id is string => typeof id === 'string' && id.length <= 32 && valid(id)))] : [];
@@ -181,7 +212,8 @@ export interface StatusServer {
  * Starts the daemon's status socket. Only the owner can connect: the file is created with mode 600.
  * Status and events are best effort and never throw into the bot's work.
  */
-export const startStatusServer = async ({ profileDir, status, now = () => new Date(), names }: StatusServerOptions): Promise<StatusServer> => {
+export const startStatusServer = async (deps: StatusServerOptions): Promise<StatusServer> => {
+  const { profileDir, status, now = () => new Date(), names } = deps;
   const path = statusSocketPath(profileDir);
   if (Buffer.byteLength(path) > MAX_PATH_BYTES) throw new Error(`The status socket path is too long for a Unix socket: ${path}`);
   await clearStale(path);
@@ -201,7 +233,7 @@ export const startStatusServer = async ({ profileDir, status, now = () => new Da
    * Reads one client's lines and answers its name requests, one at a time: a request sent while the last one is
    * still being looked up is dropped. A failing lookup answers with no names; nothing here throws into the bot.
    */
-  const listenForRequests = (socket: Socket, resolve: NamesResolver): void => {
+  const listenForRequests = (socket: Socket, resolve: NamesResolver | undefined, runs: RunHandler | undefined): void => {
     let buffer = '';
     let busy = false;
     socket.setEncoding('utf8');
@@ -212,7 +244,16 @@ export const startStatusServer = async ({ profileDir, status, now = () => new Da
         const text = buffer.slice(0, end);
         buffer = buffer.slice(end + 1);
         end = buffer.indexOf('\n');
-        if (busy || text.length > MAX_REQUEST_BYTES) continue;
+        if (text.length > MAX_REQUEST_BYTES) continue;
+        const run = runs ? parseRunRequest(text) : null;
+        if (run && runs) {
+          void runs(run).then(
+            (value): RunReply => ({ type: 'run', id: run.id, ok: true, value: value ?? null }),
+            (error: unknown): RunReply => ({ type: 'run', id: run.id, ok: false, error: (error instanceof Error ? error.message : String(error)).slice(0, 500) }),
+          ).then((reply) => send(socket, `${JSON.stringify(reply)}\n`));
+          continue;
+        }
+        if (busy || !resolve) continue;
         const request = parseNamesRequest(text);
         if (!request) continue;
         busy = true;
@@ -232,7 +273,7 @@ export const startStatusServer = async ({ profileDir, status, now = () => new Da
     clients.add(socket);
     socket.on('close', () => clients.delete(socket));
     socket.on('error', () => socket.destroy());
-    if (names) listenForRequests(socket, names);
+    if (names || deps.runs) listenForRequests(socket, names, deps.runs);
     else socket.on('data', () => {}); // Clients only read.
     try {
       // A change since the last snapshot goes to everyone, so earlier clients don't fall behind the new one.
@@ -446,3 +487,43 @@ export const requestNames = (
   socket.on('error', () => finish(null));
   socket.on('close', () => finish(null));
 });
+
+/**
+ * Asks the daemon in `profileDir` to do a `RunRequest` and resolves its value. Rejects with the daemon's own sentence,
+ * or with one saying the bot must run, when there is no daemon or it doesn't answer in time.
+ */
+export const requestRun = (profileDir: string, request: RunOp, { timeoutMs = 120_000 }: { timeoutMs?: number } = {}): Promise<unknown> =>
+  new Promise((resolve, reject) => {
+    const id = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+    let done = false;
+    let buffer = '';
+    const socket = createConnection(statusSocketPath(profileDir));
+    const finish = (error: Error | null, value?: unknown): void => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      socket.destroy();
+      if (error) reject(error); else resolve(value);
+    };
+    const notRunning = (): Error => new Error('Start the bot first: an ACP agent runs in the bot.');
+    const timer = setTimeout(() => finish(new Error('The bot didn’t answer in time. Check it’s running, then try again.')), timeoutMs);
+    socket.setEncoding('utf8');
+    socket.on('connect', () => { socket.write(`${JSON.stringify({ ...request, type: 'run', id })}\n`); });
+    socket.on('data', (chunk: string) => {
+      buffer += chunk;
+      let end = buffer.indexOf('\n');
+      while (end !== -1 && !done) {
+        const text = buffer.slice(0, end);
+        buffer = buffer.slice(end + 1);
+        end = buffer.indexOf('\n');
+        const parsed = parseJson(text);
+        if (isRecord(parsed) && parsed.type === 'run' && parsed.id === id) {
+          if (parsed.ok === true) finish(null, parsed.value);
+          else finish(new Error(typeof parsed.error === 'string' ? parsed.error : 'The bot couldn’t do that.'));
+        }
+      }
+      if (buffer.length > MAX_BUFFERED) finish(notRunning());
+    });
+    socket.on('error', () => finish(notRunning()));
+    socket.on('close', () => finish(notRunning()));
+  });

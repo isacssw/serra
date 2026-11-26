@@ -18,8 +18,10 @@ Use one private profile per bot, outside the code checkout. `pnpm run setup` cre
 | knowledge-reviews/ | One JSON digest per weekly knowledge review, named by its date. `knowledge-review.json` says whether it runs weekly |
 | onboarding.md | How to start the knowledge interview |
 | manifest.json | Slack app manifest with the chosen name |
-| state.json | Slack-thread to T3-thread mappings and last posted run IDs |
-| tasks.json | Tasks started from the app, `pnpm bot task` or `pnpm bot interview` without Slack: their T3 threads, so they show in Jobs. Written only by the app and the CLI, never by the daemon |
+| state.json | Slack-thread to job-thread mappings and last posted run IDs |
+| tasks.json | Tasks started from the app, `pnpm bot task` or `pnpm bot interview` without Slack: their threads, so they show in Jobs. Written only by the app and the CLI, never by the daemon |
+| agent-backend.json | Selected agent backend (`t3` or `acp`), per-agent models, and custom ACP harnesses added from Settings › Worker or by hand |
+| agent-runs/ | Transcripts and resume records for ACP runs |
 | releases/ | Prepared code snapshots and installed production dependencies |
 | prepared.json | The next prepared release and its content hash |
 | intake-paused.json | Present while the app has paused new work for an update; lapses on its own after 30 minutes |

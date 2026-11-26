@@ -15,6 +15,9 @@ import { codeRoot, loadConfig, writeFileAtomic, type Config } from './config.ts'
 import { createKnowledge } from './knowledge.ts';
 import { parseJson } from './lib/guards.ts';
 import { APP_PROPOSALS_FOLDER, stampProposalsFolder } from './proposals.ts';
+import { threadOf } from './state.ts';
+import { worktreeRun, type AgentBackend } from './agent/backend.ts';
+import { createT3Backend } from './agent/t3.ts';
 import { jobThreadInput, run, showThread, startThread, threadPullRequest } from './t3.ts';
 import type { StartThreadInput } from './types.ts';
 
@@ -38,7 +41,10 @@ const TASKS_FILE = 'tasks.json';
 
 /** One task in `tasks.json`. The request itself isn't kept: it is in the T3 thread. */
 export interface AppTask {
-  t3ThreadId: string;
+  /** The agent thread: a T3 thread, or an ACP session. Saved as `t3ThreadId` before agent backends. */
+  threadId: string;
+  /** Which backend runs it (`t3`, `acp:<agent>`). Absent: T3. */
+  backend?: string;
   /** The thread's title without the bot name, from the request's first words. */
   title: string;
   branch: string;
@@ -55,12 +61,20 @@ export interface StartedTask extends AppTask {
 
 export const tasksPath = (profileDir: string): string => join(resolve(profileDir), TASKS_FILE);
 
-const isTask = (value: unknown): value is AppTask => {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false;
+/** One saved task, or null. A task saved before agent backends has `t3ThreadId`, always a T3 thread. */
+const taskFrom = (value: unknown): AppTask | null => {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return null;
   const task = value as Record<string, unknown>;
-  return ['t3ThreadId', 'title', 'branch', 'requester', 'createdAt'].every((key) => typeof task[key] === 'string')
-    && (task.t3ThreadId as string) !== '';
+  const threadId = threadOf(task) ?? '';
+  if (!threadId || !['title', 'branch', 'requester', 'createdAt'].every((key) => typeof task[key] === 'string')) return null;
+  return {
+    threadId, title: task.title as string, branch: task.branch as string, requester: task.requester as string, createdAt: task.createdAt as string,
+    ...(typeof task.backend === 'string' && task.backend !== 't3' ? { backend: task.backend } : {}),
+  };
 };
+
+/** A task as saved: a T3 task keeps `t3ThreadId` too, for builds before agent backends. */
+const taskToDisk = (task: AppTask): Record<string, unknown> => ({ ...task, ...((task.backend ?? 't3') === 't3' ? { t3ThreadId: task.threadId } : {}) });
 
 /** The profile's tasks, oldest first. A missing file is no tasks; entries that don't parse are skipped. */
 export const readTasks = (profileDir: string): AppTask[] => {
@@ -74,12 +88,12 @@ export const readTasks = (profileDir: string): AppTask[] => {
   // A broken file is reported, not read as no tasks: adding a task would otherwise write over the ones in it.
   const parsed = parseJson(raw);
   if (!Array.isArray(parsed)) throw new Error(`${TASKS_FILE} is not a JSON list. Fix or remove ${tasksPath(profileDir)}.`);
-  return parsed.filter(isTask);
+  return parsed.map(taskFrom).filter((task): task is AppTask => task !== null);
 };
 
 const addTask = (profileDir: string, task: AppTask): void => {
   const tasks = readTasks(profileDir);
-  writeFileAtomic(tasksPath(profileDir), JSON.stringify([...tasks, task], null, 2) + '\n');
+  writeFileAtomic(tasksPath(profileDir), JSON.stringify([...tasks, task].map(taskToDisk), null, 2) + '\n');
 };
 
 /** The request as the app sends it: trimmed, and refused when empty or too long. */
@@ -105,6 +119,8 @@ const taskThreadInput = (config: Config, request: string, now: Date = new Date()
 export interface TaskDeps {
   startThread?: typeof startThread;
   showThread?: typeof showThread;
+  /** The agent backend the task runs on. T3 (over `startThread`/`showThread`) when absent: Jobs reads tasks from T3. */
+  agent?: AgentBackend;
   /** Brings the base branch up to date first, as the daemon does before every job. */
   fetchBase?: (config: Config) => Promise<unknown>;
   now?: () => Date;
@@ -133,11 +149,13 @@ export const startTask = async (profileDir: string, request: unknown, deps: Task
 /** Starts `input`'s thread and records it in `tasks.json`: what a task and the knowledge interview share. */
 const startRecorded = async (profileDir: string, config: Config, input: StartThreadInput, {
   startThread: start = startThread, showThread: show = showThread, fetchBase: fetch = fetchBase, now = () => new Date(),
+  agent = createT3Backend({ bin: config.t3Bin, cli: { startThread: start, showThread: show } }),
 }: TaskDeps): Promise<StartedTask> => {
   await fetch(config);
-  const t3ThreadId = await start(input, config.t3Bin);
+  const threadId = await agent.start(worktreeRun(input));
   const task: AppTask = {
-    t3ThreadId,
+    threadId,
+    ...(agent.key === 't3' ? {} : { backend: agent.key }),
     title: input.title.slice(config.name.length + 2),
     branch: input.branch,
     requester: config.ownerName,
@@ -146,9 +164,9 @@ const startRecorded = async (profileDir: string, config: Config, input: StartThr
   try {
     addTask(profileDir, task);
   } catch (error) {
-    throw new Error(`Started T3 thread ${t3ThreadId}, but couldn't record it for Jobs: ${error instanceof Error ? error.message : String(error)}`);
+    throw new Error(`Started ${agent.label} thread ${threadId}, but couldn't record it for Jobs: ${error instanceof Error ? error.message : String(error)}`);
   }
-  const link = await show(t3ThreadId, config.t3Bin).then((detail) => detail.thread.link, () => undefined);
+  const link = await agent.read(threadId).then((detail) => detail.thread.link || undefined, () => undefined);
   return { ...task, ...(link ? { link } : {}) };
 };
 
@@ -168,7 +186,7 @@ export interface TaskState {
 }
 
 /** Reads a task's thread. Resolves null when it can't, so one unreadable thread never fails the list. */
-export type TaskStateLookup = (t3ThreadId: string) => Promise<TaskState | null>;
+export type TaskStateLookup = (threadId: string) => Promise<TaskState | null>;
 
 const record = (value: unknown): Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value) ? (value as Record<string, unknown>) : {};

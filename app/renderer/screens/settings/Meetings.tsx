@@ -156,7 +156,7 @@ export const Meetings = () => {
       {settings?.enabled && (
         <Card
           title="Sources"
-          description="Serra reads Granola and Meet links in a T3 run, through the connections your AI provider in T3 already has. It never holds their keys. Test runs one short T3 run."
+          description="Serra reads Granola and Meet links in an agent run, through the connections your agent already has. It never holds their keys. Test runs one short run."
           actions={<Button size="sm" disabled={checking} icon={checking ? <LoaderCircle size={14} className="animate-spin" /> : <RefreshCw size={14} />} onClick={() => void check()}>Refresh</Button>}
         >
           {runner && (

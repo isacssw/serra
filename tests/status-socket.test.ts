@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import test, { type TestContext } from 'node:test';
 import type { Job } from '../src/contracts.ts';
 import {
-  jobCounts, startStatusServer, statusSocketPath, subscribeStatus, toBotEvent, type StatusMessage, type UpStatus,
+  jobCounts, requestRun, startStatusServer, statusSocketPath, subscribeStatus, toBotEvent, type StatusMessage, type UpStatus,
 } from '../src/status-socket.ts';
 
 const at = () => new Date('2026-11-19T10:00:00.000Z');
@@ -162,7 +162,7 @@ test('daemon events map to the app contract, and others are dropped', () => {
 
 test('counts: an open owner ask or a T3-only wait needs the owner; a waiting request is running', () => {
   const job = (fields: Partial<Job>): Job => ({
-    t3ThreadId: 't', channel: 'C0123', threadTs: '1.0', requester: 'U0123456789', pendingReactionTs: null,
+    threadId: 't', channel: 'C0123', threadTs: '1.0', requester: 'U0123456789', pendingReactionTs: null,
     lastPostedRunId: null, phase: { state: 'following' }, createdAt: '2026-11-19T09:00:00.000Z', ...fields,
   });
   assert.deepEqual(jobCounts([
@@ -173,4 +173,25 @@ test('counts: an open owner ask or a T3-only wait needs the owner; a waiting req
     job({ loadingRequested: true, phase: { state: 'waiting' } }),
     job({}),
   ]), { needsYou: 3, running: 1 });
+});
+
+test('the app\'s work on an ACP agent goes to the daemon over the socket and comes back as its answer or its sentence', async (t) => {
+  const dir = mkdtempSync(join(tmpdir(), 'serra-run-socket-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const seen: unknown[] = [];
+  const server = await startStatusServer({
+    profileDir: dir,
+    status: () => ({ state: 'up', pid: 1, startedAt: '2026-11-26T08:00:00.000Z', slackConnected: true, counts: { needsYou: 0, running: 0 } }),
+    runs: async (request) => {
+      seen.push(request);
+      if (request.op === 'send') throw new Error('Claude Code isn’t waiting on that run.');
+      return { threadId: 'session-1' };
+    },
+  });
+  t.after(() => server.close());
+  assert.deepEqual(await requestRun(dir, { op: 'task', request: 'Fix the footer' }), { threadId: 'session-1' });
+  await assert.rejects(requestRun(dir, { op: 'send', backend: 'acp:claude', threadId: 'session-1', message: 'hi' }), /isn’t waiting on that run/);
+  assert.deepEqual(seen.map((request) => (request as { op: string }).op), ['task', 'send']);
+  await server.close();
+  await assert.rejects(requestRun(dir, { op: 'interview' }), /Start the bot first/);
 });

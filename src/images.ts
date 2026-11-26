@@ -35,9 +35,12 @@ const realRoots = (roots: string[]): string[] => roots.flatMap((root) => {
  * Where workers write images: generated images, their worktrees, QA run records and temp files.
  * Anything else on the Mac is never uploaded, whatever path a reply names.
  */
-const ALLOWED_ROOTS = realRoots([
+/** Resolved at each check: a folder made after Serra started (the first ACP worktree) still counts. */
+const allowedRoots = (): string[] => realRoots([
   `${homedir()}/.codex/generated_images`,
   `${homedir()}/.t3/worktrees`,
+  // Worktrees Serra makes for a job on an ACP agent (src/agent/worktree.ts).
+  `${homedir()}/.serra/worktrees`,
   `${homedir()}/.claude/qa-runs`,
   `${homedir()}/.codex/qa-runs`,
   tmpdir(),
@@ -50,8 +53,9 @@ const ALLOWED_ROOTS = realRoots([
  * Where a linked deliverable (HTML, PDF, ZIP, text) may come from: QA runs, worktrees and /tmp. Narrower than images,
  * since any file type goes: the per-user temp area (macOS `/var/folders`) holds other programs' files.
  */
-const FILE_ROOTS = realRoots([
+const fileRoots = (): string[] => realRoots([
   `${homedir()}/.t3/worktrees`,
+  `${homedir()}/.serra/worktrees`,
   `${homedir()}/.claude/qa-runs`,
   `${homedir()}/.codex/qa-runs`,
   '/tmp',
@@ -59,7 +63,7 @@ const FILE_ROOTS = realRoots([
 ]);
 
 /** The real path of `path` when it lies under an allowed root and is at most `max` bytes, or the reason it can't be shared. */
-const checkShareable = (path: string, max: number, roots = ALLOWED_ROOTS): { path: string } | { problem: string } => {
+const checkShareable = (path: string, max: number, roots = allowedRoots()): { path: string } | { problem: string } => {
   let real: string;
   try {
     real = realpathSync(path);
@@ -144,7 +148,7 @@ export const shareImages = async (text: string, upload: Upload): Promise<string>
     if (!path || attached.has(link)) continue;
     const name = rawLabel?.replaceAll('`', '').trim();
     const label = !name || name === path ? basename(path) : rawLabel!.trim();
-    const checked = checkShareable(path, MAX_FILE_BYTES, FILE_ROOTS);
+    const checked = checkShareable(path, MAX_FILE_BYTES, fileRoots());
     if ('problem' in checked) continue;
     if (!sent.has(checked.path)) {
       if (files >= MAX_FILES) continue;
