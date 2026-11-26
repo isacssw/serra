@@ -1,7 +1,7 @@
 // Settings › Meetings in the main process (SERRA-69): what the screen reads when it opens, and the one place a model
 // call may start, the owner's Test button. Fakes only: no T3 run, no model.
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test, { type TestContext } from 'node:test';
@@ -10,6 +10,7 @@ import { meetingsHandlers } from '../app/main/ipc/meetings.ts';
 import { memoryPrefs } from '../app/main/prefs.ts';
 import { stoppedStatusSource } from '../app/main/status.ts';
 import { writeProfileFile, type Profile } from '../src/config.ts';
+import { readAgentBackend } from '../src/agent/acp-agents.ts';
 import type { MeetingRunOptions } from '../src/meeting-runs.ts';
 import { saveSourceTest, sourceStatuses, SOURCE_TEST_TTL_MS } from '../src/meeting-source-tests.ts';
 import { testedLine, testLabel } from '../app/renderer/screens/settings/meetings.logic.ts';
@@ -28,8 +29,11 @@ const setup = (t: TestContext, options: { binDir?: string } = {}) => {
   };
   writeProfileFile(profileDir, profile);
   const opened: string[] = [];
+  const asked: { message: string; detail: string }[] = [];
+  const answer = { confirm: true };
   const context: HandlerContext = {
     profileDir: () => profileDir, profileDirOrNull: () => profileDir, prefs: memoryPrefs(), status: stoppedStatusSource(),
+    confirm: async ({ message, detail }) => { asked.push({ message, detail }); return answer.confirm; },
     runtime: { version: '0.0.0', electron: '45.4.1', node: '24.0.0', platform: 'darwin' },
     openExternal: async () => {}, openPath: async (path) => { opened.push(path); },
   };
@@ -48,7 +52,7 @@ const setup = (t: TestContext, options: { binDir?: string } = {}) => {
       };
     },
   });
-  return { handlers, made, tested, opened, root, profileDir, profile };
+  return { handlers, context, made, tested, opened, asked, answer, root, profileDir, profile };
 };
 
 test('opening Settings › Meetings reads files only: no T3 run, every source untested', async (t) => {
@@ -189,4 +193,25 @@ test('Agent backend renderer logic: command parsing, slugifying and form validat
     ]).map((entry) => entry.id),
     ['antigravity'],
   );
+});
+
+test('adding an ACP agent shows its exact command in a native confirm first; cancel saves nothing', async (t) => {
+  const f = setup(t);
+  f.answer.confirm = false;
+  await assert.rejects(async () => f.handlers.addAcpAgent({ name: 'Harness', command: '/Users/you/My Agent/bin', args: ['acp', 'it\'s'] }), /^Error: Not added\.$/);
+  assert.deepEqual(f.asked, [{
+    message: 'Add Harness as an ACP agent?',
+    detail: 'Serra will run this command, with your access, when you pick it:\n\n\'/Users/you/My Agent/bin\' acp \'it\'\\\'\'s\'',
+  }]);
+  assert.equal(existsSync(join(f.profileDir, 'agent-backend.json')), false, 'nothing saved');
+
+  f.answer.confirm = true;
+  const added = await f.handlers.addAcpAgent({ name: 'Harness', command: 'harness', args: ['acp'] });
+  assert.equal(f.asked.at(-1)?.detail.endsWith('\n\nharness acp'), true);
+  assert.equal(added.agents.some((entry) => entry.id === 'harness'), true);
+
+  // Without a way to ask, nothing is added.
+  const bare = meetingsHandlers({ ...f.context, confirm: undefined });
+  await assert.rejects(async () => bare.addAcpAgent({ name: 'Other', command: 'other', args: [] }), /Not added/);
+  assert.equal(readAgentBackend(f.profileDir).custom.some((entry) => entry.id === 'other'), false);
 });

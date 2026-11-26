@@ -48,6 +48,10 @@ export interface MeetingsHandlerOptions {
   searchPath?: () => Promise<string>;
 }
 
+/** A command and its arguments as one line, each part quoted when it has anything but plain characters. */
+const commandLine = (command: string, args: readonly string[]): string =>
+  [command, ...args].map((part) => (/^[\w./:=@%+,-]+$/.test(part) ? part : `'${part.replaceAll("'", "'\\''")}'`)).join(' ');
+
 export const meetingsHandlers = (context: HandlerContext, options: MeetingsHandlerOptions = {}): Handlers<'meetings'> => {
   const makeRuns = options.runs ?? createMeetingRuns;
   const readProviders = options.readProviders ?? readT3Providers;
@@ -122,8 +126,15 @@ export const meetingsHandlers = (context: HandlerContext, options: MeetingsHandl
       if (input.args !== undefined && (!Array.isArray(input.args) || input.args.some((arg) => typeof arg !== 'string'))) {
         throw new Error('Arguments must be a list of strings.');
       }
-      const args = Array.isArray(input.args) ? input.args.filter((arg): arg is string => typeof arg === 'string') : [];
+      const args = Array.isArray(input.args) ? input.args.filter((arg): arg is string => typeof arg === 'string' && arg.length > 0) : [];
       const profileDir = context.profileDir();
+      // The window can't add a command Serra will run on its own say: the owner sees it, exactly, in a native dialog.
+      const confirmed = await context.confirm?.({
+        message: `Add ${input.name.trim()} as an ACP agent?`,
+        detail: `Serra will run this command, with your access, when you pick it:\n\n${commandLine(input.command.trim(), args)}`,
+        confirmLabel: 'Add agent',
+      });
+      if (confirmed !== true) throw new Error('Not added.');
       addCustomAcpAgent(profileDir, {
         ...(typeof input.id === 'string' ? { id: input.id } : {}),
         name: input.name,

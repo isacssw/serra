@@ -146,6 +146,14 @@ const start = async (): Promise<void> => {
       const result = owner ? await dialog.showOpenDialog(owner, options) : await dialog.showOpenDialog(options);
       return result.canceled ? null : result.filePaths[0] ?? null;
     },
+    // The smoke test drives Add ACP agent in the window, so it confirms itself, saying what it was asked.
+    confirm: async ({ message, detail, confirmLabel }) => {
+      if (smoke) { console.log('[serra] smoke confirm:', JSON.stringify({ message, detail })); return true; }
+      const options = { type: 'warning' as const, message, detail, buttons: [confirmLabel, 'Cancel'], defaultId: 1, cancelId: 1, noLink: true };
+      const owner = BrowserWindow.getFocusedWindow();
+      const result = owner ? await dialog.showMessageBox(owner, options) : await dialog.showMessageBox(options);
+      return result.response === 0;
+    },
     prefs,
     status,
     runtime: { version: app.getVersion(), electron: process.versions.electron ?? '', node: process.versions.node, platform: process.platform },
