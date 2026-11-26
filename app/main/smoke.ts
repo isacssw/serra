@@ -567,8 +567,16 @@ const runGraphChecks = async (main: BrowserWindow): Promise<string[]> => {
     if (shots) writeFileSync(join(shots, `graph-${name}.png`), (await window.webContents.capturePage()).toPNG());
   };
   const directory = graphProfile();
+  // The replay follows the system's reduced-motion setting, which differs between Macs (CI's runner asks for reduced
+  // motion). Both ways are checked, each set here rather than taken from the machine.
+  const { debugger: devtools } = window.webContents;
+  if (!devtools.isAttached()) devtools.attach('1.3');
+  const motion = async (reduce: boolean): Promise<void> => {
+    await devtools.sendCommand('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: reduce ? 'reduce' : 'no-preference' }] });
+  };
   try {
     await useProfile(directory);
+    await motion(false);
     for (const theme of shots ? ['dark', 'light'] as const : ['light'] as const) {
       await run(themeControlScript(theme));
       let frames: Promise<void> | null = null;
@@ -598,6 +606,25 @@ const runGraphChecks = async (main: BrowserWindow): Promise<string[]> => {
       await run(`(async () => { document.querySelector('[data-serra-main] canvas').dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); await new Promise((r) => setTimeout(r, 900)); })()`);
       await shot(`${theme}-rest`);
     }
+    // Reduced motion: even a first visit shows the finished map at once, with no replay and no Replay button.
+    await motion(true);
+    const still = await run<{ count: string | null; skip: boolean; replay: boolean; settled: boolean }>(`(async () => {
+      const wait = async (ok, ms = 8000) => { const end = Date.now() + ms; while (Date.now() < end) { if (ok()) return true; await new Promise((r) => setTimeout(r, 50)); } return false; };
+      const canvas = () => document.querySelector('[data-serra-main] canvas');
+      const button = (text) => [...document.querySelectorAll('[data-serra-main] button')].some((b) => b.textContent.trim() === text);
+      location.hash = '#/knowledge/pages';
+      await wait(() => !canvas());
+      localStorage.removeItem('serra.graph.seen');
+      location.hash = '#/knowledge/graph';
+      await wait(() => canvas());
+      const settled = await wait(() => canvas()?.dataset.settled === 'true');
+      return { count: document.querySelector('[data-serra-main] .tabular-nums')?.textContent ?? null, skip: button('Skip'), replay: button('Replay'), settled };
+    })()`);
+    console.log('[serra] smoke graph (reduced motion):', JSON.stringify(still));
+    if (still.skip || still.count !== '58') failures.push(`with reduced motion the graph replayed (${String(still.count)} pages shown) instead of showing the finished map`);
+    if (still.replay) failures.push('with reduced motion the graph offers Replay');
+    if (!still.settled) failures.push('with reduced motion the graph did not come to rest');
+    await motion(false);
     // Settle it from the card: Thursday stays, Tuesday moves under Replaced on its page, and the map redraws without it.
     const kept = await run<{ toast: boolean; after: string | null }>(`(async () => {
       const wait = async (ok, ms = 8000) => { const end = Date.now() + ms; while (Date.now() < end) { if (ok()) return true; await new Promise((r) => setTimeout(r, 50)); } return false; };
@@ -659,6 +686,10 @@ const runGraphChecks = async (main: BrowserWindow): Promise<string[]> => {
   } finally {
     await useProfile(null);
     rmSync(join(directory, '..'), { recursive: true, force: true });
+    if (devtools.isAttached()) {
+      await devtools.sendCommand('Emulation.setEmulatedMedia', { features: [] }).catch(() => {});
+      devtools.detach();
+    }
     if (window !== main) window.destroy();
   }
   return failures;
