@@ -79,7 +79,7 @@ export type Notice =
   /** An image someone sent reached an agent that can't see images: it only has the file's path. */
   | { kind: 'images-unsupported'; agent: string }
   /** Feedback on an answer to a question card. */
-  | { kind: 'question-hint'; hint: 'choose' | 'invalid-answer' | 'changed' | 'not-sent' | 'unconfirmed' };
+  | { kind: 'question-hint'; hint: 'choose' | 'invalid-answer' | 'changed' | 'not-sent' | 'unconfirmed' | 'owner-only' };
 
 /** What a message can be replaced with: a notice, or a question card's fixed text. */
 export type Replacement = Notice

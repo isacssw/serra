@@ -689,7 +689,13 @@ export const createBot = ({
     events('progress_shown', { key, runId, afterMs: now() - Date.parse(run.at) });
   };
 
-  const mayAnswer = (job: Job, user: string): boolean => config.allowed.has(user) && (user === config.owner || user === job.requester);
+  /**
+   * A tool approval an ACP agent asks for (src/agent/acp.ts, question id `permission`): it runs on the owner's Mac, and
+   * T3 keeps its approvals on the owner's own screen, so only the owner answers it.
+   */
+  const isApproval = (card: Pick<QuestionCard, 'questions'> | undefined): boolean => card?.questions.some((item) => item.id === 'permission') === true;
+  const mayAnswer = (job: Job, user: string, card?: QuestionCard): boolean =>
+    config.allowed.has(user) && (user === config.owner || (user === job.requester && !isApproval(card)));
 
   /**
    * Takes a question card down: it shows the answers chosen, through `deliver`, since the questions are the worker's
@@ -727,7 +733,7 @@ export const createBot = ({
       return;
     }
     const state: QuestionCard = { ...request, ts: '', index: 0, answers: {}, nonce: randomBytes(16).toString('hex'), runId: thread.activeRunId ?? thread.latestRunId };
-    const recipient = config.allowed.has(job.requester) ? job.requester : config.owner;
+    const recipient = config.allowed.has(job.requester) && !isApproval(request) ? job.requester : config.owner;
     // Checked again by `deliver` right before the card goes out. Refused, the next poll decides again.
     const posted = await deliver(deliveryFor(job), { op: 'send', out: { kind: 'question', card: state, to: recipient } });
     if (!posted.ok) return;
@@ -772,7 +778,7 @@ export const createBot = ({
     }
     if (state.index + 1 < state.questions.length) {
       const next = { ...state, answers, index: state.index + 1, nonce: randomBytes(16).toString('hex') };
-      const recipient = config.allowed.has(job.requester) ? job.requester : config.owner;
+      const recipient = config.allowed.has(job.requester) && !isApproval(next) ? job.requester : config.owner;
       const out: WorkerOut = { kind: 'question', card: next, to: recipient };
       // Save only after the edit succeeds, so a failed edit leaves usable choices and can be retried. The next question
       // is the worker's words: `deliver` checks it first, and a card it refuses is closed with fixed copy.
@@ -810,7 +816,11 @@ export const createBot = ({
     await exclusive(key, async () => {
       const job = getJob(key);
       const card = job ? cardOf(job) : undefined;
-      if (!job || !card || card.nonce !== action.nonce || !mayAnswer(job, action.user)) return;
+      if (!job || !card || card.nonce !== action.nonce) return;
+      if (!mayAnswer(job, action.user, card)) {
+        if (isApproval(card) && config.allowed.has(action.user) && action.user === job.requester) await questionFeedback(job, 'owner-only');
+        return;
+      }
       const answer = choiceAnswer(card.questions[card.index]!, action.indices);
       if (answer === null) {
         await questionFeedback(job, 'choose');
@@ -1007,7 +1017,7 @@ export const createBot = ({
     const job = getJob(key);
     if (job?.answeredQuestionMessages?.includes(msg.messageTs)) return;
     const card = job ? cardOf(job) : undefined;
-    if (job && card && mayAnswer(job, msg.user) && said !== 'others' && !msg.files?.length) {
+    if (job && card && mayAnswer(job, msg.user, card) && said !== 'others' && !msg.files?.length) {
       const answer = typedAnswer(card.questions[card.index]!, await toReadable(msg.text));
       if (answer === null) await questionFeedback(job, 'invalid-answer');
       else await submitAnswer(key, job, answer, msg.user, msg.messageTs).catch(async (error: unknown) => {

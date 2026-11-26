@@ -52,6 +52,7 @@ const QUESTION_HINTS: Record<Extract<Notice, { kind: 'question-hint' }>['hint'],
   'invalid-answer': 'Please choose one of the offered answers, or reply with its label or number.',
   'changed': 'That question changed or was already answered in T3. I’ll check for the next one.',
   'not-sent': 'I couldn’t send that answer to T3. Please try again, or answer in T3.',
+  'owner-only': 'Only the bot\u2019s owner can allow this.',
   'unconfirmed': 'I couldn\u2019t confirm who can see this thread just now, so I haven\u2019t taken that answer. Please answer again in a minute.',
 };
 
