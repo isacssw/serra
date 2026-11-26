@@ -4,15 +4,21 @@ Serra follows [Semantic Versioning](https://semver.org) once it reaches 1.0. Unt
 
 ## Unreleased
 
-- **Agent backends.** T3 stays the default, and everything can run on an ACP agent instead: Slack jobs (replies, follow-ups, question cards), app tasks, the knowledge interview, meetings and the weekly review. Pick Claude Code, Codex, OpenCode or Gemini CLI, and its model, in Settings › Worker › **Agent backend**, or add your own ACP agent with **Add ACP agent** (Serra shows the exact command and asks before saving it) or in `agent-backend.json`; changes apply to the next job without a restart. Serra ships the Claude Code and Codex ACP adapters, so all you need is `claude` or `codex` installed and signed in; OpenCode, Gemini CLI and custom harnesses need their own command on your PATH. A job keeps the backend it started on. An ACP run has no web link: Jobs › **Transcript** shows it, with its question and a reply box. After a restart Serra reopens an ACP run and the agent carries on. Images work as on T3: a screenshot sent in Slack reaches the agent (as image content on an ACP agent that takes images; one that doesn't is named in the thread), and images it makes are posted back. A run that fails says why in plain words. See `docs/agent-backends.md`. New in the profile: `agent-backend.json`, `agent-runs/`.
-- **State format:** `state.json` and `tasks.json` save a job's thread as `threadId` with its `backend` (was `t3ThreadId`). Older files are read as T3 jobs and kept as `state.json.backup-<time>` before the first rewrite; T3 jobs still write `t3ThreadId`, so a rollback reads them.
-- **Knowledge › Overview** shows what your notes do, at a glance: how many replies they shaped this week, one real request answered with and without them, and a short **To do** only when something needs you (three at a time, one button each). The health score and its trend, areas, a timeline of what the bot learned or retired, and each page's use are under Details. See `docs/knowledge-health.md`.
-- **A weekly knowledge review.** Once a week Serra looks back at the bot's replies and adds a digest to Overview: what the bot needed and no note had, and fixes to approve (a rewrite that settles two rules, retiring a page, confirming a stale one still holds). It runs as a read-only T3 run on the worker's provider; nothing changes until you approve. Turn it off or run it now from Overview. Digests are kept in `knowledge-reviews/` in the profile.
-- When two current rules disagree, To do offers **Keep Thursday / Keep Tuesday**: it saves at once with Undo and moves the other under a dated `## Replaced`. The worker's index marks both rows and names the current rule, also when a newer page says an older one ended ("moved from Grafana to Datadog", "OAuth login was removed").
-- Pages has **Retire…**: a page moves to `knowledge/archive/`, its index row goes, and Undo or **Restore** brings it back. Proposals says when a new proposal repeats a page you have, with **Merge into it…**. Pages lists pages by topic and description, and Pages, About me and Proposals lost their explanatory paragraphs.
-- Workers now see which index rows are drafts or out of date, get the three pages closest to the request as a hint, and end a reply with a line naming the pages they used. Serra removes that line before posting and records it in `logs/knowledge-usage.jsonl`, with any T3 provider.
-- **Brief & policy moved to Settings.** Knowledge now holds only what you check.
-- Fixed: **Test** in Settings › Meetings said a source was missing when its connection (for example a Granola MCP) had been added since T3 started and the provider hadn't listed it yet. The test may now look its tools up, and when it says missing, Serra asks once more in the same thread before keeping the answer. It still calls none of the source's tools.
+## 0.1.0-alpha.6 (2026-11-26)
+
+- **Agent backends.** T3 stays the default. Jobs, app tasks, the knowledge interview, meetings and the weekly review can now run on an ACP agent instead: Claude Code, Codex, OpenCode, Gemini CLI or your own. Pick it in Settings › Worker › **Agent backend**. See `docs/agent-backends.md`.
+- **Custom ACP agents:** add your own with **Add ACP agent**, or in `agent-backend.json`. Thanks @JonRoosevelt (#40).
+- An ACP agent's tool approvals go to the bot's owner only.
+- **Knowledge › Overview** shows how your notes help: how many replies used them this week, and a short **To do** when something needs you.
+- **Weekly knowledge review:** suggests fixes to your notes. Nothing changes until you approve.
+- When two rules disagree, keep one with one click (with Undo). Pages can be retired and restored. Brief & policy moved to Settings.
+- Fixed: Meetings **Test** said a source was missing when it was added after T3 started.
+
+**Upgrading from alpha.5**
+
+- Nothing to change: T3 stays the default.
+- The first time Serra saves `state.json`, it keeps a copy as `state.json.backup-<time>`.
+- Rolling back to alpha.5: T3 jobs carry on. ACP jobs are dropped; they're still in that backup.
 
 ## 0.1.0-alpha.5 (2026-11-24)
 
