@@ -40,7 +40,7 @@ export const parseCommandLine = (raw: string): ParsedCommand | { error: string }
   if (quote) return { error: 'Close the quote in the command.' };
   if (inToken) tokens.push(current);
   const [command, ...args] = tokens;
-  if (!command) return { error: 'Enter a command, like agy acp.' };
+  if (!command) return { error: 'Enter a command.' };
   if (command.startsWith('-')) return { error: 'The command can’t start with a hyphen.' };
   if (!command.startsWith('/') && command.includes('/')) return { error: 'Use a command name on your PATH or an absolute path.' };
   return { command, args };
@@ -68,7 +68,7 @@ export const validateCustomAgentForm = (
   const errors: { name?: string; command?: string } = {};
   const name = draft.name.trim();
   const id = slugifyAgentId(name);
-  if (!name) errors.name = 'Enter a name, like Antigravity.';
+  if (!name) errors.name = 'Enter a name.';
   else if (/[\r\n\0]/.test(name)) errors.name = 'The name must be one line.';
   else if (name.length > 40) errors.name = 'Use at most 40 characters.';
   else if (!id) errors.name = 'Use letters or numbers in the name.';

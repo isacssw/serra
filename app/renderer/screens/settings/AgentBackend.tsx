@@ -200,7 +200,7 @@ export const AgentBackendCard = () => {
         open={addOpen}
         onClose={closeAdd}
         title="Add ACP agent"
-        description="Add any CLI that speaks the Agent Client Protocol over stdio (for example Antigravity, Muse, Grok or pi)."
+        description="Any command that speaks ACP over stdio."
         actions={(
           <>
             <Button variant="ghost" disabled={saving} onClick={closeAdd}>Cancel</Button>
@@ -213,7 +213,7 @@ export const AgentBackendCard = () => {
         <form id={addFormId} className="flex flex-col gap-3" onSubmit={(event) => { void submitAdd(event); }}>
           <Input
             label="Name"
-            placeholder="Antigravity"
+            placeholder="My agent"
             data-autofocus
             value={draftName}
             error={submitted || draftName.trim().length > 0 ? form.errors.name : undefined}
@@ -221,17 +221,13 @@ export const AgentBackendCard = () => {
           />
           <Input
             label="Command"
-            placeholder="agy acp"
+            placeholder="my-agent acp"
             spellCheck={false}
             inputClassName="font-mono"
-            hint="Command on your PATH (or an absolute path) with its ACP arguments, e.g. agy acp or pi --acp."
             value={draftCommand}
             error={submitted || draftCommand.trim().length > 0 ? form.errors.command : undefined}
             onChange={(event) => setDraftCommand(event.target.value)}
           />
-          <p className="text-xs text-muted">
-            Saved to <code className="font-mono">agent-backend.json</code> in your profile. For custom environment variables, edit the config file directly.
-          </p>
           {addError && <p role="alert" className="text-xs text-down">{addError}</p>}
         </form>
       </Dialog>

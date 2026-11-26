@@ -13,26 +13,21 @@ Serra runs its work on an agent backend. **T3 Code is the default.** You can swi
 Serra installs nothing. Each agent keeps its own login; Serra never reads it. Pick a model per agent next to the
 picker, or leave it empty for the agent's own default.
 
-## Adding other ACP harnesses
+## Adding your own ACP agent
 
-Any CLI that speaks ACP over stdio (such as Antigravity, Muse, Grok or pi) can be added in two ways — both load live in the installed, running app and are picked up by the running daemon on the next job without a restart:
+Any command that speaks ACP over stdio can be added:
 
-- **In the app:** open Settings › Worker › **Agent backend**, click **Add ACP agent**, enter a name (e.g. `Antigravity`) and command with arguments (e.g. `agy acp` or `pi --acp`), and submit. Custom agents appear in the **Run on** picker and can be removed from the same card.
-- **In the config file:** click **Config file** in the **Agent backend** card (which creates the file if missing and opens it), or edit `~/.local/share/serra/<bot-id>/agent-backend.json` directly:
+- **In the app:** Settings › Worker › **Agent backend** › **Add ACP agent**: a name and the command with its
+  arguments. Serra shows the exact command in a system dialog and saves it only when you confirm.
+- **In the file:** **Config file** opens `agent-backend.json` in the profile (`~/.local/share/serra/<bot-id>/`):
 
 ```json
-{
-  "backend": "acp",
-  "agent": "antigravity",
-  "models": {},
-  "agents": [
-    { "id": "antigravity", "name": "Antigravity", "command": "agy", "args": ["acp"] },
-    { "id": "pi", "name": "pi", "command": "pi", "args": ["--acp"], "env": {} }
-  ]
-}
+{ "agents": [{ "id": "my-agent", "name": "My agent", "command": "my-agent", "args": ["acp"], "env": {} }] }
 ```
 
-The running app watches `agent-backend.json` and updates the picker as soon as you save. Optional `env` values live only in your own file and are never shown in the UI or logged.
+The card updates as soon as the file is saved, and an edit to an agent, or its model, applies to the next job
+without a restart; a turn already going finishes on the setup it started with. `env` values stay in your file and are
+never shown or logged. An agent can't be removed while it has a run going, since the run needs its command to carry on.
 
 ## What runs on it
 
