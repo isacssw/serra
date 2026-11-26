@@ -184,7 +184,7 @@ export interface Radial {
  * The orbit view: the centre page, the pages it links to on the first ring, theirs on the second. Each first-ring
  * page gets a slice of the circle sized to its own children, and they sit inside it, so lines barely cross.
  */
-export const radialLayout = (graph: KbGraph, centre: number, ring = 150): Radial => {
+export const radialLayout = (graph: KbGraph, centre: number, ring = 150, perBranch = Infinity): Radial => {
   const n = graph.nodes.length;
   const depth = new Int8Array(n).fill(-1);
   const parent = new Int32Array(n).fill(-1);
@@ -194,8 +194,11 @@ export const radialLayout = (graph: KbGraph, centre: number, ring = 150): Radial
   for (const i of first) depth[i] = 1;
   const children = new Map<number, number[]>(first.map((i) => [i, []]));
   for (const i of first) {
-    for (const j of graph.neighbours[i]!) {
+    // The most used pages first, so a crowded branch keeps the ones that matter.
+    const next = [...graph.neighbours[i]!].sort((a, b) => graph.nodes[b]!.uses - graph.nodes[a]!.uses);
+    for (const j of next) {
       if (depth[j] !== -1) continue;
+      if (children.get(i)!.length >= perBranch) break;
       depth[j] = 2;
       parent[j] = i;
       children.get(i)!.push(j);

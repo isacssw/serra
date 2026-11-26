@@ -275,6 +275,20 @@ const grownGraph = (size: number): KbGraph => {
 /** The seed graph: the real-size base (`small`, about 60 pages) or grown to `size` pages. */
 export const seedGraph = (size: number | 'small'): KbGraph => (size === 'small' ? smallGraph() : grownGraph(size));
 
+/** Moments on the growth timeline: where pages came from (the interview, meetings) and the weekly reviews. */
+export interface Landmark { date: string; label: string; kind: 'interview' | 'meeting' | 'review' }
+
+export const LANDMARKS: readonly Landmark[] = [
+  { date: '2026-06-02', label: 'Interview', kind: 'interview' },
+  { date: '2026-06-15', label: 'Incident review', kind: 'meeting' },
+  { date: '2026-07-07', label: 'Architecture sync', kind: 'meeting' },
+  { date: '2026-08-11', label: 'Platform planning', kind: 'meeting' },
+  { date: '2026-09-29', label: 'Release planning', kind: 'meeting' },
+  { date: '2026-10-27', label: 'SSO kickoff', kind: 'meeting' },
+  ...['2026-09-07', '2026-09-14', '2026-09-21', '2026-09-28', '2026-10-05', '2026-10-12', '2026-10-19', '2026-10-26', '2026-11-02', '2026-11-09', '2026-11-16', '2026-11-23']
+    .map((date): Landmark => ({ date, label: 'Weekly review', kind: 'review' })),
+];
+
 /** Node indexes ordered by the date they were written, oldest first; ties keep seed order. */
 export const growthOrder = (graph: KbGraph): number[] =>
   graph.nodes.map((_, i) => i).sort((a, b) => graph.nodes[a]!.written.localeCompare(graph.nodes[b]!.written) || a - b);

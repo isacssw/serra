@@ -6,13 +6,13 @@ import { useCallback, useEffect, useId, useMemo, useRef, useState, type MutableR
 import { Pause, Play, RotateCcw } from 'lucide-react';
 import { themeStore, useTheme } from '../../theme.ts';
 import { cx } from '../../ui/index.ts';
-import { createController, GraphCanvas, type Controller } from './GraphCanvas.tsx';
-import { AREA_NAMES, defaultCentre, growthOrder, seedGraph, type EdgeKind, type KbGraph } from './kbGraph.logic.ts';
+import { createController, GraphCanvas, type Controller, type Scene } from './GraphCanvas.tsx';
+import { AREA_NAMES, defaultCentre, growthOrder, LANDMARKS, seedGraph, type Area, type EdgeKind, type KbGraph } from './kbGraph.logic.ts';
 import { createSim, ease, fitCamera, islandAnchors, radialLayout, type Point, type Sim } from './layout.logic.ts';
 
-export type LabOption = 'web' | 'orbit' | 'growth' | 'islands';
+export type LabOption = 'web' | 'orbit' | 'growth' | 'islands' | 'hybrid';
 const OPTIONS: { id: LabOption; name: string }[] = [
-  { id: 'web', name: 'Web' }, { id: 'orbit', name: 'Orbit' }, { id: 'growth', name: 'Growth' }, { id: 'islands', name: 'Islands' },
+  { id: 'web', name: 'Web' }, { id: 'orbit', name: 'Orbit' }, { id: 'growth', name: 'Growth' }, { id: 'islands', name: 'Islands' }, { id: 'hybrid', name: 'Hybrid' },
 ];
 type Size = 'small' | 800;
 
@@ -34,13 +34,14 @@ interface ViewProps {
 }
 
 /** Aim the camera at `points`; `inset` keeps that many pixels at the bottom clear (the growth view's timeline). */
-const fitTo = (c: Controller, points: Point[], pad = 56, inset = 0): void => {
-  const fit = fitCamera(points, c.width || 800, (c.height || 600) - inset, pad);
-  c.target.x = fit.x; c.target.y = fit.y + inset / 2 / fit.k; c.target.k = fit.k;
+const fitTo = (c: Controller, points: Point[], pad = 56, { bottom = 0, right = 0, maxZoom = 2.4 }: { bottom?: number; right?: number; maxZoom?: number } = {}): void => {
+  const fit = fitCamera(points, (c.width || 800) - right, (c.height || 600) - bottom, pad, maxZoom);
+  c.target.x = fit.x + right / 2 / fit.k; c.target.y = fit.y + bottom / 2 / fit.k; c.target.k = fit.k;
 };
 
-const focusOn = (c: Controller, at: Point): void => {
-  c.target.x = at.x; c.target.y = at.y; c.target.k = Math.max(c.camera.k, 1.5);
+/** Focus a page: frame it and every page it links to, beside the card on the right. */
+const focusOn = (c: Controller, graph: KbGraph, sim: { x: ArrayLike<number>; y: ArrayLike<number> }, index: number): void => {
+  fitTo(c, pointsOf(sim, [index, ...graph.neighbours[index]!]), 72, { right: 272, maxZoom: 1.8 });
 };
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -70,9 +71,9 @@ const WebView = ({ graph, selected, onSelect, controller }: ViewProps) => {
     c.invalidate();
   }, [graph, sim, controller]);
   useEffect(() => {
-    if (selected !== null) focusOn(controller.current, { x: sim.x[selected]!, y: sim.y[selected]! });
+    if (selected !== null) focusOn(controller.current, graph, sim, selected);
     controller.current.invalidate();
-  }, [selected, sim, controller]);
+  }, [selected, sim, controller, graph]);
   const onDrag = useCallback((index: number, at: Point | null) => {
     sim.pin(index, at);
     if (at) sim.reheat(0.12);
@@ -90,7 +91,7 @@ const OrbitView = ({ graph, selected, onSelect, controller }: ViewProps) => {
   const [trail, setTrail] = useState<number[]>(() => [selected ?? defaultCentre(graph)]);
   const centre = trail[trail.length - 1]!;
   const ring = graph.nodes.length > 200 ? 190 : 150;
-  const layout = useMemo(() => radialLayout(graph, centre, ring), [graph, centre, ring]);
+  const layout = useMemo(() => radialLayout(graph, centre, ring, graph.nodes.length > 200 ? 4 : Infinity), [graph, centre, ring]);
   const state = useMemo(() => ({
     x: new Float32Array(graph.nodes.length), y: new Float32Array(graph.nodes.length), alpha: new Float32Array(graph.nodes.length),
     from: { x: new Float32Array(graph.nodes.length), y: new Float32Array(graph.nodes.length), alpha: new Float32Array(graph.nodes.length) },
@@ -124,7 +125,7 @@ const OrbitView = ({ graph, selected, onSelect, controller }: ViewProps) => {
     };
     c.camera.x -= origin.x;
     c.camera.y -= origin.y;
-    fitTo(c, layout.at.filter((p): p is Point => p !== null), 64);
+    fitTo(c, layout.at.filter((p): p is Point => p !== null), 48, { right: 272 });
     c.invalidate();
   }, [graph, layout, state, controller, centre]);
 
@@ -136,7 +137,7 @@ const OrbitView = ({ graph, selected, onSelect, controller }: ViewProps) => {
   }, [centre]);
   // The search box and the side panel select a page: in the orbit view, that moves it to the middle.
   useEffect(() => { if (selected !== null && selected !== centre) choose(selected); }, [selected, centre, choose]);
-  const onFit = useCallback(() => { fitTo(controller.current, layout.at.filter((p): p is Point => p !== null), 64); controller.current.invalidate(); }, [layout, controller]);
+  const onFit = useCallback(() => { fitTo(controller.current, layout.at.filter((p): p is Point => p !== null), 48, { right: 272 }); controller.current.invalidate(); }, [layout, controller]);
 
   return (
     <>
@@ -166,7 +167,48 @@ const DAY_MS = 86_400_000;
 const dayOf = (date: string): number => Date.parse(`${date}T00:00:00Z`) / DAY_MS;
 const dateName = (day: number): string => new Date(day * DAY_MS).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
 
-const GrowthView = ({ graph, selected, onSelect, controller }: ViewProps) => {
+/** The top `count` most used pages of each area: always named on the islands, so no island is blank. */
+const topOfEachArea = (graph: KbGraph, count: number): Set<number> => {
+  const byArea = new Map<string, number[]>();
+  graph.nodes.forEach((node, i) => { byArea.set(node.area, [...(byArea.get(node.area) ?? []), i]); });
+  return new Set([...byArea.values()].flatMap((list) => list.sort((a, b) => graph.nodes[b]!.uses - graph.nodes[a]!.uses).slice(0, count)));
+};
+
+/** A simulation that keeps each page on its area's island: after every step, a page past the shore is set back on it. */
+const islandSim = (graph: KbGraph): { sim: Sim; centres: Map<Area, Point & { r: number }> } => {
+  const big = graph.nodes.length > 200;
+  const { anchors, centres } = islandAnchors(graph, big ? 22 : 30);
+  const sim = createSim(graph, {
+    anchors, gravity: big ? 0.025 : 0.06, link: big ? 22 : 30, charge: big ? 200 : 160,
+    strength: (_kind, same) => (same ? 1 : 0.005),
+  });
+  const step = sim.step;
+  sim.step = () => {
+    step();
+    graph.nodes.forEach((node, i) => {
+      if (sim.active && !sim.active[i]) return;
+      const centre = centres.get(node.area)!;
+      const dx = sim.x[i]! - centre.x;
+      const dy = sim.y[i]! - centre.y;
+      const d = Math.hypot(dx, dy);
+      if (d > centre.r) { sim.x[i] = centre.x + (dx / d) * centre.r; sim.y[i] = centre.y + (dy / d) * centre.r; }
+    });
+  };
+  return { sim, centres };
+};
+
+/** Each island's shore follows its pages (the circle round the anchor that holds nearly all of them); an island with no page yet isn't drawn. */
+const shoresOf = (graph: KbGraph, sim: Sim, centres: Map<Area, Point & { r: number }>): NonNullable<Scene['islands']> => [...centres].flatMap(([area, centre]) => {
+  const distances = graph.nodes.flatMap((node, i) => (node.area === area && (!sim.active || sim.active[i]) ? [Math.hypot(sim.x[i]! - centre.x, sim.y[i]! - centre.y)] : [])).sort((a, b) => a - b);
+  if (distances.length === 0) return [];
+  const r = Math.max(30, (distances[Math.floor(distances.length * 0.95)] ?? 0) + 20);
+  return [{ x: centre.x, y: centre.y, r, label: `${AREA_NAMES[area]} · ${distances.length}` }];
+});
+
+const islandBounds = (islands: NonNullable<Scene['islands']>): Point[] =>
+  islands.flatMap((island) => [{ x: island.x - island.r, y: island.y - island.r - 26 }, { x: island.x + island.r, y: island.y + island.r }]);
+
+const GrowthView = ({ graph, selected, onSelect, controller, islands = false }: ViewProps & { islands?: boolean }) => {
   const selectedRef = useRef(selected);
   selectedRef.current = selected;
   const order = useMemo(() => growthOrder(graph), [graph]);
@@ -177,16 +219,18 @@ const GrowthView = ({ graph, selected, onSelect, controller }: ViewProps) => {
   const [progress, setProgress] = useState(() => (still() ? 1 : 0));
   const live = useRef({ progress: still() ? 1 : 0, playing: !still(), last: 0 });
   const state = useMemo(() => {
-    const sim: Sim = createSim(graph, graph.nodes.length > 200 ? { link: 26, charge: 300 } : {});
-    sim.active = new Uint8Array(graph.nodes.length);
-    return { sim, alpha: new Float32Array(graph.nodes.length), pulse: new Float32Array(graph.nodes.length), born: new Float64Array(graph.nodes.length).fill(-1) };
-  }, [graph]);
+    const made = islands ? islandSim(graph) : { sim: createSim(graph, graph.nodes.length > 200 ? { link: 24, charge: 200, gravity: 0.03 } : {}), centres: null };
+    made.sim.active = new Uint8Array(graph.nodes.length);
+    return { ...made, alpha: new Float32Array(graph.nodes.length), pulse: new Float32Array(graph.nodes.length), born: new Float64Array(graph.nodes.length).fill(-1) };
+  }, [graph, islands]);
+  const named = useMemo(() => (islands ? topOfEachArea(graph, graph.nodes.length > 200 ? 1 : 2) : null), [graph, islands]);
 
   useEffect(() => {
     const c = controller.current;
-    const { sim, alpha, pulse, born } = state;
+    const { sim, alpha, pulse, born, centres } = state;
     const active = sim.active!;
-    c.scene = { x: sim.x, y: sim.y, alpha, pulse, labelled: (i) => graph.nodes[i]!.uses >= 24 };
+    c.scene = { x: sim.x, y: sim.y, alpha, pulse, labelled: (i) => (named ? named.has(i) : graph.nodes[i]!.uses >= 24) };
+    if (centres) c.scene.edgeWeight = (a, b) => (graph.nodes[a]!.area === graph.nodes[b]!.area ? 1 : 0.3);
     c.userMoved = false;
     let frames = 0;
     const apply = (now: number, instant: boolean): boolean => {
@@ -195,11 +239,13 @@ const GrowthView = ({ graph, selected, onSelect, controller }: ViewProps) => {
       for (const i of order) {
         const on = dayOf(graph.nodes[i]!.written) <= today;
         if (on && !active[i]) {
-          // A new page starts beside the page it links to that is already there, so the graph grows outwards.
-          const anchor = graph.neighbours[i]!.find((j) => active[j]);
+          // A new page starts beside a page it links to that is already there (on its own island when there are
+          // islands), so the graph grows outwards.
+          const anchor = graph.neighbours[i]!.find((j) => active[j] && (!centres || graph.nodes[j]!.area === graph.nodes[i]!.area));
+          const home = centres?.get(graph.nodes[i]!.area) ?? { x: 0, y: 0 };
           const jitter = (i % 13) - 6;
-          sim.x[i] = anchor === undefined ? jitter * 4 : sim.x[anchor]! + jitter;
-          sim.y[i] = anchor === undefined ? ((i % 7) - 3) * 4 : sim.y[anchor]! + ((i % 5) - 2) * 3;
+          sim.x[i] = (anchor === undefined ? home.x : sim.x[anchor]!) + jitter * (anchor === undefined ? 3 : 1);
+          sim.y[i] = (anchor === undefined ? home.y : sim.y[anchor]!) + ((i % 5) - 2) * 3;
           active[i] = 1;
           born[i] = instant ? now - 5000 : now;
           changed = true;
@@ -223,6 +269,12 @@ const GrowthView = ({ graph, selected, onSelect, controller }: ViewProps) => {
       }
       return animating;
     };
+    const frame = (): void => {
+      if (centres) c.scene.islands = shoresOf(graph, sim, centres);
+      if (c.userMoved || selectedRef.current !== null) return;
+      const shown = centres ? islandBounds(c.scene.islands ?? []) : pointsOf(sim, order.filter((i) => active[i]));
+      if (shown.length) fitTo(c, shown, centres ? 40 : 64, { bottom: 56, maxZoom: 1.3 });
+    };
     c.tick = (now) => {
       const state = live.current;
       const dt = state.last ? Math.min(64, now - state.last) : 16;
@@ -234,18 +286,15 @@ const GrowthView = ({ graph, selected, onSelect, controller }: ViewProps) => {
       }
       const pulsing = apply(now, still());
       if (sim.alpha > 0.005) sim.step();
-      if (!c.userMoved && selectedRef.current === null) {
-        const shown = order.filter((i) => active[i]);
-        if (shown.length) fitTo(c, pointsOf(sim, shown), 64, 56);
-      }
+      frame();
       return state.playing || pulsing || sim.alpha > 0.005;
     };
     c.invalidate();
-  }, [graph, order, state, first, last, duration, controller]);
+  }, [graph, order, state, named, first, last, duration, controller]);
 
   useEffect(() => {
-    if (selected !== null) focusOn(controller.current, { x: state.sim.x[selected]!, y: state.sim.y[selected]! });
-  }, [selected, state, controller]);
+    if (selected !== null) focusOn(controller.current, graph, state.sim, selected);
+  }, [selected, state, controller, graph]);
 
   const toggle = (): void => {
     const l = live.current;
@@ -254,6 +303,7 @@ const GrowthView = ({ graph, selected, onSelect, controller }: ViewProps) => {
     l.last = 0;
     setPlaying(l.playing);
     controller.current.userMoved = false;
+    onSelect(null);
     controller.current.invalidate();
   };
   const scrub = (value: number): void => {
@@ -264,13 +314,20 @@ const GrowthView = ({ graph, selected, onSelect, controller }: ViewProps) => {
     controller.current.invalidate();
   };
   const today = first + (last - first) * progress;
-  const count = order.filter((i) => dayOf(graph.nodes[i]!.written) <= today).length;
+  // The latest interview or meeting, for a few days after it: what the new pages came from.
+  const moment = LANDMARKS.filter((mark) => mark.kind !== 'review' && dayOf(mark.date) <= today && today - dayOf(mark.date) < 9).at(-1);
+  const written = order.filter((i) => dayOf(graph.nodes[i]!.written) <= today);
+  const count = written.length;
+  const newest = written.length > 0 && progress < 1 ? graph.nodes[written[written.length - 1]!]!.label : null;
   const onFit = useCallback(() => {
-    controller.current.userMoved = false;
-    fitTo(controller.current, pointsOf(state.sim, order.filter((i) => state.sim.active?.[i])), 64, 56);
-    controller.current.invalidate();
-  }, [controller, state, order]);
+    const c = controller.current;
+    c.userMoved = false;
+    onSelect(null);
+    fitTo(c, state.centres ? islandBounds(c.scene.islands ?? []) : pointsOf(state.sim, order.filter((i) => state.sim.active?.[i])), 64, { bottom: 56 });
+    c.invalidate();
+  }, [controller, state, order, onSelect]);
   const id = useId();
+  const short = (day: number): string => dateName(day).replace(/ \d{4}$/, '');
 
   return (
     <>
@@ -278,19 +335,35 @@ const GrowthView = ({ graph, selected, onSelect, controller }: ViewProps) => {
       <div className="pointer-events-none absolute top-4 left-5 flex flex-col gap-0.5">
         <span className="text-[28px] leading-none font-semibold tracking-tight tabular-nums text-ink">{count}</span>
         <span className="text-xs text-muted">pages · {dateName(today)}</span>
+        {(moment ?? newest) && (
+          <span key={moment?.date ?? newest} className="mt-1 text-xs text-ink [animation:serra-rise_200ms_ease-out]">
+            {moment ? moment.label : <><span className="text-up">+</span> {newest}</>}
+          </span>
+        )}
       </div>
       <div className="absolute inset-x-4 bottom-4 flex items-center gap-3 rounded-lg border border-line bg-panel/90 px-2 py-1.5 backdrop-blur">
         <button type="button" onClick={toggle} aria-label={playing ? 'Pause' : progress >= 1 ? 'Replay' : 'Play'} className="grid size-7 place-items-center rounded-md text-ink hover:bg-hover focus-visible:outline-2 focus-visible:outline-focus">
           {playing ? <Pause size={15} /> : progress >= 1 ? <RotateCcw size={15} /> : <Play size={15} />}
         </button>
+        <span className="text-xs tabular-nums text-muted">{short(first)}</span>
         <label htmlFor={id} className="sr-only">Date</label>
-        <input
-          id={id} type="range" min={0} max={1000} value={Math.round(progress * 1000)}
-          aria-valuetext={`${dateName(today)}, ${count} pages`}
-          onChange={(event) => scrub(Number(event.target.value) / 1000)}
-          className="h-1 flex-1 cursor-pointer accent-[var(--color-ink)]"
-        />
-        <span className="w-20 text-right text-xs tabular-nums text-muted">{dateName(last).replace(/ \d{4}$/, '')}</span>
+        <div className="relative flex flex-1 items-center">
+          {/* Where pages came from, on the timeline: the interview and meetings as ticks, weekly reviews as dots. */}
+          {LANDMARKS.filter((mark) => dayOf(mark.date) >= first && dayOf(mark.date) <= last).map((mark) => (
+            <span
+              key={mark.date} aria-hidden title={`${mark.label}, ${dateName(dayOf(mark.date))}`}
+              className={cx('pointer-events-none absolute -translate-x-1/2 rounded-full', mark.kind === 'review' ? 'top-[-7px] size-1 bg-faint' : 'top-[-9px] h-2 w-px bg-muted')}
+              style={{ left: `${((dayOf(mark.date) - first) / (last - first)) * 100}%` }}
+            />
+          ))}
+          <input
+            id={id} type="range" min={0} max={1000} value={Math.round(progress * 1000)}
+            aria-valuetext={`${dateName(today)}, ${count} pages`}
+            onChange={(event) => scrub(Number(event.target.value) / 1000)}
+            className="h-1 w-full cursor-pointer accent-[var(--color-ink)]"
+          />
+        </div>
+        <span className="text-xs tabular-nums text-muted">{short(last)}</span>
       </div>
     </>
   );
@@ -298,67 +371,51 @@ const GrowthView = ({ graph, selected, onSelect, controller }: ViewProps) => {
 
 // ---------------------------------------------------------------------------------------------------------------
 // (d) Islands: one island per area (the Overview's areas), links within close, links across long and faint.
+// Click an island's open water to zoom to it.
 // ---------------------------------------------------------------------------------------------------------------
 
 const IslandsView = ({ graph, selected, onSelect, controller }: ViewProps) => {
-  const selectedRef = useRef(selected);
-  selectedRef.current = selected;
   const big = graph.nodes.length > 200;
   const { sim, centres } = useMemo(() => {
-    const { anchors, centres: placed } = islandAnchors(graph, big ? 22 : 30);
-    const made = createSim(graph, {
-      anchors, gravity: big ? 0.025 : 0.06, link: big ? 22 : 30, charge: big ? 200 : 160,
-      strength: (_kind, same) => (same ? 1 : 0.02),
-    });
-    // Each page stays on its island: after every step, one that drifted past the shore is set back on it.
-    const step = made.step;
-    made.step = () => {
-      step();
-      graph.nodes.forEach((node, i) => {
-        const centre = placed.get(node.area)!;
-        const dx = made.x[i]! - centre.x;
-        const dy = made.y[i]! - centre.y;
-        const d = Math.hypot(dx, dy);
-        if (d > centre.r) { made.x[i] = centre.x + (dx / d) * centre.r; made.y[i] = centre.y + (dy / d) * centre.r; }
-      });
-    };
-    if (still()) made.settle();
-    return { sim: made, centres: placed };
-  }, [graph, big]);
-  // Each island's shore follows its pages: the circle round the anchor that holds nearly all of them.
-  const shores = useCallback(() => [...centres].map(([area, centre]) => {
-    const distances = graph.nodes.flatMap((node, i) => (node.area === area ? [Math.hypot(sim.x[i]! - centre.x, sim.y[i]! - centre.y)] : [])).sort((a, b) => a - b);
-    const r = Math.max(34, (distances[Math.floor(distances.length * 0.95)] ?? 0) + 20);
-    return { x: centre.x, y: centre.y, r, label: `${AREA_NAMES[area]} · ${distances.length}` };
-  }), [centres, graph, sim]);
-  const bounds = useMemo(() => [...centres.values()].flatMap((c) => [{ x: c.x - c.r - 14, y: c.y - c.r - 34 }, { x: c.x + c.r + 14, y: c.y + c.r + 14 }]), [centres]);
+    const made = islandSim(graph);
+    if (still()) made.sim.settle();
+    return made;
+  }, [graph]);
+  const named = useMemo(() => topOfEachArea(graph, big ? 2 : 3), [graph, big]);
+  const bounds = useMemo(() => [...centres.values()].flatMap((c) => [{ x: c.x - c.r - 14, y: c.y - c.r - 40 }, { x: c.x + c.r + 14, y: c.y + c.r + 14 }]), [centres]);
   useEffect(() => {
     const c = controller.current;
     c.scene = {
-      x: sim.x, y: sim.y, islands: shores(),
-      labelled: (i) => graph.nodes[i]!.uses >= (big ? 28 : 18),
+      x: sim.x, y: sim.y, islands: shoresOf(graph, sim, centres),
+      labelled: (i) => named.has(i),
       edgeWeight: (a, b) => (graph.nodes[a]!.area === graph.nodes[b]!.area ? 1 : 0.3),
     };
     c.userMoved = false;
     c.tick = () => {
       if (sim.alpha <= 0.005) return false;
       sim.step();
-      c.scene.islands = shores();
+      c.scene.islands = shoresOf(graph, sim, centres);
       return true;
     };
     fitTo(c, bounds, 32);
     c.camera = { ...c.target, k: c.target.k * (still() ? 1 : 0.85) };
     c.invalidate();
-  }, [graph, sim, shores, bounds, controller, big]);
+  }, [graph, sim, centres, named, bounds, controller]);
   useEffect(() => {
-    if (selected !== null) focusOn(controller.current, { x: sim.x[selected]!, y: sim.y[selected]! });
-  }, [selected, sim, controller]);
+    if (selected !== null) focusOn(controller.current, graph, sim, selected);
+  }, [selected, sim, controller, graph]);
   const onFit = useCallback(() => {
     onSelect(null);
     fitTo(controller.current, bounds, 32);
     controller.current.invalidate();
   }, [controller, onSelect, bounds]);
-  return <GraphCanvas graph={graph} controller={controller} selected={selected} onSelect={onSelect} onFit={onFit} label={`Knowledge by area: ${centres.size} areas, ${graph.nodes.length} pages.`} />;
+  const onBackground = useCallback((at: Point) => {
+    const c = controller.current;
+    const island = (c.scene.islands ?? []).find((shore) => Math.hypot(at.x - shore.x, at.y - shore.y) < shore.r);
+    if (island) { c.userMoved = true; fitTo(c, islandBounds([island]), 48); } else fitTo(c, bounds, 32);
+    c.invalidate();
+  }, [controller, bounds]);
+  return <GraphCanvas graph={graph} controller={controller} selected={selected} onSelect={onSelect} onBackground={onBackground} onFit={onFit} label={`Knowledge by area: ${centres.size} areas, ${graph.nodes.length} pages. Click an island to zoom to it.`} />;
 };
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -410,8 +467,8 @@ const PageCard = ({ graph, index, onSelect }: { graph: KbGraph; index: number; o
 };
 
 const optionFromHash = (): LabOption => {
-  const match = /[?&]option=(web|orbit|growth|islands)/.exec(window.location.hash);
-  return match?.[1] === 'orbit' || match?.[1] === 'growth' || match?.[1] === 'islands' ? match[1] : 'web';
+  const match = /[?&]option=(\w+)/.exec(window.location.hash)?.[1];
+  return OPTIONS.find((option) => option.id === match)?.id ?? 'web';
 };
 const sizeFromHash = (): Size => (/[?&]size=800/.test(window.location.hash) ? 800 : 'small');
 
@@ -463,6 +520,7 @@ export const KbGraphLab = () => {
         {option === 'orbit' && <OrbitView key={`orbit-${size}`} {...view} />}
         {option === 'growth' && <GrowthView key={`growth-${size}`} {...view} />}
         {option === 'islands' && <IslandsView key={`islands-${size}`} {...view} />}
+        {option === 'hybrid' && <GrowthView key={`hybrid-${size}`} {...view} islands />}
         {selected !== null && <PageCard graph={graph} index={selected} onSelect={select} />}
       </div>
       <p aria-live="polite" className="sr-only">{announce}</p>

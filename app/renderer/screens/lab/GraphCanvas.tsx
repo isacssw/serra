@@ -68,6 +68,8 @@ interface Props {
   controller: MutableRefObject<Controller>;
   selected: number | null;
   onSelect: (index: number | null) => void;
+  /** A click on empty space, at this world point (the islands zoom to the island clicked). */
+  onBackground?: (at: Point) => void;
   /** Drag a node (the web view): a world point while dragging, null on release. */
   onDrag?: (index: number, at: Point | null) => void;
   /** Fit everything again (the 0 key). */
@@ -75,15 +77,15 @@ interface Props {
   label: string;
 }
 
-export const GraphCanvas = ({ graph, controller, selected, onSelect, onDrag, onFit, label }: Props) => {
+export const GraphCanvas = ({ graph, controller, selected, onSelect, onBackground, onDrag, onFit, label }: Props) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const probeRef = useRef<HTMLSpanElement>(null);
   const hover = useRef<number | null>(null);
   const selectedRef = useRef(selected);
   selectedRef.current = selected;
   const fade = useRef(0);
-  const callbacks = useRef({ onSelect, onDrag, onFit });
-  callbacks.current = { onSelect, onDrag, onFit };
+  const callbacks = useRef({ onSelect, onBackground, onDrag, onFit });
+  callbacks.current = { onSelect, onBackground, onDrag, onFit };
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -98,6 +100,8 @@ export const GraphCanvas = ({ graph, controller, selected, onSelect, onDrag, onF
     const c = controller.current;
     const still = reducedMotion();
     const samples: number[] = [];
+    const clashes: number[][] = graph.nodes.map(() => []);
+    for (const edge of graph.edges) if (edge.kind === 'disagrees') { clashes[edge.a]!.push(edge.b); clashes[edge.b]!.push(edge.a); }
 
     const toScreen = (x: number, y: number): Point => ({ x: (x - c.camera.x) * c.camera.k + c.width / 2, y: (y - c.camera.y) * c.camera.k + c.height / 2 });
     const toWorld = (sx: number, sy: number): Point => ({ x: (sx - c.width / 2) / c.camera.k + c.camera.x, y: (sy - c.height / 2) / c.camera.k + c.camera.y });
@@ -126,6 +130,8 @@ export const GraphCanvas = ({ graph, controller, selected, onSelect, onDrag, onF
       const { scene } = c;
       const near = new Set<number>(focus === null || (scene.noDim && focus === selectedRef.current) ? [] : [focus, ...graph.neighbours[focus]!]);
       const visible = (i: number): number => (scene.alpha ? scene.alpha[i]! : 1);
+      // A page is marked as disputed only while the page it disagrees with is there too (the growth view adds them).
+      const disputedNow = (i: number): boolean => clashes[i]!.some((j) => visible(j) > 0.5);
       const dim = (i: number): number => (near.size && !near.has(i) ? 1 - fade.current * 0.85 : 1);
 
       // Islands and rings behind everything.
@@ -137,6 +143,9 @@ export const GraphCanvas = ({ graph, controller, selected, onSelect, onDrag, onF
         ctx.globalAlpha = 0.7;
         ctx.fill();
         ctx.globalAlpha = 1;
+        ctx.strokeStyle = palette.line;
+        ctx.lineWidth = 1;
+        ctx.stroke();
       }
       if (scene.rings) {
         const at = toScreen(0, 0);
@@ -163,12 +172,15 @@ export const GraphCanvas = ({ graph, controller, selected, onSelect, onDrag, onF
         path.moveTo(a.x, a.y);
         path.lineTo(b.x, b.y);
       }
+      // Level of detail: a big graph seen whole draws its links fainter and its least used pages smaller and dimmer, so it
+      // reads as shapes, not a hairball; zooming in brings them back.
+      const crowd = graph.edges.length > 600 ? Math.min(1, Math.max(0.3, c.camera.k / 0.9)) : 1;
       ctx.lineWidth = 1;
       ctx.strokeStyle = palette.lineStrong;
-      ctx.globalAlpha = 1 - fade.current * 0.75;
+      ctx.globalAlpha = (1 - fade.current * 0.75) * crowd;
       ctx.stroke(quiet);
       for (const { a, b, alpha } of faded) {
-        ctx.globalAlpha = alpha * (1 - fade.current * 0.75);
+        ctx.globalAlpha = alpha * (1 - fade.current * 0.75) * crowd;
         ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
       }
       ctx.globalAlpha = 1;
@@ -197,12 +209,13 @@ export const GraphCanvas = ({ graph, controller, selected, onSelect, onDrag, onF
           ctx.lineWidth = 1.5;
           ctx.stroke();
         }
-        ctx.globalAlpha = v * dim(i);
+        const quietNode = crowd < 1 && graph.nodes[i]!.uses < 4 && !near.has(i);
+        ctx.globalAlpha = v * dim(i) * (quietNode ? 0.35 + 0.65 * crowd : 1);
         ctx.beginPath();
-        ctx.arc(at.x, at.y, r, 0, Math.PI * 2);
+        ctx.arc(at.x, at.y, quietNode ? r * (0.6 + 0.4 * crowd) : r, 0, Math.PI * 2);
         ctx.fillStyle = i === focus ? palette.ink : near.has(i) ? palette.ink : graph.nodes[i]!.area === 'identity' ? palette.ink : palette.muted;
         ctx.fill();
-        if (graph.nodes[i]!.disputed) {
+        if (disputedNow(i)) {
           ctx.strokeStyle = palette.down;
           ctx.lineWidth = 1.5;
           ctx.beginPath(); ctx.arc(at.x, at.y, r + 2.5, 0, Math.PI * 2); ctx.stroke();
@@ -210,7 +223,7 @@ export const GraphCanvas = ({ graph, controller, selected, onSelect, onDrag, onF
         if (i === selectedRef.current) {
           ctx.strokeStyle = palette.ink;
           ctx.lineWidth = 1.5;
-          ctx.beginPath(); ctx.arc(at.x, at.y, r + (graph.nodes[i]!.disputed ? 5.5 : 3.5), 0, Math.PI * 2); ctx.stroke();
+          ctx.beginPath(); ctx.arc(at.x, at.y, r + (disputedNow(i) ? 5.5 : 3.5), 0, Math.PI * 2); ctx.stroke();
         }
       }
       ctx.globalAlpha = 1;
@@ -251,12 +264,14 @@ export const GraphCanvas = ({ graph, controller, selected, onSelect, onDrag, onF
       // Island names on top, so nodes never hide them.
       ctx.font = '600 12px -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif';
       for (const island of scene.islands ?? []) {
+        // Outside the shore, above it, so no page sits under the name.
         const at = toScreen(island.x, island.y - island.r);
+        ctx.textBaseline = 'bottom';
         ctx.strokeStyle = palette.canvas;
         ctx.lineWidth = 4;
-        ctx.strokeText(island.label, at.x, at.y + 8);
+        ctx.strokeText(island.label, at.x, at.y - 6);
         ctx.fillStyle = palette.ink;
-        ctx.fillText(island.label, at.x, at.y + 8);
+        ctx.fillText(island.label, at.x, at.y - 6);
       }
 
       samples.push(performance.now() - started);
@@ -333,7 +348,10 @@ export const GraphCanvas = ({ graph, controller, selected, onSelect, onDrag, onF
     };
     const onPointerUp = (): void => {
       if (!press) return;
-      if (!press.moved) callbacks.current.onSelect(press.node);
+      if (!press.moved) {
+        callbacks.current.onSelect(press.node);
+        if (press.node === null) callbacks.current.onBackground?.(toWorld(press.sx, press.sy));
+      }
       if (press.moved && press.node !== null) callbacks.current.onDrag?.(press.node, null);
       canvas.style.cursor = 'grab';
       press = null;
