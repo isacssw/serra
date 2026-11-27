@@ -44,7 +44,7 @@ const BotSection = ({ profile, state }: { profile: Profile; state: SettingsState
         open={editing}
         onClose={() => setEditing(false)}
         title="Change bot ID"
-        description="Renames the service and branches. Rebuild the release after."
+        description="Renames the service and branches; rebuild the release."
         actions={(
           <>
             <Button variant="ghost" onClick={() => setEditing(false)}>Cancel</Button>

@@ -51,7 +51,8 @@ const ModelSection = ({ backend, profile, state }: { backend: AgentBackend; prof
   return (
     <SettingsSection
       title="Model"
-      description={acp ? 'Empty uses the agent’s default.' : workerForm.description}
+      // The profile needs a model once a provider is picked (src/config.ts), so only "both empty" means T3's default.
+      description={acp ? 'Empty uses the agent’s default.' : editor.values.provider ? 'A provider needs a model.' : workerForm.description}
     >
       {acp ? (
         <div className="grid gap-4 sm:grid-cols-2">
@@ -77,7 +78,7 @@ const ModelSection = ({ backend, profile, state }: { backend: AgentBackend; prof
               />
             )
             : <Input spellCheck={false} inputClassName="font-mono placeholder:font-sans" {...editor.field('provider')} placeholder={providers === undefined ? '' : 'claudeAgent'} />}
-          <Input spellCheck={false} {...editor.field('model')} />
+          <Input spellCheck={false} {...editor.field('model')} placeholder={editor.values.provider ? 'e.g. opus' : 'Default'} />
         </div>
       )}
       <SaveError message={editor.saveError} />
@@ -103,7 +104,7 @@ const BranchSection = ({ profile, state }: { profile: Profile; state: SettingsSt
   return (
     <SettingsSection title="Branches" description={branchPatternForm.description}>
       <div className="flex flex-col gap-2.5">
-        <Input ref={input} spellCheck={false} inputClassName="font-mono placeholder:font-sans" {...editor.field('branchPattern')} />
+        <Input ref={input} spellCheck={false} inputClassName="font-mono" {...editor.field('branchPattern')} />
         <div className="flex flex-wrap gap-1.5" role="group" aria-label="Insert a placeholder">
           {BRANCH_TOKENS.map((token) => (
             <button
@@ -132,7 +133,7 @@ const WorkerSections = ({ profile, state }: { profile: Profile; state: SettingsS
     <>
       <SettingsSection title="Agent" description="Runs every new job.">
         <AgentPicker backend={backend}><AddAgentCard backend={backend} /></AgentPicker>
-        {backend.draft.choice !== 't3' && <p className="text-xs text-faint">ACP agents can't be steered mid-turn: a message waits for the turn to end.</p>}
+        {backend.draft.choice !== 't3' && <p className="text-xs text-faint">ACP agents can't be steered mid-turn.</p>}
       </SettingsSection>
       <ModelSection backend={backend} profile={profile} state={state} />
       <BranchSection profile={profile} state={state} />
