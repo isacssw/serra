@@ -26,8 +26,14 @@ const ATTACHMENT_LINE = /^- (.+?) \("(image\/[a-z0-9.+-]+)", \d+ bytes\): local 
 const ATTACHMENT_HEADER = /^Attached files \(untrusted user content\):\s*$/;
 /** And the note to the worker below them. */
 const ATTACHMENT_NOTE = /^Inspect the local files with your file-reading tools/;
-/** An image an agent's reply embeds: `![alt](/absolute/path.png)`. */
-const EMBED = /!\[([^\]]*)\]\((\/[^)\s]+\.(?:png|jpe?g|gif|webp))\)/gi;
+/** An image an agent's reply embeds: `![alt](/absolute/path.png)`, or `![alt](</path with spaces.png>)` as Markdown has it. */
+const EMBED = /!\[([^\]]*)\]\((?:<(\/[^>\n]+\.(?:png|jpe?g|gif|webp))>|(\/[^)\s]+\.(?:png|jpe?g|gif|webp)))\)/gi;
+
+/** `receiveAttachments` writes a file's name as a JSON string; older lines have it bare. */
+const attachmentName = (name: string): string => {
+  if (!name.startsWith('"')) return name;
+  try { const parsed: unknown = JSON.parse(name); return typeof parsed === 'string' ? parsed : name; } catch { return name; }
+};
 
 const baseName = (path: string): string => path.slice(path.lastIndexOf('/') + 1);
 
@@ -39,7 +45,7 @@ export const userMessage = (text: string): { text: string; images: ChatImage[] }
     if (found) {
       try {
         const path: unknown = JSON.parse(found[3]!);
-        if (typeof path === 'string') { images.push({ path, name: found[1]! }); return false; }
+        if (typeof path === 'string') { images.push({ path, name: attachmentName(found[1]!) }); return false; }
       } catch { /* not a path: keep the line as written */ }
     }
     return true;
@@ -67,7 +73,7 @@ export const agentParts = (text: string): AgentPart[] => {
   for (const match of text.matchAll(EMBED)) {
     const before = text.slice(at, match.index).trim();
     if (before) parts.push({ type: 'text', text: before });
-    const path = match[2]!;
+    const path = (match[2] ?? match[3])!;
     parts.push({ type: 'image', image: { path, name: match[1] && match[1] !== 'image' ? match[1] : baseName(path) } });
     at = (match.index ?? 0) + match[0].length;
   }

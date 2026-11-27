@@ -35,8 +35,11 @@ const realRoots = (roots: string[]): string[] => roots.flatMap((root) => {
  * Where workers write images: generated images, their worktrees, QA run records and temp files.
  * Anything else on the Mac is never uploaded, whatever path a reply names.
  */
-/** Resolved at each check: a folder made after Serra started (the first ACP worktree) still counts. */
-const allowedRoots = (): string[] => realRoots([
+/**
+ * Resolved at each check: a folder made after Serra started (the first ACP worktree) still counts. The app's Jobs ›
+ * Chat shows images from these too (src/agent/runs-view.ts), so an image the reply shares in Slack shows there.
+ */
+export const allowedRoots = (): string[] => realRoots([
   `${homedir()}/.codex/generated_images`,
   `${homedir()}/.t3/worktrees`,
   // Worktrees Serra makes for a job on an ACP agent (src/agent/worktree.ts).

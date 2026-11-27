@@ -4,6 +4,7 @@ Serra follows [Semantic Versioning](https://semver.org) once it reaches 1.0. Unt
 
 ## Unreleased
 
+- **Jobs › Chat:** images a worker saves in its worktree, a QA run or temp files now show in the chat, as they do in Slack, including paths with spaces. Attached images show their own name.
 - **ACP agents bound to one app, such as eve:** a custom agent's `cwd` in `agent-backend.json` starts it in that folder and opens every job there instead of a worktree, with each approval waiting for a person. A question whose title repeats it shows it once. See `docs/agent-backends.md`.
 - Fixed: an ACP run whose turn failed (no sign-in, a usage limit, the agent gone) showed as **Done**. Jobs › Chat now shows it as **Failed** with the reason, and the job waits under **Needs you**. Codex's usage limit says so instead of “stopped with an error”.
 

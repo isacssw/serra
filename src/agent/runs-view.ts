@@ -8,6 +8,7 @@ import type { TaskState } from '../tasks.ts';
 import { readRunRecord, type LiveTurn, type TranscriptEntry } from './acp.ts';
 import { acpAgents, readAgentBackend } from './acp-agents.ts';
 import type { AgentBackend, QuestionRequest } from './backend.ts';
+import { allowedRoots } from '../images.ts';
 import { AGENT_IMAGES_DIR } from './images.ts';
 import { agentRunsDir } from './pool.ts';
 
@@ -103,11 +104,11 @@ const IMAGE_TYPES: Record<string, string> = { '.png': 'image/png', '.jpg': 'imag
 const MAX_CHAT_IMAGE_BYTES = 8 * 1024 * 1024;
 
 /**
- * An image a run's messages name, as a data URL the chat shows, or null. Only from Serra's own folders: the profile's
- * attachments (images sent in) and where agents' images are saved (images out), so a path in a message can't make
- * the app read any other file.
+ * An image a run's messages name, as a data URL the chat shows, or null. Only from the profile's attachments (images
+ * sent in), where agents' images are saved, and the folders a reply may share images from in Slack (worktrees, QA
+ * runs, temp files), so a path in a message can't make the app read any other file.
  */
-export const chatImage = (profileDir: string, path: string, roots: string[] = [join(profileDir, 'attachments'), AGENT_IMAGES_DIR]): string | null => {
+export const chatImage = (profileDir: string, path: string, roots: string[] = [join(profileDir, 'attachments'), AGENT_IMAGES_DIR, ...allowedRoots()]): string | null => {
   const type = IMAGE_TYPES[extname(path).toLowerCase()];
   if (!type || !isAbsolute(path)) return null;
   try {
