@@ -18,7 +18,7 @@ await page.getByLabel('GitHub login', { exact: true }).fill('acme');
 await page.getByLabel('Folder', { exact: true }).fill('/tmp/serra-qa/project');
 await page.getByLabel('Folder', { exact: true }).blur();
 await page.waitForTimeout(1500);
-console.log('DETECTED', await page.getByLabel('Base branch', { exact: true }).inputValue(), await page.getByLabel('GitHub repository', { exact: true }).inputValue());
+console.log('DETECTED', await page.getByLabel('Base branch (optional)', { exact: true }).inputValue(), await page.getByLabel('GitHub repository (optional)', { exact: true }).inputValue());
 await page.getByText('More options').click();
 await page.getByLabel('Profile folder', { exact: true }).fill('/tmp/serra-qa/profile');
 await page.getByLabel('T3 CLI', { exact: true }).fill('/tmp/serra-qa/bin/t3');
