@@ -9,6 +9,7 @@ import { join } from 'node:path';
 import test, { type TestContext } from 'node:test';
 import { createAcpBackend, readRunRecord } from '../src/agent/acp.ts';
 import { acpChat } from '../src/agent/runs-view.ts';
+import { listJobs } from '../src/jobs.ts';
 import {
   addCustomAcpAgent, agentBackendConfigError, agentChoices, ensureAgentBackendFile, KNOWN_ACP_AGENTS, launchFor,
   readAgentBackend, removeCustomAcpAgent, writeAgentBackend, type AcpAgent,
@@ -362,6 +363,34 @@ test('ACP: a failed turn says why in a fixed sentence (usage limit, sign-in), ne
   fake.reply('quick', 3);
   assert.equal(await runs.ask('t', 'hello'), 'quick');
   assert.ok(Date.now() - started < 10_000, `took ${Date.now() - started} ms`);
+});
+
+test('ACP: a failed turn stays failed in its record, so Jobs and its chat show it failed, until the next turn', async (t) => {
+  const fake = fakeAcp(t);
+  const runsDir = agentRunsDir(fake.dir);
+  const backend = fake.backend({ runsDir });
+  try {
+    const threadId = await backend.start({ workspace: { kind: 'folder', path: fake.dir, name: 'Failing' }, title: 'Serra: quota', brief: 'CODEX_ERROR=usageLimitExceeded' });
+    const failed = await backend.wait(threadId, { ...fast, after: null });
+    assert.ok(failed.kind === 'settled');
+    assert.equal(failed.detail.thread.error, 'Fake Agent hit its usage or rate limit. Try again later.', 'Codex\'s own error name, not "stopped with an error"');
+    await until(() => readRunRecord(runsDir, threadId)?.active === null);
+    const chat = acpChat(fake.dir, threadId)!;
+    assert.equal(chat.status, 'failed', 'not "Done"');
+    assert.equal(chat.error, 'Fake Agent hit its usage or rate limit. Try again later.');
+    writeFileSync(join(fake.dir, 'tasks.json'), JSON.stringify([{ threadId, backend: 'acp:fake', title: 'quota', branch: 'serra/quota', requester: 'Alex', createdAt: new Date().toISOString() }]));
+    const [row] = (await listJobs(fake.dir)).jobs;
+    assert.deepEqual([row?.group, row?.needsYouReason, row?.error], ['needs you', 'failed', 'Fake Agent hit its usage or rate limit. Try again later.']);
+    assert.ok(!readFileSync(join(runsDir, `${threadId}.json`), 'utf8').includes('SECRET'), 'the agent\'s own text stays out of the record');
+
+    // The next turn starts clean.
+    fake.reply('Back.', 2);
+    await backend.send(threadId, 'hello');
+    await backend.wait(threadId, { ...fast, after: 'run-1' });
+    await until(() => readRunRecord(runsDir, threadId)?.active === null);
+    assert.deepEqual([acpChat(fake.dir, threadId)?.status, acpChat(fake.dir, threadId)?.error], ['idle', undefined]);
+    assert.equal((await listJobs(fake.dir)).jobs[0]?.group, 'done');
+  } finally { await backend.close(); }
 });
 
 test('ACP: a job run gets the agent\'s full access, as on T3; what it still asks, and its questions, wait as question cards', async (t) => {
