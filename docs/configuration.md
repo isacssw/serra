@@ -22,6 +22,7 @@ Use one private profile per bot, outside the code checkout. `pnpm run setup` cre
 | tasks.json | Tasks started from the app, `pnpm bot task` or `pnpm bot interview` without Slack: their threads, so they show in Jobs. Written only by the app and the CLI, never by the daemon |
 | agent-backend.json | Selected agent backend (`t3` or `acp`), per-agent models, and custom ACP harnesses added from Settings › Worker or by hand (an agent's `cwd` binds it to one folder) |
 | agent-runs/ | Transcripts and resume records for ACP runs |
+| attachments/ | Images and files sent to the bot in Slack, saved for the worker ([incoming attachments](#incoming-attachments)) |
 | releases/ | Prepared code snapshots and installed production dependencies |
 | prepared.json | The next prepared release and its content hash |
 | intake-paused.json | Present while the app has paused new work for an update; lapses on its own after 30 minutes |

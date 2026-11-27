@@ -19,7 +19,7 @@ Any command that speaks ACP over stdio can be added:
 
 - **In the app:** Settings › Worker › **Agent** › the **Add ACP agent** card: a name and the command with its
   arguments. Serra shows the exact command in a system dialog and saves it only when you confirm.
-- **In the file:** **Config file** opens `agent-backend.json` in the profile (`~/.local/share/serra/<bot-id>/`):
+- **In the file:** **Open agent-backend.json** opens `agent-backend.json` in the profile (`~/.local/share/serra/<bot-id>/`):
 
 ```json
 { "agents": [{ "id": "my-agent", "name": "My agent", "command": "my-agent", "args": ["acp"], "env": {} }] }
