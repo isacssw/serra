@@ -4,6 +4,8 @@ Serra follows [Semantic Versioning](https://semver.org) once it reaches 1.0. Unt
 
 ## Unreleased
 
+- **Jobs › Chat:** images a worker saves in its worktree, a QA run or temp files now show in the chat, as they do in Slack, including paths with spaces. Attached images show their own name.
+
 ## 0.1.0-alpha.7 (2026-11-27)
 
 - **Jobs › Chat:** a run opens as a chat, on ACP agents and T3. You see the request, the reply as it streams, tool calls folded into compact rows, permissions and how they were settled, and images in and out. Answer or follow up from the box at the bottom; T3 runs keep **Open in T3**. It replaces the Transcript window.

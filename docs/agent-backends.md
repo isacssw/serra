@@ -51,6 +51,8 @@ the weekly review. A job keeps the backend it started on, so switching never mov
   so in the thread.
 - **Out:** an image the agent saves and names in its reply is uploaded to the thread, as on T3. An image an ACP agent
   sends inline is saved and uploaded the same way.
+- **Jobs › Chat** shows the same images: from `attachments/`, and from the folders a reply may share images from
+  (worktrees, QA runs, temp files). An image elsewhere, such as on the Desktop, shows as its name only.
 
 ## Permissions
 

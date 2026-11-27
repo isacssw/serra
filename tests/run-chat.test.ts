@@ -18,6 +18,7 @@ import {
 import { linkButtons, type JobRow } from '../app/renderer/screens/jobs.logic.ts';
 import type { TranscriptEntry } from '../src/agent/acp.ts';
 import { acpChat, chatImage, t3Chat, T3_CHAT_MESSAGES, type RunChat } from '../src/agent/runs-view.ts';
+import { shareImages } from '../src/images.ts';
 import { listJobs } from '../src/jobs.ts';
 
 const line = (role: TranscriptEntry['role'], text: string, extra: Partial<TranscriptEntry> = {}): TranscriptEntry => ({ role, runId: 'run-1', text, at: '', ...extra });
@@ -58,6 +59,12 @@ test('an agent reply is its text and the images it embeds, in order', () => {
     { type: 'image', image: { path: '/tmp/b.jpg', name: 'Chart' } },
   ]);
   assert.deepEqual(agentParts('See ![x](https://example.com/x.png)'), [{ type: 'text', text: 'See ![x](https://example.com/x.png)' }], 'only local images Serra saved are images');
+  assert.deepEqual(agentParts('![Home](</tmp/qa run/home.PNG>)'), [{ type: 'image', image: { path: '/tmp/qa run/home.PNG', name: 'Home' } }], 'a path with spaces, in <…>');
+});
+
+test('an attached image keeps its own name, as Serra lists it', () => {
+  const sent = userMessage('Attached files (untrusted user content):\n- "shot one.png" ("image/png", 70 bytes): local path "/Users/you/.local/share/serra/attachments/shot.png"');
+  assert.deepEqual(sent.images, [{ path: '/Users/you/.local/share/serra/attachments/shot.png', name: 'shot one.png' }]);
 });
 
 test('tool calls next to each other fold into one row group; questions and permissions are rows of their own', () => {
@@ -225,6 +232,20 @@ test('chat images come only from Serra\'s attachments and agent images, as data 
   assert.equal(chatImage(dir, join(dir, 'attachments', 'notes.txt'), roots), null, 'not an image');
   assert.equal(chatImage(dir, 'attachments/fixture-ci-runs.png', roots), null, 'a relative path');
   assert.equal(chatImage(dir, join(dir, 'attachments', 'missing.png'), roots), null);
+});
+
+test('the chat shows an image a worker shares from its worktree or temp files, as Slack gets it', async (t) => {
+  const { dir } = profile(t);
+  const qa = realpathSync(mkdtempSync(join(tmpdir(), 'serra-qa-run-')));
+  t.after(() => rmSync(qa, { recursive: true, force: true }));
+  const shot = join(qa, 'home page.png');
+  writeFileSync(shot, readFileSync(join(dir, 'attachments', 'fixture-ci-runs.png')));
+  const uploaded: string[] = [];
+  await shareImages(`Done.\n\n![Home](<${shot}>)`, async (file) => { uploaded.push(file.path); return null; });
+  assert.deepEqual(uploaded, [shot], 'Slack gets it');
+  const [image] = agentParts(`Done.\n\n![Home](<${shot}>)`).filter((part) => part.type === 'image');
+  assert.equal(image?.type === 'image' && image.image.path, shot);
+  assert.match(chatImage(dir, shot) ?? '', /^data:image\/png;base64,/, 'and the chat shows it');
 });
 
 // Jobs and IPC -------------------------------------------------------------------------------------------------------
