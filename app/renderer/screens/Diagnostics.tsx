@@ -8,7 +8,7 @@ import type { Diagnostic } from '../../../src/contracts.ts';
 import type { AppInfo } from '../../main/bridge.ts';
 import { serra } from '../bridge.ts';
 import { useBotStatus } from '../shell/live.ts';
-import { Button, cx, Page, useToast } from '../ui/index.ts';
+import { Button, cx, Page, Select, useToast } from '../ui/index.ts';
 import { SETUP_PATH } from '../setup/setup.logic.ts';
 import {
   DEFAULT_LOG_LINES, LOG_LINE_CHOICES, reportText, runtimeLine, statusKey, summarize,
@@ -171,15 +171,15 @@ export const Diagnostics = () => {
             <p className="text-xs text-muted">logs/bot.log in the profile folder. Anything shaped like a token is hidden.</p>
           </div>
           <div className="flex items-center gap-2">
-            <label htmlFor="log-lines" className="text-sm text-muted">Lines</label>
-            <select
+            <Select
               id="log-lines"
-              value={lines}
-              onChange={(event) => setLines(Number(event.target.value))}
-              className="h-7 rounded-md border border-line bg-panel px-2 text-xs text-ink focus:outline-2 focus:outline-offset-1 focus:outline-focus"
-            >
-              {LOG_LINE_CHOICES.map((choice) => <option key={choice} value={choice}>{choice}</option>)}
-            </select>
+              aria-label="Lines"
+              size="sm"
+              className="w-28"
+              value={String(lines)}
+              options={LOG_LINE_CHOICES.map((choice) => ({ value: String(choice), label: `${choice} lines` }))}
+              onChange={(choice) => setLines(Number(choice))}
+            />
             <Button size="sm" icon={<RefreshCw size={12} aria-hidden />} onClick={() => void reloadLog()}>Reload</Button>
           </div>
         </div>

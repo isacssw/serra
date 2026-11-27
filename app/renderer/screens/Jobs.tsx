@@ -4,7 +4,7 @@
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { useNavigate } from 'react-router';
 import {
-  CircleCheck, CircleX, CirclePause, ChevronDown, GitBranch, GitPullRequest, Hash, Layers, LoaderCircle, MessageSquareText, Radio,
+  CircleCheck, CircleX, CirclePause, GitBranch, GitPullRequest, Hash, Layers, LoaderCircle, MessageSquareText, Radio,
   ListChecks, Play, Plus, RefreshCw, TriangleAlert,
 } from 'lucide-react';
 import { useSearchParams } from 'react-router';
@@ -13,7 +13,7 @@ import { serra } from '../bridge.ts';
 import { useBotStatus } from '../shell/live.ts';
 import { resumePath } from '../setup/setup.logic.ts';
 import { useSetup } from '../setup/SetupState.tsx';
-import { Button, Dialog, EmptyState, Page, cx, useToast } from '../ui/index.ts';
+import { Button, Dialog, EmptyState, Page, Select, cx, useToast } from '../ui/index.ts';
 import { registerActions } from '../commands/registry.ts';
 import { TranscriptDialog } from './Transcript.tsx';
 import {
@@ -195,19 +195,13 @@ const CleanupDialog = ({ cleanup, onClose, onApply }: { cleanup: Cleanup; onClos
 };
 
 const ChannelFilter = ({ options, value, onChange }: { options: { value: string; label: string }[]; value: string | null; onChange: (channel: string | null) => void }) => (
-  <label className="relative inline-flex items-center">
-    <span className="sr-only">Channel</span>
-    <Radio size={15} strokeWidth={1.75} className="pointer-events-none absolute left-2.5 text-muted" aria-hidden />
-    <select
-      value={value ?? ''}
-      onChange={(event) => onChange(event.target.value || null)}
-      className="h-8 appearance-none rounded-md border border-line bg-panel pr-8 pl-8 text-[13px] text-ink transition-colors hover:border-line-strong focus:outline-2 focus:outline-offset-1 focus:outline-focus"
-    >
-      <option value="">All channels</option>
-      {options.map((channel) => <option key={channel.value} value={channel.value}>{channel.label}</option>)}
-    </select>
-    <ChevronDown size={15} strokeWidth={1.75} className="pointer-events-none absolute right-2.5 text-muted" aria-hidden />
-  </label>
+  <Select
+    aria-label="Channel"
+    icon={<Radio size={15} strokeWidth={1.75} />}
+    value={value ?? ''}
+    options={[{ value: '', label: 'All channels' }, ...options]}
+    onChange={(channel) => onChange(channel || null)}
+  />
 );
 
 /** Each tab's empty state: good news for Needs you, a way to start for Running, what to expect for Done. */

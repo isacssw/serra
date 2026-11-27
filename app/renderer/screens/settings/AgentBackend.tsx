@@ -5,7 +5,7 @@ import { useCallback, useEffect, useId, useState, type FormEvent } from 'react';
 import { FileCode2, Plus, Trash2 } from 'lucide-react';
 import type { AcpAgentChoice, AgentBackendView } from '../../../../src/agent/acp-agents.ts';
 import { serra } from '../../bridge.ts';
-import { Badge, Button, Dialog, Input, useToast } from '../../ui/index.ts';
+import { Badge, Button, Dialog, Input, Select, useToast } from '../../ui/index.ts';
 import { customAgents, validateCustomAgentForm } from './agent-backend.logic.ts';
 
 const message = (error: unknown): string => (error instanceof Error ? error.message : String(error));
@@ -134,25 +134,21 @@ export const AgentBackendCard = () => {
         </p>
       )}
       <div className="flex flex-wrap items-end gap-4">
-        <div className="flex flex-col gap-1">
-          <label className="text-sm font-medium" htmlFor="agent-backend">Run on</label>
-          <select
-            id="agent-backend"
-            className="h-9 min-w-52 max-w-full rounded-md border border-line-control bg-panel px-2 text-sm text-ink focus:outline-2 focus:outline-offset-1 focus:outline-focus disabled:opacity-60"
-            value={value}
-            disabled={saving}
-            onChange={(event) => void save(event.target.value === 't3' ? { backend: 't3' } : { backend: 'acp', agent: event.target.value.slice(4) })}
-          >
-            <option value="t3">T3 (default)</option>
-            <optgroup label="ACP agent">
-              {view.agents.map((choice) => (
-                <option key={choice.id} value={`acp:${choice.id}`} disabled={!choice.installed}>
-                  {choice.installed ? choice.name : `${choice.name} (not installed)`}
-                </option>
-              ))}
-            </optgroup>
-          </select>
-        </div>
+        <Select
+          id="agent-backend"
+          label="Run on"
+          className="min-w-52"
+          value={value}
+          disabled={saving}
+          options={[
+            { value: 't3', label: 'T3 (default)' },
+            ...view.agents.map((choice) => ({
+              value: `acp:${choice.id}`, label: choice.name, group: 'ACP agent', disabled: !choice.installed,
+              ...(choice.installed ? {} : { detail: 'Not installed' }),
+            })),
+          ]}
+          onChange={(next) => void save(next === 't3' ? { backend: 't3' } : { backend: 'acp', agent: next.slice(4) })}
+        />
         {agent && (
           <form className="flex flex-wrap items-end gap-2" onSubmit={(event) => { event.preventDefault(); void save({ backend: 'acp', agent, model }); }}>
             <div className="flex flex-col gap-1">

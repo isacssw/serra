@@ -13,7 +13,7 @@ export const EmptyState = ({ icon, title, children, action, className }: {
   className?: string;
 }) => (
   <div className={cx('flex flex-col items-center gap-3 rounded-xl border border-dashed border-line px-6 py-14 text-center', className)}>
-    <span className="grid size-10 place-items-center rounded-full border border-line bg-raised text-muted" aria-hidden>{icon}</span>
+    <span className="grid size-10 place-items-center rounded-xl border border-line bg-panel text-muted" aria-hidden>{icon}</span>
     <div className="flex max-w-sm flex-col gap-1">
       <p className="text-sm font-medium text-ink">{title}</p>
       {children && <p className="text-[13px] leading-5 text-muted">{children}</p>}

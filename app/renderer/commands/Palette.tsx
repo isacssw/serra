@@ -170,7 +170,7 @@ export const CommandPalette = () => {
       // reopened it. Only a dialog that is still shut means the palette closed.
       onClose={() => { if (!dialogRef.current?.open) setOpen(false); }}
       onClick={(event) => { if (event.target === dialogRef.current) close(); }}
-      className="mx-auto mt-[12vh] w-[min(36rem,calc(100vw-2rem))] overflow-hidden rounded-2xl border border-line bg-panel p-0 text-ink shadow-[0_24px_64px_-12px_rgb(0_0_0/0.45)] backdrop:bg-black/40"
+      className="mx-auto mt-[12vh] w-[min(36rem,calc(100vw-2rem))] overflow-hidden rounded-2xl border-0 bg-overlay p-0 text-ink shadow-overlay backdrop:bg-black/40"
     >
       {open && (
         <div className="flex flex-col">

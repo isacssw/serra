@@ -4,16 +4,17 @@ import { cx } from './cx.ts';
 type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger';
 type ButtonSize = 'sm' | 'md';
 
+// Disabled buttons drop their fill and keep an outline with faint text: off, never a grey block.
 const variants: Record<ButtonVariant, string> = {
-  primary: 'bg-accent text-accent-ink border-transparent hover:bg-accent/85',
-  secondary: 'bg-panel text-ink border-line hover:bg-hover hover:border-line-strong',
-  ghost: 'bg-transparent text-ink border-transparent hover:bg-hover',
-  danger: 'bg-down text-status-ink border-transparent hover:bg-down/85',
+  primary: 'bg-accent text-accent-ink border-transparent enabled:hover:bg-accent/88 enabled:active:bg-accent/80 disabled:border-line-strong',
+  secondary: 'bg-transparent text-ink border-line-strong enabled:hover:bg-hover enabled:hover:border-line-control enabled:active:bg-selected disabled:border-line',
+  ghost: 'bg-transparent text-muted border-transparent enabled:hover:bg-hover enabled:hover:text-ink enabled:active:bg-selected',
+  danger: 'bg-down text-status-ink border-transparent enabled:hover:bg-down/88 enabled:active:bg-down/80 disabled:border-line-strong',
 };
 
 const sizes: Record<ButtonSize, string> = {
-  sm: 'h-7 px-2.5 text-xs gap-1.5',
-  md: 'h-8 px-3 text-[13px] gap-2',
+  sm: 'h-7 px-2.5 text-xs gap-1.5 rounded-[7px]',
+  md: 'h-8 px-3 text-[13px] gap-1.5 rounded-lg',
 };
 
 export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
@@ -29,10 +30,12 @@ export const Button = ({ variant = 'secondary', size = 'md', icon, className, ch
   <button
     type={type}
     className={cx(
-      'inline-flex shrink-0 items-center justify-center rounded-md border font-medium whitespace-nowrap transition-colors duration-150',
+      'inline-flex shrink-0 select-none items-center justify-center border font-medium whitespace-nowrap transition-colors duration-150',
       'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus',
-      'disabled:pointer-events-none disabled:opacity-40 aria-disabled:cursor-not-allowed aria-disabled:opacity-40',
-      variants[variant], sizes[size], className,
+      variants[variant], sizes[size],
+      'disabled:cursor-not-allowed disabled:bg-transparent disabled:text-faint',
+      'aria-disabled:cursor-not-allowed aria-disabled:opacity-50',
+      className,
     )}
     {...rest}
   >

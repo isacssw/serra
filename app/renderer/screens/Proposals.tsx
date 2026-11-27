@@ -2,7 +2,7 @@
 // diff, then Promote it into a folder, Merge it into an existing page, or Discard it. Each action offers Undo.
 // Start interview (APP-26) starts the guided knowledge interview as a T3 thread; what the owner confirms there is
 // written to knowledge/proposals/, and the main process tells this screen as soon as a file lands.
-import { useCallback, useEffect, useId, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { ChevronRight, FileText, Folder, LoaderCircle, MessagesSquare } from 'lucide-react';
 import type { Proposal, ProposalDiff, ProposalSource } from '../../../src/contracts.ts';
 import type { ProposalTargets } from '../../../src/proposals.ts';
@@ -10,7 +10,7 @@ import type { UndoHandle } from '../../main/bridge.ts';
 import type { InterviewPreview } from '../../../src/tasks.ts';
 import { serra } from '../bridge.ts';
 import { REFRESH_COUNTS, announceTaskStart } from '../shell/events.ts';
-import { Button, cx, Dialog, Page, useToast } from '../ui/index.ts';
+import { Button, cx, Dialog, Page, Select, useToast } from '../ui/index.ts';
 import { RuleDiff } from './proposals/RuleDiff.tsx';
 import { MeetingReview } from './proposals/MeetingReview.tsx';
 import { AudienceChoice } from './AudienceChoice.tsx';
@@ -29,36 +29,6 @@ import.meta.hot?.dispose(unregister);
 import { taskLink } from './newTask.logic.ts';
 
 const message = (error: unknown): string => (error instanceof Error ? error.message : String(error));
-
-const Select = ({ label, value, onChange, options, icon }: {
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-  options: { value: string; label: string }[];
-  icon?: ReactNode;
-}) => {
-  const id = useId();
-  return (
-    <div className="flex flex-col gap-1.5">
-      <label htmlFor={id} className="text-sm text-muted">{label}</label>
-      <div className="relative flex items-center">
-        {icon && <span className="pointer-events-none absolute left-3 text-muted">{icon}</span>}
-        <select
-          id={id}
-          value={value}
-          onChange={(event) => onChange(event.target.value)}
-          className={cx(
-            'h-9 w-full rounded-md border border-line bg-panel pr-3 text-sm text-ink',
-            'focus:outline-2 focus:outline-offset-1 focus:outline-focus',
-            icon ? 'pl-9' : 'pl-3',
-          )}
-        >
-          {options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-        </select>
-      </div>
-    </div>
-  );
-};
 
 const Queue = ({ proposals, selected, onSelect }: { proposals: Proposal[]; selected: string | null; onSelect: (path: string) => void }) => (
   <nav aria-label="Proposals" className="flex w-full shrink-0 lg:w-72 flex-col gap-5">

@@ -27,7 +27,7 @@ await app.evaluate(({ clipboard }) => clipboard.writeText(''));
 await page.getByRole('button', { name: 'Copy report' }).click(); await page.waitForTimeout(500);
 const clip = await app.evaluate(({ clipboard }) => clipboard.readText());
 console.log('COPIED REPORT:\n' + clip.slice(0, 1200));
-await page.locator('[data-serra-main] select').selectOption('500').catch(() => {}); await page.waitForTimeout(800);
+await page.getByRole('combobox', { name: 'Lines' }).click().catch(() => {}); await page.getByRole('option', { name: '500 lines' }).click().catch(() => {}); await page.waitForTimeout(800);
 console.log('log lines shown:', await page.evaluate(() => document.querySelector('[data-serra-main] pre')?.textContent.split('\n').length));
 await shot(page, 'J4-diagnostics');
 await app.close();
