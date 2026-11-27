@@ -233,6 +233,8 @@ export const RunChat = ({ run, onClose }: { run: ChatRun | null; onClose: () => 
       {run && (
         <div className="flex h-full flex-col">
           <header className="flex shrink-0 items-center gap-3 border-b border-line px-5 pt-4 pb-3.5">
+            {/* TODO(SERRA-96): T3 and Codex have no mark in ui/brand-icons.ts (Simple Icons has neither T3 Code nor OpenAI), so
+                they show a generic icon. Add them here once an official mark is licensed for use. */}
             {run.backend === 't3'
               ? <ToolIcon brand={null} fallback={<Layers size={14} />} label="T3" className="size-8 bg-raised!" />
               : <ToolIcon brand={brand} fallback={<Bot size={15} />} label={chat?.agent ?? 'Agent'} className="size-8 bg-raised!" />}
