@@ -221,7 +221,7 @@ export const createKnowledge = (knowledgeDir: string, { backupDir }: KnowledgeOp
     // Each row says when its page is a draft or hasn't been re-checked in a while, so the worker weighs it accordingly.
     // Only pages this reply may use are compared, so a note never quotes a page the audience may not hear.
     const mayRead = pages.filter(({ path }) => mayUse(audiences.get(path)!, visibility));
-    let index = markIndexRows(filterIndex(indexText.trim(), (page) => (audiences.has(page) ? { audience: audiences.get(page)!, description: descriptions.get(page) ?? '' } : null), visibility), mayRead, now);
+    let index = markIndexRows(filterIndex(indexText.trim(), (page) => (audiences.has(page) ? { audience: audiences.get(page)!, description: descriptions.get(page) ?? '' } : null), visibility), mayRead, now, { dismissed: dismissedPairs(dirname(root)) });
     // Every worker reads a snapshot of approved pages, so an edit waiting for review needs no note for teammates. The
     // owner hears which files are waiting. Before the approved copy exists, nobody opens pages.
     if (drifted && visibility === 'owner') {

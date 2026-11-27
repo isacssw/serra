@@ -12,12 +12,12 @@ import { pagesHandlers } from '../app/main/ipc/pages.ts';
 import type { HandlerContext } from '../app/main/ipc/context.ts';
 import { memoryPrefs } from '../app/main/prefs.ts';
 import { stoppedStatusSource } from '../app/main/status.ts';
-import { groupLine, groupPairs, isSafe, keepNames, keepNewerForAll, sideNames, versus, wordDiff, type PairIssue } from '../app/renderer/screens/conflicts.logic.ts';
-import { keepNewerOnPages, keepOne } from '../app/renderer/screens/keep.ts';
+import { groupLine, groupPairs, isSafe, keepNames, keepNewerForAll, rowNames, sideNames, versus, wordDiff, type PairIssue } from '../app/renderer/screens/conflicts.logic.ts';
+import { keepNewerOnPages, keepOne, keepOver } from '../app/renderer/screens/keep.ts';
 import { fixItems, needsYou, todoTally } from '../app/renderer/screens/overview.logic.ts';
 import { currentRules } from '../app/renderer/screens/pages.logic.ts';
 import { dismissedPairs } from '../src/knowledge-dismissals.ts';
-import { assessKnowledge, findOverlaps, learnedOn, pageFacts, pairId, ruleText, type KnowledgeFile } from '../src/knowledge-health.ts';
+import { assessKnowledge, findOverlaps, learnedOn, markIndexRows, pageFacts, pairId, ruleText, type KnowledgeFile } from '../src/knowledge-health.ts';
 import { knowledgeGraph, knowledgeOverview } from '../src/knowledge-overview.ts';
 import { createKnowledge } from '../src/knowledge.ts';
 import { oldFormatKnowledge, OLD_FORMAT_PAGES } from './fakes/kb-conflicts.ts';
@@ -69,8 +69,11 @@ test('a rule learned again on a later day reads the same: dates, (date, source) 
   assert.equal(ruleText('Open every PR as a draft and link the Linear issue (2026-11-16)'), 'Open every PR as a draft and link the Linear issue');
   assert.equal(ruleText('Refunds v2 ships on Tuesday (2026-11-20, Payments sync: Ana; LIN-482) <!-- m:a1b2c3 -->'), 'Refunds v2 ships on Tuesday');
   assert.equal(ruleText('Read [the runbook](https://wiki.acme.dev/x) before a rollback (from #team-dx, Nov 16)'), 'Read the runbook before a rollback');
-  assert.equal(ruleText('2026-11-16: always rebase before merge'), 'always rebase before merge');
-  assert.equal(ruleText('Always rebase before merge — 2026-11-17'), 'Always rebase before merge');
+  assert.equal(ruleText('Always rebase before merge — learned 2026-11-17'), 'Always rebase before merge');
+  // A bare date at either end, or two dates in one bracket, may be the rule's own value: they stay.
+  assert.equal(ruleText('2026-12-01: code freeze for mobile releases begins'), '2026-12-01: code freeze for mobile releases begins');
+  assert.equal(ruleText('Code freeze for mobile releases begins - 2026-12-01'), 'Code freeze for mobile releases begins - 2026-12-01');
+  assert.equal(ruleText('Code freeze runs (2026-12-01 – 2026-12-15)'), 'Code freeze runs (2026-12-01 – 2026-12-15)');
   // A date the rule is about stays: it's a value that can change.
   assert.equal(ruleText('The code freeze starts 2026-12-01.'), 'The code freeze starts 2026-12-01.');
   assert.equal(ruleText('Code freeze runs (2026-12-01 to 2026-12-15) for payouts'), 'Code freeze runs (2026-12-01 to 2026-12-15) for payouts');
@@ -104,6 +107,10 @@ test('real conflicts are still caught with dated notes on every line: a number, 
     ['Keep PRs under 400 changed lines (2026-11-01, Eng sync)', 'Keep PRs under 300 changed lines (2026-11-20, Eng sync)', 'conflict'],
     ['The payouts code freeze starts 2026-12-01 (2026-11-10)', 'The payouts code freeze starts 2026-12-15 (2026-11-20)', 'conflict'],
     ['Risky releases ship on Tuesday, never Thursday or Friday.', 'Risky releases ship on Thursday now (since 2026-10-01), never Friday.', 'conflict'],
+    ['Run database migrations before deploying the app (2026-11-16)', 'Run database migrations after deploying the app (2026-11-17)', 'conflict'],
+    ['Code freeze for releases runs (2026-12-01 – 2026-12-15)', 'Code freeze for releases runs (2026-12-08 – 2026-12-22)', 'conflict'],
+    ['2026-12-01: code freeze for mobile releases begins', '2026-12-08: code freeze for mobile releases begins', 'conflict'],
+    ['Code freeze for mobile releases begins - 2026-12-01', 'Code freeze for mobile releases begins - 2026-12-08', 'conflict'],
     ['Open every PR as a draft (2026-11-16)', 'Open every PR as a draft (2026-11-17)', 'duplicate'],
     ['Webhooks retry 5 times (2026-11-16)', 'Invoices retry 3 times (2026-11-17)', 'neither'],
   ];
@@ -155,7 +162,11 @@ test('"Keep newer for all" only takes pairs where the newer line says everything
   assert.equal(drops.covers, false);
   assert.ok(!isSafe(drops) && !prs.safe.includes(drops), 'a newer line that drops "lowercase only" is never kept in bulk');
   assert.equal(prs.dropsDetail, 1);
-  assert.equal(groupLine(prs), `${prs.pairs.length} lines repeat with a newer date · 1 drops detail`);
+  assert.equal(groupLine(prs), '4 rules learned again · 1 needs a look');
+  // A newer line that drops a small word ("before", "all") never covers the older one.
+  const flip = pairsOf([{ path: 'a.md', text: '---\ntype: rule\n---\n- Ping all reviewers when the PR is ready (2026-11-16)\n- Ping reviewers when the PR is ready (2026-11-17)\n' }]);
+  assert.equal(flip.length, 1);
+  assert.equal(flip[0]!.pair.covers, false, '"all" was dropped');
 });
 
 test('bulk keep moves only the intended lines, keeps the newest of a chain, and leaves every other byte', () => {
@@ -299,4 +310,88 @@ test('Needs you shows one row per page, in "learned again", "really disagree" an
   assert.equal(view.disagree.find((group) => group.pages[0] === 'projects/live-breach.md') && groupLine(view.disagree.find((group) => group.pages[0] === 'projects/live-breach.md')!), '“3” vs “4”');
   // To review and Needs you count the same rows: a page of repeats is one, however many pairs it has.
   assert.deepEqual(todoTally(items), { count: view.rows, text: '2 disagree · 4 repeat' });
+});
+
+test('a rule restated three times is one row, Nov 16, Nov 17 → Nov 18, and Keep newer moves both older lines in one save', async (t) => {
+  const { knowledge, bridge, backups } = profile(t);
+  const { repeats } = groupPairs(pairsOf(oldFormatKnowledge()));
+  const prs = repeats.find((group) => group.pages[0] === 'owner/pr-rules.md')!;
+  assert.equal(prs.pairs.length, 6);
+  assert.equal(prs.rows.length, 4, 'three versions of the PR rule are one row');
+  const chain = prs.rows.find((row) => row.olders.length === 2)!;
+  assert.deepEqual(rowNames(chain), ['Nov 16, Nov 17', 'Nov 18']);
+  assert.equal(chain.newer.text, 'Open every PR as a draft, link the Linear issue and attach proof (2026-11-18)');
+  const before = readFileSync(join(knowledge, 'owner/pr-rules.md'), 'utf8');
+  const result = await keepOver(bridge, chain.newer, chain.olders);
+  assert.notEqual(result, 'open');
+  const after = readFileSync(join(knowledge, 'owner/pr-rules.md'), 'utf8');
+  assert.deepEqual(currentRules(after), currentRules(before).filter((line) => !chain.olders.some((side) => side.text === line)));
+  assert.equal(backupsOf(backups).length, 1, 'one save, one backup');
+  if (result !== 'open') await result.undo();
+  assert.equal(readFileSync(join(knowledge, 'owner/pr-rules.md'), 'utf8'), before);
+});
+
+test('"Both hold" works on the pair Overview showed, even when the page has an edit waiting for review', async (t) => {
+  const { dir, knowledge, handlers } = profile(t);
+  const conflict = pairsOf(oldFormatKnowledge()).find((issue) => issue.kind === 'conflict' && issue.pages[0] === 'projects/live-breach.md')!;
+  const path = join(knowledge, 'projects/live-breach.md');
+  writeFileSync(path, `${readFileSync(path, 'utf8')}- An edit made outside Serra about the debrief.\n`);
+  await handlers.bothHold(conflict.pair.id);
+  assert.deepEqual([...dismissedPairs(dir)], [conflict.pair.id]);
+});
+
+test('Undo never overwrites an edit made after the Keep: it is refused and the edit stays', async (t) => {
+  const { knowledge, bridge, handlers } = profile(t);
+  const pair = pairsOf(oldFormatKnowledge()).find((issue) => issue.pages[0] === 'owner/quick-vs-right.md')!.pair;
+  const result = await keepOne(bridge, pair.newer, pair.older);
+  assert.notEqual(result, 'open');
+  const kept = await handlers.read('owner/quick-vs-right.md');
+  const edited = kept.replace('# Trade-offs', '# Trade-offs\n\n- A rule the owner added after the Keep.');
+  await handlers.save('owner/quick-vs-right.md', edited, kept);
+  if (result !== 'open') await assert.rejects(result.undo(), /changed since you opened it/);
+  assert.equal(readFileSync(join(knowledge, 'owner/quick-vs-right.md'), 'utf8'), edited);
+});
+
+test('bulk keep leaves rules inside longer text, cross-page pairs and changed links to the owner', () => {
+  // A rule that is one sentence of a longer bullet can't be moved by a click.
+  const prose = { path: 'p.md', text: '---\ntype: rule\n---\n- Tag each release in git (2026-11-16). Then post the notes.\n- Tag each release in git (2026-11-17)\n' };
+  const prosePairs = pairsOf([prose]);
+  assert.equal(prosePairs.length, 1);
+  assert.deepEqual(keepNewerForAll(prose.text, 'p.md', prosePairs.map((issue) => issue.pair), TODAY), { text: prose.text, moved: [] });
+  // The same rule on two pages is never kept in bulk: which page keeps it is the owner's call.
+  const cross = pairsOf([
+    { path: 'owner/a.md', text: '---\ntype: rule\n---\n- Tag each release in git with its version (2026-11-16)\n' },
+    { path: 'owner/b.md', text: '---\ntype: rule\n---\n- Tag each release in git with its version (2026-11-17)\n' },
+  ]);
+  assert.equal(cross.length, 1);
+  assert.ok(!isSafe(cross[0]!.pair));
+  assert.equal(groupPairs(cross).repeats[0]!.safeRows, 0);
+  // A newer line that points somewhere else doesn't say what the older one does.
+  const squad = groupPairs(pairsOf(oldFormatKnowledge())).repeats.find((group) => group.pages[0] === 'product/squad-products.md')!;
+  assert.equal(squad.rows.find((row) => row.newer.plain.startsWith('See the squad wiki'))!.covers, false, 'the wiki link changed');
+});
+
+test('a range with a plain hyphen stays a value: a moved freeze is a conflict, not a repeat', () => {
+  const pairs = pairsOf([{ path: 'a.md', text: '---\ntype: rule\n---\n- Holiday code freeze for payouts (2026-12-01 - 2026-12-15)\n- Holiday code freeze for payouts (2026-12-08 - 2026-12-22)\n' }]);
+  assert.deepEqual(pairs.map((issue) => issue.kind), ['conflict']);
+  assert.equal(learnedOn('Holiday code freeze for payouts (2026-12-01 - 2026-12-15)'), null);
+});
+
+test('the worker brief honours "Both hold": the pair is no longer marked as rules that disagree', () => {
+  const files = oldFormatKnowledge();
+  const index = files.find((file) => file.path === 'index.md')!.text;
+  const conflict = pairsOf(files).find((issue) => issue.kind === 'conflict' && issue.pages[0] === 'projects/live-breach.md')!;
+  const marked = markIndexRows(index, files, NOW);
+  assert.match(marked, /Current: "Each Live Breach exercise runs 4 hours[^\n]*It replaces "Each Live Breach exercise runs 3 hours/, 'the learned dates say which is current');
+  const kept = markIndexRows(index, files, NOW, { dismissed: new Set([conflict.pair.id]) });
+  assert.doesNotMatch(kept, /Each Live Breach exercise/);
+  assert.match(kept, /Never merge a PR before Sam reviews it/, 'the other disagreement is still there');
+});
+
+test('each side of a disagreement reads as written: its own case and spacing, its own words in bold', () => {
+  const older = wordDiff('Never merge a PR (before review)', 'Merge a PR (after review)', 'older');
+  assert.equal(older.map((part) => part.text).join(''), 'Never merge a PR (before review)');
+  assert.deepEqual(older.filter((part) => part.op !== 'same').map((part) => part.text.trim()), ['Never', 'before']);
+  const newer = wordDiff('Never merge a PR (before review)', 'Merge a PR (after review)', 'newer');
+  assert.equal(newer.map((part) => part.text).join(''), 'Merge a PR (after review)');
 });

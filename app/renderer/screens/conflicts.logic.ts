@@ -19,10 +19,12 @@ const join = (list: string[]): string => list.reduce((out, token, at) => (at ===
 
 /**
  * `before` → `after` word by word: what stayed, what went and what came in, in reading order (each removal before the
- * addition that replaced it). Case is ignored for matching; each part keeps the words as written. A part's `text`
- * starts with a space when it follows a word, so the parts read as one line when joined.
+ * addition that replaced it). Case is ignored for matching. `show` picks the line it reads as: `both` (removals and
+ * additions in one line, the newer's wording for what stayed), `older` (the older line, its removals marked) or
+ * `newer` (the newer line, its additions marked). Each part's `text` starts with the space before it, so the parts
+ * read as one line when joined.
  */
-export const wordDiff = (before: string, after: string): DiffPart[] => {
+export const wordDiff = (before: string, after: string, show: 'both' | 'older' | 'newer' = 'both'): DiffPart[] => {
   const [a, b] = [tokens(before), tokens(after)];
   const [x, y] = [a.map((word) => word.toLowerCase()), b.map((word) => word.toLowerCase())];
   // Longest common subsequence, from the end, so the walk below reads front to back.
@@ -33,17 +35,18 @@ export const wordDiff = (before: string, after: string): DiffPart[] => {
   const steps: { op: DiffPart['op']; token: string }[] = [];
   let [i, j] = [0, 0];
   while (i < a.length || j < b.length) {
-    if (i < a.length && j < b.length && x[i] === y[j]) { steps.push({ op: 'same', token: b[j]! }); i += 1; j += 1; }
+    if (i < a.length && j < b.length && x[i] === y[j]) { steps.push({ op: 'same', token: show === 'older' ? a[i]! : b[j]! }); i += 1; j += 1; }
     else if (j >= b.length || (i < a.length && table[i + 1]![j]! >= table[i]![j + 1]!)) { steps.push({ op: 'del', token: a[i]! }); i += 1; }
     else { steps.push({ op: 'add', token: b[j]! }); j += 1; }
   }
+  const shown = steps.filter((step) => !(show === 'older' && step.op === 'add') && !(show === 'newer' && step.op === 'del'));
   const parts: { op: DiffPart['op']; list: string[] }[] = [];
-  for (const step of steps) {
+  for (const step of shown) {
     const last = parts.at(-1);
     if (last?.op === step.op) last.list.push(step.token);
     else parts.push({ op: step.op, list: [step.token] });
   }
-  // Spacing comes from the reading order of every token shown (the removed ones included).
+  // Spacing comes from the reading order of the tokens this view shows.
   let previous: string | null = null;
   return parts.map(({ op, list }) => {
     const text = join(list);
@@ -76,15 +79,58 @@ export const versus = (older: string, newer: string): string => {
 /** A health issue that is a pair: what the grouping needs of it. */
 export interface PairIssue { kind: 'conflict' | 'duplicate'; pages: string[]; pair: PairInfo }
 
+/**
+ * One rule's versions, as one row: the newest line and every older version it was paired with, oldest first. A rule
+ * restated on Nov 16, 17 and 18 makes three pairs and one row, "Nov 16, Nov 17 → Nov 18".
+ */
+export interface ChainRow {
+  /** The newest line's page and text. */
+  key: string;
+  newer: PairSide;
+  olders: PairSide[];
+  /** The newest line against each older one. */
+  pairs: PairInfo[];
+  /** The most recent older version against the newest: the change the row shows. */
+  latest: PairInfo;
+  /** The newest line says everything every older one does. */
+  covers: boolean;
+  order: PairInfo['order'];
+}
+
+const sideKey = (side: Pick<PairSide, 'page' | 'text'>): string => `${side.page}\n${side.text.trim()}`;
+
+/**
+ * Pairs as rows, one per newest line. A pair whose newer line is itself an older version of a later line is left out
+ * when its older line is paired with that later one too: the row for the later line already shows it.
+ */
+const chainRows = (pairs: readonly PairInfo[]): ChainRow[] => {
+  const has = new Set(pairs.map((pair) => `${sideKey(pair.older)}\u0000${sideKey(pair.newer)}`));
+  const later = new Map<string, string[]>();
+  for (const pair of pairs) later.set(sideKey(pair.older), [...(later.get(sideKey(pair.older)) ?? []), sideKey(pair.newer)]);
+  const shown = pairs.filter((pair) => !(later.get(sideKey(pair.newer)) ?? []).some((next) => has.has(`${sideKey(pair.older)}\u0000${next}`)));
+  const rows = new Map<string, PairInfo[]>();
+  for (const pair of shown) rows.set(sideKey(pair.newer), [...(rows.get(sideKey(pair.newer)) ?? []), pair]);
+  const age = (pair: PairInfo): string => pair.older.learned ?? '';
+  return [...rows].map(([key, list]) => {
+    const sorted = [...list].sort((a, b) => age(a).localeCompare(age(b)));
+    const latest = sorted.at(-1)!;
+    return { key, newer: latest.newer, olders: sorted.map((pair) => pair.older), pairs: sorted, latest, covers: sorted.every((pair) => pair.covers), order: latest.order };
+  });
+};
+
 export interface PairGroup {
   /** The pages, joined: one page for most groups, two when the lines sit on different pages. */
   key: string;
   kind: 'repeat' | 'disagree';
   pages: string[];
   pairs: PairInfo[];
-  /** Pairs "Keep newer for all" settles: dated, the newer saying everything the older does, both on this one page. */
+  /** Repeats as rows, one per rule (`chainRows`). */
+  rows: ChainRow[];
+  /** Pairs "Keep newer for all" settles: those of `safeRows` (dated, on this one page, the newest saying everything). */
   safe: PairInfo[];
-  /** Pairs whose newer line leaves out something the older one says: asked one by one. */
+  /** Rows "Keep newer for all" settles whole, which is the number its button shows. */
+  safeRows: number;
+  /** Rows whose newest line leaves out something an older one says: asked one by one. */
   dropsDetail: number;
 }
 
@@ -98,11 +144,18 @@ export const groupPairs = (issues: readonly PairIssue[]): { repeats: PairGroup[]
     const kind = issue.kind === 'conflict' ? 'disagree' : 'repeat';
     const pages = [...new Set([issue.pair.older.page, issue.pair.newer.page])].sort();
     const key = `${kind}:${pages.join('|')}`;
-    const group = groups.get(key) ?? { key, kind, pages, pairs: [], safe: [], dropsDetail: 0 };
+    const group = groups.get(key) ?? { key, kind, pages, pairs: [], rows: [], safe: [], safeRows: 0, dropsDetail: 0 };
     group.pairs.push(issue.pair);
-    if (kind === 'repeat' && isSafe(issue.pair)) group.safe.push(issue.pair);
-    if (kind === 'repeat' && !issue.pair.covers) group.dropsDetail += 1;
     groups.set(key, group);
+  }
+  for (const group of groups.values()) {
+    if (group.kind !== 'repeat') continue;
+    group.rows = chainRows(group.pairs);
+    group.dropsDetail = group.rows.filter((row) => !row.covers).length;
+    // Only whole rows: a rule with one version the newest leaves detail out of waits for the owner, all its versions.
+    const safeRows = group.rows.filter((row) => row.covers && row.pairs.every(isSafe));
+    group.safe = safeRows.flatMap((row) => row.pairs);
+    group.safeRows = safeRows.length;
   }
   const all = [...groups.values()].sort((a, b) => b.pairs.length - a.pairs.length || a.key.localeCompare(b.key));
   return { repeats: all.filter((group) => group.kind === 'repeat'), disagree: all.filter((group) => group.kind === 'disagree') };
@@ -113,9 +166,9 @@ export const groupLine = (group: PairGroup): string => {
   if (group.kind === 'disagree') {
     return group.pairs.length === 1 ? versus(group.pairs[0]!.older.plain, group.pairs[0]!.newer.plain) : `${group.pairs.length} pairs say different things`;
   }
-  const count = group.pairs.length;
-  const dated = group.pairs.every((pair) => pair.order === 'date');
-  return [`${count} ${count === 1 ? 'line repeats' : 'lines repeat'}${dated ? ' with a newer date' : ''}`, group.dropsDetail > 0 ? `${group.dropsDetail} ${group.dropsDetail === 1 ? 'drops' : 'drop'} detail` : null]
+  const count = group.rows.length;
+  const dated = group.rows.every((row) => row.order === 'date');
+  return [`${count} ${count === 1 ? 'rule' : 'rules'} learned again${dated ? '' : ' or written twice'}`, group.dropsDetail > 0 ? `${group.dropsDetail} ${group.dropsDetail === 1 ? 'needs' : 'need'} a look` : null]
     .filter(Boolean).join(' · ');
 };
 
@@ -126,6 +179,13 @@ const day = (date: string): string => new Date(`${date}T00:00:00Z`).toLocaleDate
 export const sideNames = (pair: Pick<PairInfo, 'order' | 'older' | 'newer'>): [string, string] => {
   if (pair.order === 'length') return ['Shorter', 'Longer'];
   return [pair.older.learned ? day(pair.older.learned) : 'Earlier', pair.newer.learned ? day(pair.newer.learned) : 'Later'];
+};
+
+/** A row's versions in a few words: "Nov 16, Nov 17 → Nov 18", "Nov 16 → Nov 17", "Shorter → Longer". */
+export const rowNames = (row: Pick<ChainRow, 'order' | 'olders' | 'newer'>): [string, string] => {
+  if (row.order === 'length') return ['Shorter', 'Longer'];
+  const olders = row.olders.map((side) => (side.learned ? day(side.learned) : 'Earlier'));
+  return [olders.length > 2 ? `${olders[0]} … ${olders.at(-1)}` : olders.join(', '), row.newer.learned ? day(row.newer.learned) : 'Later'];
 };
 
 /** The Keep buttons, older (or shorter) first. */

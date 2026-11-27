@@ -2,6 +2,7 @@
 import { join } from 'node:path';
 import { readProfileFile } from '../../../src/config.ts';
 import { createKnowledge, profileRoots, type KnowledgeRoot } from '../../../src/knowledge.ts';
+import { createJournal } from '../../../src/knowledge-journal.ts';
 import { createMeetingStore } from '../../../src/meeting-store.ts';
 import { knowledgeGraph, knowledgeOverview, listKnowledgeFiles } from '../../../src/knowledge-overview.ts';
 import { assessKnowledge, confirmHeldBack } from '../../../src/knowledge-health.ts';
@@ -75,7 +76,11 @@ export const pagesHandlers = (context: HandlerContext): Handlers<'pages'> => {
     bothHold: (id) => {
       if (typeof id !== 'string' || !/^[0-9a-z]{14}$/.test(id)) throw new Error('Pick the two rules that both hold.');
       // Only a pair listed now can be set aside, with its two lines kept beside the id. No page is written.
-      const pair = assessKnowledge(listKnowledgeFiles(join(context.profileDir(), 'knowledge')), new Date()).issues.find((issue) => issue.pair?.id === id)?.pair;
+      // Read as Overview does (the approved copy once there is one), so the ids are the ones the owner was shown.
+      const root = join(context.profileDir(), 'knowledge');
+      const journal = createJournal(root);
+      const files = listKnowledgeFiles(journal.seeded() ? journal.approvedRoot : root);
+      const pair = assessKnowledge(files, new Date(), undefined, { dismissed: dismissedPairs(context.profileDir()) }).issues.find((issue) => issue.pair?.id === id)?.pair;
       if (!pair) throw new Error('Those two rules changed since you looked. Reload Overview.');
       dismissPair(context.profileDir(), id, [pair.older.text, pair.newer.text]);
     },

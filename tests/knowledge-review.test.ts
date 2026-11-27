@@ -233,6 +233,11 @@ test('the review may tidy part of a page: a rewrite that settles one of three re
     ask: async (title) => (title.includes('weekly review') ? JSON.stringify({ summary: 'One.', rewrites: [{ page: page.path, text, why: 'Merges a repeated rule.' }] }) : 'An answer.') });
   const unchanged = await run(page.text);
   assert.deepEqual(unchanged.suggestions.filter((item) => item.kind === 'replace' && item.page === page.path), [], 'a rewrite that settles nothing is not offered');
+  // A rewrite that settles one repeat but adds another line saying a rule again is not offered.
+  const repeated = tidied.replace('- Back every claim in a reply with a link or a test result (2026-11-17)\n', '- Back every claim in a reply with a link or a test result (2026-11-17)\n- Back every claim in a reply with a link or a test result (2026-11-20)\n');
+  assert.notEqual(repeated, tidied);
+  const added = await run(repeated);
+  assert.deepEqual(added.suggestions.filter((item) => item.kind === 'replace' && item.page === page.path), [], 'a new repeat on the page is refused');
   const partial = await run(tidied);
   assert.deepEqual(partial.suggestions.filter((item) => item.kind === 'replace').map((item) => item.page), [page.path], 'two repeats left is still progress');
 });

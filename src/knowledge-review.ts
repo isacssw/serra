@@ -236,6 +236,9 @@ export const runKnowledgeReview = async ({ profileDir, knowledgeDir, ask, now = 
       const [conflictsWere, conflictsLeft] = [pairsOn(health.issues, 'conflict'), pairsOn(afterIssues, 'conflict')];
       const [repeatsWere, repeatsLeft] = [pairsOn(health.issues, 'duplicate'), pairsOn(afterIssues, 'duplicate')];
       if ([...conflictsLeft].some((id) => !conflictsWere.has(id))) continue;
+      // Nor a new repeat within the page: a rule said twice is what the review is there to tidy.
+      const ownRepeats = afterIssues.filter((item) => item.kind === 'duplicate' && item.pair && item.pair.older.page === target && item.pair.newer.page === target);
+      if (ownRepeats.some((item) => !repeatsWere.has(item.pair!.id))) continue;
       const sentFor = conflictsWere.size + repeatsWere.size > 0 && !topical.some((pair) => pair.page === target);
       if (sentFor && conflictsLeft.size >= conflictsWere.size && repeatsLeft.size >= repeatsWere.size) continue;
       const newer = conflicted.filter((item) => item.kind === 'conflict' && item.pages.length === 2 && item.pages.includes(target)).flatMap((item) => item.facts ?? [])

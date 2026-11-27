@@ -14,8 +14,8 @@ import { Button, cx, Dialog, useToast } from '../../ui/index.ts';
 import { DiffView } from '../proposals/DiffView.tsx';
 import { pageBody } from '../../../../src/knowledge-rules.ts';
 import { fixItems, fixKind, needsYou, type FixItem } from '../overview.logic.ts';
-import { groupLine, type PairGroup } from '../conflicts.logic.ts';
-import { keepNewerOnPages, keepOne } from '../keep.ts';
+import { groupLine, type ChainRow, type PairGroup } from '../conflicts.logic.ts';
+import { keepNewerOnPages, keepOne, keepOver } from '../keep.ts';
 import { localDate } from '../pages.logic.ts';
 import { DisagreePairs, RepeatPairs, type PairActions } from './RulePairs.tsx';
 import { settle } from './WeekDigest.tsx';
@@ -86,6 +86,8 @@ export const FixList = ({ overview, onOpen, onChanged }: { overview: KnowledgeOv
   }
   const shown = all ? view.items : view.items.slice(0, SHOWN);
   const markDone = (ids: string[]): void => setDone((set) => new Set([...set, ...ids]));
+  /** After an Undo: the rows come back at once, not only after the reload. */
+  const unmark = (ids: string[]): void => setDone((set) => new Set([...set].filter((id) => !ids.includes(id))));
 
   const apply = async (list: ReviewSuggestion[]) => {
     const undoIds: string[] = [];
@@ -124,22 +126,46 @@ export const FixList = ({ overview, onOpen, onChanged }: { overview: KnowledgeOv
       if (result === 'open') { onOpen(drop.page); return; }
       // Only this pair leaves the list: the page's other pairs stay until the reload says they're settled too.
       markDone([pair.id]);
-      toast({ message: 'Kept.', tone: 'success', action: { label: 'Undo', onClick: () => { void result.undo().then(onChanged, (failure: unknown) => toast({ message: message(failure), tone: 'error' })); } } });
+      toast({ message: 'Kept.', tone: 'success', action: { label: 'Undo', onClick: () => { void result.undo().then(() => { unmark([pair.id]); onChanged(); }, (failure: unknown) => toast({ message: message(failure), tone: 'error' })); } } });
       onChanged();
     } catch (failure) { toast({ message: message(failure), tone: 'error' }); } finally { setBusy(null); }
   };
 
-  /** Both lines hold: Serra stops listing the pair. Remembered in the profile; no page is written. */
-  const bothHold = async (pair: PairInfo) => {
+  /**
+   * A repeated rule: Keep newer moves every older version under "Replaced" (one save per page); Keep older keeps the
+   * latest older version and moves the newest. Backed up, saved at once, undoable.
+   */
+  const keepRow = async (row: ChainRow, side: 'older' | 'newer') => {
     const bridge = serra();
     if (!bridge) return;
-    setBusy(pair.id);
+    const [kept, drops] = side === 'newer' ? [row.newer, row.olders] : [row.latest.older, [row.newer]];
+    setBusy(row.key);
     try {
-      await bridge.pages.bothHold(pair.id);
-      markDone([pair.id]);
-      toast({ message: 'Both kept. Not listed again.', tone: 'success', action: { label: 'Undo', onClick: () => { void bridge.pages.undoBothHold(pair.id).then(() => { setDone((set) => new Set([...set].filter((id) => id !== pair.id))); onChanged(); }, (failure: unknown) => toast({ message: message(failure), tone: 'error' })); } } });
+      const result = await keepOver(bridge, kept, drops);
+      if (result === 'open') { onOpen(drops[0]!.page); return; }
+      const ids = row.pairs.map((pair) => pair.id);
+      markDone(ids);
+      toast({ message: 'Kept.', tone: 'success', action: { label: 'Undo', onClick: () => { void result.undo().then(() => { unmark(ids); onChanged(); }, (failure: unknown) => toast({ message: message(failure), tone: 'error' })); } } });
       onChanged();
     } catch (failure) { toast({ message: message(failure), tone: 'error' }); } finally { setBusy(null); }
+  };
+
+  /** Both lines hold: Serra stops listing the pairs. Remembered in the profile; no page is written. */
+  const bothHold = async (pairs: PairInfo[]) => {
+    const bridge = serra();
+    if (!bridge) return;
+    setBusy('both');
+    const set: string[] = [];
+    const undo = async (): Promise<void> => { for (const id of set) await bridge.pages.undoBothHold(id); };
+    try {
+      for (const pair of pairs) { await bridge.pages.bothHold(pair.id); set.push(pair.id); }
+      markDone(set);
+      toast({ message: 'Both kept. Not listed again.', tone: 'success', action: { label: 'Undo', onClick: () => { void undo().then(() => { unmark(set); onChanged(); }, (failure: unknown) => toast({ message: message(failure), tone: 'error' })); } } });
+      onChanged();
+    } catch (failure) {
+      await undo().catch(() => {});
+      toast({ message: message(failure), tone: 'error' });
+    } finally { setBusy(null); }
   };
 
   /** "Keep newer" on every safe pair of these pages: one backed-up save per page (keep.ts), undoable as one. */
@@ -148,12 +174,15 @@ export const FixList = ({ overview, onOpen, onChanged }: { overview: KnowledgeOv
     if (!bridge) return;
     setBusy('bulk');
     const result = await keepNewerOnPages(bridge, groups, localDate(new Date()));
-    markDone(groups.filter((group) => result.pages.includes(group.pages[0]!)).flatMap((group) => group.safe.map((pair) => pair.id)));
+    // Only the pairs whose older line really moved leave the list; a rule inside a sentence of prose stays for the page.
+    const settled = groups.flatMap((group) => group.safe.filter((pair) => result.moved.some((line) => line.page === pair.older.page && line.text === pair.older.text.trim())).map((pair) => pair.id));
+    markDone(settled);
     setBusy(null);
     if (result.error !== undefined) toast({ message: message(result.error), tone: 'error' });
+    else if (result.lines === 0) toast({ message: 'Nothing moved: those lines sit inside longer text. Open the page to tidy them.', tone: 'error' });
     if (result.pages.length > 0) {
       toast({ message: `Kept newer: ${result.lines} older line${result.lines === 1 ? '' : 's'} moved under “Replaced”.`, tone: 'success', action: { label: 'Undo', onClick: () => {
-        void result.undo().then(onChanged, (failure: unknown) => toast({ message: message(failure), tone: 'error' }));
+        void result.undo().then(() => { unmark(settled); onChanged(); }, (failure: unknown) => toast({ message: message(failure), tone: 'error' }));
       } } });
     }
     onChanged();
@@ -179,12 +208,13 @@ export const FixList = ({ overview, onOpen, onChanged }: { overview: KnowledgeOv
     else void apply([suggestion]);
   };
 
-  const actions: PairActions = { busy: busy !== null, keep: (pair, side) => void keep(pair, side), bothHold: (pair) => void bothHold(pair) };
+  const actions: PairActions = { busy: busy !== null, keep: (pair, side) => void keep(pair, side), keepRow: (row, side) => void keepRow(row, side), bothHold: (pairs) => void bothHold(pairs) };
   const safePages = view.repeats.filter((group) => group.safe.length > 0 && group.pages.length === 1);
   const safeLines = (groups: PairGroup[]): number => new Set(groups.flatMap((group) => group.safe.map((pair) => `${group.key}\n${pair.older.text}`))).size;
+  const safeRows = (groups: PairGroup[]): number => groups.reduce((sum, group) => sum + group.safeRows, 0);
   const askKeepNewer = (groups: PairGroup[]) => setAsking({
     title: groups.length === 1 ? `Keep newer on ${groupTitle(groups[0]!)}?` : `Keep newer on ${groups.length} pages?`,
-    description: `${safeLines(groups)} older line${safeLines(groups) === 1 ? '' : 's'} move under “Replaced”. Only lines the newer one fully covers. Each page is backed up first.`,
+    description: `${safeLines(groups)} older line${safeLines(groups) === 1 ? '' : 's'} move under “Replaced”, only where the newer line says everything they do${groups.length > 1 ? `, on ${groups.map(groupTitle).join('; ')}` : ''}. Each page is backed up first.`,
     confirm: 'Keep newer', run: () => void keepNewer(groups),
   });
 
@@ -231,7 +261,7 @@ export const FixList = ({ overview, onOpen, onChanged }: { overview: KnowledgeOv
                   <p className="truncate text-xs leading-4 text-muted">{groupLine(group)}</p>
                 </div>
                 <Button size="sm" variant={at === 0 && !isOpen ? 'secondary' : 'ghost'} aria-expanded={isOpen} className="pr-1.5" onClick={() => setOpened(isOpen ? null : group.key)}>
-                  {kind === 'repeat' ? `Review ${group.pairs.length}` : 'Compare'}
+                  {kind === 'repeat' ? `Review ${group.rows.length}` : 'Compare'}
                   <ChevronRight size={13} aria-hidden className={cx('-ml-0.5 transition-transform', isOpen && 'rotate-90')} />
                 </Button>
               </div>
@@ -239,7 +269,7 @@ export const FixList = ({ overview, onOpen, onChanged }: { overview: KnowledgeOv
                 <div className="flex flex-col gap-2.5 pl-7">
                   <div className="flex flex-wrap gap-1.5">
                     {kind === 'repeat' && group.safe.length > 0 && group.pages.length === 1 && (
-                      <Button size="sm" variant="primary" disabled={busy !== null} onClick={() => askKeepNewer([group])}>Keep newer for all {safeLines([group])}</Button>
+                      <Button size="sm" variant="primary" disabled={busy !== null} onClick={() => askKeepNewer([group])}>Keep newer for all {safeRows([group])}</Button>
                     )}
                     {group.pages.map((page) => (
                       <Button key={page} size="sm" variant="ghost" className="pr-1.5" onClick={() => onOpen(page)}>
@@ -247,7 +277,7 @@ export const FixList = ({ overview, onOpen, onChanged }: { overview: KnowledgeOv
                       </Button>
                     ))}
                   </div>
-                  {kind === 'repeat' ? <RepeatPairs pairs={group.pairs} actions={actions} /> : <DisagreePairs pairs={group.pairs} titleOf={title} actions={actions} />}
+                  {kind === 'repeat' ? <RepeatPairs rows={group.rows} titleOf={title} actions={actions} /> : <DisagreePairs pairs={group.pairs} titleOf={title} actions={actions} />}
                 </div>
               )}
             </li>
@@ -285,7 +315,7 @@ export const FixList = ({ overview, onOpen, onChanged }: { overview: KnowledgeOv
       {view.repeats.length > 0 && (
         <div className="flex flex-col gap-1.5">
           <GroupHead
-            id="todo-repeat" title="Same rule, learned again" hint="safe"
+            id="todo-repeat" title="Same rule, learned again" hint={view.repeats.some((group) => group.dropsDetail > 0) ? 'mostly safe' : 'safe'}
             action={safePages.length > 1 && <Button size="sm" disabled={busy !== null} onClick={() => askKeepNewer(safePages)}>{busy === 'bulk' ? 'Working…' : `Keep newer on all ${safePages.length} pages`}</Button>}
           />
           {groupRows(view.repeats, 'repeat')}

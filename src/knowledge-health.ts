@@ -74,15 +74,20 @@ export const currentText = (text: string): string => text
 const ISO_DAY = '\\d{4}-\\d{2}-\\d{2}';
 const MONTH_DAY = '(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\\.?\\s+\\d{1,2}(?:,?\\s+\\d{4})?';
 const NOTE_DAY = `(?:${ISO_DAY}|${MONTH_DAY})`;
+/** Text in a bracket that holds no date: the source part of a note ("Payments sync: Ana; LIN-482"). */
+const NO_DAY = `(?:(?!${NOTE_DAY})[^()\\[\\]])*`;
 /**
- * A note saying when (and where) a rule was learned: a parenthesis or bracket that starts or ends with a date,
- * "(2026-11-16)", "(2026-11-20, Payments sync: Ana)", "(from #team-dx, Nov 16)", "(since 2026-10-01)". A date in the
- * middle of a parenthesis ("(2026-12-01 to 2026-12-15)") is what the rule is about, so it stays.
+ * A note saying when (and where) a rule was learned: a bracket holding one date, alone or beside a source after a
+ * comma, "(2026-11-16)", "(2026-11-20, Payments sync: Ana)", "(from #team-dx, Nov 16)", "(since 2026-10-01)". A
+ * bracket with two dates ("(2026-12-01 – 2026-12-15)") or a date inside a phrase is what the rule is about: it stays.
  */
-const NOTE = new RegExp(`\\s*[(\\[]\\s*(?:(?:learned|added|noted|confirmed|updated|since|as of|on|from)\\s+)?${NOTE_DAY}(?:\\s*[,;·—–-][^()\\[\\]]*)?\\s*[)\\]]|\\s*[(\\[][^()\\[\\]]*[,;·—–-]\\s*${NOTE_DAY}\\s*[)\\]]`, 'gi');
-/** "… — 2026-11-16" or "… · Nov 16" at the end of a line, and "2026-11-16: …" at its start. */
-const TRAILING_NOTE = new RegExp(`\\s+[—–·-]\\s+${NOTE_DAY}\\.?\\s*$`, 'i');
-const LEADING_NOTE = new RegExp(`^\\s*${ISO_DAY}\\s*[:—–-]\\s+`);
+const NOTE = new RegExp(`\\s*[(\\[]\\s*(?:(?:learned|added|noted|confirmed|updated|since|as of|on|from)\\s+)?${NOTE_DAY}(?:\\s*[,;·]${NO_DAY})?\\s*[)\\]]`
+  + `|\\s*[(\\[]${NO_DAY}[,;·]\\s*${NOTE_DAY}\\s*[)\\]]`, 'gi');
+/**
+ * "… — learned 2026-11-16" at the end of a line. A bare date at either end ("2026-12-01: code freeze begins") may be
+ * the rule's own value, so only one that says it is when the rule was learned goes.
+ */
+const TRAILING_NOTE = new RegExp(`\\s+[—–·-]\\s+(?:learned|added|noted|confirmed|updated)\\s+${NOTE_DAY}\\.?\\s*$`, 'i');
 const ISO_IN = new RegExp(ISO_DAY, 'g');
 
 /**
@@ -98,7 +103,6 @@ export const ruleText = (text: string): string => text
   .replace(/\bhttps?:\/\/[^\s)>\]]+/g, ' ')
   .replace(NOTE, ' ')
   .replace(/\(\s*\)|\[\s*\]/g, ' ')
-  .replace(LEADING_NOTE, '')
   .replace(/\s+/g, ' ')
   .replace(TRAILING_NOTE, '')
   .replace(/\s+([.,;:!?])/g, '$1')
@@ -110,7 +114,7 @@ export const ruleText = (text: string): string => text
  */
 export const learnedOn = (text: string): string | null => {
   const notes = [...text.replace(/<!--[\s\S]*?-->/g, ' ').matchAll(NOTE)].map((match) => match[0]);
-  const edges = [LEADING_NOTE.exec(text)?.[0] ?? '', TRAILING_NOTE.exec(text.replace(/<!--[\s\S]*?-->/g, ' ').trimEnd())?.[0] ?? ''];
+  const edges = [TRAILING_NOTE.exec(text.replace(/<!--[\s\S]*?-->/g, ' ').trimEnd())?.[0] ?? ''];
   const days = [...notes, ...edges].flatMap((note) => note.match(ISO_IN) ?? []).sort();
   return days.at(-1) ?? null;
 };
@@ -186,6 +190,17 @@ const ruledOut = (text: string): Set<string> => new Set(text.toLowerCase().split
   const at = clause.search(/\b(never|not|no|don'?t|avoid|except)\b/);
   return at === -1 ? [] : clause.slice(at).match(SLOTS) ?? [];
 }));
+/** Words that turn a rule around when one replaces the other: "before deploying" / "after deploying". */
+const OPPOSITES: [string, string][] = [['before', 'after'], ['always', 'never'], ['more', 'less'], ['more', 'fewer'], ['above', 'below'], ['over', 'under'],
+  ['min', 'max'], ['minimum', 'maximum'], ['earlier', 'later'], ['first', 'last'], ['enable', 'disable'], ['enabled', 'disabled'], ['allow', 'forbid'],
+  ['allowed', 'forbidden'], ['public', 'private'], ['required', 'optional'], ['include', 'exclude'], ['start', 'stop']];
+/** Every word of a rule, lower case and stemmed, the small ones ("before", "all", "if") included. */
+const allWords = (text: string): Set<string> => new Set((text.toLowerCase().replace(/[’']/g, '').match(/[\p{L}\p{N}]+/gu) ?? [])
+  .filter((word) => !['a', 'an', 'the'].includes(word)).map((word) => (/^\d/.test(word) ? word : stem(word))));
+const opposed = (a: Set<string>, b: Set<string>): boolean => OPPOSITES.some(([x, y]) => {
+  const [sx, sy] = [stem(x), stem(y)];
+  return (a.has(sx) && !a.has(sy) && b.has(sy) && !b.has(sx)) || (a.has(sy) && !a.has(sx) && b.has(sx) && !b.has(sy));
+});
 const SLOT_WORD = /^(always|alway|monday|tuesday|wednesday|thursday|friday|saturday|sunday|weekly|daily|monthly|morning|afternoon|evening|\d+)$/;
 /**
  * Words that mark a rule as changed ("now", "since", "moved") or only frame it ("keep", "should stay", "day"), rather
@@ -213,7 +228,7 @@ export const findOverlaps = (facts: Fact[], comparable: (a: string, b: string) =
     const topics = topic(fact.words);
     const all = slots(fact.plain);
     const out = ruledOut(fact.plain);
-    return { topics, size: topics.size, slots: all, said: new Set([...all].filter((slot) => !out.has(slot))), out, negated: negated(fact.words) };
+    return { topics, size: topics.size, slots: all, said: new Set([...all].filter((slot) => !out.has(slot))), out, negated: negated(fact.words), every: allWords(fact.plain) };
   });
   const byWord = new Map<string, number[]>();
   info.forEach(({ topics }, at) => {
@@ -259,7 +274,9 @@ export const findOverlaps = (facts: Fact[], comparable: (a: string, b: string) =
       const slotClash = mine.slots.size > 0 && theirs.slots.size > 0 && [...mine.slots].some((slot) => !theirs.slots.has(slot)) && [...theirs.slots].some((slot) => !mine.slots.has(slot));
       const negationClash = mine.negated !== theirs.negated;
       // "Tuesday, never Thursday" against "Thursday now, never Friday": one says the day the other rules out.
-      const polarityClash = [...mine.said].some((slot) => theirs.out.has(slot)) || [...theirs.said].some((slot) => mine.out.has(slot));
+      const polarityClash = [...mine.said].some((slot) => theirs.out.has(slot)) || [...theirs.said].some((slot) => mine.out.has(slot))
+        // "Run migrations before deploying" against "after deploying": one word turned around.
+        || opposed(mine.every, theirs.every);
       // Two rules about different things ("Retry webhooks 5 times", "Retry invoices 3 times") each have a word the
       // other lacks, so they're never the same subject. "Never Thursday" against "Thursday now" is a conflict too.
       if ((sameSubject && (slotClash || negationClash || polarityClash)) || (nearlyNested && (slotClash || polarityClash))) conflicts.push(pair);
@@ -429,12 +446,17 @@ export const pairId = (a: { page: string; text: string }, b: { page: string; tex
 
 const sideOf = (fact: { page: string; text: string }): PairSide => ({ ...fact, plain: ruleText(fact.text), learned: learnedOn(fact.text) });
 
-/** Whether `wide` says everything `narrow` does: each of its words, numbers and days, and the same "never". */
+/**
+ * Whether `wide` says everything `narrow` does: every word (small ones like "before", "all" and "if" too, only "a",
+ * "an" and "the" aside), number and day, with no word of it turned around and the same "never".
+ */
 const says = (wide: string, narrow: string): boolean => {
-  const [w, n] = [new Set(words(wide)), new Set(words(narrow))];
+  const [w, n] = [allWords(wide), allWords(narrow)];
   const [ws, ns] = [slots(wide), slots(narrow)];
-  return [...n].every((word) => w.has(word)) && [...ns].every((slot) => ws.has(slot)) && negated(w) === negated(n);
+  return [...n].every((word) => w.has(word)) && [...ns].every((slot) => ws.has(slot)) && negated(w) === negated(n) && !opposed(w, n);
 };
+/** The links a line gives, which `ruleText` leaves out of the comparison: a newer line that drops or changes one doesn't cover the older. */
+const links = (text: string): Set<string> => new Set(text.match(/https?:\/\/[^\s)>\]]+/g) ?? []);
 
 /** Which of a pair is older, by the days their notes give, else the shorter first; and whether the newer covers the older. */
 const pairInfo = (pair: { a: { page: string; text: string }; b: { page: string; text: string } }): PairInfo => {
@@ -444,7 +466,7 @@ const pairInfo = (pair: { a: { page: string; text: string }; b: { page: string; 
   const aFirst = dated ? (b.learned !== null && (a.learned === null || a.learned < b.learned))
     : words(a.plain).length < words(b.plain).length || (words(a.plain).length === words(b.plain).length && a.plain.length <= b.plain.length);
   const [older, newer] = aFirst ? [a, b] : [b, a];
-  return { id: pairId(pair.a, pair.b), older, newer, order: dated ? 'date' : 'length', covers: says(newer.plain, older.plain) };
+  return { id: pairId(pair.a, pair.b), older, newer, order: dated ? 'date' : 'length', covers: says(newer.plain, older.plain) && [...links(older.text)].every((link) => links(newer.text).has(link)) };
 };
 
 export interface AssessOptions {
@@ -783,6 +805,9 @@ export const similarPages = (proposal: string, files: KnowledgeFile[], { limit =
 const newerOf = (pair: FactPair, confirmed: Map<string, string>): 'a' | 'b' | null => {
   const fresh = (text: string): boolean => /\bnow\b/i.test(text) || /\b(since|as of|starting|from)\s+(\d{4}-\d{2}|\d{1,2}\s+)?(jan(uary)?|feb(ruary)?|mar(ch)?|apr(il)?|may|june?|july?|aug(ust)?|sep(t(ember)?)?|oct(ober)?|nov(ember)?|dec(ember)?|\d{4}-\d{2})\b/i.test(text);
   if (fresh(pair.a.text) !== fresh(pair.b.text)) return fresh(pair.a.text) ? 'a' : 'b';
+  // Each line's own note says when it was learned: the later one is current.
+  const [la, lb] = [learnedOn(pair.a.text), learnedOn(pair.b.text)];
+  if (la && lb && la !== lb) return la > lb ? 'a' : 'b';
   const [a, b] = [confirmed.get(pair.a.page) ?? '', confirmed.get(pair.b.page) ?? ''];
   if (pair.a.page !== pair.b.page && DATE.test(a) && DATE.test(b) && a !== b) return a > b ? 'a' : 'b';
   return null;
@@ -827,7 +852,7 @@ const endedRules = (facts: Fact[], confirmed: Map<string, string>): FactPair[] =
  * The index with a note on each row whose page a worker should weigh with care: `(draft: not confirmed)` or
  * `(confirmed 2026-08-01; may be out of date)`. Rows of fresh pages are left as they are.
  */
-export const markIndexRows = (index: string, files: KnowledgeFile[], now: Date): string => {
+export const markIndexRows = (index: string, files: KnowledgeFile[], now: Date, { dismissed }: AssessOptions = {}): string => {
   const notes = new Map<string, string[]>();
   const add = (path: string, note: string): void => { notes.set(path, [...(notes.get(path) ?? []), note]); };
   for (const { path, text } of files) {
@@ -839,7 +864,8 @@ export const markIndexRows = (index: string, files: KnowledgeFile[], now: Date):
   const pages = describePages(files, index, now);
   const areaOf = new Map(pages.map((page) => [page.path, page.area]));
   const facts = files.filter((file) => isPage(file.path)).flatMap((file) => pageFacts(file.path, file.text));
-  const { conflicts } = findOverlaps(facts, (a, b) => samePageSubject(a, b, areaOf));
+  // Pairs the owner said both hold aren't a disagreement the worker has to weigh.
+  const conflicts = findOverlaps(facts, (a, b) => samePageSubject(a, b, areaOf)).conflicts.filter((pair) => !dismissed?.has(pairId(pair.a, pair.b)));
   const confirmed = new Map(files.map((file) => [file.path, frontmatter(file.text)?.get('verified')?.trim() ?? '']));
   // A rule that says what it ended is the current one by its own words.
   const said = new Set(conflicts.map((pair) => [pair.a.text, pair.b.text].sort().join('\n')));
