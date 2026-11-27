@@ -7,7 +7,8 @@
 // - A run record (`runsDir`, one JSON file per session): the messages, the folder, and whether a turn was going. It
 //   is the run's transcript (Jobs shows it), and after a restart Serra reopens the session with `session/load` and
 //   carries on a turn the restart cut off. Without `runsDir` (meeting runs) a run lives only in this process.
-// - Worktrees: Serra makes one itself (src/agent/worktree.ts) and starts the session in it.
+// - Worktrees: Serra makes one itself (src/agent/worktree.ts) and starts the session in it, except for an agent bound
+//   to its own folder (`cwd`, eve's app root), whose sessions all open there.
 // - Steer: there is none in ACP v1, so a message sent while a turn runs is queued and sent when the turn ends.
 //
 // Access, never wider than T3 gives the same kind of run:
@@ -205,7 +206,8 @@ const formQuestions = (message: string, schema: unknown): { questions: T3Questio
       : fieldOptions(multi ? items : field);
     const header = typeof field.title === 'string' ? field.title : '';
     const question = typeof field.description === 'string' && field.description.trim() ? field.description : keys.length <= 2 ? message : header || message;
-    questions.push({ id: key, header, question, options, ...(multi ? { multiSelect: true } : {}) });
+    // A title that only repeats the question (eve's) isn't shown twice.
+    questions.push({ id: key, header: header === question ? '' : header, question, options, ...(multi ? { multiSelect: true } : {}) });
   }
   for (const question of questions) if (question.options.length) question.allowCustomAnswer = custom.has(question.id);
   return { questions, custom };
@@ -240,7 +242,7 @@ const RESUME = 'Serra restarted while you were working on the last message, so y
 const defaultSpawn = (agent: AcpAgent, env: NodeJS.ProcessEnv): ChildProcess => {
   const launch = launchFor(agent, env.PATH ?? '');
   if ('missing' in launch) throw new Error(launch.missing);
-  return spawn(launch.command, launch.args, { stdio: ['pipe', 'pipe', 'pipe'], env: { ...env, ...agent.env, ...launch.env }, detached: true });
+  return spawn(launch.command, launch.args, { stdio: ['pipe', 'pipe', 'pipe'], env: { ...env, ...agent.env, ...launch.env }, detached: true, ...(agent.cwd ? { cwd: agent.cwd } : {}) });
 };
 
 /** Signals the agent's process group, else the agent alone. */
@@ -575,6 +577,8 @@ export const createAcpBackend = ({
     } else if (!mode && modes && access !== 'full' && PERMISSIVE.test(modes.currentModeId)) {
       throw new Error(`${agent.name} runs in "${modes.currentModeId}" mode and has none that asks before using tools, so Serra can't make this run read-only.`);
     } else if (!mode && access === 'full') allowAll = true;
+    // An agent bound to its own folder works outside a throwaway worktree: what it asks, a person answers.
+    if (agent.cwd) allowAll = false;
     if (model) {
       const option = configOptions?.find((choice) => choice.category === 'model' || choice.id === 'model');
       if (option) {
@@ -614,9 +618,9 @@ export const createAcpBackend = ({
 
   const start = async (input: StartRun): Promise<string> => {
     const access: RunAccess = input.readOnly ? 'read-only' : input.workspace.kind === 'worktree' ? 'full' : 'ask';
-    const cwd = input.workspace.kind === 'folder'
+    const cwd = agent.cwd ?? (input.workspace.kind === 'folder'
       ? input.workspace.path
-      : await makeWorktree({ ...input.workspace, ...(worktreeRoot ? { root: worktreeRoot } : {}) });
+      : await makeWorktree({ ...input.workspace, ...(worktreeRoot ? { root: worktreeRoot } : {}) }));
     let created: acp.NewSessionResponse;
     let open: acp.ClientConnection;
     try {

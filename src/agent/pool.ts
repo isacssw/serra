@@ -50,7 +50,7 @@ export const createBackendPool = ({ profileDir, t3, log = () => {}, makeAcp = cr
   log?: (message: string) => void;
   makeAcp?: typeof createAcpBackend;
 }): AgentBackends => {
-  // Each agent's newest instance, and the setup it was made from. An edit to the agent (command, args, env, name)
+  // Each agent's newest instance, and the setup it was made from. An edit to the agent (command, args, env, cwd, name)
   // or its model in `agent-backend.json` makes a new instance for the next job; the old one is kept for the turns
   // still going on it, then closed once it has none. A thread goes to the instance whose turn it is, else the newest.
   const newest = new Map<string, { setup: string; backend: AgentBackend }>();
@@ -74,7 +74,7 @@ export const createBackendPool = ({ profileDir, t3, log = () => {}, makeAcp = cr
       throw new Error(`Serra has no ACP agent "${id}" any more. Add it back in agent-backend.json to carry on its threads.`);
     }
     const model = settings.models[agent.id];
-    const setup = JSON.stringify([agent.name, agent.command, agent.args, agent.env ?? {}, model ?? null]);
+    const setup = JSON.stringify([agent.name, agent.command, agent.args, agent.env ?? {}, agent.cwd ?? null, model ?? null]);
     if (held?.setup === setup) return held.backend;
     if (held) {
       retired.set(key, [...retired.get(key) ?? [], held.backend]);

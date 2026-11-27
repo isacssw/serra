@@ -4,6 +4,8 @@ Serra follows [Semantic Versioning](https://semver.org) once it reaches 1.0. Unt
 
 ## Unreleased
 
+- **ACP agents bound to one app, such as eve:** a custom agent's `cwd` in `agent-backend.json` starts it in that folder and opens every job there instead of a worktree, with each approval waiting for a person. A question whose title repeats it shows it once. See `docs/agent-backends.md`.
+
 ## 0.1.0-alpha.7 (2026-11-27)
 
 - **Jobs › Chat:** a run opens as a chat, on ACP agents and T3. You see the request, the reply as it streams, tool calls folded into compact rows, permissions and how they were settled, and images in and out. Answer or follow up from the box at the bottom; T3 runs keep **Open in T3**. It replaces the Transcript window.
