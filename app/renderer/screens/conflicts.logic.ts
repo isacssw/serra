@@ -149,7 +149,9 @@ export interface PairGroup {
 }
 
 /** A pair "Keep newer" can settle without losing a word: the newer is dated later and says all the older says. */
-export const isSafe = (pair: PairInfo): boolean => pair.order === 'date' && pair.covers && pair.older.page === pair.newer.page && pair.older.whole && pair.newer.whole;
+export const isSafe = (pair: PairInfo): boolean => pair.order === 'date' && pair.covers && pair.older.page === pair.newer.page && pair.older.whole && pair.newer.whole
+  // Both days with their year: a year-less note orders only within a year, which a click shouldn't rely on.
+  && !(pair.newer.learned ?? '0000').startsWith('0000');
 
 /** Pairs as one row per page (or pair of pages), repeats and disagreements apart, biggest group first. */
 export const groupPairs = (issues: readonly PairIssue[]): { repeats: PairGroup[]; disagree: PairGroup[] } => {

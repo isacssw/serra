@@ -135,7 +135,15 @@ export const replacedOn = (kept: string, today: string): string => {
 
 export const keepRule = (text: string, drop: string, date: string): string => {
   const lines = text.replace(/\r\n?/g, '\n').split('\n');
-  const at = lines.findIndex((line) => line.trim().replace(/^([-*]|\d+\.)\s+/, '').trim() === drop.trim());
+  // Only a current rule moves: never a line of the header, a code block or the "Replaced" section itself.
+  let [header, fence, replaced] = [lines[0] === '---', false, false];
+  const at = lines.findIndex((line, index) => {
+    if (header) { if (index > 0 && line === '---') header = false; return false; }
+    if (/^\s*```/.test(line)) { fence = !fence; return false; }
+    if (fence) return false;
+    if (/^##\s/.test(line)) replaced = /^##\s+Replaced\b/i.test(line);
+    return !replaced && line.trim().replace(/^([-*]|\d+\.)\s+/, '').trim() === drop.trim();
+  });
   if (at === -1) return text;
   lines.splice(at, 1);
   const body = lines.join('\n').trimEnd();

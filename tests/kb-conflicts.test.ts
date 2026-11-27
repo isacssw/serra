@@ -499,3 +499,42 @@ test('Keep moves the line under a "## Replaced" heading that ends the page with 
   assert.match(kept, /## Replaced\n\n- Until 2026-11-25: Ship on Tuesday\.\n$/);
   assert.deepEqual(currentRules(kept), ['Ship on Thursday now.']);
 });
+
+test('a changed sign, a year-less date and a line in a code block are never moved by "Keep newer for all"', () => {
+  const safe = (older: string, newer: string): number => groupPairs(pairsOf([{ path: 'a.md', text: `---\ntype: rule\n---\n- ${older}\n- ${newer}\n` }], undefined))
+    .repeats.reduce((sum, group) => sum + group.safeRows, 0);
+  for (const [older, newer] of [
+    ['Alert when p95 latency >= 500 ms for checkout (2026-11-16)', 'Alert when p95 latency <= 500 ms for checkout (2026-11-17)'],
+    ['Refunds over $100 need a second approver (2026-11-16)', 'Refunds over €100 need a second approver (2026-11-17)'],
+    ['Schedule the payout batch at 09:00 UTC+2 daily (2026-11-16)', 'Schedule the payout batch at 09:00 UTC-2 daily (2026-11-17)'],
+    ['The billing code freeze ends (Dec 15)', 'The billing code freeze ends (Dec 20)'],
+  ] as [string, string][]) assert.equal(safe(older, newer), 0, `${older} / ${newer}`);
+  assert.equal(learnedOn('The billing code freeze ends (Dec 15)'), null, 'a day with no year and no source is a value');
+  // A rule shown in a code block isn't a rule, and Keep never moves a line from one.
+  const text = '---\ntype: rule\n---\n```\nTag each release in git with its version\n```\n- Tag each release in git with its version\n- Tag each release in git with its version and changelog\n';
+  assert.equal(pageFacts('a.md', text).length, 2, 'the code block holds no rule');
+  const kept = keepRule(text, 'Tag each release in git with its version', '2026-11-27');
+  assert.match(kept, /```\nTag each release in git with its version\n```/, 'the code block is untouched');
+  assert.ok(!kept.includes('- Tag each release in git with its version\n'), 'the bullet moved');
+  assert.match(kept, /## Replaced\n\n- Until 2026-11-27: Tag each release in git with its version\n$/);
+});
+
+test('a note dated after today is a deadline: the two lines disagree, they are not the same rule learned again', () => {
+  const pairs = pairsOf([{ path: 'a.md', text: '---\ntype: rule\n---\n- The payouts migration starts (2026-12-15)\n- The payouts migration starts (2026-12-20)\n' }]);
+  assert.deepEqual(pairs.map((issue) => issue.kind), ['conflict']);
+});
+
+test('one more "never", a changed sign, and a year-less note beside a dated one: never a safe repeat', () => {
+  const pair = (older: string, newer: string) => pairsOf([{ path: 'a.md', text: `---\ntype: rule\n---\n- ${older}\n- ${newer}\n` }]);
+  assert.deepEqual(pair('Merge a PR without Sam reviewing it (2026-11-16)', 'Never merge a PR without Sam reviewing it (2026-11-17)').map((issue) => issue.kind), ['conflict']);
+  assert.deepEqual(pair('Keep checkout latency < 200 ms (2026-11-16)', 'Keep checkout latency > 200 ms (2026-11-17)').map((issue) => issue.kind), ['conflict']);
+  const mixed = pair('Ask in the thread before a rollback (2026-11-16)', 'Ask in the thread before a rollback (from #team-dx, Nov 20)');
+  assert.ok(mixed.every((issue) => issue.pair.order === 'length' && !isSafe(issue.pair)), 'a day without a year is never ordered against one with a year');
+});
+
+test('a source link in the learned note is where it was said: a restatement from another thread is still covered', () => {
+  const pairs = pairsOf([{ path: 'a.md', text: '---\ntype: rule\n---\n- Open every PR as a draft first (2026-11-16, [Slack](https://acme.slack.com/archives/C1/p1))\n- Open every PR as a draft first (2026-11-17, [Slack](https://acme.slack.com/archives/C1/p2))\n' }]);
+  assert.equal(pairs.length, 1);
+  assert.equal(pairs[0]!.pair.covers, true);
+  assert.equal(pairs[0]!.pair.newer.learned, '2026-11-17');
+});

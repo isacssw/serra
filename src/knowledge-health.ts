@@ -103,30 +103,8 @@ const unlinked = (text: string): string => text
   .replace(/\s+/g, ' ')
   .trim();
 
-/**
- * A rule as it is compared: without the dates and sources that say when it was learned (`(2026-11-16)`,
- * `(2026-11-20, Payments sync)`), links (`[the doc](https://…)` reads as "the doc"; a bare URL goes) and Serra's
- * `<!-- m:… -->` meeting tags. The same rule learned again on a later day then reads the same, while a changed number,
- * day or name still differs. The page itself is never changed: this is only how two lines are compared.
- */
-export const ruleText = (text: string): string => unlinked(text)
-  .replace(NOTE, ' ')
-  .replace(/\(\s*\)|\[\s*\]/g, ' ')
-  .replace(/\s+/g, ' ')
-  .replace(TRAILING_NOTE, '')
-  .replace(/\s+([.,;:!?])/g, '$1')
-  .trim();
-
-/**
- * The day a line's note says it was learned ("(2026-11-17)", "(2026-11-20, Payments sync)", "(from #team-dx, Nov
- * 16)"), as `YYYY-MM-DD`; a note without a year gets `0000`, which still orders the days of one year. Null without a
- * note: a date the rule is about ("the freeze starts 2026-12-01") isn't it.
- */
-export const learnedOn = (text: string): string | null => {
-  // Read the way `ruleText` reads it: a link inside a note ("(2026-11-17, [PR #42](…))") is just its words.
-  const line = unlinked(text);
-  const note = NOTE.exec(line)?.[0] ?? TRAILING_NOTE.exec(line)?.[0];
-  if (!note) return null;
+/** A note's day as `YYYY-MM-DD` (`0000-` when it gives no year). */
+const dayOf = (note: string): string | null => {
   const iso = ISO_IN.exec(note)?.[0];
   if (iso) return iso;
   const named = new RegExp(MONTH_DAY, 'i').exec(note)?.[0];
@@ -136,10 +114,51 @@ export const learnedOn = (text: string): string | null => {
   return `${year}-${String(month).padStart(2, '0')}-${day.padStart(2, '0')}`;
 };
 
+/**
+ * The line's learned-date note, if it has one, and its day. A bracket with only a day and no year ("(Dec 15)") is a
+ * value unless it names where it came from or says "learned"; a day after `today` is a deadline, not when it was learned.
+ */
+const noteOf = (line: string, today?: string): { note: string; day: string } | null => {
+  const note = NOTE.exec(line)?.[0] ?? TRAILING_NOTE.exec(line)?.[0];
+  if (!note) return null;
+  const day = dayOf(note);
+  if (!day) return null;
+  if (day.startsWith('0000') && !/[,;·]|learned|added|noted|confirmed|updated/i.test(note)) return null;
+  if (today && !day.startsWith('0000') && day > today) return null;
+  return { note, day };
+};
+
+/**
+ * A rule as it is compared: without the date and source that say when it was learned (`(2026-11-16)`,
+ * `(2026-11-20, Payments sync)`), links (`[the doc](https://…)` reads as "the doc"; a bare URL goes) and Serra's
+ * `<!-- m:… -->` meeting tags. The same rule learned again on a later day then reads the same, while a changed number,
+ * day or name still differs. With `today`, a note dated after it stays: it's a deadline. The page itself is never
+ * changed: this is only how two lines are compared.
+ */
+export const ruleText = (text: string, today?: string): string => {
+  const line = unlinked(text);
+  const found = noteOf(line, today);
+  return (found ? line.replace(found.note, ' ') : line)
+    .replace(/\(\s*\)|\[\s*\]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .replace(/\s+([.,;:!?])/g, '$1')
+    .trim();
+};
+
+/**
+ * The day a line's note says it was learned ("(2026-11-17)", "(2026-11-20, Payments sync)", "(from #team-dx, Nov
+ * 16)"), as `YYYY-MM-DD`; a note without a year gets `0000`, which still orders the days of one year. Null without a
+ * note: a date the rule is about ("the freeze starts 2026-12-01", "(Dec 15)") isn't it.
+ */
+export const learnedOn = (text: string, today?: string): string | null => noteOf(unlinked(text), today)?.day ?? null;
+
+/** A page's text with what's inside ``` fences blanked: code and examples aren't rules. */
+const withoutFences = (text: string): string => text.replace(/^\s*```[^\n]*\n[\s\S]*?(?:^\s*```[^\n]*$|(?![\s\S]))/gm, '');
+
 /** One thing a page says: a bullet, or a sentence of a paragraph. `text` is the line as written; `plain` as compared. */
 export interface Fact { page: string; text: string; plain: string; words: Set<string> }
 
-export const pageFacts = (path: string, text: string): Fact[] => currentText(text).split('\n').flatMap((line) => {
+export const pageFacts = (path: string, text: string, today?: string): Fact[] => withoutFences(currentText(text)).split('\n').flatMap((line) => {
   const trimmed = line.trim();
   // Headings, tables, code and quoted examples (a voice page's sample message) aren't rules.
   if (!trimmed || trimmed.startsWith('#') || trimmed.startsWith('|') || trimmed.startsWith('```') || trimmed.startsWith('>')) return [];
@@ -147,7 +166,7 @@ export const pageFacts = (path: string, text: string): Fact[] => currentText(tex
   // A bullet can hold several facts ("Payment records are kept 7 years. Webhook payloads 30 days."): each sentence is one.
   const parts = body.split(/(?<=[.!?])\s+(?=[A-Z])/);
   return parts.flatMap((part) => {
-    const plain = ruleText(part);
+    const plain = ruleText(part, today);
     const set = new Set(words(plain));
     return set.size >= 3 ? [{ page: path, text: part.trim(), plain, words: set }] : [];
   });
@@ -228,6 +247,10 @@ const CHANGE_WORDS = new Set(['now', 'since', 'currently', 'current', 'change', 
   'should', 'stay', 'must', 'we', 'is', 'are', 'be', 'keep', 'day', 'always', 'every', 'per', 'theres', 'there'].map((word) => stem(word)));
 const topic = (set: Set<string>): Set<string> => new Set([...set].filter((word) => !NEGATIONS.has(word) && !SLOT_WORD.test(word) && !CHANGE_WORDS.has(word)));
 const negated = (set: Set<string>): boolean => [...set].some((word) => NEGATIONS.has(word));
+/** How many times a rule turns itself around: "never merge without review" twice, "merge without review" once. */
+const negations = (text: string): number => words(text).filter((word) => NEGATIONS.has(word)).length;
+/** Signs and operators, in order: ">= 500", "$100", "UTC+2". */
+const signs = (text: string): string[] => text.match(/[<>=!≠≤≥$€£¥%#@&*^~|]+|[+-](?=\d)/g) ?? [];
 
 /** Above this, two facts say the same thing. */
 const DUPLICATE_AT = 0.7;
@@ -239,15 +262,26 @@ const CONFLICT_AT = 0.4;
  * the other Thursday, one has a number the other changes, or one says "never" where the other doesn't. Only facts
  * sharing a word are compared, so this stays fast on a full knowledge base.
  */
+/** What `findOverlaps` needs of a fact, worked out once per fact: history compares the same facts again and again. */
+const infoOf = new WeakMap<Fact, ReturnType<typeof readFact>>();
+const readFact = (fact: Fact) => {
+  const topics = topic(fact.words);
+  const all = slots(fact.plain);
+  const out = ruledOut(fact.plain);
+  return { topics, size: topics.size, slots: all, said: new Set([...all].filter((slot) => !out.has(slot))), out, negated: negated(fact.words), negations: negations(fact.plain), signs: signs(fact.plain).join(' '), every: allWords(fact.plain) };
+};
+const factInfo = (fact: Fact): ReturnType<typeof readFact> => {
+  const known = infoOf.get(fact);
+  if (known) return known;
+  const read = readFact(fact);
+  infoOf.set(fact, read);
+  return read;
+};
+
 export const findOverlaps = (facts: Fact[], comparable: (a: string, b: string) => boolean = () => true): { duplicates: FactPair[]; conflicts: FactPair[] } => {
   // Everything about one fact is worked out once; pairs are found by counting shared topic words, so no set is built
   // per pair. A knowledge base at its caps (60 pages of 120 lines) stays well under a second.
-  const info = facts.map((fact) => {
-    const topics = topic(fact.words);
-    const all = slots(fact.plain);
-    const out = ruledOut(fact.plain);
-    return { topics, size: topics.size, slots: all, said: new Set([...all].filter((slot) => !out.has(slot))), out, negated: negated(fact.words), every: allWords(fact.plain) };
-  });
+  const info = facts.map(factInfo);
   const byWord = new Map<string, number[]>();
   info.forEach(({ topics }, at) => {
     for (const word of topics) {
@@ -290,7 +324,10 @@ export const findOverlaps = (facts: Fact[], comparable: (a: string, b: string) =
       if (fact.page !== that.page && !comparable(fact.page, that.page)) continue;
       const pair = { a: { page: fact.page, text: fact.text }, b: { page: that.page, text: that.text }, similarity: Math.round(similarity * 100) / 100 };
       const slotClash = mine.slots.size > 0 && theirs.slots.size > 0 && [...mine.slots].some((slot) => !theirs.slots.has(slot)) && [...theirs.slots].some((slot) => !mine.slots.has(slot));
-      const negationClash = mine.negated !== theirs.negated;
+      // "Never merge without review" against "Merge without review": the same "without", one more "never".
+      const negationClash = mine.negated !== theirs.negated || mine.negations % 2 !== theirs.negations % 2;
+      // "Keep latency < 200ms" against "> 200ms", "$100" against "€100".
+      const signClash = mine.signs !== '' && theirs.signs !== '' && mine.signs !== theirs.signs;
       // "Tuesday, never Thursday" against "Thursday now, never Friday": one says the day the other rules out.
       const polarityClash = [...mine.said].some((slot) => theirs.out.has(slot)) || [...theirs.said].some((slot) => mine.out.has(slot))
         // "Run migrations before deploying" against "after deploying": one word turned around.
@@ -300,7 +337,7 @@ export const findOverlaps = (facts: Fact[], comparable: (a: string, b: string) =
         && OPPOSITES.some(([x, y]) => [stem(x), stem(y)].every((word) => mine.topics.has(word) || theirs.topics.has(word)));
       // Two rules about different things ("Retry webhooks 5 times", "Retry invoices 3 times") each have a word the
       // other lacks, so they're never the same subject. "Never Thursday" against "Thursday now" is a conflict too.
-      if ((sameSubject && (slotClash || negationClash || polarityClash)) || (nearlyNested && (slotClash || polarityClash)) || swapped) conflicts.push(pair);
+      if ((sameSubject && (slotClash || negationClash || polarityClash || signClash)) || (nearlyNested && (slotClash || polarityClash || signClash)) || swapped) conflicts.push(pair);
       // A repeat about a different subject has to be near word for word.
       // One rule's words all inside another's (three or more), the other adding at most two: it says it again.
       else if ((similarity >= DUPLICATE_AT && (sameSubject || similarity >= 0.85)) || (nestedTopics && Math.min(mine.size, theirs.size) >= 3 && Math.max(onlyMine, onlyTheirs) <= 2)) duplicates.push(pair);
@@ -432,10 +469,20 @@ const textKey = (text: string): string => {
 };
 
 /** Every overlap between the pages, built pair by pair from the cache. Same result as one `findOverlaps` over all. */
-const cachedOverlaps = (pages: KnowledgeFile[], cache: OverlapCache, comparable: (a: string, b: string) => boolean): ReturnType<typeof findOverlaps> => {
+/**
+ * A page's key in the cache. Facts depend on the day only where a note is dated after it (a deadline, kept in the
+ * comparison), so only such pages are keyed by the day too: history replays stay cached.
+ */
+const factsKey = (file: KnowledgeFile, today: string): string => {
+  // Dates in brackets in the body only: the header's `written:` and `verified:` never change a fact.
+  const future = (currentText(file.text).match(/[([][^()[\]\n]*\d{4}-\d{2}-\d{2}/g) ?? []).some((match) => match.slice(-10) > today);
+  return `${file.path}#${textKey(file.text)}${future ? `@${today}` : ''}`;
+};
+
+const cachedOverlaps = (pages: KnowledgeFile[], cache: OverlapCache, comparable: (a: string, b: string) => boolean, today: string): ReturnType<typeof findOverlaps> => {
   const keyed = pages.map((file) => {
-    const key = `${file.path}#${textKey(file.text)}`;
-    const facts = cache.facts.get(key) ?? pageFacts(file.path, file.text);
+    const key = factsKey(file, today);
+    const facts = cache.facts.get(key) ?? pageFacts(file.path, file.text, today);
     cache.facts.set(key, facts);
     return { key, path: file.path, facts };
   });
@@ -478,9 +525,7 @@ export const pairId = (a: { page: string; text: string }, b: { page: string; tex
  * ("ship by (2026-12-15)"), so the side keeps it in `plain` and has no learned day.
  */
 const sideOf = (fact: { page: string; text: string }, today: string, whole: (page: string, text: string) => boolean): PairSide => {
-  const learned = learnedOn(fact.text);
-  const future = learned !== null && !learned.startsWith('0000') && learned > today;
-  return { ...fact, plain: future ? unlinked(fact.text) : ruleText(fact.text), learned: future ? null : learned, whole: whole(fact.page, fact.text) };
+  return { ...fact, plain: ruleText(fact.text, today), learned: learnedOn(fact.text, today), whole: whole(fact.page, fact.text) };
 };
 
 /**
@@ -493,19 +538,27 @@ const says = (wide: string, narrow: string): boolean => {
   // In the same order, too, small words and single digits included: "staging to main" isn't said by "main to
   // staging", nor "2 retries, 5 seconds" by "5 retries, 2 seconds". Only "and" and "or" may move, as a clause is added:
   // "a draft and link" is said by "a draft, link … and attach".
-  const ordered = (text: string): string[] => wordList(text).filter((word) => word !== 'and' && word !== 'or');
+  // Signs and operators count as words here: ">= 500" isn't said by "<= 500", nor "$100" by "€100", nor "UTC+2" by "UTC-2".
+  const ordered = (text: string): string[] => [...wordList(text).filter((word) => word !== 'and' && word !== 'or'), '\u0000', ...signs(text)];
   const order = ordered(wide);
   let at = 0;
   const inOrder = ordered(narrow).every((word) => { at = order.indexOf(word, at); return at++ !== -1; });
-  return inOrder && [...n].every((word) => w.has(word)) && [...ns].every((slot) => ws.has(slot)) && negated(w) === negated(n);
+  return inOrder && [...n].every((word) => w.has(word)) && [...ns].every((slot) => ws.has(slot)) && negated(w) === negated(n) && negations(wide) === negations(narrow);
 };
 /** The links a line gives, which `ruleText` leaves out of the comparison: a newer line that drops or changes one doesn't cover the older. */
-const links = (text: string): Set<string> => new Set(text.match(/https?:\/\/[^\s)>\]]+/g) ?? []);
+const links = (text: string): Set<string> => {
+  // A link in the learned note (the Slack thread it came from) is where it was said, not part of the rule.
+  const note = learnedOn(text) ? /\s*\((?:[^()]|\([^()]*\))*\)[\s.]*$/.exec(text.replace(/<!--[\s\S]*?-->/g, '').trimEnd())?.[0] : undefined;
+  const rule = note ? text.replace(/<!--[\s\S]*?-->/g, '').trimEnd().slice(0, -note.length) : text;
+  return new Set(rule.match(/https?:\/\/[^\s)>\]]+/g) ?? []);
+};
 
 /** Which of a pair is older, by the days their notes give, else the shorter first; and whether the newer covers the older. */
 const pairInfo = (pair: { a: { page: string; text: string }; b: { page: string; text: string } }, today: string, whole: (page: string, text: string) => boolean): PairInfo => {
   const [a, b] = [sideOf(pair.a, today, whole), sideOf(pair.b, today, whole)];
-  const dated = (a.learned !== null || b.learned !== null) && a.learned !== b.learned;
+  // A day without a year orders only against another one without a year.
+  const comparable = (a.learned?.startsWith('0000') ?? false) === (b.learned?.startsWith('0000') ?? false) || a.learned === null || b.learned === null;
+  const dated = comparable && (a.learned !== null || b.learned !== null) && a.learned !== b.learned;
   // An undated line beside a dated one is from before lines carried dates: the older.
   const aFirst = dated ? (b.learned !== null && (a.learned === null || a.learned < b.learned))
     : words(a.plain).length < words(b.plain).length || (words(a.plain).length === words(b.plain).length && a.plain.length <= b.plain.length);
@@ -516,24 +569,26 @@ const pairInfo = (pair: { a: { page: string; text: string }; b: { page: string; 
 export interface AssessOptions {
   /** Pairs the owner said both hold ("not a conflict"), by `pairId`: never listed again while both lines read the same. */
   dismissed?: ReadonlySet<string>;
+  /** False for a history point, which only counts pairs: leaves out each pair's `PairInfo`. */
+  details?: boolean;
 }
 
-export const assessKnowledge = (files: KnowledgeFile[], now: Date, cache?: OverlapCache, { dismissed }: AssessOptions = {}): Health => {
+export const assessKnowledge = (files: KnowledgeFile[], now: Date, cache?: OverlapCache, { dismissed, details = true }: AssessOptions = {}): Health => {
   const index = files.find((file) => file.path === 'index.md')?.text ?? '';
   const pages = describePages(files, index, now);
+  const today = now.toISOString().slice(0, 10);
   const facts = files.filter((file) => isPage(file.path)).flatMap((file) => {
-    if (!cache) return pageFacts(file.path, file.text);
-    const key = `${file.path}#${textKey(file.text)}`;
-    const found = cache.facts.get(key) ?? pageFacts(file.path, file.text);
+    if (!cache) return pageFacts(file.path, file.text, today);
+    const key = factsKey(file, today);
+    const found = cache.facts.get(key) ?? pageFacts(file.path, file.text, today);
     cache.facts.set(key, found);
     return found;
   });
   const areaOf = new Map(pages.map((page) => [page.path, page.area]));
   const same = (a: string, b: string): boolean => samePageSubject(a, b, areaOf);
-  const found = cache ? cachedOverlaps(files.filter((file) => isPage(file.path)), cache, same) : findOverlaps(facts, same);
+  const found = cache ? cachedOverlaps(files.filter((file) => isPage(file.path)), cache, same, today) : findOverlaps(facts, same);
   // A list to work through, grouped by page on the screen: enough that no page's group is cut short.
   const open = (pair: FactPair): boolean => !dismissed?.has(pairId(pair.a, pair.b));
-  const today = now.toISOString().slice(0, 10);
   // Each page's current lines, as a click finds them (a bullet without its marker), for `PairSide.whole`.
   const lines = new Map(files.filter((file) => isPage(file.path)).map((file) => [file.path, new Set(currentText(file.text).split('\n').map((line) => line.trim().replace(/^([-*]|\d+\.)\s+/, '').trim()))]));
   const whole = (page: string, text: string): boolean => lines.get(page)?.has(text.trim()) ?? false;
@@ -544,12 +599,12 @@ export const assessKnowledge = (files: KnowledgeFile[], now: Date, cache?: Overl
   for (const pair of conflicts) {
     issues.push({ kind: 'conflict', pages: [...new Set([pair.b.page, pair.a.page])], text: pair.a.page === pair.b.page
       ? `${pair.a.page} has two rules that disagree. Keep the current one and move the other under "Replaced".`
-      : `${pair.a.page} and ${pair.b.page} disagree. Keep the current rule on one page.`, detail: [short(pair.a.text), short(pair.b.text)], facts: [pair.a, pair.b], pair: pairInfo(pair, today, whole) });
+      : `${pair.a.page} and ${pair.b.page} disagree. Keep the current rule on one page.`, detail: [short(pair.a.text), short(pair.b.text)], facts: [pair.a, pair.b], ...(details ? { pair: pairInfo(pair, today, whole) } : {}) });
   }
   for (const pair of duplicates) {
     issues.push({ kind: 'duplicate', pages: [...new Set([pair.b.page, pair.a.page])], text: pair.a.page === pair.b.page
       ? `${pair.a.page} says the same thing twice.`
-      : `${pair.a.page} and ${pair.b.page} say the same thing. One rule lives on one page.`, detail: [short(pair.a.text), short(pair.b.text)], facts: [pair.a, pair.b], pair: pairInfo(pair, today, whole) });
+      : `${pair.a.page} and ${pair.b.page} say the same thing. One rule lives on one page.`, detail: [short(pair.a.text), short(pair.b.text)], facts: [pair.a, pair.b], ...(details ? { pair: pairInfo(pair, today, whole) } : {}) });
   }
   for (const [a, b] of overlaps) issues.push({ kind: 'overlap', pages: [a, b], text: `${a} and ${b} cover the same topic. Merge them into one page.` });
   for (const page of pages) {
@@ -689,7 +744,7 @@ export const knowledgeHistory = (files: KnowledgeFile[], changes: KnowledgeChang
   const set = (path: string, text: string | null): void => { if (text === null) state.delete(path); else state.set(path, text); };
   const cache: OverlapCache = { facts: new Map(), pairs: new Map() };
   const snapshot = (at: Date): HistoryPoint => {
-    const health = assessKnowledge([...state].map(([path, text]) => ({ path, text })), at, cache, options);
+    const health = assessKnowledge([...state].map(([path, text]) => ({ path, text })), at, cache, { ...options, details: false });
     return {
       at: at.toISOString(), score: health.score, pages: health.pages, facts: health.facts,
       conflicts: health.issues.filter((issue) => issue.kind === 'conflict').length,
@@ -911,7 +966,7 @@ export const markIndexRows = (index: string, files: KnowledgeFile[], now: Date, 
   // Two current rules that disagree: the worker is told which, so it says which it followed instead of picking one silently.
   const pages = describePages(files, index, now);
   const areaOf = new Map(pages.map((page) => [page.path, page.area]));
-  const facts = files.filter((file) => isPage(file.path)).flatMap((file) => pageFacts(file.path, file.text));
+  const facts = files.filter((file) => isPage(file.path)).flatMap((file) => pageFacts(file.path, file.text, now.toISOString().slice(0, 10)));
   // Pairs the owner said both hold aren't a disagreement the worker has to weigh.
   const conflicts = findOverlaps(facts, (a, b) => samePageSubject(a, b, areaOf)).conflicts.filter((pair) => !dismissed?.has(pairId(pair.a, pair.b)));
   const confirmed = new Map(files.map((file) => [file.path, frontmatter(file.text)?.get('verified')?.trim() ?? '']));

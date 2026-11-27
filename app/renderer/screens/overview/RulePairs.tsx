@@ -50,7 +50,7 @@ export const RepeatPairs = ({ rows, titleOf, actions }: { rows: ChainRow[]; titl
             <span>{from}</span><span aria-hidden>→</span>
             <span className={cx(row.covers && 'text-up')}>{to}</span>
             {row.covers && <Check size={12} aria-label="Says everything the older lines do" className="text-up" />}
-            {same && <span>· same words</span>}
+            {same && <span>{row.covers ? '· same words' : '· a link changed'}</span>}
             {/* Two pages: which one each version sits on, so Keep says where the rule stays. */}
             {row.latest.older.page !== row.newer.page && <span className="truncate">· {titleOf(row.latest.older.page)} → {titleOf(row.newer.page)}</span>}
           </p>
