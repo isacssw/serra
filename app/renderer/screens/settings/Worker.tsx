@@ -6,7 +6,7 @@ import type { T3Providers } from '../../../../src/t3-providers.ts';
 import { serra } from '../../bridge.ts';
 import { Input, Select } from '../../ui/index.ts';
 import { agentMark } from './agent-backend.logic.ts';
-import { AgentActions, AgentGlyph, AgentPicker, useAgentBackend, type AgentBackend } from './AgentBackend.tsx';
+import { AddAgentCard, AgentGlyph, AgentPicker, ConfigFileButton, useAgentBackend, type AgentBackend } from './AgentBackend.tsx';
 import { BRANCH_TOKENS, branchPatternForm, branchPreview, t3BinForm, updatesForm, workerForm } from './settings.logic.ts';
 import { Advanced, FieldsCard, SaveError, SettingsPage, SettingsSection, useSectionForm, useSettings, type SettingsState } from './SettingsKit.tsx';
 
@@ -33,7 +33,7 @@ const providerOptions = (list: T3Providers, current: string) => {
       value: provider.instanceId,
       label: provider.label,
       icon: <AgentGlyph mark={agentMark(provider.driver)} size={14} />,
-      ...(provider.enabled ? (provider.label === provider.instanceId ? {} : { detail: provider.instanceId }) : { detail: 'Off in T3' }),
+      ...(provider.enabled ? {} : { detail: 'Off in T3' }),
     })),
   ];
   if (current && !list.providers.some((provider) => provider.instanceId === current)) {
@@ -54,13 +54,13 @@ const ModelSection = ({ backend, profile, state }: { backend: AgentBackend; prof
       description={acp ? 'Empty uses the agent’s default.' : workerForm.description}
     >
       {acp ? (
-        <div className="grid gap-4 sm:grid-cols-2">
+        <div className="grid gap-4">
           <Input
             label={`${agentName ?? 'Agent'} model`}
             placeholder="Default"
             spellCheck={false}
             value={backend.draft.model}
-            hint="A message waits for the turn to end."
+            hint="No steering mid-turn."
             onChange={(event) => backend.setModel(event.target.value)}
           />
         </div>
@@ -131,8 +131,8 @@ const WorkerSections = ({ profile, state }: { profile: Profile; state: SettingsS
   const backend = useAgentBackend();
   return (
     <>
-      <SettingsSection title="Agent" description="Runs every new job." action={<AgentActions backend={backend} />}>
-        <AgentPicker backend={backend} />
+      <SettingsSection title="Agent" description="Runs every new job." action={<ConfigFileButton backend={backend} />}>
+        <AgentPicker backend={backend}><AddAgentCard backend={backend} /></AgentPicker>
       </SettingsSection>
       <ModelSection backend={backend} profile={profile} state={state} />
       <BranchSection profile={profile} state={state} />

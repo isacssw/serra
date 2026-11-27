@@ -112,10 +112,10 @@ const AgentCard = ({ option, checked, focusable, onPick, onKeyDown, onRemove, bu
         'flex w-full items-center gap-3 rounded-xl border px-3 py-2.5 text-left transition-[border-color,background-color,box-shadow] duration-150',
         'focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring',
         option.disabled
-          ? 'cursor-not-allowed border-line bg-transparent'
+          ? 'cursor-not-allowed border-dashed border-line-strong bg-transparent'
           : checked
             ? 'border-focus-field bg-raised shadow-field'
-            : 'border-line-strong bg-panel shadow-field hover:border-line-control hover:bg-raised',
+            : 'border-line-control/60 bg-panel shadow-field hover:border-line-control hover:bg-raised',
         onRemove && 'pr-16',
       )}
     >
@@ -129,12 +129,14 @@ const AgentCard = ({ option, checked, focusable, onPick, onKeyDown, onRemove, bu
         <span className={cx('truncate text-[13px] leading-5 font-medium', option.disabled ? 'text-faint' : 'text-ink')}>{option.name}</span>
         <span className="truncate text-xs leading-4 text-faint">{option.detail}</span>
       </span>
-      <span aria-hidden className={cx(
-        'grid size-4 shrink-0 place-items-center rounded-full border transition-colors duration-150',
-        checked ? 'border-ink bg-ink' : option.disabled ? 'border-line-strong' : 'border-line-control',
-      )}>
-        {checked && <span className="size-1.5 rounded-full bg-canvas" />}
-      </span>
+      {!option.disabled && (
+        <span aria-hidden className={cx(
+          'grid size-4 shrink-0 place-items-center rounded-full border transition-colors duration-150',
+          checked ? 'border-ink bg-ink' : 'border-line-control',
+        )}>
+          {checked && <span className="size-1.5 rounded-full bg-canvas" />}
+        </span>
+      )}
     </button>
     {onRemove && (
       <Button
@@ -152,7 +154,7 @@ const AgentCard = ({ option, checked, focusable, onPick, onKeyDown, onRemove, bu
 );
 
 /** T3 and every ACP agent as cards, a radio group: arrows move and pick, Tab leaves. Custom agents can be removed. */
-export const AgentPicker = ({ backend }: { backend: AgentBackend }) => {
+export const AgentPicker = ({ backend, children }: { backend: AgentBackend; children?: ReactNode }) => {
   const toast = useToast();
   const { view, draft, pick, setView } = backend;
   const [busy, setBusy] = useState(false);
@@ -190,7 +192,8 @@ export const AgentPicker = ({ backend }: { backend: AgentBackend }) => {
       {view.configError && (
         <p role="alert" className="rounded-lg border border-down/30 bg-down/8 px-3 py-2 text-xs text-ink">{view.configError}</p>
       )}
-      <div ref={group} id="agent-backend" role="radiogroup" aria-label="Agent" className="grid gap-2 sm:grid-cols-2">
+      <div className="grid gap-2 sm:grid-cols-2">
+      <div ref={group} id="agent-backend" role="radiogroup" aria-label="Agent" className="contents">
         {options.map((option) => (
           <AgentCard
             key={option.value}
@@ -204,12 +207,26 @@ export const AgentPicker = ({ backend }: { backend: AgentBackend }) => {
           />
         ))}
       </div>
+      {children}
+      </div>
     </>
   );
 };
 
-/** Add ACP agent and Config file, under the Agent section's title. */
-export const AgentActions = ({ backend }: { backend: AgentBackend }) => {
+/** Opens `agent-backend.json` outside the app, for agents with their own environment. */
+export const ConfigFileButton = ({ backend }: { backend: AgentBackend }) => {
+  const toast = useToast();
+  if (!backend.view) return null;
+  const openConfig = async (): Promise<void> => {
+    try { await serra()?.meetings.openAgentBackendConfig(); } catch (failure) { toast({ message: message(failure), tone: 'error' }); }
+  };
+  return (
+    <Button variant="ghost" size="sm" flush icon={<FileCode2 size={14} />} title={backend.view.configPath} onClick={() => void openConfig()}>Config file</Button>
+  );
+};
+
+/** The last card in the Agent grid: adds a custom ACP agent through a dialog. */
+export const AddAgentCard = ({ backend }: { backend: AgentBackend }) => {
   const toast = useToast();
   const formId = useId();
   const [open, setOpen] = useState(false);
@@ -243,14 +260,20 @@ export const AgentActions = ({ backend }: { backend: AgentBackend }) => {
     } catch (failure) { setError(message(failure)); }
     finally { setAdding(false); }
   };
-  const openConfig = async (): Promise<void> => {
-    try { await serra()?.meetings.openAgentBackendConfig(); } catch (failure) { toast({ message: message(failure), tone: 'error' }); }
-  };
-
   return (
-    <div className="-ml-2.5 flex flex-col items-start gap-0.5">
-      <Button variant="ghost" size="sm" icon={<Plus size={14} />} onClick={openAdd}>Add ACP agent</Button>
-      <Button variant="ghost" size="sm" icon={<FileCode2 size={14} />} title={view.configPath} onClick={() => void openConfig()}>Config file</Button>
+    <>
+      <button
+        type="button"
+        onClick={openAdd}
+        className={cx(
+          'flex min-h-[3.75rem] items-center gap-3 rounded-xl border border-dashed border-line-strong px-3 py-2.5 text-left text-[13px] font-medium text-muted',
+          'transition-colors duration-150 hover:border-line-control hover:bg-hover hover:text-ink',
+          'focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring',
+        )}
+      >
+        <span aria-hidden className="grid size-8 shrink-0 place-items-center rounded-lg border border-dashed border-line-strong"><Plus size={15} strokeWidth={1.75} /></span>
+        Add ACP agent
+      </button>
       <Dialog
         open={open}
         onClose={close}
@@ -286,6 +309,6 @@ export const AgentActions = ({ backend }: { backend: AgentBackend }) => {
           {error && <p role="alert" className="text-xs text-down">{error}</p>}
         </form>
       </Dialog>
-    </div>
+    </>
   );
 };

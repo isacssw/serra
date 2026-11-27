@@ -38,17 +38,20 @@ export const People = () => {
   const state = useSettings();
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState<string | null>(null);
+  // Add was pressed with an ID that can't be added: show why, even for an ID still being typed.
+  const [tried, setTried] = useState(false);
   const names = useSlackNames(state.profile);
 
   return (
     <SettingsPage title="People" subtitle={state.profile ? `Who can ask ${state.profile.bot.name} for work.` : undefined} state={state}>
       {(profile) => {
         const rows = peopleRows(profile, names);
-        const problem = addPersonFieldMessage(input, profile);
+        const problem = tried ? addPersonProblem(input, profile) : addPersonFieldMessage(input, profile);
         const canAdd = !!input.trim() && addPersonProblem(input, profile) === null && busy === null;
         const add = async (event: FormEvent): Promise<void> => {
           event.preventDefault();
-          if (!canAdd) return;
+          if (!canAdd) { setTried(true); return; }
+          setTried(false);
           setBusy('add');
           try { await state.addPerson(input.trim()); setInput(''); } catch { /* the toast says why */ } finally { setBusy(null); }
         };
@@ -89,16 +92,16 @@ export const People = () => {
             <form className="flex items-start gap-2" onSubmit={(event) => { void add(event); }}>
               <Input
                 aria-label="Slack member ID"
-                placeholder="U0123456789"
+                placeholder="Slack member ID, like U0…"
                 spellCheck={false}
                 autoCapitalize="characters"
                 className="w-64"
                 inputClassName="font-mono"
                 value={input}
                 error={problem}
-                onChange={(event) => setInput(event.target.value)}
+                onChange={(event) => { setInput(event.target.value); setTried(false); }}
               />
-              <Button type="submit" icon={<Plus size={14} />} disabled={!canAdd}>{busy === 'add' ? 'Adding…' : 'Add person'}</Button>
+              <Button type="submit" icon={<Plus size={14} />} disabled={busy !== null}>{busy === 'add' ? 'Adding…' : 'Add person'}</Button>
             </form>
           </div>
         );

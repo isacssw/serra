@@ -34,7 +34,7 @@ const RepositoryTable = ({ lines, onEdit }: { lines: Line[]; onEdit: (key: strin
               <span className="flex min-w-0 items-center gap-2">
                 <span className="truncate font-medium text-ink">{line.name}</span>
                 {line.main && <Badge tone="accent">Main</Badge>}
-                {line.edited && <span aria-label={line.invalid ? 'Needs attention' : 'Edited'} title={line.invalid ? 'Needs attention' : 'Edited'} className={`size-1.5 shrink-0 rounded-full ${line.invalid ? 'bg-down' : 'bg-warn'}`} />}
+                {line.edited && <Badge tone={line.invalid ? 'down' : 'warn'}>{line.invalid ? 'Fix' : 'Edited'}</Badge>}
               </span>
             </Cell>
             <Cell><span className="block truncate font-mono text-xs text-muted" title={line.path}>{line.path || '—'}</span></Cell>
@@ -66,7 +66,7 @@ const MainFields = ({ values, errors, onChange }: { values: FormValues; errors: 
         placeholder={field.placeholder}
         spellCheck={false}
         inputClassName="font-mono"
-        className={field.key === 'path' ? 'sm:col-span-2' : undefined}
+        className={field.key === 'path' || field.key === 'githubRepo' ? 'sm:col-span-2' : undefined}
         {...(index === 0 ? { 'data-autofocus': true } : {})}
         value={values[field.key] ?? ''}
         error={errors[field.key]}
@@ -76,11 +76,12 @@ const MainFields = ({ values, errors, onChange }: { values: FormValues; errors: 
   </div>
 );
 
+/** Same order as the main project's dialog: path, GitHub, then the ref; a name first because only these have one. */
 const OTHER_FIELDS: { key: keyof RepositoryRow; label: string; placeholder?: string; wide?: boolean; mono?: boolean }[] = [
-  { key: 'name', label: 'Name', placeholder: 'docs' },
-  { key: 'baseRef', label: 'Base ref', placeholder: 'origin/main', mono: true },
+  { key: 'name', label: 'Name', placeholder: 'docs', wide: true },
   { key: 'path', label: 'Local path', placeholder: '/Users/you/docs', wide: true, mono: true },
-  { key: 'githubRepo', label: 'GitHub repository (optional)', placeholder: 'acme/docs', wide: true, mono: true },
+  { key: 'githubRepo', label: 'GitHub repository (optional)', placeholder: 'acme/docs', mono: true },
+  { key: 'baseRef', label: 'Base ref', placeholder: 'origin/main', mono: true },
 ];
 
 const RepositoriesTable = ({ profile, state }: { profile: Profile; state: SettingsState }) => {
@@ -149,7 +150,7 @@ const RepositoriesTable = ({ profile, state }: { profile: Profile; state: Settin
         actions={(
           <>
             {editing?.kind === 'other' && editing.index !== null && (
-              <Button variant="ghost" icon={<Trash2 size={14} />} className="mr-auto -ml-3 hover:text-down" onClick={remove}>Remove</Button>
+              <Button variant="ghost" icon={<Trash2 size={14} />} className="mr-auto -ml-3 text-down enabled:hover:text-down" onClick={remove}>Remove</Button>
             )}
             <Button variant="ghost" onClick={() => setEditing(null)}>Cancel</Button>
             <Button variant="primary" type="submit" form={formId}>{editing?.kind === 'other' && editing.index === null ? 'Add' : 'Done'}</Button>

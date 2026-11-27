@@ -4,7 +4,7 @@
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { useNavigate } from 'react-router';
 import {
-  CircleCheck, CirclePause, GitBranch, GitPullRequest, Layers, LoaderCircle, MessageSquareText, Radio, ListChecks, Play,
+  BrushCleaning, CircleCheck, CirclePause, GitPullRequest, Hash, Layers, LoaderCircle, MessageSquareText, Radio, ListChecks, Play,
   Plus, RefreshCw,
 } from 'lucide-react';
 import { useSearchParams } from 'react-router';
@@ -124,19 +124,19 @@ const JobRowView = ({ job, icon, now, onError, onTranscript, focused = false }: 
         </p>
       </div>
       {pill && <Badge tone={pill.tone} className="shrink-0">{pill.label}</Badge>}
-      <div className="flex shrink-0 items-center gap-0.5">
-        {linkButtons(job).map((link) => (
-          <span key={link.kind} title={link.hint}>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="w-7 px-0! disabled:border-transparent disabled:opacity-45"
-              icon={LINK_ICONS[link.kind]}
-              disabled={!link.url && !link.transcript}
-              aria-label={`${link.label}: ${link.hint}`}
-              onClick={() => { if (link.transcript) onTranscript(link.transcript, job.title); else if (link.url) open(link.url, onError); }}
-            />
-          </span>
+      {/* Only the links the job has, right-aligned in a fixed slot so the pills line up row to row. */}
+      <div className="flex w-[5.75rem] shrink-0 items-center justify-end gap-0.5">
+        {linkButtons(job).filter((link) => link.url || link.transcript).map((link) => (
+          <Button
+            key={link.kind}
+            variant="ghost"
+            size="sm"
+            className="w-7 px-0!"
+            icon={LINK_ICONS[link.kind]}
+            title={link.hint}
+            aria-label={`${link.label}: ${link.hint}`}
+            onClick={() => { if (link.transcript) onTranscript(link.transcript, job.title); else if (link.url) open(link.url, onError); }}
+          />
         ))}
       </div>
     </li>
@@ -209,7 +209,7 @@ const CleanupDialog = ({ cleanup, onClose, onApply }: { cleanup: Cleanup; onClos
 const ChannelFilter = ({ options, value, onChange }: { options: { value: string; label: string }[]; value: string | null; onChange: (channel: string | null) => void }) => (
   <Select
     aria-label="Channel"
-    icon={<Radio size={15} strokeWidth={1.75} />}
+    icon={<Hash size={15} strokeWidth={1.75} />}
     value={value ?? ''}
     options={[{ value: '', label: 'All channels' }, ...options]}
     onChange={(channel) => onChange(channel || null)}
@@ -220,11 +220,11 @@ const ChannelFilter = ({ options, value, onChange }: { options: { value: string;
 const EMPTY_STATES: Record<JobGroup, { icon: ReactNode; title: string; start: boolean }> = {
   'needs you': { icon: <CircleCheck size={18} strokeWidth={1.75} className="text-up" />, title: "You're all caught up", start: false },
   running: { icon: <Play size={18} strokeWidth={1.75} />, title: 'Nothing running', start: true },
-  done: { icon: <GitPullRequest size={18} strokeWidth={1.75} />, title: 'Nothing finished today', start: false },
+  done: { icon: <GitPullRequest size={18} strokeWidth={1.75} />, title: 'Nothing finished today', start: true },
 };
 
 /** A quiet empty state: a hairline panel, not the dashed drop-zone look. */
-const EMPTY_CLASS = 'border-solid border-line-subtle bg-panel py-16';
+const EMPTY_CLASS = 'border-none bg-transparent py-20';
 
 const PATHS: Record<JobGroup, string> = { 'needs you': '/jobs/needs-you', running: '/jobs/running', done: '/jobs/done' };
 const TAB_IDS: Record<JobGroup, string> = { 'needs you': 'jobs-tab-needs-you', running: 'jobs-tab-running', done: 'jobs-tab-done' };
@@ -359,8 +359,12 @@ export const Jobs = ({ group }: { group: JobGroup }) => {
         title="Jobs"
         actions={(
           <>
-            <ChannelFilter options={channelChoices(rows, channel)} value={channel} onChange={setChannel} />
-            <Button icon={<GitBranch size={15} strokeWidth={1.75} />} className="w-8 px-0!" aria-label="Clean up worktrees" title="Clean up worktrees" onClick={startCleanup} />
+            <ChannelFilter
+              options={channelChoices(rows, channel).map((option) => (rows.some((job) => job.channel === option.value && job.channelName) && option.value !== 'app' ? { ...option, label: `#${option.label.replace(/^#/, '')}` } : option))}
+              value={channel}
+              onChange={setChannel}
+            />
+            <Button icon={<BrushCleaning size={15} strokeWidth={1.75} />} className="w-8 px-0!" aria-label="Clean up worktrees" title="Clean up worktrees" onClick={startCleanup} />
           </>
         )}
       >

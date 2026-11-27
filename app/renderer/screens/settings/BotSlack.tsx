@@ -3,7 +3,8 @@
 import { useId, useState, type FormEvent } from 'react';
 import { Pencil } from 'lucide-react';
 import type { Profile } from '../../../../src/contracts.ts';
-import { Button, Dialog, Input } from '../../ui/index.ts';
+import { Button, cx, Dialog, Input } from '../../ui/index.ts';
+import { labelClass, noteClass } from '../../ui/field.ts';
 import { botForm, ownerForm, reviewForm, serviceLabelForm } from './settings.logic.ts';
 import { Advanced, FieldsCard, SaveError, SettingsPage, SettingsSection, useSectionForm, useSettings, type SettingsState } from './SettingsKit.tsx';
 
@@ -12,11 +13,13 @@ const BotSection = ({ profile, state }: { profile: Profile; state: SettingsState
   const formId = useId();
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState('');
+  const [tried, setTried] = useState(false);
   const id = editor.values.id ?? '';
   const problem = botForm.parse({ ...editor.values, id: draft }).errors.id;
-  const open = (): void => { setDraft(id); setEditing(true); };
+  const open = (): void => { setDraft(id); setTried(false); setEditing(true); };
   const apply = (event: FormEvent): void => {
     event.preventDefault();
+    setTried(true);
     if (problem) return;
     editor.set('id', draft.trim());
     setEditing(false);
@@ -26,9 +29,14 @@ const BotSection = ({ profile, state }: { profile: Profile; state: SettingsState
     <SettingsSection title="Bot">
       <div className="grid gap-4 sm:grid-cols-2">
         <Input spellCheck={false} {...editor.field('name')} />
-        <div className="flex items-end gap-2">
-          <Input readOnly className="flex-1" inputClassName="font-mono" label={idField.label} value={id} error={idField.error} />
-          <Button icon={<Pencil size={13} />} onClick={open} aria-label="Edit bot ID">Edit…</Button>
+        {/* Read-only on purpose: shown as a value, not a field, with Edit… opening the dialog that warns. */}
+        <div className="flex min-w-0 flex-col gap-1.5">
+          <span className={labelClass}>{idField.label}</span>
+          <div className="flex h-8 items-center gap-2">
+            <span className={cx('min-w-0 flex-1 truncate font-mono text-[13px]', idField.error ? 'text-down' : 'text-ink')}>{id}</span>
+            <Button variant="ghost" size="sm" icon={<Pencil size={13} />} onClick={open} aria-label="Edit bot ID">Edit…</Button>
+          </div>
+          {idField.error && <p className={noteClass(true)}>{idField.error}</p>}
         </div>
       </div>
       <SaveError message={editor.saveError} />
@@ -36,11 +44,11 @@ const BotSection = ({ profile, state }: { profile: Profile; state: SettingsState
         open={editing}
         onClose={() => setEditing(false)}
         title="Change bot ID"
-        description="It also names the background service and job branches. Prepare a new release after changing it."
+        description="Also renames the service and job branches. Needs a new release."
         actions={(
           <>
             <Button variant="ghost" onClick={() => setEditing(false)}>Cancel</Button>
-            <Button variant="primary" type="submit" form={formId} disabled={Boolean(problem) || draft.trim() === id}>Change</Button>
+            <Button variant="primary" type="submit" form={formId}>Change</Button>
           </>
         )}
       >
@@ -53,8 +61,8 @@ const BotSection = ({ profile, state }: { profile: Profile; state: SettingsState
             inputClassName="font-mono"
             placeholder="friday"
             value={draft}
-            error={draft === id ? undefined : problem}
-            hint="Lowercase letters, digits and hyphens."
+            error={tried || draft !== id ? problem : undefined}
+            hint="Lowercase letters, digits, hyphens"
             onChange={(event) => setDraft(event.target.value)}
           />
         </form>
@@ -66,7 +74,7 @@ const BotSection = ({ profile, state }: { profile: Profile; state: SettingsState
 export const BotSlack = () => {
   const state = useSettings();
   return (
-    <SettingsPage title="Bot & Slack" state={state}>
+    <SettingsPage title="Bot & Slack" subtitle={state.profile ? `How ${state.profile.bot.name} shows up, and who it works for.` : undefined} state={state}>
       {(profile) => (
         <>
           <BotSection profile={profile} state={state} />

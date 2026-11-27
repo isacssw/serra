@@ -97,11 +97,17 @@ export const keychainHint = (status: SecretStatus): string =>
     ? `Stored in the Keychain item ${status.source.service} / ${status.source.account}. Paste a new value to replace it.`
     : 'Paste the token to store it in the Keychain, or leave it empty to use an item that already exists.';
 
+/** Slack's `auth.test` error codes in words, for the line under a rejected token. The raw code stays in the tooltip. */
+const SLACK_CODES: Record<string, string> = {
+  invalid_auth: 'Token invalid', not_authed: 'No token sent', token_revoked: 'Token revoked', token_expired: 'Token expired',
+  account_inactive: 'Workspace account inactive', not_allowed_token_type: 'Wrong kind of token',
+};
+
 /** The status pill on a token's row: 1-3 words, with the detail for the line under the name and the tooltip. */
 export const statusPill = (status: SecretStatus, now: Date): { tone: StatusTone; label: string; detail: string } => {
   if (status.error) {
     const rejected = /^Slack rejected \w+: (.+)$/.exec(status.error);
-    if (rejected) return { tone: 'error', label: 'Rejected by Slack', detail: rejected[1]! };
+    if (rejected) return { tone: 'error', label: 'Rejected by Slack', detail: SLACK_CODES[rejected[1]!] ?? rejected[1]! };
     if (status.error.startsWith('Couldn’t reach Slack') || status.error.startsWith("Couldn't reach Slack")) return { tone: 'error', label: 'Slack unreachable', detail: status.error };
     return { tone: 'error', label: 'Check failed', detail: status.error };
   }

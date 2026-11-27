@@ -4,7 +4,7 @@
 import { useId, useState, type FormEvent, type ReactNode } from 'react';
 import { Bell, Bot, Hash, Pencil, Plus, Trash2, User, Users } from 'lucide-react';
 import type { Profile } from '../../../../src/contracts.ts';
-import { Button, Dialog, EmptyState, Input, Select, TextArea } from '../../ui/index.ts';
+import { Badge, Button, Dialog, EmptyState, Input, Select, TextArea } from '../../ui/index.ts';
 import {
   emptyTriggerRow, MAX_INSTRUCTIONS, parseTriggers, triggerRows, triggerSummary, type TriggerRow, type TriggerSource,
 } from './settings.logic.ts';
@@ -52,10 +52,9 @@ const Triggers = ({ profile, state }: { profile: Profile; state: SettingsState }
           <EmptyState
             icon={<Bell size={18} strokeWidth={1.75} />}
             title="No alerts yet"
-            action={<Button variant="primary" size="sm" icon={<Plus size={14} />} onClick={() => open(null)}>Add trigger</Button>}
-          >
-            The bot answers @mentions only.
-          </EmptyState>
+            className="border-solid border-line bg-transparent"
+            action={<Button variant="primary" size="sm" icon={<Plus size={14} />} onClick={() => open(null)}>Add alert</Button>}
+          />
         )
         : (
           <>
@@ -72,27 +71,27 @@ const Triggers = ({ profile, state }: { profile: Profile; state: SettingsState }
                         <span className="truncate font-mono font-medium text-ink">{row.channel || 'No channel'}</span>
                         <span className="shrink-0 text-faint">·</span>
                         <span className="truncate text-muted">{summary.source}</span>
-                        {edited && <span aria-label={invalid ? 'Needs attention' : 'Edited'} title={invalid ? 'Needs attention' : 'Edited'} className={`size-1.5 shrink-0 rounded-full ${invalid ? 'bg-down' : 'bg-warn'}`} />}
+                        {edited && <Badge tone={invalid ? 'down' : 'warn'}>{invalid ? 'Fix' : 'Edited'}</Badge>}
                       </p>
                       <p className="truncate text-xs text-faint" title={row.instructions}>{summary.instructions}</p>
                     </div>
-                    <Button variant="ghost" size="sm" aria-label={`Edit trigger in ${row.channel || 'no channel'}`} title="Edit" icon={<Pencil size={13} />} className="w-7 px-0!" onClick={() => open(index)} />
+                    <Button variant="ghost" size="sm" aria-label={`Edit alert in ${row.channel || 'no channel'}`} title="Edit" icon={<Pencil size={13} />} className="w-7 px-0!" onClick={() => open(index)} />
                   </li>
                 );
               })}
             </ul>
-            <div className="-mt-2"><Button variant="ghost" size="sm" flush icon={<Plus size={14} />} onClick={() => open(null)}>Add trigger</Button></div>
+            <div className="-mt-2"><Button variant="ghost" size="sm" flush icon={<Plus size={14} />} onClick={() => open(null)}>Add alert</Button></div>
           </>
         )}
       <SaveError message={list.saveError} />
       <Dialog
         open={editing !== null}
         onClose={() => setEditing(null)}
-        title={editing?.index === null ? 'Add trigger' : 'Edit trigger'}
+        title={editing?.index === null ? 'Add alert' : 'Edit alert'}
         description="A match starts a read-only investigation."
         actions={(
           <>
-            {editing?.index != null && <Button variant="ghost" icon={<Trash2 size={14} />} className="mr-auto -ml-3 hover:text-down" onClick={remove}>Remove</Button>}
+            {editing?.index != null && <Button variant="ghost" icon={<Trash2 size={14} />} className="mr-auto -ml-3 text-down enabled:hover:text-down" onClick={remove}>Remove</Button>}
             <Button variant="ghost" onClick={() => setEditing(null)}>Cancel</Button>
             <Button variant="primary" type="submit" form={formId}>{editing?.index === null ? 'Add' : 'Done'}</Button>
           </>
@@ -118,7 +117,7 @@ const Triggers = ({ profile, state }: { profile: Profile; state: SettingsState }
             label="Instructions"
             rows={5}
             placeholder="Find the failing service and the likely cause."
-            hint={`${draft.instructions.length.toLocaleString()} / ${MAX_INSTRUCTIONS.toLocaleString()}`}
+            {...(draft.instructions.length > MAX_INSTRUCTIONS * 0.9 ? { hint: `${draft.instructions.length.toLocaleString()} / ${MAX_INSTRUCTIONS.toLocaleString()}` } : {})}
             value={draft.instructions}
             error={shown.instructions}
             onChange={(event) => setDraft({ ...draft, instructions: event.target.value })}

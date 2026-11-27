@@ -174,6 +174,8 @@ const SecretRow = ({ status, now, onSaved, onChecked }: CardProps) => {
 
   const save = async (event: FormEvent): Promise<void> => {
     event.preventDefault();
+    const missing = dialog?.kind === '1password' ? !draft.reference.trim() : dialog?.replace === true && dialog.kind === 'keychain' && !draft.value.trim();
+    if (missing) { setFormError(dialog?.kind === '1password' ? 'Enter a 1Password reference.' : 'Paste the new token.'); return; }
     const request = saveRequest(status, draft);
     if ('error' in request) { setFormError(request.error); return; }
     const bridge = serra();
@@ -205,7 +207,6 @@ const SecretRow = ({ status, now, onSaved, onChecked }: CardProps) => {
 
   const replacing = dialog?.replace === true;
   const needsValue = dialog?.kind === 'keychain' && (replacing || status.source.kind !== 'keychain');
-  const canSave = busy === null && (dialog?.kind === '1password' ? draft.reference.trim() !== '' : !(replacing && dialog?.kind === 'keychain' && !draft.value.trim()));
   return (
     <li data-secret={status.name} className="flex flex-wrap items-center gap-x-4 gap-y-3 py-3.5 pr-3 pl-4">
       <span aria-hidden className="grid size-8 shrink-0 place-items-center rounded-lg border border-line bg-canvas text-ink"><BrandMark brand="slack" size={14} /></span>
@@ -232,7 +233,7 @@ const SecretRow = ({ status, now, onSaved, onChecked }: CardProps) => {
             onChange={(kind) => open(kind, false)}
           />
         </span>
-        <Button onClick={() => void check()} disabled={busy !== null}>{busy === 'check' ? 'Checking…' : 'Check'}</Button>
+        <Button variant="ghost" onClick={() => void check()} disabled={busy !== null}>{busy === 'check' ? 'Checking…' : 'Check'}</Button>
         {status.source.kind !== 'env' && (
           <Button onClick={() => open(status.source.kind, true)} disabled={busy !== null} aria-label={`Replace ${label}`}>
             {status.source.kind === '1password' ? 'Edit…' : 'Replace…'}
@@ -247,7 +248,7 @@ const SecretRow = ({ status, now, onSaved, onChecked }: CardProps) => {
         actions={(
           <>
             <Button variant="ghost" onClick={close} disabled={busy === 'save'}>Cancel</Button>
-            <Button variant="primary" type="submit" form={formId} disabled={!canSave}>{busy === 'save' ? 'Saving…' : 'Save'}</Button>
+            <Button variant="primary" type="submit" form={formId} disabled={busy !== null}>{busy === 'save' ? 'Saving…' : 'Save'}</Button>
           </>
         )}
       >
@@ -315,7 +316,7 @@ export const Secrets = () => {
   };
 
   return (
-    <Page title="Secrets" width="narrow">
+    <Page title="Secrets" subtitle="Where the bot reads its Slack tokens." width="narrow">
       {changed.length > 0 && (
         <div role="status" className="flex items-center gap-3 rounded-xl bg-raised py-2 pr-2 pl-4 text-[13px]">
           <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-warn" />

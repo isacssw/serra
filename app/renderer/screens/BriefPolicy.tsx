@@ -19,7 +19,7 @@ type Drafts = Record<BriefDocument, Draft>;
 type Proposed = Partial<Record<BriefDocument, string>>;
 
 const Tabs = ({ active, drafts, onSelect }: { active: BriefDocument; drafts: Drafts; onSelect: (document: BriefDocument) => void }) => (
-  <div role="tablist" aria-label="Document" className="inline-flex w-fit gap-0.5 rounded-lg border border-line bg-canvas p-0.5">
+  <div role="tablist" aria-label="Document" className="inline-flex w-fit gap-0.5 rounded-lg border border-line-subtle bg-raised p-0.5">
     {DOCUMENTS.map((document) => (
       <button
         key={document.id}
@@ -30,7 +30,7 @@ const Tabs = ({ active, drafts, onSelect }: { active: BriefDocument; drafts: Dra
         className={cx(
           'flex h-7 items-center gap-1.5 rounded-md border px-3 text-[13px] font-medium transition-colors duration-150',
           'focus-visible:outline-2 focus-visible:-outline-offset-1 focus-visible:outline-focus',
-          active === document.id ? 'border-line-strong bg-raised text-ink shadow-field' : 'border-transparent text-muted hover:text-ink',
+          active === document.id ? 'border-line-strong bg-overlay text-ink shadow-field' : 'border-transparent text-muted hover:text-ink',
         )}
       >
         {document.label}
@@ -266,7 +266,7 @@ export const BriefPolicy = () => {
           <section className="flex flex-col gap-3" aria-label="Editor">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <Tabs active={active} drafts={drafts} onSelect={setActive} />
-              <span className="text-xs text-faint" title={about.about}>{about.hint}</span>
+              <span className="font-mono text-xs text-faint" title={about.about}>{about.hint}</span>
             </div>
             <textarea
               aria-label={about.file}
@@ -278,7 +278,7 @@ export const BriefPolicy = () => {
               disabled={draft.saved === null}
               onChange={(event) => edit(event.target.value)}
               placeholder={active === 'policy' ? '# Owner policy\n\nAdd your workflow choices here.' : undefined}
-              className={cx('min-h-[26rem] resize-y px-3.5 py-3 font-mono text-xs leading-5', fieldClass(current.length > 0))}
+              className={cx('min-h-[26rem] max-h-[40rem] resize-none px-3.5 py-3 font-mono text-xs leading-5 [field-sizing:content]', fieldClass(current.length > 0))}
             />
             <Problems problems={current} dirty={dirty} />
           </section>

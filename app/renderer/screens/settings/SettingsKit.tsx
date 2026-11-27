@@ -220,7 +220,7 @@ export const SaveBar = ({ changed, count = 1, valid, saving, note, onSave, onRes
         {!valid && <Button onClick={reveal}>Show</Button>}
         <Button variant="primary" disabled={!canSave} onClick={onSave} aria-keyshortcuts={isMac ? 'Meta+S' : 'Control+S'}>
           {saving ? 'Saving…' : 'Save'}
-          {canSave && <kbd aria-hidden className="font-sans text-[11px] font-normal text-current opacity-60">{isMac ? '⌘S' : 'Ctrl+S'}</kbd>}
+          {canSave && <kbd aria-hidden className="font-sans text-[11px] font-normal text-current opacity-75">{isMac ? '⌘S' : 'Ctrl+S'}</kbd>}
         </Button>
         </div>
       </div>
@@ -243,7 +243,7 @@ const PageSaveBar = ({ entries, settings }: { entries: Partial<Record<SaveBarKey
       count={pending.length}
       valid={pending.every(({ entry }) => entry.valid)}
       saving={pending.some(({ entry }) => entry.saving)}
-      note={applies === 'now' ? null : appliesLabel(applies)}
+      note={appliesLabel(applies)}
       onSave={() => { void (async () => { for (const { entry } of pending) await entry.save(); })(); }}
       onReset={() => { for (const { entry } of pending) entry.reset(); }}
       onReveal={() => { for (const { entry } of pending) entry.reveal(); }}
