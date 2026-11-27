@@ -11,7 +11,7 @@ import { ValueList } from './overview/ValueList.tsx';
 import { Proof, ReviewControls } from './overview/WeekDigest.tsx';
 import { Button, cx, EmptyState, Page } from '../ui/index.ts';
 import {
-  EVENT_LABELS, factsChart, fixItems, shortDate, groupByDay, headline, scoreChart, scoreWord, todoTally,
+  EVENT_LABELS, factsChart, shortDate, groupByDay, headline, scoreChart, scoreWord,
 } from './overview.logic.ts';
 
 const message = (error: unknown): string => (error instanceof Error ? error.message : String(error));
@@ -170,7 +170,6 @@ export const Overview = () => {
   const days = groupByDay(overview.events, now, 5);
   const head = headline(overview, now);
   const example = overview.review?.examples[0];
-  const tally = todoTally(fixItems(overview));
   const grown = monthAgo ? health.pages - monthAgo.pages : null;
   const most = Math.max(1, ...health.areas.map((area) => area.pages));
 
@@ -184,11 +183,10 @@ export const Overview = () => {
         </>
       )}
     >
-      <section aria-label="At a glance" className="grid grid-cols-2 overflow-hidden rounded-xl border border-line bg-panel shadow-card sm:grid-cols-[1fr_1fr_1fr_1.35fr]">
+      <section aria-label="At a glance" className="grid grid-cols-2 overflow-hidden rounded-xl border border-line bg-panel shadow-card sm:grid-cols-3">
         <Stat label="Pages" value={health.pages} note={grown === null ? `${health.facts} facts` : grown > 0 ? `+${grown} in 30 days` : `${health.facts} facts`} />
         <Stat label="Used in replies" value={head?.used ?? 0} note={head ? `of ${head.replies} replies ${head.period}` : 'No replies yet'} />
         <Stat label="Health" value={health.score} unit="%" note={word.word} />
-        <Stat label="To review" value={tally.count} note="" />
       </section>
 
       {example && (

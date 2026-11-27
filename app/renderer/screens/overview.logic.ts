@@ -253,17 +253,17 @@ const TIDY = new Set(['long', 'unstructured', 'overlap', 'unindexed']);
 export interface NeedsYou {
   /** Everything else, one row each, in To do's order: review fixes, proposals, pages to confirm… */
   items: FixItem[];
-  /** "Same rule, learned again": one row per page. */
+  /** Repeated rules, by page: one row in all. */
   repeats: PairGroup[];
-  /** "Really disagree": one row per page. */
+  /** Rules that disagree, one row per page. */
   disagree: PairGroup[];
-  /** "Tidy up", folded away. */
+  /** What can wait ("N pages to tidy"), one row in all. */
   tidy: FixItem[];
   /** The rows the owner sees, which is what Needs you counts: all repeats are one, and so is Tidy up. */
   rows: number;
 }
 
-/** To do as Needs you shows it: pairs grouped one row per page, disagreements apart from repeats, tidy-ups last. */
+/** To do as Needs you shows it: a row per disagreement, one for every repeat, one for what can wait. */
 export const needsYou = (items: readonly FixItem[]): NeedsYou => {
   const pairs = items.flatMap((item): PairIssue[] => {
     const kind = fixKind(item);
@@ -276,11 +276,4 @@ export const needsYou = (items: readonly FixItem[]): NeedsYou => {
   const others = groupFixes(rest.filter((item) => !TIDY.has(fixKind(item))));
   // Repeats are one row however many pages have them, and so is what can wait.
   return { items: others, repeats, disagree, tidy, rows: others.length + disagree.length + (repeats.length > 0 ? 1 : 0) + (tidy.length > 0 ? 1 : 0) };
-};
-
-/** To review's number and one short line: how many need a decision, else that the rest is quick. */
-export const todoTally = (items: readonly FixItem[]): { count: number; text: string } => {
-  const view = needsYou(items);
-  if (view.rows === 0) return { count: 0, text: 'Nothing to do' };
-  return { count: view.rows, text: view.disagree.length > 0 ? `${view.disagree.length} to decide` : 'All quick' };
 };

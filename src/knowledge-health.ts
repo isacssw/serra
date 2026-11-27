@@ -560,6 +560,9 @@ const CHANGERS = new Set([...NEGATIONS, 'unless', 'except', 'only', 'but', 'if',
   'other', 'than', 'after', 'before', 'plus', 'first', 'later', 'once', 'twice', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine',
   'ten', 'eleven', 'twelve', 'any', 'some', 'most', 'all', 'every', 'each', 'none', 'more', 'less', 'fewer'].map(stem));
 
+/** Words by which a rule limits itself: a clause added after one of them may widen or narrow what it allows. */
+const LIMITS = new Set([...NEGATIONS, 'only', 'except', 'unless', 'but', 'if', 'when', 'whenever', 'until', 'excluding', 'besides', 'or'].map(stem));
+
 /**
  * Whether `wide` says everything `narrow` does and nothing that changes it. Strict on purpose, since "Keep newer for
  * all" moves lines on it: `wide` is `narrow` word for word (numbers and signs too), or `narrow` and then one added
@@ -572,6 +575,8 @@ const says = (wide: string, narrow: string): boolean => {
   if (w.length < n.length || n.some((word, at) => w[at] !== word)) return false;
   const added = w.slice(n.length);
   if (added.length === 0) return true;
+  // A rule that limits itself ("only on Fridays", "never …", "except …") changes when a clause joins it.
+  if (n.some((word) => LIMITS.has(word))) return false;
   return added[0] === 'and' && added.length >= 2 && added.slice(1).every((word) => !CHANGERS.has(word) && !/^[\d<>=!≠≤≥$€£¥%±+-]/.test(word));
 };
 /** The links a line gives, which `ruleText` leaves out of the comparison: a newer line that drops or changes one doesn't cover the older. */
@@ -579,7 +584,8 @@ const links = (text: string, today: string): Set<string> => {
   // A link in the learned note (the Slack thread it came from) is where it was said, not part of the rule.
   const note = learnedOn(text, today) ? /\s*\((?:[^()]|\([^()]*\))*\)[\s.]*$/.exec(text.replace(/<!--[\s\S]*?-->/g, '').trimEnd())?.[0] : undefined;
   const rule = note ? text.replace(/<!--[\s\S]*?-->/g, '').trimEnd().slice(0, -note.length) : text;
-  return new Set(rule.match(/https?:\/\/[^\s)>\]]+/g) ?? []);
+  // A Markdown link's target counts too, a page path as much as a web address.
+  return new Set([...(rule.match(/https?:\/\/[^\s)>\]]+/g) ?? []), ...[...rule.matchAll(/\]\(([^)\s]+)\)/g)].map((match) => match[1]!)]);
 };
 
 /** Which of a pair is older, by the days their notes give, else the shorter first; and whether the newer covers the older. */

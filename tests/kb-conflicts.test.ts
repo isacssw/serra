@@ -14,7 +14,7 @@ import { memoryPrefs } from '../app/main/prefs.ts';
 import { stoppedStatusSource } from '../app/main/status.ts';
 import { checkReason, groupLine, groupPairs, repeatsLine, isSafe, keepNewerForAll, sideNames, versus, wordDiff, type PairIssue } from '../app/renderer/screens/conflicts.logic.ts';
 import { keepNewerOnPages, keepOne, keepOver } from '../app/renderer/screens/keep.ts';
-import { fixItems, needsYou, todoTally } from '../app/renderer/screens/overview.logic.ts';
+import { fixItems, needsYou } from '../app/renderer/screens/overview.logic.ts';
 import { currentRules, keepRule } from '../app/renderer/screens/pages.logic.ts';
 import { dismissedPairs } from '../src/knowledge-dismissals.ts';
 import { assessKnowledge, findOverlaps, knowledgeHistory, learnedOn, markIndexRows, pageFacts, pairId, ruleText, type KnowledgeFile } from '../src/knowledge-health.ts';
@@ -317,7 +317,6 @@ test('Needs you shows a row per disagreement, one for all repeats and one to tid
   assert.equal(view.disagree.find((group) => group.pages[0] === 'projects/live-breach.md') && groupLine(view.disagree.find((group) => group.pages[0] === 'projects/live-breach.md')!), '“3 hours” vs “4 hours”');
   // To review and Needs you count the same rows: all repeats are one row, however many pages and pairs.
   assert.equal(view.rows, 2 + 1 + view.items.length + (view.tidy.length > 0 ? 1 : 0));
-  assert.deepEqual(todoTally(items), { count: view.rows, text: '2 to decide' });
   assert.equal(repeatsLine(view.repeats), '4 pages');
 });
 
@@ -609,6 +608,7 @@ test('"Keep newer for all" only takes a newer line that adds plain words: no add
     ['Run the tests before merging a PR (2026-11-16)', 'Run the tests before merging a PR, ideally (2026-11-17)'],
     ['Ask Sam or Lee before a payouts release (2026-11-16)', 'Ask Sam and Lee before a payouts release (2026-11-17)'],
     ['Run the payouts dry run before each release (2026-11-16)', 'Try to run the payouts dry run before each release (2026-11-17)'],
+    ['Deploy the payouts service only on Fridays (2026-11-16)', 'Deploy the payouts service only on Fridays and Mondays (2026-11-17)'],
   ] as [string, string][]) assert.equal(safe(older, newer), false, `${older} / ${newer}`);
   // A plain clause added with "and" is still a safe restatement.
   assert.equal(safe('Open every PR as a draft and link the Linear issue (2026-11-16)', 'Open every PR as a draft and link the Linear issue, and attach proof (2026-11-18)'), true);
@@ -619,4 +619,18 @@ test('Keep writes under the page\'s own "## Replaced", never one shown in a code
   const text = '---\ntype: rule\n---\n- Ship on Tuesday.\n- Ship on Thursday now.\n\n```\n## Replaced\n```\n';
   const kept = keepRule(text, 'Ship on Tuesday.', '2026-11-25');
   assert.match(kept, /```\n## Replaced\n```\n\n## Replaced\n\n- Until 2026-11-25: Ship on Tuesday\.\n$/);
+});
+
+test('every repeated rule that waits says why in a few words, and a changed page link is never covered', () => {
+  const reasons = (older: string, newer: string, pages: [string, string] = ['a.md', 'a.md']) => {
+    const files = pages[0] === pages[1]
+      ? [{ path: pages[0], text: `---\ntype: rule\n---\n- ${older}\n- ${newer}\n` }]
+      : [{ path: pages[0], text: `---\ntype: rule\n---\n- ${older}\n` }, { path: pages[1], text: `---\ntype: rule\n---\n- ${newer}\n` }];
+    return groupPairs(pairsOf(files)).repeats.flatMap((group) => group.rows.map(checkReason));
+  };
+  assert.deepEqual(reasons('Tag each release in git with its version (2026-11-16)', 'Tag each release in git with its version (2026-11-17)'), [null]);
+  assert.deepEqual(reasons('Tag each release in git with its version (2026-11-16)', 'Tag each release in git with its version (2026-11-17)', ['owner/a.md', 'owner/b.md']), ['On two pages']);
+  assert.deepEqual(reasons('Tag each release in git with its version', 'Tag each release in git with its version and its changelog'), ['No date']);
+  assert.deepEqual(reasons('Read [the policy](owner/v1.md) before a payouts change (2026-11-16)', 'Read [the policy](owner/v2.md) before a payouts change (2026-11-17)'), ['owner/v1.md → owner/v2.md']);
+  assert.deepEqual(reasons('Ask Sam or Lee before a payouts release (2026-11-16)', 'Ask Sam and Lee before a payouts release (2026-11-17)'), ['“or” vs “and”']);
 });

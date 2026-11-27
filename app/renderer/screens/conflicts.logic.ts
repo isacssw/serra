@@ -1,6 +1,6 @@
-// Overview › Needs you, the rules part, pure: pairs of lines grouped one row per page ("Same rule, learned again",
-// "Really disagree"), the words that changed between two versions of a rule, and "Keep newer for all" worked out on a
-// page's text before anything is saved. Tested in tests/kb-conflicts.test.ts; FixList.tsx and RulePairs.tsx draw it.
+// Overview › Needs you, the rules part, pure: pairs of lines grouped by page (repeats and disagreements apart), why a
+// repeat waits for the owner, the words that changed between two versions of a rule, and "Keep newer for all" worked
+// out on a page's text before anything is saved. Tested in tests/kb-conflicts.test.ts; FixList.tsx and RulePairs.tsx draw it.
 import type { PairInfo, PairSide } from '../../../src/knowledge-health.ts';
 import { currentRules, keepRule, replacedOn } from './pages.logic.ts';
 
@@ -189,23 +189,38 @@ export const groupPairs = (issues: readonly PairIssue[]): { repeats: PairGroup[]
   return { repeats: all.filter((group) => group.kind === 'repeat'), disagree: all.filter((group) => group.kind === 'disagree') };
 };
 
-/** The row's one line under the page's name: "3 repeat · 1 drops detail", or the words two rules disagree on. */
 /** What two rules that disagree differ on, in a few words: `“3 hours” vs “4 hours”`. */
 export const groupLine = (group: PairGroup): string =>
   (group.pairs.length === 1 ? versus(group.pairs[0]!.older.plain, group.pairs[0]!.newer.plain) : `${group.pairs.length} pairs differ`);
 
+/** A line's link targets, without the scheme: "wiki.acme.dev/squad", "owner/v1.md". */
+const targets = (text: string): string[] => [...(text.match(/https?:\/\/[^\s)>\]]+/g) ?? []), ...[...text.matchAll(/\]\(([^)\s]+)\)/g)].map((match) => match[1]!)]
+  .map((link) => link.replace(/^https?:\/\//, '')).filter((link, at, all) => all.indexOf(link) === at);
+
 /**
- * Why a repeated rule waits for the owner, in two or three words, or null when "Use newer for all" settles it:
- * "Inside longer text", "Written twice", "Drops “lowercase only”", "Link changed", "Reworded", "No date".
+ * Why a repeated rule waits for the owner, in a few words, or null when "Keep newer for all" settles it: "Inside
+ * longer text", "Written twice", "On two pages", "No date", "Drops “lowercase only”", "wiki.acme.dev/squad →
+ * wiki.acme.dev/squad-v2", or what was reworded ("“or” vs “and”").
  */
 export const checkReason = (row: ChainRow): string | null => {
   if (row.safe) return null;
   if (row.pairs.some((pair) => !pair.older.whole || !pair.newer.whole)) return 'Inside longer text';
   if (row.twice) return 'Written twice';
-  if (row.covers) return row.order === 'date' ? null : 'No date';
+  if (row.pairs.some((pair) => pair.older.page !== pair.newer.page)) return 'On two pages';
+  if (row.covers) return 'No date';
+  const pair = row.pairs.find((one) => !one.covers) ?? row.latest;
+  // A word swapped for another reads as the swap; words only taken out read as what's dropped.
+  const parts = wordDiff(pair.older.plain, pair.newer.plain);
+  if (parts.some((part) => part.op === 'add') && parts.some((part) => part.op === 'del')) return versus(pair.older.plain, pair.newer.plain);
   const dropped = droppedWords(row);
   if (dropped) return `Drops “${dropped}”`;
-  return row.pairs.every((pair) => pair.older.plain === pair.newer.plain) ? 'Link changed' : 'Reworded';
+  if (pair.older.plain === pair.newer.plain) {
+    const [was, now] = [targets(pair.older.text), targets(pair.newer.text)];
+    const gone = was.find((link) => !now.includes(link));
+    const came = now.find((link) => !was.includes(link));
+    return gone && came ? `${gone} → ${came}` : 'Link changed';
+  }
+  return versus(pair.older.plain, pair.newer.plain);
 };
 
 /** What a row's newest line leaves out of an older version, in a few words: "lowercase only". Null when nothing. */

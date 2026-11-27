@@ -1,6 +1,6 @@
 // Overview's "Needs you": the one place to act on the knowledge, one quiet row per job. Review fixes, proposals and
 // pages to confirm come first; then each pair of rules that disagree (Compare); then every repeated rule in one row
-// (Review, with one "Use newer for all"); then what can wait ("N pages to tidy"). A row opens in place.
+// (Review, with one "Keep newer for all"); then what can wait ("N pages to tidy"). A row opens in place.
 import { useEffect, useState, type ReactNode } from 'react';
 import { useNavigate } from 'react-router';
 import { PROPOSAL_PARAM } from '../proposals.logic.ts';
@@ -189,9 +189,9 @@ export const FixList = ({ overview, onOpen, onChanged }: { overview: KnowledgeOv
   const safePages = view.repeats.filter((group) => group.safe.length > 0 && group.pages.length === 1);
   const safeRows = safePages.reduce((sum, group) => sum + group.safeRows, 0);
   const askKeepNewer = (groups: PairGroup[]) => setAsking({
-    title: `Use the newer line for ${safeRows} ${safeRows === 1 ? 'rule' : 'rules'}?`,
+    title: `Keep the newer line for ${safeRows} ${safeRows === 1 ? 'rule' : 'rules'}?`,
     description: `Only where it says everything the older one does. Older lines move to “Replaced” on ${groups.length === 1 ? groupTitle(groups[0]!) : `${groups.length} pages`}. You can undo.`,
-    confirm: 'Use newer', run: () => void keepNewer(groups),
+    confirm: 'Keep newer', run: () => void keepNewer(groups),
   });
 
   const itemRow = (item: FixItem) => {
@@ -257,7 +257,7 @@ export const FixList = ({ overview, onOpen, onChanged }: { overview: KnowledgeOv
         {shown.map(itemRow)}
         {view.disagree.map((group) => row({
           // What differs leads; the page it's on comes second.
-          id: group.key, icon: <AlertTriangle size={15} aria-hidden className="mt-0.5 shrink-0 text-warn" />, name: groupLine(group), line: groupTitle(group), action: 'Compare',
+          id: group.key, icon: <AlertTriangle {...quiet} />, name: groupLine(group), line: groupTitle(group), action: 'Compare',
           panel: <DisagreePairs pairs={group.pairs} titleOf={title} actions={actions} />,
         }))}
         {view.repeats.length > 0 && row({
@@ -266,7 +266,7 @@ export const FixList = ({ overview, onOpen, onChanged }: { overview: KnowledgeOv
             <>
               {safeRows > 0 && (
                 <div className="flex items-center gap-3">
-                  <Button size="sm" variant="primary" disabled={busy !== null} onClick={() => askKeepNewer(safePages)}>{busy === 'bulk' ? 'Working…' : 'Use newer for all'}</Button>
+                  <Button size="sm" variant="primary" disabled={busy !== null} onClick={() => askKeepNewer(safePages)}>{busy === 'bulk' ? 'Working…' : safeRows === view.repeats.reduce((sum, group) => sum + group.rows.length, 0) ? 'Keep newer for all' : 'Keep newer where safe'}</Button>
                   <span className="text-xs text-faint">Older lines move to “Replaced”. You can undo.</span>
                 </div>
               )}
@@ -274,13 +274,11 @@ export const FixList = ({ overview, onOpen, onChanged }: { overview: KnowledgeOv
               <ul className="flex flex-col divide-y divide-line-subtle border-y border-line-subtle">
                 {view.repeats.map((group) => {
                   const isOpen = openPage === group.key;
-                  const needs = group.rows.length - group.safeRows;
                   return (
                     <li key={group.key} className="flex flex-col">
                       <button type="button" aria-expanded={isOpen} onClick={() => setOpenPage(isOpen ? null : group.key)} className="flex items-center gap-2 py-2 text-left text-[13px] text-ink hover:text-ink focus-visible:outline-2 focus-visible:outline-focus">
                         <ChevronRight size={13} aria-hidden className={cx('shrink-0 text-faint transition-transform', isOpen && 'rotate-90')} />
                         <span className="min-w-0 flex-1 truncate">{groupTitle(group)}</span>
-                        {needs > 0 && <span className="shrink-0 text-xs tabular-nums text-faint">{needs} to check</span>}
                       </button>
                       {isOpen && <div className="pb-2 pl-5"><RepeatPairs rows={group.rows} actions={actions} /></div>}
                     </li>

@@ -34,9 +34,9 @@ const RepeatRow = ({ row, actions }: { row: ChainRow; actions: PairActions }) =>
   const reason = checkReason(row);
   const prose = reason === 'Inside longer text';
   // A rule "Use newer for all" settles has no button of its own. One that loses detail shows both choices.
-  const both = !row.covers && !row.twice && !prose;
-  const newer = row.twice ? 'Remove copy' : row.order === 'length' ? 'Use longer' : 'Use newer';
-  const older = row.order === 'length' ? 'Use shorter' : 'Use older';
+  const both = !row.safe && !row.twice && !prose;
+  const newer = row.twice ? 'Remove copy' : row.order === 'length' ? 'Keep longer' : 'Keep newer';
+  const older = row.order === 'length' ? 'Keep shorter' : 'Keep older';
   return (
     <li className="flex items-start gap-3 py-2">
       <div className="flex min-w-0 flex-1 flex-col gap-0.5" title={[...row.olders.map((side) => side.text), row.newer.text].join('\n')}>
@@ -48,16 +48,36 @@ const RepeatRow = ({ row, actions }: { row: ChainRow; actions: PairActions }) =>
         {!prose && (both || (more && !row.twice)) && <Button size="sm" variant={both ? 'secondary' : 'ghost'} disabled={actions.busy} title={row.latest.older.text} onClick={() => actions.keepRow(row, 'older')}>{older}</Button>}
         {!prose && (reason !== null || more) && <Button size="sm" variant={reason !== null ? 'secondary' : 'ghost'} disabled={actions.busy} title={row.newer.text} onClick={() => actions.keepRow(row, 'newer')}>{newer}</Button>}
         {more && <Button size="sm" variant="ghost" disabled={actions.busy} title="Leave the page as it is" onClick={() => actions.bothHold(row.all)}>Keep both</Button>}
+        {more && !prose && <Button size="sm" variant="ghost" disabled={actions.busy} onClick={() => actions.open(row.newer.page)}>Open page</Button>}
         <Button size="sm" variant="ghost" aria-label="Other choices" aria-expanded={more} className="px-1.5" onClick={() => setMore(!more)}><MoreHorizontal size={14} aria-hidden /></Button>
       </div>
     </li>
   );
 };
 
-/** One page's repeated rules, each once. */
-export const RepeatPairs = ({ rows, actions }: { rows: ChainRow[]; actions: PairActions }) => (
-  <ul className="flex flex-col divide-y divide-line-subtle">{rows.map((row) => <RepeatRow key={row.key} row={row} actions={actions} />)}</ul>
-);
+/**
+ * One page's repeated rules: those that need a choice, each with its reason; the rest, which "Keep newer for all"
+ * settles, folded into one quiet line that opens to show them.
+ */
+export const RepeatPairs = ({ rows, actions }: { rows: ChainRow[]; actions: PairActions }) => {
+  const [shown, setShown] = useState(false);
+  const check = rows.filter((row) => checkReason(row) !== null);
+  const rest = rows.filter((row) => checkReason(row) === null);
+  return (
+    <ul className="flex flex-col divide-y divide-line-subtle">
+      {check.map((row) => <RepeatRow key={row.key} row={row} actions={actions} />)}
+      {rest.length > 0 && (shown
+        ? rest.map((row) => <RepeatRow key={row.key} row={row} actions={actions} />)
+        : (
+          <li className="py-2">
+            <Button size="sm" variant="ghost" flush aria-expanded={false} onClick={() => setShown(true)}>
+              {rest.length} more {rest.length === 1 ? 'changes' : 'change'} with Keep newer
+            </Button>
+          </li>
+        ))}
+    </ul>
+  );
+};
 
 /** Two rules that disagree, side by side, older on the left; what tells them apart in bold. */
 export const DisagreePairs = ({ pairs, titleOf, actions }: { pairs: PairInfo[]; titleOf: (page: string) => string; actions: PairActions }) => (
@@ -70,7 +90,7 @@ export const DisagreePairs = ({ pairs, titleOf, actions }: { pairs: PairInfo[]; 
         return (
           <div className="flex min-w-0 flex-col gap-1.5 rounded-lg border border-line px-3 py-2.5">
             <p className="truncate text-xs text-faint">
-              {side === 'older' ? from : to}{pair.older.page === pair.newer.page ? '' : ` · ${titleOf(rule.page)}`}{lead && ' · newer'}
+              {side === 'older' ? from : to}{pair.older.page === pair.newer.page ? '' : ` · ${titleOf(rule.page)}`}
             </p>
             <p className="text-[13px] leading-5 text-ink" title={rule.text}><Side parts={wordDiff(pair.older.plain, pair.newer.plain, side)} /></p>
             <Button size="sm" variant={lead ? 'primary' : 'secondary'} className="mt-0.5 self-start" disabled={actions.busy} onClick={() => actions.keep(pair, side)}>Keep</Button>
