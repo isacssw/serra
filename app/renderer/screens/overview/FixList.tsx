@@ -2,7 +2,7 @@
 // replies were missing (Tell it) and hand edits come first, one line and one button each. Rules that repeat or disagree
 // follow one row per page, in two groups: "Same rule, learned again" (safe: Keep newer for all) and "Really disagree"
 // (your call, side by side). Jobs that can wait fold away under "Tidy up".
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { useNavigate } from 'react-router';
 import { PROPOSAL_PARAM } from '../proposals.logic.ts';
 import { AlertTriangle, Check, ChevronRight, CircleCheck, CircleHelp, FileText, PenLine, Sparkles } from 'lucide-react';
@@ -69,6 +69,8 @@ export const FixList = ({ overview, onOpen, onChanged }: { overview: KnowledgeOv
   const [opened, setOpened] = useState<string | null>(null);
   const [more, setMore] = useState<Set<string>>(new Set());
   const [tidyOpen, setTidyOpen] = useState(false);
+  // Fresh data says what is still open: rows hidden after a click are judged again from it.
+  useEffect(() => { setDone(new Set()); }, [overview]);
   const items = fixItems(overview);
   const open = items.filter((item) => !done.has(item.id) && !(item.pair && done.has(item.pair.id)));
   const view = needsYou(open);

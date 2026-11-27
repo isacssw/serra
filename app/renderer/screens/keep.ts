@@ -3,7 +3,7 @@
 // the page service, which backs the page up first and refuses a page that changed since it was read.
 import type { SerraBridge } from '../../main/bridge.ts';
 import { keepNewerForAll, type PairGroup } from './conflicts.logic.ts';
-import { keepRule, localDate, replacedOn } from './pages.logic.ts';
+import { currentRules, keepRule, localDate, replacedOn } from './pages.logic.ts';
 
 type Rule = { page: string; text: string };
 type Bridge = Pick<SerraBridge, 'pages'>;
@@ -46,6 +46,8 @@ export const keepOver = async (bridge: Bridge, kept: Rule, drops: readonly Rule[
       if (after === next) return 'open';
       next = after;
     }
+    // The kept line must still be there: a copy of it is never moved with its own twin.
+    if (page === kept.page && !currentRules(next).includes(kept.text.trim())) return 'open';
     planned.push({ page, before, next });
   }
   const saved: Saved[] = [];

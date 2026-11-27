@@ -183,8 +183,11 @@ export const fixItems = (overview: Pick<KnowledgeOverview, 'review' | 'health' |
     action: suggestionAction(suggestion.kind), suggestion,
   }));
   const covered = new Set(fromReview.map((item) => `${item.suggestion!.kind === 'replace' ? 'conflict' : item.suggestion!.kind === 'confirm' ? 'stale' : 'overlap'}:${item.pages[0]}`));
+  // A line pasted twice beside a third makes the same pair twice: it is one item.
+  const pairSeen = new Set<string>();
   const fromHealth: FixItem[] = overview.health.issues.flatMap((issue) => {
     const page = issue.pages[0]!;
+    if (issue.pair) { if (pairSeen.has(issue.pair.id)) return []; pairSeen.add(issue.pair.id); }
     if (covered.has(`${issue.kind === 'duplicate' ? 'conflict' : issue.kind}:${page}`) || issue.pages.some((path) => covered.has(`conflict:${path}`))) return [];
     const why = ({ conflict: 'Two rules disagree', duplicate: 'A rule is written twice', overlap: 'Two pages on one topic', stale: 'Not confirmed in over 60 days', draft: 'Not confirmed yet', unindexed: 'Not in the index, so never used', long: 'Near the page size limit', unstructured: 'Long prose, hard for the bot to scan', 'index-full': 'The index is nearly full' } as const)[issue.kind];
     // "Still true" only where nothing suggests it changed; otherwise the page opens for the owner to look.

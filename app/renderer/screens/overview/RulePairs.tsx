@@ -44,6 +44,7 @@ export const RepeatPairs = ({ rows, titleOf, actions }: { rows: ChainRow[]; titl
       const same = parts.every((part) => part.op === 'same');
       return (
         <li key={row.key} className={cx('flex flex-col gap-2 rounded-lg border px-3 py-2.5', row.covers ? 'border-line' : 'border-warn/50')}>
+          {row.twice ? <p className="text-xs text-faint">Written twice, word for word</p> : (
           <p className="flex flex-wrap items-center gap-x-1.5 text-xs text-faint">
             {!row.covers && <span className="font-medium text-warn">Newer drops detail ·</span>}
             <span>{from}</span><span aria-hidden>→</span>
@@ -53,10 +54,17 @@ export const RepeatPairs = ({ rows, titleOf, actions }: { rows: ChainRow[]; titl
             {/* Two pages: which one each version sits on, so Keep says where the rule stays. */}
             {row.latest.older.page !== row.newer.page && <span className="truncate">· {titleOf(row.latest.older.page)} → {titleOf(row.newer.page)}</span>}
           </p>
+          )}
           <p className="text-[13px] leading-5 text-ink" title={[...row.olders.map((side) => side.text), row.newer.text].join('\n')}><Marked parts={parts} /></p>
           <div className="flex flex-wrap gap-1.5">
-            <Button size="sm" disabled={actions.busy} title={row.olders.length > 1 ? `Keeps “${row.latest.older.text}”. Only the newest line moves.` : row.latest.older.text} onClick={() => actions.keepRow(row, 'older')}>{keepOlder}</Button>
-            <Button size="sm" variant={row.covers ? 'primary' : 'secondary'} disabled={actions.busy} title={row.newer.text} onClick={() => actions.keepRow(row, 'newer')}>{keepNewer}</Button>
+            {row.twice
+              ? <Button size="sm" variant="primary" disabled={actions.busy} title="Moves one copy under “Replaced”" onClick={() => actions.keepRow(row, 'newer')}>Keep one</Button>
+              : (
+                <>
+                  <Button size="sm" disabled={actions.busy} title={row.olders.length > 1 ? `Keeps “${row.latest.older.text}”. Only the newest line moves.` : row.latest.older.text} onClick={() => actions.keepRow(row, 'older')}>{keepOlder}</Button>
+                  <Button size="sm" variant={row.covers ? 'primary' : 'secondary'} disabled={actions.busy} title={row.newer.text} onClick={() => actions.keepRow(row, 'newer')}>{keepNewer}</Button>
+                </>
+              )}
             <Button size="sm" variant="ghost" disabled={actions.busy} title="Leave the lines as they are and stop listing them" onClick={() => actions.bothHold(row.all)}>Both hold</Button>
           </div>
         </li>

@@ -15,7 +15,7 @@ import { stoppedStatusSource } from '../app/main/status.ts';
 import { groupLine, groupPairs, isSafe, keepNames, keepNewerForAll, rowNames, sideNames, versus, wordDiff, type PairIssue } from '../app/renderer/screens/conflicts.logic.ts';
 import { keepNewerOnPages, keepOne, keepOver } from '../app/renderer/screens/keep.ts';
 import { fixItems, needsYou, todoTally } from '../app/renderer/screens/overview.logic.ts';
-import { currentRules } from '../app/renderer/screens/pages.logic.ts';
+import { currentRules, keepRule } from '../app/renderer/screens/pages.logic.ts';
 import { dismissedPairs } from '../src/knowledge-dismissals.ts';
 import { assessKnowledge, findOverlaps, learnedOn, markIndexRows, pageFacts, pairId, ruleText, type KnowledgeFile } from '../src/knowledge-health.ts';
 import { knowledgeGraph, knowledgeOverview } from '../src/knowledge-overview.ts';
@@ -422,4 +422,80 @@ test('a line pasted twice word for word is one row that Keep can settle, never a
   assert.equal(repeats[0]!.rows.length, 1);
   assert.equal(groupLine(repeats[0]!), '1 rule learned again or written twice');
   assert.equal(repeats[0]!.safeRows, 0, 'two identical undated lines are never kept in bulk');
+});
+
+test('only the note at the end of a line is when it was learned: an earlier bracket or a future date is a value', () => {
+  const kinds = (a: string, b: string) => {
+    const pairs = pairsOf([{ path: 'a.md', text: `---\ntype: rule\n---\n- ${a}\n- ${b}\n` }]);
+    return { pairs, safe: groupPairs(pairs).repeats.reduce((sum, group) => sum + group.safeRows, 0) };
+  };
+  const mid = kinds('The billing code freeze starts (Dec 1) (2026-11-16)', 'The billing code freeze starts (Dec 15) (2026-11-17)');
+  assert.deepEqual(mid.pairs.map((issue) => issue.kind), ['conflict']);
+  // A date after today in the end bracket is a deadline, not when the line was learned: never kept in bulk.
+  const future = kinds('Ship the billing migration by (2026-12-01)', 'Ship the billing migration by (2026-12-15)');
+  assert.equal(future.safe, 0);
+  assert.ok(future.pairs.every((issue) => issue.pair.older.learned === null && issue.pair.newer.learned === null && !issue.pair.covers));
+  assert.ok(future.pairs.every((issue) => issue.pair.newer.plain.includes('2026-12')), 'the screen shows the dates that differ');
+  // A note without a year still orders the days.
+  assert.equal(learnedOn('Ask in the thread first (from #team-dx, Nov 16)'), '0000-11-16');
+});
+
+test('the same line pasted twice as the newest version: one row for the restatement, one "Keep one" row for the copy', async (t) => {
+  const { knowledge, bridge } = profile(t);
+  const text = '---\ntype: rule\ndescription: Copies\nwritten: 2026-11-18\nverified: 2026-11-18\nsources:\n  - Sam, 2026-11-18\n---\n- Pair on anything touching refunds (2026-11-16)\n- Pair on anything touching refunds (2026-11-17)\n- Pair on anything touching refunds (2026-11-17)\n';
+  writeFileSync(join(knowledge, 'owner/copies.md'), text);
+  createKnowledge(knowledge).acceptDrift('owner/copies.md', text); // the owner accepted it in Pages
+  const { repeats } = groupPairs(pairsOf([{ path: 'owner/copies.md', text }]));
+  const rows = repeats[0]!.rows;
+  assert.equal(rows.length, 2);
+  const restated = rows.find((row) => !row.twice)!;
+  assert.deepEqual(restated.olders.map((side) => side.learned), ['2026-11-16'], 'the newest line is never among its own older versions');
+  const copy = rows.find((row) => row.twice)!;
+  for (const row of [restated, copy]) {
+    const before = readFileSync(join(knowledge, 'owner/copies.md'), 'utf8');
+    const result = await keepOver(bridge, row.newer, row.olders);
+    assert.notEqual(result, 'open', 'Keep newer settles it in a click');
+    assert.equal(currentRules(readFileSync(join(knowledge, 'owner/copies.md'), 'utf8')).length, currentRules(before).length - 1, 'one line moved');
+  }
+  assert.deepEqual(currentRules(readFileSync(join(knowledge, 'owner/copies.md'), 'utf8')).filter((line) => line.startsWith('Pair')), ['Pair on anything touching refunds (2026-11-17)']);
+});
+
+test('a rule inside a longer bullet is never counted in "Keep newer for all"', () => {
+  const pairs = pairsOf([{ path: 'a.md', text: '---\ntype: rule\n---\n- Deploy payouts only on Tuesday mornings (2026-11-16). Ask Ana first.\n- Deploy payouts only on Tuesday mornings (2026-11-17)\n' }]);
+  assert.equal(pairs.length, 1);
+  assert.equal(pairs[0]!.pair.older.whole, false);
+  assert.equal(groupPairs(pairs).repeats[0]!.safeRows, 0, 'the button never promises a line it cannot move');
+});
+
+test('small words and digits keep their order, and one word swapped for its opposite is a conflict', () => {
+  for (const [older, newer] of [
+    ['Deploy to staging from main (2026-11-16)', 'Deploy from staging to main (2026-11-17)'],
+    ['Keep 2 retries and 5 seconds timeout (2026-11-16)', 'Keep 5 retries and 2 seconds timeout (2026-11-17)'],
+  ]) {
+    const pairs = pairsOf([{ path: 'a.md', text: `---\ntype: rule\n---\n- ${older}\n- ${newer}\n` }]);
+    assert.ok(pairs.every((issue) => !isSafe(issue.pair)), `${older} / ${newer}`);
+  }
+  const swap = pairsOf([{ path: 'a.md', text: '---\ntype: rule\n---\n- Enable retries for payout webhooks\n- Disable retries for payout webhooks\n' }]);
+  assert.deepEqual(swap.map((issue) => issue.kind), ['conflict']);
+});
+
+test('a line pasted three times loses one copy per click, never all of them', async (t) => {
+  const { knowledge, bridge } = profile(t);
+  const line = 'Pair on anything touching refunds';
+  const text = `---\ntype: rule\ndescription: Copies\nwritten: 2026-11-18\nverified: 2026-11-18\nsources:\n  - Sam, 2026-11-18\n---\n- ${line}\n- ${line}\n- ${line}\n`;
+  writeFileSync(join(knowledge, 'owner/copies.md'), text);
+  createKnowledge(knowledge).acceptDrift('owner/copies.md', text);
+  const rows = groupPairs(pairsOf([{ path: 'owner/copies.md', text }])).repeats[0]!.rows;
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0]!.olders.length, 1);
+  const result = await keepOver(bridge, rows[0]!.newer, rows[0]!.olders);
+  assert.notEqual(result, 'open');
+  assert.equal(currentRules(readFileSync(join(knowledge, 'owner/copies.md'), 'utf8')).filter((rule) => rule === line).length, 2);
+});
+
+test('Keep moves the line under a "## Replaced" heading that ends the page with nothing under it yet', () => {
+  const text = '---\ntype: rule\n---\n- Ship on Tuesday.\n- Ship on Thursday now.\n\n## Replaced';
+  const kept = keepRule(text, 'Ship on Tuesday.', '2026-11-25');
+  assert.match(kept, /## Replaced\n\n- Until 2026-11-25: Ship on Tuesday\.\n$/);
+  assert.deepEqual(currentRules(kept), ['Ship on Thursday now.']);
 });

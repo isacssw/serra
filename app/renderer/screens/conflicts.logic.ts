@@ -96,6 +96,8 @@ export interface ChainRow {
   latest: PairInfo;
   /** The newest line says everything every older one does. */
   covers: boolean;
+  /** The same line pasted twice, word for word: Keep one takes out a copy. */
+  twice: boolean;
   order: PairInfo['order'];
 }
 
@@ -112,16 +114,21 @@ const chainRows = (pairs: readonly PairInfo[]): ChainRow[] => {
   for (const pair of pairs) {
     if (sideKey(pair.older) !== sideKey(pair.newer)) later.set(sideKey(pair.older), [...(later.get(sideKey(pair.older)) ?? []), sideKey(pair.newer)]);
   }
-  const shown = pairs.filter((pair) => !(later.get(sideKey(pair.newer)) ?? []).some((next) => has.has(`${sideKey(pair.older)}\u0000${next}`)));
+  const self = (pair: PairInfo): boolean => sideKey(pair.older) === sideKey(pair.newer);
+  const shown = pairs.filter((pair) => self(pair) || !(later.get(sideKey(pair.newer)) ?? []).some((next) => has.has(`${sideKey(pair.older)}\u0000${next}`)));
   const rows = new Map<string, PairInfo[]>();
-  for (const pair of shown) rows.set(sideKey(pair.newer), [...(rows.get(sideKey(pair.newer)) ?? []), pair]);
+  for (const pair of shown) {
+    const key = self(pair) ? `${sideKey(pair.newer)}\u0000twice` : sideKey(pair.newer);
+    rows.set(key, [...(rows.get(key) ?? []), pair]);
+  }
   const age = (pair: PairInfo): string => pair.older.learned ?? '';
   return [...rows].map(([key, list]) => {
     const sorted = [...list].sort((a, b) => age(a).localeCompare(age(b)));
     const latest = sorted.at(-1)!;
-    const lines = new Set([key, ...sorted.map((pair) => sideKey(pair.older))]);
-    const all = [...new Map(pairs.filter((pair) => lines.has(sideKey(pair.older)) && lines.has(sideKey(pair.newer))).map((pair) => [pair.id, pair])).values()];
-    return { key, newer: latest.newer, olders: sorted.map((pair) => pair.older), pairs: sorted, all, latest, covers: sorted.every((pair) => pair.covers), order: latest.order };
+    const lines = new Set([sideKey(latest.newer), ...sorted.map((pair) => sideKey(pair.older))]);
+    // A line pasted twice stays out of other rows' sets: Keep newer there moves its own older versions, not a copy.
+    const all = list.some(self) ? list : pairs.filter((pair) => !self(pair) && lines.has(sideKey(pair.older)) && lines.has(sideKey(pair.newer)));
+    return { key, newer: latest.newer, olders: sorted.map((pair) => pair.older), pairs: sorted, all, latest, covers: sorted.every((pair) => pair.covers), twice: list.some(self), order: latest.order };
   });
 };
 
@@ -142,12 +149,16 @@ export interface PairGroup {
 }
 
 /** A pair "Keep newer" can settle without losing a word: the newer is dated later and says all the older says. */
-export const isSafe = (pair: PairInfo): boolean => pair.order === 'date' && pair.covers && pair.older.page === pair.newer.page;
+export const isSafe = (pair: PairInfo): boolean => pair.order === 'date' && pair.covers && pair.older.page === pair.newer.page && pair.older.whole && pair.newer.whole;
 
 /** Pairs as one row per page (or pair of pages), repeats and disagreements apart, biggest group first. */
 export const groupPairs = (issues: readonly PairIssue[]): { repeats: PairGroup[]; disagree: PairGroup[] } => {
   const groups = new Map<string, PairGroup>();
+  // A line pasted twice beside a third gives two issues with one id: the pair counts once.
+  const seen = new Set<string>();
   for (const issue of issues) {
+    if (seen.has(issue.pair.id)) continue;
+    seen.add(issue.pair.id);
     const kind = issue.kind === 'conflict' ? 'disagree' : 'repeat';
     const pages = [...new Set([issue.pair.older.page, issue.pair.newer.page])].sort();
     const key = `${kind}:${pages.join('|')}`;

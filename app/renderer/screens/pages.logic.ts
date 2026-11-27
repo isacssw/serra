@@ -140,9 +140,10 @@ export const keepRule = (text: string, drop: string, date: string): string => {
   lines.splice(at, 1);
   const body = lines.join('\n').trimEnd();
   const entry = `- Until ${date}: ${drop.trim()}`;
+  // The heading may be the page's last line, with nothing under it yet: the entry still goes under it.
   return /^##\s+Replaced\b/im.test(body)
     // A function, not a replacement string: a rule like "Refunds over $100" must not be read as `$1`.
-    ? `${body.replace(/^(##\s+Replaced\b[^\n]*\n(?:\n)?)/im, (head) => `${head}${entry}\n`)}\n`
+    ? `${body.replace(/^(##\s+Replaced\b[^\n]*)(?:\n\n?|$)/im, (_all, head: string) => `${head}\n\n${entry}\n`).trimEnd()}\n`
     : `${body}\n\n## Replaced\n\n${entry}\n`;
 };
 
