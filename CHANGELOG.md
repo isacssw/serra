@@ -5,6 +5,7 @@ Serra follows [Semantic Versioning](https://semver.org) once it reaches 1.0. Unt
 ## Unreleased
 
 - **A calmer, high-end look:** new dark and light colours, 32px fields with a soft focus ring, one dropdown style everywhere, and buttons that read as off when disabled. **Settings** is now one sidebar entry (⌘,) with its own grouped menu; Esc goes back. Each settings page has one **Save** bar (⌘S) that says once when changes apply.
+- **Knowledge pages, redesigned:** Overview opens on four numbers (pages, replies they shaped, health, what needs you) with a grouped **Needs you** list and coverage by area. **Pages** lists each page by name with its description, a check for verified ones, and keeps the list in place while you read. **Proposals** shows the proposed text first, with folder, who may hear it and the actions in one row. **About me** says each title once, switches You / Team / External in the header, and sums up what's left out in one line.
 - **Knowledge › Graph:** what your bot knows, as a map. One island per area, pages linked by what they mention, where they came from, which replies used them together, and rules that disagree. The first visit replays how it grew; later visits replay only new pages. Click a page (or use the arrow keys) to see its links, open it, or keep one of two rules that disagree.
 
 ## 0.1.0-alpha.6 (2026-11-26)

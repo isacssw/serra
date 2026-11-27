@@ -31,13 +31,13 @@ export const DiffView = ({ current, proposed, labels = ['Current', 'Proposed'], 
   const stats = diffStats(rows);
   return (
     <div className="flex flex-col gap-2">
-      <p className="text-xs text-muted">
+      <p className="text-xs text-faint">
         {current === null ? `New page, ${stats.added} lines.` : `${stats.removed} line${stats.removed === 1 ? '' : 's'} removed, ${stats.added} added${stats.moved ? `, ${stats.moved} moved` : ''}.`}
       </p>
       <div className="@container">
         {/* Narrow: one column, removed lines above the lines that replace them, so nothing wraps mid-word. */}
-        <div className="overflow-hidden rounded-lg border border-line bg-panel @3xl:hidden" role="group" aria-label={`${labels[0]} and ${labels[1]}, one column`}>
-          <h3 className="border-b border-line bg-raised px-3 py-2 text-sm font-semibold">
+        <div className="overflow-hidden rounded-xl border border-line bg-panel shadow-card @3xl:hidden" role="group" aria-label={`${labels[0]} and ${labels[1]}, one column`}>
+          <h3 className="border-b border-line-subtle px-4 py-2 text-xs font-medium text-muted">
             {current === null ? labels[1] : `${labels[0]} → ${labels[1]}`}
           </h3>
           <div className="py-1.5 font-mono text-xs leading-6">
@@ -48,12 +48,12 @@ export const DiffView = ({ current, proposed, labels = ['Current', 'Proposed'], 
           </div>
         </div>
         {/* Wide: one grid, so a wrapped line on one side keeps its row level with the other side. */}
-        <div className="hidden grid-cols-2 overflow-hidden rounded-lg border border-line bg-panel @3xl:grid" role="group" aria-label={`${labels[0]} and ${labels[1]}`}>
-          <h3 className="border-r border-b border-line bg-raised px-3 py-2 text-sm font-semibold">{labels[0]}</h3>
-          <h3 className="border-b border-line bg-raised px-3 py-2 text-sm font-semibold">{labels[1]}</h3>
+        <div className="hidden grid-cols-2 overflow-hidden rounded-xl border border-line bg-panel shadow-card @3xl:grid" role="group" aria-label={`${labels[0]} and ${labels[1]}`}>
+          <h3 className="border-r border-b border-line-subtle px-4 py-2 text-xs font-medium text-muted">{labels[0]}</h3>
+          <h3 className="border-b border-line-subtle px-4 py-2 text-xs font-medium text-muted">{labels[1]}</h3>
           {current === null ? (
             <>
-              <p className="border-r border-line px-3 py-3 text-sm text-muted">{emptyCurrent}</p>
+              <p className="border-r border-line-subtle px-4 py-3 text-[13px] text-faint">{emptyCurrent}</p>
               <div className="py-1.5 font-mono text-xs leading-6" aria-label={labels[1]}>
                 {rows.map((row, index) => <Cell key={index} cell={row.proposed} />)}
               </div>
@@ -62,7 +62,7 @@ export const DiffView = ({ current, proposed, labels = ['Current', 'Proposed'], 
             <div className="col-span-2 grid grid-cols-2 py-1.5 font-mono text-xs leading-6">
               {rows.map((row, index) => (
                 <div key={index} className="contents">
-                  <div className="min-w-0 border-r border-line"><Cell cell={row.current} /></div>
+                  <div className="min-w-0 border-r border-line-subtle"><Cell cell={row.current} /></div>
                   <div className="min-w-0"><Cell cell={row.proposed} /></div>
                 </div>
               ))}

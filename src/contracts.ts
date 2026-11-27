@@ -45,6 +45,8 @@ export interface KnowledgePage {
   /** Header fields. Absent when the header lacks them, which `problems` then reports. */
   type?: string;
   description?: string;
+  /** The page's own name: its first `# ` heading, like "Tom Reyes". Absent when the body has none. */
+  title?: string;
   /** Date the page was written, `YYYY-MM-DD`. */
   written?: string;
   /** Date the owner confirmed the page, `YYYY-MM-DD`, or null while it is unconfirmed. */

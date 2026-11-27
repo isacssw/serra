@@ -52,8 +52,8 @@ export const Proof = ({ example }: { example: ReviewExample }) => (
   </figure>
 );
 
-/** Run the review now, and whether it runs every week. */
-export const ReviewControls = ({ weekly, first, onChanged }: { weekly: boolean; first: boolean; onChanged: () => void }) => {
+/** Run the review now, and whether it runs every week: the Overview's header actions. */
+export const ReviewControls = ({ weekly, ran, onChanged }: { weekly: boolean; ran: boolean; onChanged: () => void }) => {
   const toast = useToast();
   const [running, setRunning] = useState(false);
   const run = async () => {
@@ -70,12 +70,14 @@ export const ReviewControls = ({ weekly, first, onChanged }: { weekly: boolean; 
     try { await serra()?.pages.setReviewWeekly(!weekly); onChanged(); } catch (failure) { toast({ message: message(failure), tone: 'error' }); }
   };
   return (
-    <div className="flex flex-wrap items-center gap-3">
-      <Button size="sm" variant={first ? 'primary' : 'ghost'} disabled={running} onClick={() => void run()} icon={<RefreshCw size={13} aria-hidden className={cx(running && 'animate-spin')} />}>{running ? 'Reviewing…' : first ? 'Run review' : 'Run again'}</Button>
-      <label className="flex items-center gap-1.5 text-xs text-muted">
-        <input type="checkbox" checked={weekly} onChange={() => void toggle()} className="accent-ink" />
-        Every week
-      </label>
+    <div className="flex items-center gap-3">
+      <button type="button" role="switch" aria-checked={weekly} onClick={() => void toggle()} className="group flex h-8 items-center gap-2 rounded-lg px-1 text-[13px] text-muted hover:text-ink focus-visible:outline-2 focus-visible:outline-focus">
+        <span aria-hidden className={cx('relative h-4 w-7 rounded-full border transition-colors duration-150', weekly ? 'border-transparent bg-accent' : 'border-line-control bg-field')}>
+          <span className={cx('absolute top-1/2 size-3 -translate-y-1/2 rounded-full shadow-sm transition-[left] duration-150', weekly ? 'left-[13px] bg-accent-ink' : 'left-0.5 bg-faint')} />
+        </span>
+        Weekly review
+      </button>
+      <Button disabled={running} onClick={() => void run()} icon={<RefreshCw size={14} aria-hidden className={cx(running && 'animate-spin')} />}>{running ? 'Reviewing…' : ran ? 'Run again' : 'Run review'}</Button>
     </div>
   );
 };
