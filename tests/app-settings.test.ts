@@ -9,7 +9,8 @@ import { createHandlers, registerHandlers, type IpcRegistrar } from '../app/main
 import { memoryPrefs } from '../app/main/prefs.ts';
 import { stoppedStatusSource } from '../app/main/status.ts';
 import {
-  addPersonFieldMessage, addPersonProblem, appliesLabel, botForm, branchPatternForm, channelIdProblem, emptyTriggerRow,
+  addPersonFieldMessage, addPersonProblem, appliesLabel, botForm, branchPatternForm, branchPreview, channelIdProblem, emptyTriggerRow,
+  triggerSummary,
   formChanged, memberIdProblem, ownerForm, parseRepositories, parseTriggers, peopleRows, peopleToName, pendingRestart, projectForm,
   repositoryRows, reviewForm, sectionList, serviceLabelForm, t3BinForm, triggerRows, updatesForm, workerForm, type SectionForm,
 } from '../app/renderer/screens/settings/settings.logic.ts';
@@ -298,4 +299,18 @@ test('saving a section reports when it applies; null removes an optional section
 
   const triggers = await bridge.settings.saveSection('messageTriggers', []);
   assert.equal(triggers.applies, 'now');
+});
+
+test('branch preview: names the branch a job would get, as src/branch.ts does, and the default for an empty pattern', () => {
+  const now = new Date(2026, 10, 18, 12, 0, 0);
+  const stamp = now.getTime().toString(36);
+  assert.equal(branchPreview('', { id: 'friday', slug: 'fix-it', now }), `friday/fix-it-${stamp}`);
+  assert.equal(branchPreview('TEAM-{DDMM}/{slug}-{stamp}', { id: 'friday', slug: 'fix-it', now }), `TEAM-1811/fix-it-${stamp}`);
+  assert.equal(branchPreview('{MMDD}/{id}', { id: 'friday', slug: 'x', now }), '1118/friday');
+});
+
+test('trigger summary: who a trigger answers and its first instruction line, for the Alerts list', () => {
+  assert.deepEqual(triggerSummary({ channel: 'C0123456789', source: 'bot', sourceId: 'B0123456789', instructions: '\nFind the cause.\nThen post.' }), { source: 'Bot', id: 'B0123456789', instructions: 'Find the cause.' });
+  assert.equal(triggerSummary({ channel: 'C1', source: 'user', sourceId: '', instructions: '' }).id, '(no ID)');
+  assert.deepEqual(triggerSummary({ channel: 'C1', source: 'any', sourceId: '', instructions: ' ' }), { source: 'Any message', id: '', instructions: 'No instructions' });
 });

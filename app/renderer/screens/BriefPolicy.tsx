@@ -2,10 +2,12 @@
 // the brief a worker would get for a sample request (the draft, before saving), and apply a rewrite waiting in the
 // profile's `proposed/`. Both files are read per job, so a save applies to the next job without a restart.
 import { useCallback, useEffect, useState } from 'react';
-import { CircleAlert, CircleCheck, Eye, FileText, RotateCcw, Save, Sparkles } from 'lucide-react';
+import { ChevronRight, CircleAlert, CircleCheck, Eye, Sparkles } from 'lucide-react';
 import type { BriefDocument } from '../../main/bridge.ts';
 import { serra } from '../bridge.ts';
 import { Badge, Button, cx, Dialog, Input, Page, useToast } from '../ui/index.ts';
+import { fieldClass } from '../ui/field.ts';
+import { SaveBar } from './settings/SettingsKit.tsx';
 import {
   DOCUMENTS, emptyDraft, isDirty, loadedDraft, proposedLabel, replacesLine, SAMPLE_REQUEST, type Draft,
 } from './brief.logic.ts';
@@ -17,21 +19,39 @@ type Drafts = Record<BriefDocument, Draft>;
 type Proposed = Partial<Record<BriefDocument, string>>;
 
 const Tabs = ({ active, drafts, onSelect }: { active: BriefDocument; drafts: Drafts; onSelect: (document: BriefDocument) => void }) => (
-  <div role="tablist" aria-label="Document" className="inline-flex w-fit rounded-md border border-line bg-raised p-0.5">
+  <div
+    role="tablist"
+    aria-label="Document"
+    className="inline-flex w-fit gap-0.5 rounded-lg border border-line bg-hover p-0.5"
+    onKeyDown={(event) => {
+      // Arrows, Home and End move between the two documents, as a tablist does.
+      const at = DOCUMENTS.findIndex((document) => document.id === active);
+      const to = event.key === 'ArrowRight' ? at + 1 : event.key === 'ArrowLeft' ? at - 1 : event.key === 'Home' ? 0 : event.key === 'End' ? DOCUMENTS.length - 1 : null;
+      if (to === null) return;
+      event.preventDefault();
+      const next = DOCUMENTS[(to + DOCUMENTS.length) % DOCUMENTS.length]!;
+      onSelect(next.id);
+      requestAnimationFrame(() => document.getElementById(`brief-tab-${next.id}`)?.focus());
+    }}
+  >
     {DOCUMENTS.map((document) => (
       <button
         key={document.id}
+        id={`brief-tab-${document.id}`}
         type="button"
         role="tab"
         aria-selected={active === document.id}
+        tabIndex={active === document.id ? 0 : -1}
         onClick={() => onSelect(document.id)}
         className={cx(
-          'flex h-8 items-center gap-1.5 rounded px-3 text-sm font-medium',
-          active === document.id ? 'bg-panel text-ink shadow-sm' : 'text-muted hover:text-ink',
+          'relative flex h-7 items-center rounded-md border pr-4 pl-3 text-[13px] font-medium transition-colors duration-150',
+          'focus-visible:outline-2 focus-visible:-outline-offset-1 focus-visible:outline-focus',
+          active === document.id ? 'border-line-strong bg-overlay text-ink shadow-field' : 'border-transparent text-muted hover:text-ink',
         )}
       >
         {document.label}
-        {isDirty(drafts[document.id]) && <span className="size-1.5 rounded-full bg-warn" aria-label="unsaved changes" />}
+        {/* The dot sits in the corner, taking no width, so the segments don't shift as you type. */}
+        {isDirty(drafts[document.id]) && <span className="absolute top-1.5 right-1 size-1.5 rounded-full bg-warn" aria-label="unsaved changes" />}
       </button>
     ))}
   </div>
@@ -39,15 +59,15 @@ const Tabs = ({ active, drafts, onSelect }: { active: BriefDocument; drafts: Dra
 
 const Problems = ({ problems, dirty }: { problems: string[]; dirty: boolean }) => (
   problems.length ? (
-    <ul className="flex flex-col gap-1 text-sm text-down" aria-live="polite">
+    <ul id="brief-problems" className="flex flex-col gap-1 text-xs text-down" aria-live="polite">
       {problems.map((problem) => (
-        <li key={problem} className="flex items-start gap-1.5"><CircleAlert size={15} className="mt-0.5 shrink-0" aria-hidden />{problem}</li>
+        <li key={problem} className="flex items-start gap-1.5"><CircleAlert size={13} className="mt-px shrink-0" aria-hidden />{problem}</li>
       ))}
     </ul>
   ) : (
-    <p className="flex items-center gap-1.5 text-sm text-muted" aria-live="polite">
-      <CircleCheck size={15} className="text-up" aria-hidden />
-      {dirty ? 'Looks good' : 'Saved'}
+    <p className="flex items-center gap-1.5 text-xs text-faint" aria-live="polite">
+      <CircleCheck size={13} className="text-up" aria-hidden />
+      {dirty ? 'Placeholders look good' : 'Saved'}
     </p>
   )
 );
@@ -74,20 +94,18 @@ const Preview = ({ draft }: { draft: Draft }) => {
   };
 
   return (
-    <section className="flex flex-col gap-3 rounded-lg border border-line bg-panel px-5 py-4" aria-label="Preview">
-      <div className="flex flex-col gap-0.5">
-        <h2 className="text-base font-semibold">Preview</h2>
-      </div>
-      <form className="flex items-end gap-2" onSubmit={(event) => { event.preventDefault(); void run(); }}>
-        <Input className="flex-1" label="Sample request" value={request} onChange={(event) => setRequest(event.target.value)} error={error} />
-        <Button type="submit" variant="primary" icon={<Eye size={16} />} disabled={busy || !request.trim()}>{busy ? 'Rendering…' : 'Preview'}</Button>
+    <section className="flex flex-col gap-3 border-t border-line pt-7" aria-labelledby="brief-preview">
+      <h2 id="brief-preview" className="text-sm leading-5 font-semibold">Preview</h2>
+      <form className="flex items-start gap-2" onSubmit={(event) => { event.preventDefault(); void run(); }}>
+        <Input className="flex-1" aria-label="Sample request" placeholder="A sample request" value={request} onChange={(event) => setRequest(event.target.value)} error={error} />
+        <Button type="submit" icon={<Eye size={14} />} disabled={busy || !request.trim()}>{busy ? 'Rendering…' : 'Preview'}</Button>
       </form>
       {result && (
         <div className="flex flex-col gap-1.5">
-          <p className="text-xs text-muted">
+          <p className="text-xs text-faint">
             {result.fromDraft ? 'From the unsaved draft' : 'From the saved brief'} · {result.text.split('\n').length} lines
           </p>
-          <pre className="max-h-[28rem] overflow-auto rounded-md border border-line bg-raised px-3 py-2 font-mono text-xs leading-5 whitespace-pre-wrap">{result.text}</pre>
+          <pre className="max-h-[28rem] overflow-auto rounded-lg border border-line bg-raised px-3 py-2.5 font-mono text-xs leading-5 whitespace-pre-wrap">{result.text}</pre>
         </div>
       )}
     </section>
@@ -137,13 +155,11 @@ const ProposedRewrites = ({ names, drafts, onApplied }: { names: string[]; draft
   };
 
   return (
-    <section className="flex flex-col gap-3 rounded-lg border border-line bg-panel px-5 py-4" aria-label="Proposed rewrites">
-      <div className="flex flex-col gap-0.5">
-        <h2 className="flex items-center gap-2 text-base font-semibold">
-          <Sparkles size={16} className="text-accent" aria-hidden />Proposed rewrites <Badge shape="count">{names.length}</Badge>
-        </h2>
-      </div>
-      <ul className="flex flex-col gap-1">
+    <section className="flex flex-col gap-3" aria-labelledby="brief-proposed">
+      <h2 id="brief-proposed" className="flex items-center gap-2 text-sm leading-5 font-semibold">
+        <Sparkles size={14} className="text-muted" aria-hidden />Proposed rewrites <Badge shape="count">{names.length}</Badge>
+      </h2>
+      <ul className="flex flex-col divide-y divide-line overflow-hidden rounded-xl border border-line">
         {names.map((name) => {
           const label = proposedLabel(name);
           const active = name === selected;
@@ -151,23 +167,27 @@ const ProposedRewrites = ({ names, drafts, onApplied }: { names: string[]; draft
             <li key={name}>
               <button
                 type="button"
-                aria-current={active ? 'true' : undefined}
+                aria-expanded={active}
                 onClick={() => setSelected(active ? null : name)}
-                className={cx('flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-sm', active ? 'bg-raised font-medium' : 'hover:bg-raised')}
+                className={cx(
+                  'flex w-full items-center gap-3 px-4 py-2.5 text-left text-[13px] transition-colors duration-150',
+                  'focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-focus',
+                  active ? 'bg-raised' : 'hover:bg-hover',
+                )}
               >
-                <FileText size={15} className="shrink-0 text-muted" aria-hidden />
-                <span className="flex-1 truncate">{label.title}</span>
-                {label.date && <span className="text-xs text-muted tabular-nums">{label.date}</span>}
+                <span className="flex-1 truncate font-medium text-ink">{label.title}</span>
+                {label.date && <span className="text-xs text-faint tabular-nums">{label.date}</span>}
+                <span className="flex items-center gap-1 text-xs text-muted">{active ? 'Hide' : 'Review'}<ChevronRight size={14} aria-hidden className={cx('transition-transform duration-150', active && 'rotate-90')} /></span>
               </button>
             </li>
           );
         })}
       </ul>
       {selected && proposed && (
-        <div className="flex flex-col gap-4 border-t border-line pt-4">
+        <div className="flex flex-col gap-4">
           {documents.map((document) => (
             <div key={document.id} className="flex flex-col gap-1.5">
-              <h3 className="text-sm font-semibold">{document.file}</h3>
+              <h3 className="font-mono text-xs font-medium text-muted">{document.file}</h3>
               <DiffView current={drafts[document.id].saved ?? null} proposed={proposed[document.id]!} />
             </div>
           ))}
@@ -233,18 +253,23 @@ export const BriefPolicy = () => {
   }, [active, draft.text, draft.saved]);
 
   const edit = (text: string) => setDrafts((current) => ({ ...current, [active]: { ...current[active], text } }));
-  const revert = () => setDrafts((current) => ({ ...current, [active]: loadedDraft(current[active].saved ?? '') }));
+  // The save bar covers both documents: an edit to the brief stays unsaved, and saveable, while Policy is open.
+  const unsaved = DOCUMENTS.filter((document) => isDirty(drafts[document.id]));
+  const revert = () => setDrafts((current) => ({
+    brief: loadedDraft(current.brief.saved ?? ''), policy: loadedDraft(current.policy.saved ?? ''),
+  }));
 
   const save = async () => {
     const bridge = serra();
     if (!bridge) return;
     setSaving(true);
-    const document = active;
-    const text = draft.text;
     try {
-      await bridge.brief.save(document, text);
-      setDrafts((current) => ({ ...current, [document]: { saved: text, text: current[document].text } }));
-      toast({ message: `${DOCUMENTS.find((entry) => entry.id === document)!.file} saved. Workers get it from their next job.`, tone: 'success' });
+      for (const { id: document, file } of unsaved) {
+        const text = drafts[document].text;
+        await bridge.brief.save(document, text);
+        setDrafts((current) => ({ ...current, [document]: { saved: text, text: current[document].text } }));
+        toast({ message: `${file} saved. Workers get it from their next job.`, tone: 'success' });
+      }
     } catch (error) {
       toast({ message: message(error), tone: 'error' });
     } finally { setSaving(false); }
@@ -254,43 +279,43 @@ export const BriefPolicy = () => {
   const current = problems[active];
 
   return (
-    <Page title="Brief & policy">
+    <Page title="Brief & policy" subtitle="What every worker reads before it starts." width="narrow">
       {loadError ? (
-        <p className="flex items-center gap-2 rounded-lg border border-line bg-panel px-5 py-4 text-sm text-down"><CircleAlert size={16} aria-hidden />{loadError}</p>
+        <p role="alert" className="flex items-center gap-2 rounded-xl border border-down/30 bg-down/8 px-4 py-2.5 text-[13px] text-ink"><CircleAlert size={15} className="text-down" aria-hidden />{loadError}</p>
       ) : (
         <>
           <ProposedRewrites names={proposedNames} drafts={drafts} onApplied={load} />
-          <section className="flex flex-col gap-3 rounded-lg border border-line bg-panel px-5 py-4" aria-label="Editor">
+          <section className="flex flex-col gap-3" aria-label="Editor">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <Tabs active={active} drafts={drafts} onSelect={setActive} />
-              <div className="flex items-center gap-2">
-                <Button icon={<RotateCcw size={16} />} onClick={revert} disabled={!dirty || saving}>Revert</Button>
-                <Button variant="primary" icon={<Save size={16} />} onClick={() => void save()} disabled={!dirty || saving || current.length > 0}>
-                  {saving ? 'Saving…' : 'Save'}
-                </Button>
-              </div>
+              <span className="font-mono text-xs text-faint" title={about.about}>{about.hint}</span>
             </div>
             <textarea
               aria-label={about.file}
-              title={about.about}
               aria-invalid={current.length ? true : undefined}
+              aria-describedby={current.length ? 'brief-problems' : undefined}
               spellCheck={false}
               value={draft.text}
               disabled={draft.saved === null}
               onChange={(event) => edit(event.target.value)}
-              onKeyDown={(event) => {
-                if ((event.metaKey || event.ctrlKey) && event.key === 's') { event.preventDefault(); if (dirty && !current.length) void save(); }
-              }}
               placeholder={active === 'policy' ? '# Owner policy\n\nAdd your workflow choices here.' : undefined}
-              className={cx(
-                'min-h-[24rem] resize-y rounded-md border bg-canvas px-3 py-2 font-mono text-xs leading-5 text-ink',
-                'focus:outline-2 focus:outline-offset-1 focus:outline-focus',
-                current.length ? 'border-down' : 'border-line',
-              )}
+              className={cx('min-h-[20rem] max-h-[calc(100vh-20rem)] resize-none px-3.5 py-3 font-mono text-xs leading-5 [field-sizing:content]', fieldClass(current.length > 0))}
             />
             <Problems problems={current} dirty={dirty} />
           </section>
           {active === 'brief' && <Preview draft={draft} />}
+          {/* Room for the floating save bar at the end of the page, so the last lines aren't under it. */}
+          {unsaved.length > 0 && <div aria-hidden className="h-14" />}
+          <SaveBar
+            changed={unsaved.length > 0}
+            count={unsaved.length}
+            valid={unsaved.every((document) => problems[document.id].length === 0)}
+            saving={saving}
+            note={`${unsaved.map((document) => document.file).join(' and ')} · Applies on the next job`}
+            onSave={() => void save()}
+            onReset={revert}
+            onReveal={() => { const bad = unsaved.find((document) => problems[document.id].length > 0); if (bad) setActive(bad.id); }}
+          />
         </>
       )}
     </Page>

@@ -809,11 +809,11 @@ const runCustomAcpAgentChecks = async (window: BrowserWindow): Promise<string[]>
     const addedInUi = await run<{ optionFound: boolean; enabled: boolean }>(`(async () => {${setInput}
       [...document.querySelectorAll('dialog[open] button')].find((b) => b.textContent.trim() === 'Add agent')?.click();
       await wait(() => !document.querySelector('dialog[open]'));
-      const found = await wait(() => document.querySelector('#agent-backend-list [role=option][data-value="acp:example-acp"]'));
-      const opt = document.querySelector('#agent-backend-list [role=option][data-value="acp:example-acp"]');
+      const found = await wait(() => document.querySelector('#agent-backend [role=radio][data-value="acp:example-acp"]'));
+      const opt = document.querySelector('#agent-backend [role=radio][data-value="acp:example-acp"]');
       return { optionFound: Boolean(found), enabled: Boolean(opt && opt.getAttribute('aria-disabled') !== 'true') };
     })()`);
-    if (!addedInUi.optionFound) failures.push('Example ACP did not appear in the Run on picker after adding via UI');
+    if (!addedInUi.optionFound) failures.push('Example ACP did not appear in the Agent picker after adding via UI');
     if (!addedInUi.enabled) failures.push('Example ACP (/bin/echo acp) was unexpectedly disabled');
 
     // 2. Live config-file reload: edit agent-backend.json on disk while the window stays open.
@@ -828,7 +828,7 @@ const runCustomAcpAgentChecks = async (window: BrowserWindow): Promise<string[]>
     for (let attempt = 0; attempt < 20 && !liveReloaded; attempt += 1) {
       writeFileSync(configPath, `${updated}\n`);
       liveReloaded = await run<boolean>(`(async () => {${setInput}
-        return Boolean(await wait(() => document.querySelector('#agent-backend-list [role=option][data-value="acp:pi"]'), 8));
+        return Boolean(await wait(() => document.querySelector('#agent-backend [role=radio][data-value="acp:pi"]'), 8));
       })()`);
     }
     if (!liveReloaded) failures.push('editing agent-backend.json on disk did not live-reload into the open window');
@@ -837,9 +837,9 @@ const runCustomAcpAgentChecks = async (window: BrowserWindow): Promise<string[]>
     // 3. Remove via UI button.
     const removed = await run<boolean>(`(async () => {${setInput}
       document.querySelector('button[aria-label="Remove Example ACP"]')?.click();
-      return Boolean(await wait(() => !document.querySelector('#agent-backend-list [role=option][data-value="acp:example-acp"]')));
+      return Boolean(await wait(() => !document.querySelector('#agent-backend [role=radio][data-value="acp:example-acp"]')));
     })()`);
-    if (!removed) failures.push('removing Example ACP from the UI did not update the picker');
+    if (!removed) failures.push('removing Example ACP from the UI did not update the Agent picker');
     console.log('[serra] smoke custom ACP agents:', JSON.stringify({ addedInUi, liveReloaded, removed }));
   } finally {
     await run(`(async () => {

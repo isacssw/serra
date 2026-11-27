@@ -2,12 +2,12 @@
 // remove, and add by member ID. Applies now: the daemon reloads allowedUsers live (APP-5). Allowed people's names
 // come from Slack through the running bot (`settings.peopleNames`); the app never reads the bot token.
 import { useEffect, useState, type FormEvent } from 'react';
-import { Lock, X } from 'lucide-react';
+import { Lock, Plus, X } from 'lucide-react';
 import type { Profile } from '../../../../src/contracts.ts';
 import { serra } from '../../bridge.ts';
-import { Button, Input, Table, TBody, Td, Th, THead, Tr } from '../../ui/index.ts';
+import { Badge, Button, Input, Table, TBody, Td, Th, THead, Tr } from '../../ui/index.ts';
 import { addPersonFieldMessage, addPersonProblem, peopleRows, peopleToName } from './settings.logic.ts';
-import { SectionCard, SettingsPage, useSettings } from './SettingsKit.tsx';
+import { SettingsPage, useSettings } from './SettingsKit.tsx';
 
 /** Slack names of the allowed people, by member ID: known names at once, the rest when the bot finds them. */
 const useSlackNames = (profile: Profile | null): Record<string, string> => {
@@ -27,21 +27,31 @@ const useSlackNames = (profile: Profile | null): Record<string, string> => {
   return names;
 };
 
+/** A round initial, so the list reads as people at a glance. */
+const Avatar = ({ name }: { name: string | null }) => (
+  <span aria-hidden className="grid size-6 shrink-0 place-items-center rounded-full border border-line bg-raised text-[11px] font-semibold text-muted">
+    {(name?.trim()[0] ?? '?').toUpperCase()}
+  </span>
+);
+
 export const People = () => {
   const state = useSettings();
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState<string | null>(null);
+  // Add was pressed with an ID that can't be added: show why, even for an ID still being typed.
+  const [tried, setTried] = useState(false);
   const names = useSlackNames(state.profile);
 
   return (
-    <SettingsPage title="People" state={state}>
-      {(profile, settings) => {
+    <SettingsPage title="People" subtitle={state.profile ? `Who can ask ${state.profile.bot.name} for work.` : undefined} state={state}>
+      {(profile) => {
         const rows = peopleRows(profile, names);
-        const problem = addPersonFieldMessage(input, profile);
+        const problem = tried ? addPersonProblem(input, profile) : addPersonFieldMessage(input, profile);
         const canAdd = !!input.trim() && addPersonProblem(input, profile) === null && busy === null;
         const add = async (event: FormEvent): Promise<void> => {
           event.preventDefault();
-          if (!canAdd) return;
+          if (!canAdd) { setTried(true); return; }
+          setTried(false);
           setBusy('add');
           try { await state.addPerson(input.trim()); setInput(''); } catch { /* the toast says why */ } finally { setBusy(null); }
         };
@@ -50,47 +60,50 @@ export const People = () => {
           try { await state.removePerson(id); } catch { /* the toast says why */ } finally { setBusy(null); }
         };
         return (
-          <SectionCard section="allowedUsers" settings={settings} description="The owner and these Slack members can ask the bot for work.">
-            <Table>
+          <div className="flex flex-col gap-4">
+            <Table className="text-[13px]">
               <THead>
-                <Tr><Th>Name</Th><Th>Slack member ID</Th><Th>Access</Th><Th className="w-12"><span className="sr-only">Remove</span></Th></Tr>
+                <Tr><Th>Name</Th><Th>Slack member ID</Th><Th className="w-28"><span className="sr-only">Access</span></Th></Tr>
               </THead>
               <TBody>
                 {rows.map((row) => (
-                  <Tr key={row.slackUserId}>
-                    <Td className="font-semibold">
-                      {row.name ?? <span className="font-normal text-muted" title="The running bot looks names up in Slack.">Name not known yet</span>}
-                    </Td>
-                    <Td className="font-mono">{row.slackUserId}</Td>
+                  <Tr key={row.slackUserId} className="h-11">
                     <Td>
-                      {row.access === 'owner'
-                        ? <span className="inline-flex items-center gap-1.5"><Lock size={14} aria-hidden />Owner</span>
-                        : 'Allowed'}
+                      <span className="flex min-w-0 items-center gap-2.5">
+                        <Avatar name={row.name} />
+                        {row.name
+                          ? <span className="truncate font-medium text-ink">{row.name}</span>
+                          : <span className="truncate text-faint" title="The running bot looks names up in Slack.">Name not known yet</span>}
+                      </span>
                     </Td>
-                    <Td className="text-right">
-                      {row.access === 'allowed' && (
-                        <Button variant="ghost" size="sm" aria-label={`Remove ${row.slackUserId}`} disabled={busy !== null}
-                          icon={<X size={16} />} onClick={() => { void remove(row.slackUserId); }} />
-                      )}
+                    <Td className="font-mono text-xs text-muted">{row.slackUserId}</Td>
+                    <Td className="py-0 text-right">
+                      {row.access === 'owner'
+                        ? <Badge tone="neutral" title="The owner always has access"><Lock size={11} aria-hidden className="mr-1" />Owner</Badge>
+                        : (
+                          <Button variant="ghost" size="sm" aria-label={`Remove ${row.name ?? row.slackUserId}`} title="Remove" disabled={busy !== null}
+                            className="w-7 px-0! hover:text-down" icon={<X size={14} />} onClick={() => { void remove(row.slackUserId); }} />
+                        )}
                     </Td>
                   </Tr>
                 ))}
               </TBody>
             </Table>
-            <form className="flex items-start gap-3" onSubmit={(event) => { void add(event); }}>
+            <form className="flex items-start gap-2" onSubmit={(event) => { void add(event); }}>
               <Input
                 aria-label="Slack member ID"
-                placeholder="Slack member ID"
+                placeholder="Slack member ID, like U0…"
                 spellCheck={false}
                 autoCapitalize="characters"
-                className="w-80"
+                className="w-64"
+                inputClassName="font-mono placeholder:font-sans"
                 value={input}
                 error={problem}
-                onChange={(event) => setInput(event.target.value)}
+                onChange={(event) => { setInput(event.target.value); setTried(false); }}
               />
-              <Button variant="primary" type="submit" disabled={!canAdd}>{busy === 'add' ? 'Adding…' : 'Add person'}</Button>
+              <Button type="submit" icon={<Plus size={14} />} disabled={busy !== null}>{busy === 'add' ? 'Adding…' : 'Add person'}</Button>
             </form>
-          </SectionCard>
+          </div>
         );
       }}
     </SettingsPage>
