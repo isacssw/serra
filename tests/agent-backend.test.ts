@@ -7,12 +7,13 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSy
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test, { type TestContext } from 'node:test';
-import { createAcpBackend } from '../src/agent/acp.ts';
+import { createAcpBackend, readRunRecord } from '../src/agent/acp.ts';
+import { acpChat } from '../src/agent/runs-view.ts';
 import {
   addCustomAcpAgent, agentBackendConfigError, agentChoices, ensureAgentBackendFile, KNOWN_ACP_AGENTS, launchFor,
   readAgentBackend, removeCustomAcpAgent, writeAgentBackend, type AcpAgent,
 } from '../src/agent/acp-agents.ts';
-import { agentEnv, createBackendPool } from '../src/agent/pool.ts';
+import { agentEnv, agentRunsDir, createBackendPool } from '../src/agent/pool.ts';
 import { followAgentBackend } from '../app/main/agent-backend-watch.ts';
 import { createMeetingRuns } from '../src/meeting-runs.ts';
 import { pollUntilSettled, worktreeRun, type AgentBackend, type RunDetail, type WaitOptions } from '../src/agent/backend.ts';
@@ -382,6 +383,46 @@ test('ACP: a run with a record carries on after a restart: the session is reopen
     const after = await second.wait(threadId, { ...fast, after: 'run-1' });
     assert.ok(after.kind === 'settled' && after.runId === 'run-2' && after.answer === 'hello again');
   } finally { await second.close(); }
+});
+
+test('ACP: a streaming turn is written to its record as it goes, and the chat reads it, with tool kinds and how a permission was settled', async (t) => {
+  const fake = fakeAcp(t);
+  const runsDir = agentRunsDir(fake.dir);
+  const claudeLike = { currentModeId: 'auto', availableModes: [{ id: 'default', name: 'Manual' }, { id: 'bypassPermissions', name: 'Bypass' }] };
+  const backend = fake.backend({ runsDir, agent: { ...fake.agent, env: { ...fake.agent.env, FAKE_ACP_MODES: JSON.stringify(claudeLike) } } });
+  const repo = join(fake.dir, 'repo');
+  mkdirSync(repo);
+  execFileSync('git', ['-C', repo, 'init', '-q', '-b', 'main']);
+  execFileSync('git', ['-C', repo, '-c', 'user.name=You', '-c', 'user.email=you@example.com', 'commit', '-q', '--allow-empty', '-m', 'start']);
+  try {
+    const threadId = await backend.start({ workspace: { kind: 'worktree', project: repo, baseRef: 'main', branch: 'serra/chat' }, title: 'Serra: stream', brief: 'ASK:execute STREAM' });
+    const request = await waitingOn(backend, threadId);
+    assert.ok(request);
+    assert.equal(acpChat(fake.dir, threadId)?.status, 'waiting', 'the chat shows it waits, with the question to answer');
+    assert.equal(acpChat(fake.dir, threadId)?.waiting[0]?.requestId, request.requestId);
+    await backend.questions!.answer(threadId, request.requestId, { permission: 'no' });
+
+    // Before the turn's text is known: its reply so far and the tool still running, in the record.
+    await until(() => (readRunRecord(runsDir, threadId)?.live?.tools.length ?? 0) > 0);
+    const streaming = acpChat(fake.dir, threadId)!;
+    assert.equal(streaming.status, 'running');
+    assert.deepEqual(streaming.live, { runId: 'run-1', reply: 'Working on it. ', tools: [{ id: 'slow-1', title: 'pnpm test', kind: 'execute' }] });
+
+    fake.reply('Done.');
+    const done = await backend.wait(threadId, { ...fast, after: null });
+    assert.ok(done.kind === 'settled');
+    await until(() => readRunRecord(runsDir, threadId)?.active === null);
+    const chat = acpChat(fake.dir, threadId)!;
+    assert.equal(chat.status, 'idle');
+    assert.equal(chat.live, null, 'a turn that ended has nothing live');
+    assert.deepEqual(chat.lines.map((line) => [line.role, line.text, line.kind ?? null, line.failed ?? false, line.ask ?? null, line.outcome ?? null]), [
+      ['user', 'ASK:execute STREAM', null, false, null, null],
+      ['tool', 'Asked: Fake Agent wants to: a execute tool', null, false, 'permission', 'denied'],
+      ['tool', 'pnpm test', 'execute', true, null, null],
+      ['assistant', 'Working on it. Done.', null, false, null, null],
+    ]);
+    assert.equal(chat.replyBlocked, undefined, 'a job run takes follow-ups');
+  } finally { await backend.close(); }
 });
 
 /** A Slack attachment line as `receiveAttachments` writes it, for a PNG saved in `root`. */

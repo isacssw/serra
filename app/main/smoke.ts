@@ -9,6 +9,7 @@ import type { Theme } from './bridge.ts';
 import { codeRoot } from '../../src/config.ts';
 import { createJournal } from '../../src/knowledge-journal.ts';
 import { createProfile } from '../../src/setup.ts';
+import { writeChatFixture } from './chat-fixture.ts';
 import { writeGraphFixture } from './graph-fixture.ts';
 import { windowOptions } from './window-options.ts';
 import { missingRuntimeFiles } from './runtime-files.ts';
@@ -344,7 +345,7 @@ interface ContrastReport { route: string; checked: number; low: { text: string; 
  * Opens one screen and measures every visible bit of text against the colours behind it (alpha layers composited,
  * colours resolved by drawing them on a canvas, so oklab and color-mix work). Disabled or faded text is skipped.
  */
-const contrastScript = (route: string): string => `(async () => {
+const contrastScript = (route: string, scopes = '[data-serra-sidebar], [data-serra-main]'): string => `(async () => {
   const wait = async (check) => { for (let i = 0; i < 80 && !check(); i++) await new Promise((r) => setTimeout(r, 50)); return check(); };
   ${route.startsWith('#') ? `location.hash = '${route}'; await new Promise((r) => setTimeout(r, 100));` : `document.querySelector('[data-serra-sidebar] a[data-route="${route}"]')?.click();`}
   await wait(() => document.querySelector('[data-serra-main] h1, [data-serra-main] [data-screen-label]'));
@@ -378,7 +379,7 @@ const contrastScript = (route: string): string => `(async () => {
   const seen = new Set();
   const low = [];
   let checked = 0;
-  for (const scope of document.querySelectorAll('[data-serra-sidebar], [data-serra-main]')) {
+  for (const scope of document.querySelectorAll('${scopes}')) {
     const walker = document.createTreeWalker(scope, NodeFilter.SHOW_TEXT);
     for (let text = walker.nextNode(); text; text = walker.nextNode()) {
       const el = text.parentElement;
@@ -699,6 +700,76 @@ const runGraphChecks = async (main: BrowserWindow): Promise<string[]> => {
  * Verifies custom ACP harnesses in the real window: adding one via the Add ACP agent dialog, live reload when
  * `agent-backend.json` is edited on disk without a restart, and removing it from the UI.
  */
+// ---------------------------------------------------------------------------------------------------------------
+// Jobs › Chat (stream E): the fixture's ACP runs open as a chat, in both themes, with readable text
+// ---------------------------------------------------------------------------------------------------------------
+
+interface ChatReport { opened: boolean; tools: number; allowed: boolean; images: number; composer: boolean; card: boolean; working: boolean }
+
+/** Opens the chat of the row titled `title` on `hash`, and reads what the sheet shows. */
+const chatScript = (hash: string, title: string): string => `(async () => {
+  const wait = async (check) => { for (let i = 0; i < 80 && !check(); i++) await new Promise((r) => setTimeout(r, 50)); return check(); };
+  for (const open of document.querySelectorAll('dialog[data-sheet][open]')) open.close();
+  location.hash = '${hash}';
+  const row = () => [...document.querySelectorAll('[data-serra-main] li')].find((li) => li.textContent.includes(${JSON.stringify(title)}));
+  await wait(() => row()?.querySelector('button[aria-label^="Chat"]'));
+  row()?.querySelector('button[aria-label^="Chat"]')?.click();
+  const sheet = () => document.querySelector('dialog[data-sheet][open]');
+  await wait(() => sheet()?.querySelector('[role=log] p, [role=log] [data-question-card]') && sheet()?.dataset.chatStatus);
+  await new Promise((r) => setTimeout(r, 600));
+  const box = sheet();
+  return {
+    opened: Boolean(box),
+    tools: box?.querySelectorAll('[role=log] button[aria-expanded]').length ?? 0,
+    allowed: Boolean(box && [...box.querySelectorAll('[role=log] span')].some((span) => span.textContent === 'Allowed')),
+    images: box?.querySelectorAll('img[src^="data:image/png"]').length ?? 0,
+    // With the bot stopped (as here), the box says so instead.
+    composer: Boolean(box?.querySelector('#run-chat-input') || [...(box?.querySelectorAll('footer p') ?? [])].some((p) => p.textContent === 'Start Serra to reply')),
+    card: Boolean(box?.querySelector('[data-question-card] button')),
+    working: box?.dataset.chatStatus === 'running',
+  };
+})()`;
+
+const runChatChecks = async (window: BrowserWindow): Promise<string[]> => {
+  const failures: string[] = [];
+  const run = async <T>(script: string): Promise<T> => await window.webContents.executeJavaScript(script) as T;
+  const useProfile = (dir: string | null): Promise<unknown> => run(`(async () => {
+    await window.serra.app.setPrefs({ profileDir: ${JSON.stringify(dir)} });
+    window.dispatchEvent(new Event('serra:setup-changed'));
+    await new Promise((r) => setTimeout(r, 300));
+  })()`);
+  const directory = layoutProfile();
+  const { imageOut } = writeChatFixture(directory);
+  const shots = process.env.SERRA_SMOKE_SHOTS;
+  try {
+    await useProfile(directory);
+    for (const theme of ['light', 'dark'] as const) {
+      await run(themeControlScript(theme));
+      const finished = await run<ChatReport>(chatScript('#/jobs/done', 'Fix the flaky checkout test'));
+      if (!finished.opened) { failures.push(`${theme}: the Chat button did not open the run's chat`); continue; }
+      if (finished.tools < 1) failures.push(`${theme}: the chat shows no folded tool calls`);
+      if (!finished.allowed) failures.push(`${theme}: the chat does not show the permission as Allowed`);
+      if (finished.images < 2) failures.push(`${theme}: the chat shows ${finished.images} of the run's 2 images`);
+      if (!finished.composer) failures.push(`${theme}: the chat has no box to follow up`);
+      const contrast = await run<ContrastReport>(contrastScript('#/jobs/done', 'dialog[data-sheet][open]'));
+      if (contrast.checked === 0) failures.push(`${theme}: no text found in the chat`);
+      for (const item of contrast.low) failures.push(`${theme}: "${item.text}" in the chat reads at ${item.ratio}:1 (${item.color} on ${item.background})`);
+      if (shots) writeFileSync(join(shots, `${theme}-chat.png`), (await window.webContents.capturePage()).toPNG());
+      const waiting = await run<ChatReport>(chatScript('#/jobs/needs-you', 'Remove the stale feature flags'));
+      if (!waiting.card) failures.push(`${theme}: a run waiting on a permission shows no Allow or Deny`);
+      const streaming = await run<ChatReport>(chatScript('#/jobs/running', 'Draft the 4.2 release notes'));
+      if (!streaming.working) failures.push(`${theme}: a streaming run does not show as working`);
+      await run(`for (const open of document.querySelectorAll('dialog[data-sheet][open]')) open.close();`);
+    }
+  } finally {
+    await run(themeControlScript('system')).catch(() => null);
+    await useProfile(null).catch(() => null);
+    rmSync(join(directory, '..'), { recursive: true, force: true });
+    rmSync(imageOut, { force: true });
+  }
+  return failures;
+};
+
 const runCustomAcpAgentChecks = async (window: BrowserWindow): Promise<string[]> => {
   const failures: string[] = [];
   const directory = layoutProfile();
@@ -819,6 +890,7 @@ export const runSmokeChecks = async (window: BrowserWindow, resendStatus: () => 
     ...await runLayoutChecks(window),
     ...await runThemeChecks(window),
     ...await runGraphChecks(window),
+    ...await runChatChecks(window),
     ...await runCustomAcpAgentChecks(window),
   ].filter((failure): failure is string => typeof failure === 'string');
   for (const failure of failures) console.error(`[serra] smoke failed: ${failure}`);

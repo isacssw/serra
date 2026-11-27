@@ -40,8 +40,29 @@ const ALLOWED_KINDS = new Set<acp.ToolKind>(['read', 'search', 'fetch', 'think',
 /** What a run may do: see the header. */
 type RunAccess = 'read-only' | 'ask' | 'full';
 
-/** What a person opens to see a run: one line per message, a tool's title, or a question that waited. */
-export interface TranscriptEntry { role: 'user' | 'assistant' | 'tool'; runId: string; text: string; at: string }
+/**
+ * What a person opens to see a run: one line per message, a tool's title, or a question that waited. A tool line has
+ * its ACP `kind` and whether it failed; a question line (`ask`) says what it asked and, once it's settled, how.
+ */
+export interface TranscriptEntry {
+  role: 'user' | 'assistant' | 'tool';
+  runId: string;
+  text: string;
+  at: string;
+  kind?: string;
+  failed?: true;
+  ask?: 'permission' | 'question';
+  outcome?: AskOutcome;
+}
+
+/** How a question a run asked was settled. */
+type AskOutcome = 'allowed' | 'denied' | 'answered' | 'cancelled';
+
+/** A tool the running turn has started and not finished. */
+interface LiveTool { id: string; title: string; kind: string | null }
+
+/** The running turn so far, written while it streams, so the app can show it before it ends. */
+export interface LiveTurn { runId: string; reply: string; tools: LiveTool[] }
 
 /** A run as Serra records it in `runsDir`. */
 export interface RunRecord {
@@ -58,6 +79,8 @@ export interface RunRecord {
   /** The questions the run waits on when this was written (a restart cancels them). */
   waiting?: QuestionRequest[];
   entries: TranscriptEntry[];
+  /** The running turn's reply and open tools so far; null or absent when no turn is going. */
+  live?: LiveTurn | null;
 }
 
 export interface AcpBackendOptions {
@@ -101,6 +124,8 @@ interface Session {
   cost: { amount: number; currency: string } | null;
   /** The agent couldn't be put in a full-access mode, so Serra allows what it asks, as T3's full access would. */
   allowAll: boolean;
+  /** A write of the streaming turn that's due (`saveSoon`). */
+  saveTimer: ReturnType<typeof setTimeout> | null;
 }
 
 /** Modes in which an agent uses tools without asking. */
@@ -243,10 +268,32 @@ export const readRunRecord = (runsDir: string, sessionId: string): RunRecord | n
     waiting: Array.isArray(value.waiting) ? value.waiting.filter((entry): entry is QuestionRequest => isRecord(entry) && typeof entry.requestId === 'string' && Array.isArray(entry.questions)) : [],
     entries: value.entries.filter(isRecord).flatMap((entry): TranscriptEntry[] => {
       const role = entry.role === 'user' || entry.role === 'assistant' || entry.role === 'tool' ? entry.role : null;
-      return role && typeof entry.text === 'string' ? [{ role, runId: str(entry.runId), text: entry.text, at: str(entry.at) }] : [];
+      if (!role || typeof entry.text !== 'string') return [];
+      const ask = entry.ask === 'permission' || entry.ask === 'question' ? entry.ask : null;
+      const outcome = ASK_OUTCOMES.find((known) => known === entry.outcome);
+      return [{
+        role, runId: str(entry.runId), text: entry.text, at: str(entry.at),
+        ...(typeof entry.kind === 'string' && entry.kind ? { kind: entry.kind } : {}),
+        ...(entry.failed === true ? { failed: true as const } : {}),
+        ...(ask ? { ask } : {}), ...(outcome ? { outcome } : {}),
+      }];
     }),
+    live: liveOf(value.live),
   };
 };
+
+const ASK_OUTCOMES: readonly AskOutcome[] = ['allowed', 'denied', 'answered', 'cancelled'];
+
+/** A record's running turn, or null when it has none or it doesn't parse. */
+const liveOf = (value: unknown): LiveTurn | null => {
+  if (!isRecord(value) || typeof value.runId !== 'string' || typeof value.reply !== 'string' || !Array.isArray(value.tools)) return null;
+  const tools = value.tools.filter(isRecord).flatMap((tool): LiveTool[] => (typeof tool.id === 'string'
+    ? [{ id: tool.id, title: str(tool.title), kind: typeof tool.kind === 'string' ? tool.kind : null }] : []));
+  return { runId: value.runId, reply: value.reply, tools };
+};
+
+/** How often a streaming turn is written to its record, at most. */
+const LIVE_SAVE_MS = 250;
 
 export const createAcpBackend = ({
   agent, env = async () => process.env, worktreeRoot, runsDir, attachmentsDir, model, spawnAgent = defaultSpawn, log = () => {}, mcpServers = [], now = () => new Date(),
@@ -268,14 +315,35 @@ export const createAcpBackend = ({
     waiters.clear();
   };
 
+  /** The running turn as the record keeps it: its reply so far, and the tools it started that haven't finished. */
+  const liveTurn = (current: Session): LiveTurn | null => {
+    const runId = current.active;
+    if (!runId) return null;
+    const tools = [...current.tools.values()]
+      .filter((tool) => tool.runId === runId && tool.status !== 'completed' && tool.status !== 'failed')
+      .map(({ id, title, kind }) => ({ id, title, kind }));
+    return { runId, reply: current.reply, tools };
+  };
   const save = (current: Session): void => {
     if (!runsDir) return;
+    if (current.saveTimer) { clearTimeout(current.saveTimer); current.saveTimer = null; }
     mkdirSync(runsDir, { recursive: true, mode: 0o700 });
     const waiting = [...current.waiting.values()].map((entry) => entry.request);
-    writeFileAtomic(recordFile(runsDir, current.sessionId), `${JSON.stringify({ ...current.record, active: current.active, waiting })}\n`, { mode: 0o600 });
+    writeFileAtomic(recordFile(runsDir, current.sessionId), `${JSON.stringify({ ...current.record, active: current.active, waiting, live: liveTurn(current) })}\n`, { mode: 0o600 });
   };
-  const note = (current: Session, role: TranscriptEntry['role'], runId: string, text: string): void => {
-    current.record.entries.push({ role, runId, text, at: now().toISOString() });
+  /** Writes a streaming turn soon, at most every `LIVE_SAVE_MS`: a chunk at a time would write the file per word. */
+  const saveSoon = (current: Session): void => {
+    if (!runsDir || current.saveTimer) return;
+    current.saveTimer = setTimeout(() => {
+      current.saveTimer = null;
+      if (sessions.get(current.sessionId) === current) save(current);
+    }, LIVE_SAVE_MS);
+    current.saveTimer.unref?.();
+  };
+  const note = (current: Session, role: TranscriptEntry['role'], runId: string, text: string, extra: Partial<TranscriptEntry> = {}): TranscriptEntry => {
+    const entry: TranscriptEntry = { role, runId, text, at: now().toISOString(), ...extra };
+    current.record.entries.push(entry);
+    return entry;
   };
 
   /** The agent went away: in-flight turns end, or with a record, are carried on when the run is next read. */
@@ -294,17 +362,23 @@ export const createAcpBackend = ({
     changed();
   };
 
-  /** Puts a question in front of a person and gives back their answer. A read-only run gets none: it's refused. */
-  const ask = (current: Session, questions: T3Question[]): Promise<QuestionAnswers | null> => new Promise((resolve) => {
+  /**
+   * Puts a question in front of a person and gives back their answer. A read-only run gets none: it's refused. The
+   * transcript keeps what was asked and, once settled, how: a permission's choice is allowed or denied by its label.
+   */
+  const ask = (current: Session, questions: T3Question[], kind: 'permission' | 'question'): Promise<QuestionAnswers | null> => new Promise((resolve) => {
     const requestId = randomUUID();
+    const entry = note(current, 'tool', current.active ?? `run-${current.record.runs}`, `Asked: ${questions.map((question) => question.question).join(' / ')}`, { ask: kind });
     const done = (answers: QuestionAnswers | null): void => {
       current.waiting.delete(requestId);
+      const first = questions[0];
+      const chosen = first && answers ? first.options.find((option) => (option.value ?? option.label) === answers[first.id]) : undefined;
+      entry.outcome = !answers ? 'cancelled' : kind === 'question' ? 'answered' : chosen?.label === 'Allow' ? 'allowed' : 'denied';
       save(current);
       changed();
       resolve(answers);
     };
     current.waiting.set(requestId, { request: { requestId, questions }, answer: (answers) => done(answers), cancel: () => done(null) });
-    note(current, 'tool', current.active ?? `run-${current.record.runs}`, `Asked: ${questions.map((question) => question.question).join(' / ')}`);
     save(current);
     changed();
   });
@@ -320,10 +394,15 @@ export const createAcpBackend = ({
         // An image the agent sends: saved where replies share images from, and embedded, so the chat uploads it.
         const embed = saveAgentImage(update.content.data, update.content.mimeType, `${current.sessionId}-${runId}-${current.tools.size}-${current.reply.length}`);
         current.reply += embed ? `\n\n${embed}\n\n` : `\n\n_(${agent.name} sent an image Serra can't show: ${update.content.mimeType})_\n\n`;
-      } else if (update.sessionUpdate === 'agent_message_chunk') current.reply += textOf(update.content);
+        saveSoon(current);
+      } else if (update.sessionUpdate === 'agent_message_chunk') {
+        current.reply += textOf(update.content);
+        saveSoon(current);
+      }
       else if (update.sessionUpdate === 'usage_update' && update.cost) current.cost = { amount: update.cost.amount, currency: update.cost.currency };
       else if (update.sessionUpdate === 'tool_call') {
         current.tools.set(update.toolCallId, { id: update.toolCallId, runId, title: update.title, kind: update.kind ?? null, status: update.status ?? null, rawInput: update.rawInput, rawOutput: update.rawOutput, content: update.content });
+        saveSoon(current);
       } else if (update.sessionUpdate === 'tool_call_update') {
         const known = current.tools.get(update.toolCallId) ?? { id: update.toolCallId, runId, title: '', kind: null, status: null, rawInput: undefined, rawOutput: undefined, content: undefined };
         const next = {
@@ -333,7 +412,10 @@ export const createAcpBackend = ({
           ...(update.content ? { content: update.content } : {}),
         };
         current.tools.set(update.toolCallId, next);
-        if (next.status === 'completed' || next.status === 'failed') note(current, 'tool', next.runId, `${next.title || next.kind || 'Tool'}${next.status === 'failed' ? ' (failed)' : ''}`);
+        if (next.status === 'completed' || next.status === 'failed') {
+          note(current, 'tool', next.runId, next.title || next.kind || 'Tool', { ...(next.kind ? { kind: next.kind } : {}), ...(next.status === 'failed' ? { failed: true as const } : {}) });
+        }
+        saveSoon(current);
       }
     })
     .onRequest(acp.methods.client.session.requestPermission, async ({ params }) => {
@@ -363,7 +445,7 @@ export const createAcpBackend = ({
         id: 'permission', header: 'Permission', question: `${agent.name} wants to: ${title}`,
         options: [{ label: 'Allow', description: '', value: allowOption.optionId }, { label: 'Deny', description: '', value: rejectOption.optionId }],
         allowCustomAnswer: false,
-      }]);
+      }], 'permission');
       const chosen = answers?.permission;
       return typeof chosen === 'string' && (chosen === allowOption.optionId || chosen === rejectOption.optionId)
         ? { outcome: { outcome: 'selected', optionId: chosen } }
@@ -381,7 +463,7 @@ export const createAcpBackend = ({
       }
       const { questions, custom } = formQuestions(request.message, request.requestedSchema);
       if (!questions.length) return { action: 'decline' };
-      const answers = await ask(current, questions);
+      const answers = await ask(current, questions, 'question');
       return answers ? { action: 'accept', content: formContent(questions, custom, answers, request.requestedSchema) } as acp.CreateElicitationResponse : { action: 'cancel' };
     });
 
@@ -504,7 +586,7 @@ export const createAcpBackend = ({
   };
 
   const newSession = (record: RunRecord, allowAll: boolean): Session => ({
-    sessionId: record.sessionId, record, active: null, refused: 0, waiting: new Map(), failed: null, reply: '', tools: new Map(), queue: [], cost: null, allowAll,
+    sessionId: record.sessionId, record, active: null, refused: 0, waiting: new Map(), failed: null, reply: '', tools: new Map(), queue: [], cost: null, allowAll, saveTimer: null,
   });
 
   /** A run this backend follows, reopened from its record after a restart. Throws a plain sentence when it can't be. */

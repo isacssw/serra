@@ -4,7 +4,7 @@
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { useNavigate } from 'react-router';
 import {
-  BrushCleaning, CheckCheck, CircleCheck, CirclePause, GitPullRequest, Hash, Layers, LoaderCircle, MessageSquareText, Radio, ListChecks, Play,
+  BrushCleaning, CheckCheck, CircleCheck, CirclePause, GitPullRequest, Hash, Layers, LoaderCircle, MessageSquareText, ListChecks, Play,
   Plus, RefreshCw,
 } from 'lucide-react';
 import { useSearchParams } from 'react-router';
@@ -15,7 +15,7 @@ import { resumePath } from '../setup/setup.logic.ts';
 import { useSetup } from '../setup/SetupState.tsx';
 import { Badge, BrandMark, Button, Dialog, EmptyState, Page, Select, cx, useToast } from '../ui/index.ts';
 import { registerActions } from '../commands/registry.ts';
-import { TranscriptDialog } from './Transcript.tsx';
+import { RunChat, type ChatRun } from './chat/RunChat.tsx';
 import {
   ageLabel, channelChoices, channelTag, CLEANUP_PARAM, cleanupView, cleanupWorktreesAction, filterJobs, groupJobs, ICON_LABELS,
   linkButtons, rowIcon, rowNote, rowParts, rowPill, verdictLabel, type JobRow, type JobSection, type LinkKind, type RowIcon,
@@ -78,7 +78,7 @@ const ROW_ICONS: Record<RowIcon, ReactNode> = {
 const LINK_ICONS: Record<LinkKind, ReactNode> = {
   slack: <BrandMark brand="slack" size={13} />,
   t3: <Layers size={14} strokeWidth={1.75} />,
-  transcript: <MessageSquareText size={14} strokeWidth={1.75} />,
+  chat: <MessageSquareText size={14} strokeWidth={1.75} />,
   pr: <GitPullRequest size={14} strokeWidth={1.75} />,
 };
 
@@ -89,7 +89,7 @@ const open = (url: string, onError: (text: string) => void): void => {
 };
 
 /** One job: the task first, then who asked, where and how long ago; a pill when it waits on you; its links as icons. */
-const JobRowView = ({ job, icon, now, kinds, onError, onTranscript, focused = false }: { job: JobRow; icon: RowIcon; now: Date; kinds: readonly LinkKind[]; onError: (text: string) => void; onTranscript: (threadId: string, title: string) => void; focused?: boolean }) => {
+const JobRowView = ({ job, icon, now, kinds, onError, onChat, focused = false }: { job: JobRow; icon: RowIcon; now: Date; kinds: readonly LinkKind[]; onError: (text: string) => void; onChat: (run: ChatRun) => void; focused?: boolean }) => {
   const { requester, title, tooltip } = rowParts(job);
   const note = rowNote(job);
   const pill = rowPill(job, icon);
@@ -127,7 +127,7 @@ const JobRowView = ({ job, icon, now, kinds, onError, onTranscript, focused = fa
       <span className="flex w-28 shrink-0 justify-end">{pill && <Badge tone={pill.tone}>{pill.label}</Badge>}</span>
       {/* One slot per link kind any row in the list has, so an icon stays in its column; a link this job lacks leaves its slot empty. */}
       <div className="flex shrink-0 items-center gap-0.5">
-        {kinds.map((kind) => linkButtons(job).find((link) => link.kind === kind)).map((link, index) => (link && (link.url || link.transcript) ? (
+        {kinds.map((kind) => linkButtons(job).find((link) => link.kind === kind)).map((link, index) => (link && (link.url || link.chat) ? (
           <Button
             key={link.kind}
             variant="ghost"
@@ -136,7 +136,7 @@ const JobRowView = ({ job, icon, now, kinds, onError, onTranscript, focused = fa
             icon={LINK_ICONS[link.kind]}
             title={link.hint}
             aria-label={`${link.label}: ${link.hint}`}
-            onClick={() => { if (link.transcript) onTranscript(link.transcript, job.title); else if (link.url) open(link.url, onError); }}
+            onClick={() => { if (link.chat) onChat({ ...link.chat, title: job.title }); else if (link.url) open(link.url, onError); }}
           />
         ) : <span key={`empty-${kinds[index]}`} aria-hidden className="w-7" />))}
       </div>
@@ -226,8 +226,8 @@ const EMPTY_STATES: Record<JobGroup, { icon: ReactNode; title: string; start: bo
 
 /** The link kinds any row in the list has, in their usual order: each gets a column. */
 const linkKinds = (rows: readonly JobRow[]): LinkKind[] => {
-  const present = new Set(rows.flatMap((job) => linkButtons(job).filter((link) => link.url || link.transcript).map((link) => link.kind)));
-  return (['slack', 't3', 'transcript', 'pr'] as const).filter((kind) => present.has(kind));
+  const present = new Set(rows.flatMap((job) => linkButtons(job).filter((link) => link.url || link.chat).map((link) => link.kind)));
+  return (['slack', 't3', 'chat', 'pr'] as const).filter((kind) => present.has(kind));
 };
 
 /** A quiet empty state: a hairline panel, not the dashed drop-zone look. */
@@ -293,7 +293,7 @@ export const Jobs = ({ group }: { group: JobGroup }) => {
   const toast = useToast();
   const [channel, setChannel] = useState<string | null>(null);
   const [cleanup, setCleanup] = useState<Cleanup>({ step: 'closed' });
-  const [transcript, setTranscript] = useState<{ threadId: string; title: string } | null>(null);
+  const [chat, setChat] = useState<ChatRun | null>(null);
   const ready = load.state === 'ready';
 
   // `?job=<key>` (a clicked notification, APP-24) opens that job's tab, marks its row and scrolls to it.
@@ -406,7 +406,7 @@ export const Jobs = ({ group }: { group: JobGroup }) => {
               {current.rows.length === 0
                 ? (channel
                   ? (
-                    <EmptyState className={EMPTY_CLASS} icon={<Radio size={16} strokeWidth={1.75} />} title={`Nothing here in ${channelChoices(rows, channel).find((c) => c.value === channel)?.label ?? 'this channel'}`} action={<Button size="sm" onClick={() => setChannel(null)}>Show all channels</Button>} />
+                    <EmptyState className={EMPTY_CLASS} icon={<Hash size={16} strokeWidth={1.75} />} title={`Nothing here in ${channelChoices(rows, channel).find((c) => c.value === channel)?.label ?? 'this channel'}`} action={<Button size="sm" onClick={() => setChannel(null)}>Show all channels</Button>} />
                   )
                   : setupLeft && current.group === 'needs you'
                   ? (
@@ -427,14 +427,14 @@ export const Jobs = ({ group }: { group: JobGroup }) => {
                   ))
                 : (
                   <ul className="flex flex-col divide-y divide-line overflow-hidden rounded-xl border border-line">
-                    {current.rows.map((job) => <JobRowView key={job.key} job={job} icon={rowIcon(job, status)} now={now} kinds={linkKinds(current.rows)} onError={onLinkError} onTranscript={(threadId, title) => setTranscript({ threadId, title })} focused={job.key === focusedKey} />)}
+                    {current.rows.map((job) => <JobRowView key={job.key} job={job} icon={rowIcon(job, status)} now={now} kinds={linkKinds(current.rows)} onError={onLinkError} onChat={setChat} focused={job.key === focusedKey} />)}
                   </ul>
                 )}
             </div>
           </div>
         )}
         <CleanupDialog cleanup={cleanup} onClose={() => setCleanup({ step: 'closed' })} onApply={applyCleanup} />
-        <TranscriptDialog threadId={transcript?.threadId ?? null} title={transcript?.title ?? ''} onClose={() => setTranscript(null)} />
+        <RunChat run={chat} onClose={() => setChat(null)} />
       </Page>
     </div>
   );

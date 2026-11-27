@@ -192,7 +192,8 @@ export const listJobs = async (profileDir: string, {
       ...(ownerQuestion ? { ownerQuestion } : {}),
       ...(reason ? { needsYouReason: reason } : {}),
       ...(error ? { error } : {}),
-      links: { ...(slack ? { slack } : {}), ...(pr ? { pr } : {}), ...(acp ? { transcript: job.threadId } : {}) },
+      links: { ...(slack ? { slack } : {}), ...(pr ? { pr } : {}) },
+      ...(acp ? { chat: { threadId: job.threadId, backend: 'acp' as const } } : t3ThreadId ? { chat: { threadId: t3ThreadId, backend: 't3' as const } } : {}),
       ...(t3ThreadId ? { t3ThreadId } : {}),
     }];
   }))).flat();
@@ -208,7 +209,9 @@ export const listJobs = async (profileDir: string, {
       title: task.title,
       createdAt: task.createdAt,
       lastActivityAt: later(task.createdAt, live?.updatedAt),
-      links: { ...(live?.link ? { t3: live.link } : {}), ...(live?.pr ? { pr: live.pr } : {}), ...(acp ? { transcript: task.threadId } : {}) },
+      links: { ...(live?.link ? { t3: live.link } : {}), ...(live?.pr ? { pr: live.pr } : {}) },
+      // An ACP task Serra has no record of has nothing to show.
+      ...(onAcp(task.backend) ? (acp ? { chat: { threadId: task.threadId, backend: 'acp' as const } } : {}) : { chat: { threadId: task.threadId, backend: 't3' as const } }),
     };
   }));
   all.push(...taskRows);

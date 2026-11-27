@@ -4,7 +4,10 @@ import { listJobs, t3ThreadLookup, type ThreadInfo, type ThreadLookup } from '..
 import { slackWorkspace } from '../../../src/secrets.ts';
 import { slackMentions, slackPlainText, type SlackNames } from '../../../src/slack-names.ts';
 import { t3TaskState } from '../../../src/tasks.ts';
-import { acpTranscript } from '../../../src/agent/runs-view.ts';
+import { acpChat, chatImage, t3Chat } from '../../../src/agent/runs-view.ts';
+import { createT3Backend } from '../../../src/agent/t3.ts';
+import { showThread } from '../../../src/t3.ts';
+import { isRecord } from '../../../src/json-guards.ts';
 import { requestRun } from '../../../src/status-socket.ts';
 import type { Handlers } from '../bridge.ts';
 import type { HandlerContext } from './context.ts';
@@ -27,6 +30,13 @@ export interface JobsDeps {
 const runThread = (value: unknown): string => {
   if (typeof value !== 'string' || !value || value.length > 200) throw new Error('That run is missing.');
   return value;
+};
+
+/** A run as the renderer names it: its thread and backend. */
+const runOf = (value: unknown): { threadId: string; backend: 'acp' | 't3' } => {
+  const run = isRecord(value) ? value : {};
+  if (run.backend !== 'acp' && run.backend !== 't3') throw new Error('That run is missing.');
+  return { threadId: runThread(run.threadId), backend: run.backend };
 };
 
 /** How long a thread without a PR is remembered before T3 is asked again: its worker may open one any minute. */
@@ -89,10 +99,15 @@ const withNames = (rows: Row[], names: SlackNames): Row[] => {
 export const jobsHandlers = (context: HandlerContext, { run = runCommand, now = () => new Date(), worktreesRoot, names, slackNames = {}, daemon = requestRun }: JobsDeps = {}): Handlers<'jobs'> => {
   /** The ACP backend a run is on, from its record. */
   const backendOf = (threadId: string): string => {
-    const found = acpTranscript(context.profileDir(), threadId);
+    const found = acpChat(context.profileDir(), threadId);
     if (!found) throw new Error('Serra has no record of that run.');
-    return `acp:${found.agent}`;
+    return `acp:${found.agentId}`;
   };
+  /** The profile's T3 behind Serra's agent layer, reading with `t3 thread show` (through `run`, so tests fake it). */
+  const t3 = () => createT3Backend({
+    bin: profileT3Bin(context.profileDir()),
+    cli: { showThread: (threadId, bin, count) => showThread(threadId, bin, count, run) },
+  });
   const threads = new Map<string, { info: ThreadInfo; until: number }>();
   const namesFor = names ?? profileSlackNames(context, slackNames);
   return {
@@ -110,11 +125,17 @@ export const jobsHandlers = (context: HandlerContext, { run = runCommand, now = 
       });
       return withNames(jobs, namesFor(profileDir));
     },
-    transcript: (threadId) => acpTranscript(context.profileDir(), runThread(threadId)),
-    reply: async (threadId, message) => {
-      const id = runThread(threadId);
+    chat: async (value) => {
+      const { threadId, backend } = runOf(value);
+      if (backend === 'acp') return acpChat(context.profileDir(), threadId);
+      const title = isRecord(value) && typeof value.title === 'string' ? value.title.slice(0, 300) : '';
+      return t3Chat(t3(), threadId, title);
+    },
+    image: (path) => (typeof path === 'string' && path.length < 4096 ? chatImage(context.profileDir(), path) : null),
+    reply: async (value, message) => {
+      const { threadId, backend } = runOf(value);
       if (typeof message !== 'string' || !message.trim() || message.length > 8_000) throw new Error('Write a reply.');
-      await daemon(context.profileDir(), { op: 'send', backend: backendOf(id), threadId: id, message: message.trim() });
+      await daemon(context.profileDir(), { op: 'send', backend: backend === 'acp' ? backendOf(threadId) : 't3', threadId, message: message.trim() });
     },
     answer: async (threadId, requestId, answers) => {
       const id = runThread(threadId);

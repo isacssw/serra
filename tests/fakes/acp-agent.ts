@@ -5,6 +5,7 @@
 // running turn with `cancelled`. `FAIL:<kind>` fails the turn with that error kind. `ELICIT` asks a form question like
 // Claude Code's AskUserQuestion and writes the answer to `elicit-<n>`. `session/load` reopens a session (writes
 // `load-<id>`). Images a prompt carries are written to `images-<n>` (their MIME types); `IMAGE_OUT` sends a PNG back.
+// `STREAM` sends part of the reply and starts a tool before the turn's text is known; the tool fails when it ends.
 // FAKE_ACP_NO_IMAGES: the agent says it takes no images. Run: node tests/fakes/acp-agent.ts
 import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -88,7 +89,14 @@ const app = acp.agent({ name: 'fake-acp' })
       await client.notify(acp.methods.client.session.update, { sessionId: params.sessionId, update: { sessionUpdate: 'tool_call', toolCallId: `tool-${turn}`, title: 'get_meeting_transcript', kind: 'other', status: 'in_progress', rawInput: { meeting_id: tool } } });
       await client.notify(acp.methods.client.session.update, { sessionId: params.sessionId, update: { sessionUpdate: 'tool_call_update', toolCallId: `tool-${turn}`, status: 'completed', content: [{ type: 'content', content: { type: 'text', text: 'Ana: Hi\nBo: Hello' } }] } });
     }
+    // STREAM: part of the reply and a tool still running arrive before the turn's text is known; the tool ends with it.
+    const streams = text.includes('STREAM');
+    if (streams) {
+      await client.notify(acp.methods.client.session.update, { sessionId: params.sessionId, update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'Working on it. ' } } });
+      await client.notify(acp.methods.client.session.update, { sessionId: params.sessionId, update: { sessionUpdate: 'tool_call', toolCallId: `slow-${turn}`, title: 'pnpm test', kind: 'execute', status: 'in_progress' } });
+    }
     const reply = await waitFor(join(dir, `turn-${turn}`), params.sessionId);
+    if (streams) await client.notify(acp.methods.client.session.update, { sessionId: params.sessionId, update: { sessionUpdate: 'tool_call_update', toolCallId: `slow-${turn}`, status: 'failed' } });
     if (reply === null) return { stopReason: 'cancelled' as const };
     for (const part of [reply.slice(0, 2), reply.slice(2)]) {
       if (part) await client.notify(acp.methods.client.session.update, { sessionId: params.sessionId, update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: part } } });

@@ -142,7 +142,7 @@ export const rowParts = (job: JobRow): { requester: string; channel: string; tit
   tooltip: job.title ? `${job.title} (${job.key})` : `T3 had no title for this job (${job.key})`,
 });
 
-export type LinkKind = 'slack' | 't3' | 'transcript' | 'pr';
+export type LinkKind = 'slack' | 'chat' | 't3' | 'pr';
 
 export interface LinkButton {
   kind: LinkKind;
@@ -151,24 +151,29 @@ export interface LinkButton {
   url?: string;
   /** Tooltip, saying why a disabled button is disabled. */
   hint: string;
-  /** An ACP run's thread id: the button opens its transcript in the app. */
-  transcript?: string;
+  /** The job's run: the button opens it in the app's chat view. */
+  chat?: NonNullable<JobRow['chat']>;
 }
 
 const LINK_HINTS: Record<LinkKind, { label: string; open: string; none: string }> = {
   slack: { label: 'Slack', open: 'Open the Slack thread', none: 'No Slack link: check the bot token in Secrets so the app knows the workspace' },
   t3: { label: 'T3', open: 'Open the T3 thread', none: "T3 didn't return a link for this thread" },
-  transcript: { label: 'Transcript', open: 'Open the transcript', none: 'No transcript yet' },
+  chat: { label: 'Chat', open: 'Open the run’s chat', none: 'No run yet' },
   pr: { label: 'PR', open: 'Open the pull request', none: 'No pull request yet' },
 };
 
 /** Only `https:` links become buttons: the main process opens them in the browser. */
 const safe = (url: string | undefined): string | undefined => (url && /^https:\/\//.test(url) ? url : undefined);
 
+/** The kinds of button a row shows, in order. The chat opens in the app; an ACP run has no web link, so no T3 button. */
+const linkKinds = (job: JobRow): readonly LinkKind[] => {
+  if (!job.chat) return ['slack', 't3', 'pr'];
+  return job.chat.backend === 'acp' ? ['slack', 'chat', 'pr'] : ['slack', 'chat', 't3', 'pr'];
+};
+
 export const linkButtons = (job: JobRow): LinkButton[] =>
-  // An ACP run has no web link: its transcript opens in the app, in the T3 button's place.
-  (job.links.transcript ? (['slack', 'transcript', 'pr'] as const) : (['slack', 't3', 'pr'] as const)).map((kind): LinkButton => {
-    if (kind === 'transcript') return { kind, label: LINK_HINTS.transcript.label, hint: LINK_HINTS.transcript.open, transcript: job.links.transcript! };
+  linkKinds(job).map((kind): LinkButton => {
+    if (kind === 'chat') return { kind, label: LINK_HINTS.chat.label, hint: LINK_HINTS.chat.open, chat: job.chat! };
     const url = safe(job.links[kind as 'slack' | 't3' | 'pr']);
     const { label, open, none } = LINK_HINTS[kind];
     const missing = kind === 'slack' && isAppTask(job) ? 'Started in the app: there is no Slack thread' : none;

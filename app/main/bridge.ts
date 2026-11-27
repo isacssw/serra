@@ -29,7 +29,7 @@ import type { MeetingReviewed, MeetingView } from '../../src/meeting-store.ts';
 import type { MeetingSettings } from '../../src/meeting-settings.ts';
 import type { MeetingRunner } from '../../src/meeting-runs.ts';
 import type { AgentBackendView, CustomAcpAgentInput } from '../../src/agent/acp-agents.ts';
-import type { RunTranscript } from '../../src/agent/runs-view.ts';
+import type { RunChat } from '../../src/agent/runs-view.ts';
 import type { MeetingProvider, ProviderStatus } from '../../src/meeting-sources.ts';
 import type { T3Providers } from '../../src/t3-providers.ts';
 import type { DetectedProject, OwnerConfirmed, ProfileDraft, ProfileSummary, SetupProgress, SlackManifest } from '../../src/setup.ts';
@@ -171,10 +171,15 @@ export interface SerraApi {
     list(): JobListing['jobs'];
     /** Worktree cleanup. Without `apply` it is the dry run the screen shows first. */
     cleanupWorktrees(options: { apply: boolean; days?: number }): Verdict[];
-    /** An ACP run's transcript and what it waits on (`links.transcript`), from its record. Null when there's none. */
-    transcript(threadId: string): RunTranscript | null;
-    /** Sends a message to an ACP run, through the bot. It queues behind a turn that's going. */
-    reply(threadId: string, message: string): void;
+    /**
+     * A job's run as the chat view shows it (`JobSummary.chat`): an ACP run from its record, with the turn streaming
+     * and what it waits on; a T3 run's messages and state through its backend. Null when Serra has no record of it.
+     */
+    chat(run: { threadId: string; backend: 'acp' | 't3'; title?: string }): RunChat | null;
+    /** An image a run's messages name, as a data URL, from Serra's attachments or agent images only. Null otherwise. */
+    image(path: string): string | null;
+    /** Sends a follow-up to a run, through the bot. On ACP it queues behind a turn that's going. */
+    reply(run: { threadId: string; backend: 'acp' | 't3' }, message: string): void;
     /** Answers a question an ACP run waits on, through the bot. */
     answer(threadId: string, requestId: string, answers: Record<string, unknown>): void;
   };
@@ -453,7 +458,7 @@ export const bridgeMethods = {
     'progress', 'detect', 'useProfile', 'chooseFolder', 'defaults', 'detectProject', 'create', 'manifest', 'confirmOwner', 'installService',
   ]),
   bot: methods<'bot'>()(['status', 'start', 'stop', 'restart']),
-  jobs: methods<'jobs'>()(['list', 'cleanupWorktrees', 'transcript', 'reply', 'answer']),
+  jobs: methods<'jobs'>()(['list', 'cleanupWorktrees', 'chat', 'image', 'reply', 'answer']),
   proposals: methods<'proposals'>()(['list', 'diff', 'targets', 'promote', 'mergeInto', 'discard', 'undo', 'retire', 'similar', 'archived', 'restore', 'staleRewrite']),
   pages: methods<'pages'>()(['list', 'read', 'save', 'drift', 'acceptDrift', 'restoreDrift', 'aboutMe', 'untagged', 'share', 'overview', 'graph', 'issues', 'canConfirm', 'runReview', 'setReviewWeekly']),
   brief: methods<'brief'>()(['read', 'save', 'check', 'preview', 'listProposed', 'readProposed', 'applyProposed']),

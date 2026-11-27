@@ -154,9 +154,12 @@ export const sendToThread = async (threadId: string, message: string, bin = T3_B
   await run(bin, ['thread', 'send', '--json', threadId, '-'], { input: message });
 };
 
-/** Reads a thread's state and its latest `messages` messages, oldest first. Throws if T3's JSON no longer has the fields the bot needs. */
-export const showThread = async (threadId: string, bin = T3_BIN, messages = 1): Promise<T3ThreadDetail> => {
-  const raw = await run(bin, ['thread', 'show', '--messages', String(messages), '--json', threadId]);
+/**
+ * Reads a thread's state and its latest `messages` messages, oldest first. Throws if T3's JSON no longer has the fields
+ * the bot needs. `exec` runs the CLI (the app passes its own runner, which tests fake).
+ */
+export const showThread = async (threadId: string, bin = T3_BIN, messages = 1, exec: (cmd: string, args: string[]) => Promise<string> = run): Promise<T3ThreadDetail> => {
+  const raw = await exec(bin, ['thread', 'show', '--messages', String(messages), '--json', threadId]);
   const detail = parseJson(raw, 'thread show');
   if (!isThreadDetail(detail)) {
     throw new Error(`Unexpected t3 thread show output for ${threadId}: ${raw.slice(0, 300)}`);
