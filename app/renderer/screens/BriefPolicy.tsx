@@ -44,14 +44,14 @@ const Tabs = ({ active, drafts, onSelect }: { active: BriefDocument; drafts: Dra
         tabIndex={active === document.id ? 0 : -1}
         onClick={() => onSelect(document.id)}
         className={cx(
-          'relative flex h-7 items-center rounded-md border px-3.5 text-[13px] font-medium transition-colors duration-150',
+          'relative flex h-7 items-center rounded-md border pr-4 pl-3 text-[13px] font-medium transition-colors duration-150',
           'focus-visible:outline-2 focus-visible:-outline-offset-1 focus-visible:outline-focus',
           active === document.id ? 'border-line-strong bg-overlay text-ink shadow-field' : 'border-transparent text-muted hover:text-ink',
         )}
       >
         {document.label}
         {/* The dot sits in the corner, taking no width, so the segments don't shift as you type. */}
-        {isDirty(drafts[document.id]) && <span className="absolute top-1.5 right-1.5 size-1.5 rounded-full bg-warn" aria-label="unsaved changes" />}
+        {isDirty(drafts[document.id]) && <span className="absolute top-1.5 right-1 size-1.5 rounded-full bg-warn" aria-label="unsaved changes" />}
       </button>
     ))}
   </div>
