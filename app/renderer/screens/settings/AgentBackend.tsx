@@ -117,10 +117,10 @@ export const AgentBackendCard = () => {
   };
 
   return (
-    <section className="flex flex-col gap-4 rounded-lg border border-line bg-panel p-5">
+    <section className="flex flex-col gap-4 rounded-xl border border-line bg-panel p-5">
       <header className="flex flex-wrap items-start justify-between gap-3">
         <div className="flex flex-col gap-1">
-          <h2 className="text-lg font-semibold">Agent backend</h2>
+          <h2 className="text-[15px] leading-5 font-semibold">Agent backend</h2>
           <p className="text-sm text-muted">Runs new jobs, tasks, meetings and the weekly review.</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">

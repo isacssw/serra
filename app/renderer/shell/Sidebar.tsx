@@ -172,6 +172,21 @@ export const Sidebar = ({ status, counts }: { status: BotStatus | null; counts: 
     if (settingsOpen) last.settings = pathname;
     else last.main = pathname;
   }, [pathname, settingsOpen]);
+  // Escape anywhere in Settings goes back, unless a field, dialog or open list has it.
+  useEffect(() => {
+    if (!settingsOpen) return;
+    const onKey = (event: globalThis.KeyboardEvent): void => {
+      if (event.key !== 'Escape' || event.defaultPrevented) return;
+      const target = event.target instanceof HTMLElement ? event.target : null;
+      if (target?.closest('input, textarea, select, [contenteditable="true"], [role="combobox"], [data-serra-sidebar]')) return;
+      if (document.querySelector('dialog[open], :popover-open')) return;
+      event.preventDefault();
+      document.querySelector<HTMLAnchorElement>('[data-serra-sidebar] a[data-settings-back]')?.click();
+      focusScreen(last.main, null);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [settingsOpen]);
   // The Jobs item stands for every Jobs tab; New task has its own button.
   const inJobs = pathname.startsWith('/jobs/') && pathname !== '/jobs/new';
   const settingsRoutes: readonly Route[] = routes.filter((route) => route.section === 'settings');
@@ -219,7 +234,7 @@ export const Sidebar = ({ status, counts }: { status: BotStatus | null; counts: 
             );
           })}
         </div>
-        <div className="shrink-0 border-t border-line-subtle px-2 py-2">
+        <div className="shrink-0 border-t border-line px-2 py-2">
           <Link to={last.settings} data-nav aria-keyshortcuts={`${ariaMod}+,`} className={itemClass(false)}>
             <Settings size={15} strokeWidth={1.75} aria-hidden className={iconClass} />
             <span className="flex-1">Settings</span>

@@ -77,8 +77,8 @@ export const SecretCard = ({ status, now, onSaved, onChecked }: CardProps) => {
   };
 
   return (
-    <section className="flex flex-col gap-4 rounded-lg border border-line bg-panel px-5 py-4" data-secret={status.name}>
-      <h2 className="text-lg font-semibold">{label}</h2>
+    <section className="flex flex-col gap-4 rounded-xl border border-line bg-panel px-5 py-4" data-secret={status.name}>
+      <h2 className="text-[15px] leading-5 font-semibold">{label}</h2>
       <div className="flex flex-wrap items-center gap-3">
         <Select
           id={`${status.name}-source`}

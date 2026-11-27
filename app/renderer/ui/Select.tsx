@@ -49,7 +49,7 @@ const inGroupOrder = <V extends string>(options: readonly SelectOption<V>[]): Se
 /** Places the list under the button, or above it when there is more room there, inside the window. */
 const place = (button: HTMLElement, list: HTMLElement): void => {
   const box = button.getBoundingClientRect();
-  const gap = 4;
+  const gap = 6;
   const margin = 8;
   const below = window.innerHeight - box.bottom - gap - margin;
   const above = box.top - gap - margin;
@@ -174,6 +174,8 @@ export const Select = <V extends string>({
         aria-labelledby={label ? labelId : undefined}
         aria-label={label ? undefined : ariaLabel}
         tabIndex={-1}
+        // Clicks on a heading or the scrollbar keep focus on the button too, so the list stays open.
+        onMouseDown={(event) => event.preventDefault()}
         className={cx(
           'fixed inset-auto m-0 max-w-[min(360px,calc(100vw-16px))] overflow-y-auto overscroll-contain rounded-[10px] border-0 bg-overlay p-1 text-ink shadow-overlay',
           'animate-[serra-pop_120ms_ease-out]',

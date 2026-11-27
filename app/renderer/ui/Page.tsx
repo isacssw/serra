@@ -17,7 +17,7 @@ export const Page = ({ title, subtitle, actions, width, children }: {
   const { pathname } = useLocation();
   const column = width ?? (inSettings(pathname) ? 'narrow' : 'wide');
   return (
-  <div className={cx('mx-auto flex w-full flex-col gap-6 px-8 pt-3 pb-10', widths[column])}>
+  <div className={cx('mx-auto flex min-h-full w-full flex-col gap-6 px-8 pt-3 pb-10', widths[column])}>
     <header className="flex min-h-8 flex-wrap items-center justify-between gap-4">
       <div className="flex flex-col gap-1">
         <h1 className="text-xl leading-7 font-semibold tracking-[-0.012em]">{title}</h1>

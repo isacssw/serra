@@ -99,10 +99,6 @@ export const useSettings = (): SettingsState => {
 // Page frame, badge and restart banner
 // ---------------------------------------------------------------------------------------------------------------
 
-/** When a setting applies, said quietly: a note, not a status pill. */
-export const AppliesBadge = ({ when }: { when: AppliesWhen }) => (
-  <span className="text-xs text-faint">{appliesLabel(when)}</span>
-);
 
 const RestartBanner = () => {
   const status = useBotStatus();
@@ -139,6 +135,8 @@ interface PendingSection {
   saving: boolean;
   save(): Promise<void>;
   reset(): void;
+  /** Shows every problem, including those on rows not typed in yet. */
+  reveal(): void;
 }
 
 type RegisterSection = (section: ProfileSection, entry: PendingSection | null) => void;
@@ -151,7 +149,7 @@ const useSaveBarSection = (section: ProfileSection, entry: PendingSection): void
   latest.current = entry;
   const { changed, valid, saving } = entry;
   useEffect(() => {
-    register?.(section, { changed, valid, saving, save: () => latest.current.save(), reset: () => latest.current.reset() });
+    register?.(section, { changed, valid, saving, save: () => latest.current.save(), reset: () => latest.current.reset(), reveal: () => latest.current.reveal() });
   }, [register, section, changed, valid, saving]);
   useEffect(() => () => register?.(section, null), [register, section]);
 };
@@ -160,7 +158,7 @@ const useSaveBarSection = (section: ProfileSection, entry: PendingSection): void
  * A page's one Save and Reset, floating at the bottom of the screen while something is unsaved. `note` says once
  * when the changes apply (after a restart, on the next job). ⌘S saves.
  */
-const SaveBar = ({ changed, count = 1, valid, saving, note, onSave, onReset }: {
+const SaveBar = ({ changed, count = 1, valid, saving, note, onSave, onReset, onReveal }: {
   changed: boolean;
   /** How many sections have unsaved changes. */
   count?: number;
@@ -169,12 +167,18 @@ const SaveBar = ({ changed, count = 1, valid, saving, note, onSave, onReset }: {
   note?: string | null;
   onSave: () => void;
   onReset: () => void;
+  /** Shows the problems that stop a save and focuses the first. */
+  onReveal: () => void;
 }) => {
   const canSave = changed && valid && !saving;
-  const save = useRef(onSave);
-  save.current = onSave;
+  const reveal = (): void => {
+    onReveal();
+    requestAnimationFrame(() => document.querySelector<HTMLElement>('[data-serra-main] [aria-invalid="true"]')?.focus());
+  };
+  const save = useRef(canSave ? onSave : reveal);
+  save.current = canSave ? onSave : reveal;
   useEffect(() => {
-    if (!canSave) return;
+    if (!changed || saving) return;
     const onKey = (event: KeyboardEvent): void => {
       const command = isMac ? event.metaKey && !event.ctrlKey : event.ctrlKey && !event.metaKey;
       if (!command || event.altKey || event.shiftKey || event.key.toLowerCase() !== 's') return;
@@ -183,15 +187,17 @@ const SaveBar = ({ changed, count = 1, valid, saving, note, onSave, onReset }: {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [canSave]);
+  }, [changed, saving]);
   if (!changed) return null;
   return (
-    <div role="region" aria-label="Unsaved changes" data-save-bar className="sticky bottom-0 z-10 -mx-2 px-2 pt-6 pb-4 bg-linear-to-t from-canvas from-60% to-transparent animate-[serra-rise_160ms_ease-out]">
-      <div className="flex items-center gap-3 rounded-xl bg-overlay py-2 pr-2 pl-4 shadow-overlay">
-        <span aria-hidden className={valid ? 'size-1.5 shrink-0 rounded-full bg-ink' : 'size-1.5 shrink-0 rounded-full bg-down'} />
+    <div role="region" aria-label="Unsaved changes" data-save-bar className="pointer-events-none sticky bottom-0 z-10 mt-auto -mb-10 -mx-2 px-2 pt-12 pb-5 bg-linear-to-t from-canvas from-45% to-transparent animate-[serra-rise_160ms_ease-out]">
+      <div className="pointer-events-auto flex items-center gap-3 rounded-xl bg-overlay py-2 pr-2 pl-4 shadow-overlay">
+        <span aria-hidden className={valid ? 'size-1.5 shrink-0 rounded-full bg-warn' : 'size-1.5 shrink-0 rounded-full bg-down'} />
         <p role="status" className="min-w-0 flex-1 truncate text-[13px]">
-          <span className="font-medium text-ink">{!valid ? 'Fix the marked fields to save' : count > 1 ? `Unsaved changes in ${count} sections` : 'Unsaved changes'}</span>
-          {note && <span className="text-muted"> · {note}</span>}
+          {valid
+            ? <span className="font-medium text-ink">{count > 1 ? `Unsaved changes in ${count} sections` : 'Unsaved changes'}</span>
+            : <button type="button" onClick={reveal} className="rounded font-medium text-ink underline decoration-line-control underline-offset-4 hover:decoration-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus">Show what’s missing to save</button>}
+          {valid && note && <span className="text-muted"> · {note}</span>}
         </p>
         <Button variant="ghost" disabled={saving} onClick={onReset}>Reset</Button>
         <Button variant="primary" disabled={!canSave} onClick={onSave} aria-keyshortcuts={isMac ? 'Meta+S' : 'Control+S'}>
@@ -220,6 +226,7 @@ const PageSaveBar = ({ entries, settings }: { entries: Partial<Record<ProfileSec
       note={applies === 'now' ? null : appliesLabel(applies)}
       onSave={() => { void (async () => { for (const { entry } of pending) await entry.save(); })(); }}
       onReset={() => { for (const { entry } of pending) entry.reset(); }}
+      onReveal={() => { for (const { entry } of pending) entry.reveal(); }}
     />
   );
 };
@@ -290,7 +297,7 @@ export const FieldsCard = ({ form, profile, settings, state }: { form: SectionFo
     catch (reason) { setSaveError(reason instanceof Error ? reason.message : String(reason)); }
     finally { setSaving(false); }
   };
-  useSaveBarSection(form.section, { changed, valid, saving, save, reset: () => setValues(form.toForm(profile)) });
+  useSaveBarSection(form.section, { changed, valid, saving, save, reset: () => setValues(form.toForm(profile)), reveal: () => {} });
   return (
     <form onSubmit={(event) => { event.preventDefault(); void save(); }}>
       <SectionCard section={form.section} settings={settings} description={form.description}>
@@ -319,7 +326,7 @@ export const FieldsCard = ({ form, profile, settings, state }: { form: SectionFo
  * A section edited as a list of rows (other repositories, alert triggers). `parse` turns rows into the section's
  * value (undefined when empty) and problems keyed `<row>.<field>`.
  */
-export const useListEditor = <Row,>(
+export const useListEditor = <Row extends object,>(
   section: ProfileSection,
   profile: Profile,
   toRows: (profile: Profile) => Row[],
@@ -327,6 +334,9 @@ export const useListEditor = <Row,>(
   state: SettingsState,
 ) => {
   const [rows, setRows] = useState<Row[]>(() => toRows(profile));
+  // Rows just added and not yet typed in: their empty fields aren't marked as errors until the owner gets to them.
+  const [fresh] = useState(() => new WeakSet<Row>());
+  const [revealed, setRevealed] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const current = JSON.stringify((profile as unknown as Record<string, unknown>)[section] ?? null);
@@ -343,12 +353,13 @@ export const useListEditor = <Row,>(
     catch (reason) { setSaveError(reason instanceof Error ? reason.message : String(reason)); }
     finally { setSaving(false); }
   };
-  const reset = (): void => setRows(toRows(profile));
-  useSaveBarSection(section, { changed, valid, saving, save, reset });
+  const reset = (): void => { setRevealed(false); setRows(toRows(profile)); };
+  useSaveBarSection(section, { changed, valid, saving, save, reset, reveal: () => setRevealed(true) });
   return {
-    rows, errors: changed ? errors : {}, changed, valid, saving, saveError,
+    rows, changed, valid, saving, saveError,
+    errors: changed ? Object.fromEntries(Object.entries(errors).filter(([key]) => { const row = rows[Number(key.split('.')[0])]; return revealed || !row || !fresh.has(row); })) : {},
     update: (index: number, patch: Partial<Row>) => setRows((list) => list.map((row, i) => (i === index ? { ...row, ...patch } : row))),
-    add: (row: Row) => setRows((list) => [...list, row]),
+    add: (row: Row) => { fresh.add(row); setRows((list) => [...list, row]); },
     remove: (index: number) => setRows((list) => list.filter((_, i) => i !== index)),
     reset,
     save,

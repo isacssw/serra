@@ -18,10 +18,10 @@ const message = (error: unknown): string => (error instanceof Error ? error.mess
 type History = Awaited<ReturnType<NonNullable<ReturnType<typeof serra>>['meetings']['history']>>;
 
 const Card = ({ title, description, children, actions }: { title: string; description?: ReactNode; children?: ReactNode; actions?: ReactNode }) => (
-  <section className="flex flex-col gap-4 rounded-lg border border-line bg-panel p-5">
+  <section className="flex flex-col gap-4 rounded-xl border border-line bg-panel p-5">
     <header className="flex flex-wrap items-start justify-between gap-3">
       <div className="flex flex-col gap-1">
-        <h2 className="text-lg font-semibold">{title}</h2>
+        <h2 className="text-[15px] leading-5 font-semibold">{title}</h2>
         {description && <p className="text-sm text-muted">{description}</p>}
       </div>
       {actions && <div className="flex items-center gap-2">{actions}</div>}

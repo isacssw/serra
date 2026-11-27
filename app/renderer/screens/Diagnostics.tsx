@@ -151,7 +151,7 @@ export const Diagnostics = () => {
       )}
 
       {checks.results && summary && (
-        <section className="flex flex-col rounded-lg border border-line bg-panel" aria-label="Checks">
+        <section className="flex flex-col rounded-xl border border-line bg-panel" aria-label="Checks">
           <header className={cx('flex items-center gap-2 border-b border-line px-5 py-3 text-sm font-medium', summary.tone === 'up' ? 'text-up' : 'text-down')} data-diagnostics-summary={summary.tone}>
             {summary.tone === 'up' ? <CircleCheck size={16} aria-hidden /> : <CircleAlert size={16} aria-hidden />}
             {summary.text}
@@ -167,7 +167,7 @@ export const Diagnostics = () => {
       <section className="flex flex-col gap-3" aria-label="Daemon log">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex flex-col">
-            <h2 className="text-lg font-semibold">Daemon log</h2>
+            <h2 className="text-[15px] leading-5 font-semibold">Daemon log</h2>
             <p className="text-xs text-muted">logs/bot.log in the profile folder. Anything shaped like a token is hidden.</p>
           </div>
           <div className="flex items-center gap-2">
