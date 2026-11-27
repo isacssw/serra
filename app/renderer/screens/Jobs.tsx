@@ -4,7 +4,7 @@
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { useNavigate } from 'react-router';
 import {
-  BrushCleaning, CheckCheck, CircleCheck, CirclePause, GitPullRequest, Hash, Layers, LoaderCircle, MessageSquareText, Radio, ListChecks, Play,
+  BrushCleaning, CheckCheck, CircleCheck, CirclePause, GitPullRequest, Hash, Layers, LoaderCircle, MessageSquareText, ListChecks, Play,
   Plus, RefreshCw,
 } from 'lucide-react';
 import { useSearchParams } from 'react-router';
@@ -406,7 +406,7 @@ export const Jobs = ({ group }: { group: JobGroup }) => {
               {current.rows.length === 0
                 ? (channel
                   ? (
-                    <EmptyState className={EMPTY_CLASS} icon={<Radio size={16} strokeWidth={1.75} />} title={`Nothing here in ${channelChoices(rows, channel).find((c) => c.value === channel)?.label ?? 'this channel'}`} action={<Button size="sm" onClick={() => setChannel(null)}>Show all channels</Button>} />
+                    <EmptyState className={EMPTY_CLASS} icon={<Hash size={16} strokeWidth={1.75} />} title={`Nothing here in ${channelChoices(rows, channel).find((c) => c.value === channel)?.label ?? 'this channel'}`} action={<Button size="sm" onClick={() => setChannel(null)}>Show all channels</Button>} />
                   )
                   : setupLeft && current.group === 'needs you'
                   ? (

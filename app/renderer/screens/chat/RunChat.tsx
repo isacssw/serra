@@ -306,7 +306,7 @@ export const RunChat = ({ run, onClose }: { run: ChatRun | null; onClose: () => 
               {!box ? null : box.mode === 'blocked'
                 ? <p className="flex h-11 items-center justify-center gap-2 rounded-2xl border border-dashed border-line-control text-[13px] text-muted"><Lock size={13} aria-hidden />{box.reason}</p>
                 : (
-                  <div className={cx('flex items-end gap-2 py-1.5 pr-1.5 pl-4', composerClass({ filled: draft.trim() !== '' }))}>
+                  <div className={cx('flex items-end gap-2 py-2 pr-2 pl-4', composerClass({ filled: draft.trim() !== '' }))}>
                     <label htmlFor="run-chat-input" className="sr-only">{box?.mode === 'answer' ? 'Your answer' : 'Follow up'}</label>
                     <textarea
                       id="run-chat-input"
