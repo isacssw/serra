@@ -23,7 +23,7 @@ export const serverStatus = (server: Pick<McpServer, 'load' | 'health'>): Status
   // Before health: a server that connects from the checkout may still not reach a job's worktree.
   if (server.load === 'unsure') return { tone: 'warn', text: 'May not load' };
   if (server.health === 'connected') return { tone: 'up', text: 'Connected' };
-  if (server.health === 'needs-auth') return { tone: 'warn', text: 'Needs sign-in' };
+  if (server.health === 'needs-auth') return { tone: 'warn', text: 'Not signed in' };
   if (server.health === 'failed') return { tone: 'down', text: 'Failed' };
   if (server.health === 'pending') return { tone: 'warn', text: 'Needs approval' };
   // Turned on, but nobody checked it answers (Codex lists servers without connecting).
@@ -112,8 +112,7 @@ export const providerLine = (worker: McpOverview['worker']): string => {
   const labels = worker.providers.map((provider) => provider.label);
   if (worker.provider) return `Worker: ${labels[0] ?? worker.provider}`;
   if (labels.length) return `No worker provider set: every provider on in T3 (${labels.join(', ')})`;
-  if (worker.drivers.length > 1) return 'No worker provider set, so both are listed';
-  return 'No worker provider set';
+  return 'Worker provider not set';
 };
 
 /** Where a server comes from, in a few words: "User config · ~/.claude.json", "claude.ai connector", "Added by Codex". */
@@ -198,7 +197,7 @@ export const recommendationRows = (
     let state: Status;
     if (cliReady || connected) state = { tone: 'up', text: 'Ready' };
     else if (mcpPending && !rec.needsCli) state = { tone: 'neutral', text: 'Checking…' };
-    else if (!rec.needsCli && servers.some((server) => server.health === 'needs-auth')) state = { tone: 'warn', text: 'Needs sign-in' };
+    else if (!rec.needsCli && servers.some((server) => server.health === 'needs-auth')) state = { tone: 'warn', text: 'Not signed in' };
     else if (cliState?.text === 'Not signed in') state = { tone: 'warn', text: 'Not signed in' };
     else if (configured) state = { tone: 'neutral', text: 'Configured' };
     // A server that's on but failed, may not load or waits for approval: say so, as the MCP list below does.
@@ -219,7 +218,7 @@ export const recommendationRows = (
         else if (!existing.length && rec.mcp) setup.push({ label: `Add to ${DRIVER_NAMES[driver]}`, command: PROVIDER_MCP[driver].add(rec.mcp.name, rec.mcp.url) });
       }
     }
-    rows.push({ rec, reason: rec.reason ?? signal ?? 'An MCP server for it is set up', state, setup });
+    rows.push({ rec, reason: rec.reason ?? signal ?? 'MCP server set up', state, setup });
   }
   return rows;
 };

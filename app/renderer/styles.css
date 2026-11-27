@@ -20,6 +20,9 @@
   /* A secondary button's fill, a step above a card so it lifts on the page and inside cards alike. */
   --color-control: light-dark(#ffffff, #18181c);
   --color-control-hover: light-dark(#f6f6f7, #202026);
+  /* A segmented control's groove: grey on a white card, set in below the card in dark mode, so the chosen segment (an
+     overlay fill) reads as raised in both themes. */
+  --color-track: light-dark(#f1f1f3, #0a0a0c);
   /* A field's fill: set into the surface in dark mode (darker than a card), white with a lift in light mode. */
   --color-field: light-dark(#ffffff, #0a0a0c);
   /* Borders and interaction states. Hairlines stay quiet; a control's edge meets 3:1 on every surface (WCAG 1.4.11). */
@@ -52,6 +55,8 @@
   --shadow-field: 0 1px 2px light-dark(#0000000d, #00000000);
   /* A card's hint of depth on a white page; none in dark, where the surface step does it. */
   --shadow-card: 0 1px 2px light-dark(#0000000a, #00000000);
+  /* A hero composer (New task): lifted off the page, with a hairline highlight on its top edge in dark mode. */
+  --shadow-composer: inset 0 1px 0 light-dark(#ffffff00, #ffffff0a), 0 1px 2px light-dark(#0000000a, #00000066), 0 12px 32px -20px light-dark(#0000001f, #000000cc);
   --shadow-overlay: 0 0 0 1px light-dark(#0000001a, #ffffff24), inset 0 1px 0 light-dark(#ffffff00, #ffffff0d), 0 16px 48px -8px light-dark(#00000038, #000000cc), 0 4px 12px light-dark(#0000001a, #00000080);
   --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", system-ui, sans-serif;
   --font-mono: ui-monospace, "SF Mono", Menlo, monospace;

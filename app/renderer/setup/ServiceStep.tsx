@@ -1,7 +1,7 @@
 // Step 4: install the bot under launchd and see it running. "Running" means the daemon answers on its status socket,
 // not only that a release was activated, so the step waits for it to report in before it calls setup done.
 import { useEffect, useRef, useState } from 'react';
-import { Power } from 'lucide-react';
+import { ChevronRight, Power } from 'lucide-react';
 import { useNavigate } from 'react-router';
 import type { ActivationOutcome } from '../../../src/releases.ts';
 import { serra } from '../bridge.ts';
@@ -81,7 +81,7 @@ export const ServiceStep = () => {
   const latest = log.at(-1);
 
   return (
-    <div className="flex flex-col gap-8">
+    <div className="flex flex-1 flex-col gap-8">
       <StepHeader step={step} icon={<Power size={18} strokeWidth={1.75} />} />
       <Card className="flex flex-col gap-3 px-4 py-3.5">
         <div className="flex items-center gap-3">
@@ -96,8 +96,9 @@ export const ServiceStep = () => {
           {(late || (disconnected && !busy)) && <Button size="sm" variant={disconnected ? 'primary' : 'ghost'} onClick={() => void navigate('/settings/diagnostics')}>Diagnostics</Button>}
         </div>
         {log.length > 0 && (
-          <details className="pl-8 text-[13px]" open={Boolean(result)}>
-            <summary className="w-fit cursor-pointer rounded text-muted hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus">
+          <details className="group pl-8 text-[13px]" open={Boolean(result)}>
+            <summary className="flex w-fit cursor-pointer list-none items-center gap-1 rounded text-muted hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus [&::-webkit-details-marker]:hidden">
+              <ChevronRight size={13} aria-hidden className="transition-transform group-open:rotate-90" />
               Details{busy && latest ? '' : ` · ${log.length} lines`}
             </summary>
             <pre ref={logRef} className="mt-2 max-h-56 overflow-auto rounded-md border border-line bg-raised px-3 py-2 font-mono text-[11px] whitespace-pre-wrap" data-setup-log>

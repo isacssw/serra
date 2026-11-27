@@ -18,16 +18,16 @@ export interface FlowStep {
   title: string;
   /** Its name in the progress rail. */
   short: string;
-  /** One line under the heading. */
-  summary: string;
+  /** One short line under the heading, when the title and fields don't already say it. */
+  summary?: string;
 }
 
 /** The steps, in order. */
 export const FLOW: readonly FlowStep[] = [
-  { id: 'profile', path: '/setup/you', title: 'You and your repository', short: 'You & repo', summary: 'Who the bot works for, and where it works.' },
-  { id: 'slack', path: '/setup/slack', title: 'Connect Slack', short: 'Slack', summary: 'Create the Slack app, then add its two tokens.' },
-  { id: 'owner', path: '/setup/owner', title: 'Confirm it’s you', short: 'Confirm you', summary: 'Slack checks the member ID, so the bot knows who to ask.' },
-  { id: 'service', path: '/setup/service', title: 'Install and start', short: 'Install', summary: 'Runs every check, then starts the bot. Nothing changes if a check fails.' },
+  { id: 'profile', path: '/setup/you', title: 'You and your repository', short: 'You & repo' },
+  { id: 'slack', path: '/setup/slack', title: 'Connect Slack', short: 'Slack', summary: 'Create the app, then add its two tokens.' },
+  { id: 'owner', path: '/setup/owner', title: 'Confirm it’s you', short: 'Confirm you', summary: 'Slack checks your member ID.' },
+  { id: 'service', path: '/setup/service', title: 'Install and start', short: 'Install', summary: 'Runs every check, then starts the bot.' },
 ];
 
 export const isSetupPath = (path: string): boolean => path === SETUP_PATH || path.startsWith(`${SETUP_PATH}/`);
@@ -161,7 +161,7 @@ export const summaryRows = (summary: ProfileSummary): SummaryRow[] => {
 export const foundLine = (summary: ProfileSummary): string => {
   if (summary.service === 'disconnected') return 'Set up, but not connected to Slack.';
   const done = summaryRows(summary).filter((row) => row.done).length;
-  return done === FLOW.length ? 'Everything is set up.' : `${done} of ${FLOW.length} steps already done.`;
+  return done === FLOW.length ? 'All set up' : `${done} of ${FLOW.length} done`;
 };
 
 /** The profiles to choose between, the one in use first. Profiles that can't be read are left out. */
@@ -232,7 +232,7 @@ export const draftErrors = (draft: DraftForm): DraftErrors => {
   if (!draft.botName.trim()) errors.botName = 'Give the bot a name.';
   if (!/^[a-z][a-z0-9-]{0,47}$/.test(id)) errors.botId = 'Start with a letter; use up to 48 lowercase letters, digits or hyphens.';
   if (!draft.ownerName.trim()) errors.ownerName = 'Enter your name.';
-  if (!/^[UW][A-Z0-9]+$/.test(draft.ownerSlackUserId.trim())) errors.ownerSlackUserId = 'Looks like U0123456789.';
+  if (!/^[UW][A-Z0-9]+$/.test(draft.ownerSlackUserId.trim())) errors.ownerSlackUserId = draft.ownerSlackUserId.trim() ? 'Starts with U, like U0123456789.' : 'Enter your member ID.';
   if (!/^[\w-]+$/.test(draft.githubLogin.trim())) errors.githubLogin = 'Enter your GitHub login.';
   if (!draft.projectPath.trim().startsWith('/')) errors.projectPath = 'Choose the repository’s folder.';
   if (!draft.remote.trim() || draft.remote.trim().startsWith('-')) errors.remote = 'Enter the Git remote, usually origin.';

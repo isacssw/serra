@@ -11,6 +11,7 @@ import { serra } from '../../bridge.ts';
 import { Badge, Button, Dialog, Page, useToast } from '../../ui/index.ts';
 import { ToolIcon } from '../../ui/ToolIcon.tsx';
 import { SourceIcon } from '../proposals/MeetingReview.tsx';
+import { useBotName } from '../../setup/SetupState.tsx';
 import { testedLine, testLabel } from './meetings.logic.ts';
 
 const message = (error: unknown): string => (error instanceof Error ? error.message : String(error));
@@ -18,17 +19,26 @@ const message = (error: unknown): string => (error instanceof Error ? error.mess
 type History = Awaited<ReturnType<NonNullable<ReturnType<typeof serra>>['meetings']['history']>>;
 
 const Card = ({ title, description, children, actions }: { title: string; description?: ReactNode; children?: ReactNode; actions?: ReactNode }) => (
-  <section className="flex flex-col gap-4 rounded-xl border border-line bg-panel p-5">
+  <section className="flex flex-col gap-4 rounded-xl border border-line bg-panel p-5 shadow-card">
     <header className="flex flex-wrap items-start justify-between gap-3">
-      <div className="flex flex-col gap-1">
+      <div className="flex min-w-0 flex-col gap-1">
         <h2 className="text-[15px] leading-5 font-semibold">{title}</h2>
-        {description && <p className="text-sm text-muted">{description}</p>}
+        {description && <p className="text-[13px] leading-5 text-muted">{description}</p>}
       </div>
       {actions && <div className="flex items-center gap-2">{actions}</div>}
     </header>
     {children}
   </section>
 );
+
+const FILE_ICON = <ToolIcon brand={null} fallback={<FileText size={14} />} label="File or text" />;
+
+/** What capture reads, shown while it's off so the owner sees what they'd turn on. */
+const OFF_SOURCES = [
+  { label: 'Granola', icon: <SourceIcon source="granola" /> },
+  { label: 'Google Meet', icon: <SourceIcon source="google-meet" /> },
+  { label: 'File or text', icon: FILE_ICON },
+];
 
 type BadgeTone = NonNullable<ComponentProps<typeof Badge>['tone']>;
 
@@ -41,8 +51,8 @@ const STATE: Record<ProviderStatus['state'], { label: string; tone: BadgeTone }>
 };
 
 const PROVIDER_ROWS: { provider: MeetingProvider; label: string; how: string }[] = [
-  { provider: 'granola', label: 'Granola', how: 'Send the note’s link, like notes.granola.ai/d/…' },
-  { provider: 'google-meet', label: 'Google Meet', how: 'Send the transcript Doc’s link from Drive.' },
+  { provider: 'granola', label: 'Granola', how: 'Note link, like notes.granola.ai/d/…' },
+  { provider: 'google-meet', label: 'Google Meet', how: 'Transcript Doc link from Drive' },
 ];
 
 const SourceRow = ({ icon, label, how, status, action }: { icon: ReactNode; label: string; how: string; status: { label: string; tone: BadgeTone; detail?: string; tested?: string | null } | null; action?: ReactNode }) => (
@@ -50,12 +60,12 @@ const SourceRow = ({ icon, label, how, status, action }: { icon: ReactNode; labe
     {icon}
     <div className="flex min-w-0 flex-1 flex-col gap-0.5">
       <div className="flex flex-wrap items-center gap-2">
-        <span className="text-sm font-medium">{label}</span>
+        <span className="text-[13px] font-medium">{label}</span>
         {status && <Badge tone={status.tone}>{status.label}</Badge>}
       </div>
-      <p className="text-[13px] text-muted">{how}</p>
-      {status?.detail && <p className="text-[13px] text-muted">{status.detail}</p>}
-      {status?.tested && <p className="text-xs text-muted">{status.tested}</p>}
+      <p className="text-xs text-muted">{how}</p>
+      {status?.detail && <p className="text-xs text-muted">{status.detail}</p>}
+      {status?.tested && <p className="text-xs text-faint">{status.tested}</p>}
     </div>
     {action}
   </li>
@@ -63,6 +73,7 @@ const SourceRow = ({ icon, label, how, status, action }: { icon: ReactNode; labe
 
 export const Meetings = () => {
   const toast = useToast();
+  const bot = useBotName();
   const [settings, setSettings] = useState<(MeetingSettings & { notice: string }) | null>(null);
   const [runner, setRunner] = useState<MeetingRunner | null>(null);
   const [sources, setSources] = useState<ProviderStatus[] | null>(null);
@@ -138,25 +149,33 @@ export const Meetings = () => {
   };
 
   return (
-    <Page title="Meetings" subtitle="Keep the decisions from your team’s meetings, so coding work knows why.">
+    <Page title="Meetings">
       {error && <p role="alert" className="text-sm text-down">{error}</p>}
       {settings && (
         <Card
           title="Meeting capture"
           description={settings.enabled
-            ? <>In your DM with Serra, send a new message starting with &ldquo;remember this meeting&rdquo;, with the transcript attached, pasted, or linked. You review every item in Proposals.</>
-            : 'Off. Turn it on to send Serra meeting transcripts from your DM.'}
+            ? <>In your DM with {bot}, start a message with &ldquo;remember this meeting&rdquo; and attach, paste or link the transcript. Each item waits in Proposals.</>
+            : `Send meeting transcripts to ${bot} in a DM.`}
           actions={settings.enabled
             ? <Button disabled={busy} onClick={() => void setEnabled(false)}>Turn off</Button>
             : <Button variant="primary" disabled={busy} onClick={() => setAcknowledging(true)}>Turn on…</Button>}
         >
-          {settings.enabled && settings.acknowledged && <p className="text-xs text-muted">On since {new Date(settings.acknowledged.at).toLocaleDateString()}.</p>}
+          {settings.enabled && settings.acknowledged && <p className="text-xs text-faint">On since {new Date(settings.acknowledged.at).toLocaleDateString()}</p>}
+          {!settings.enabled && (
+            <div className="-mx-5 flex flex-wrap items-center gap-x-5 gap-y-2 border-t border-line-subtle px-5 pt-4 text-xs text-muted">
+              <span className="text-faint">Works with</span>
+              <ul aria-label="Works with" className="contents">
+                {OFF_SOURCES.map((source) => <li key={source.label} className="flex items-center gap-2">{source.icon}{source.label}</li>)}
+              </ul>
+            </div>
+          )}
         </Card>
       )}
       {settings?.enabled && (
         <Card
           title="Sources"
-          description="Serra reads Granola and Meet links in an agent run, through the connections your agent already has. It never holds their keys. Test runs one short run."
+          description={`Read through your agent's own connections. ${bot} holds no keys.`}
           actions={<Button size="sm" disabled={checking} icon={checking ? <LoaderCircle size={14} className="animate-spin" /> : <RefreshCw size={14} />} onClick={() => void check()}>Refresh</Button>}
         >
           {runner && (
@@ -177,12 +196,12 @@ export const Meetings = () => {
                 )}
               />
             ))}
-            <SourceRow icon={<ToolIcon brand={null} fallback={<FileText size={14} />} label="File or text" />} label="File or pasted text" how="Attach a .txt, .md, .vtt or .srt export from any notetaker, or paste the summary." status={{ label: 'Ready', tone: 'up' }} />
+            <SourceRow icon={FILE_ICON} label="File or pasted text" how=".txt, .md, .vtt or .srt from any notetaker" status={{ label: 'Ready', tone: 'up' }} />
           </ul>
         </Card>
       )}
       {history.length > 0 && (
-        <Card title="Meetings" description="Forget a meeting to remove everything it added.">
+        <Card title="Captured" description="Forget one to remove everything it added.">
           <ul className="flex flex-col divide-y divide-line">
             {history.map((meeting) => (
               <li key={meeting.id} className="flex items-center gap-3 py-3">
@@ -216,11 +235,11 @@ export const Meetings = () => {
         open={forgetting !== null}
         onClose={() => setForgetting(null)}
         title={`Forget ${forgetting?.title ?? 'this meeting'}?`}
-        description="Removes what it added: page lines, backups, pending quotes and its digest message. Threads that read it start fresh on their next message. This can't be undone. Your Slack upload and T3 threads that already read it aren't touched."
+        description="Removes its page lines, backups, pending quotes and digest. Threads that read it start fresh. Your Slack upload and T3 threads stay. This can't be undone."
         actions={(
           <>
             <Button onClick={() => setForgetting(null)}>Cancel</Button>
-            <Button variant="primary" disabled={busy} onClick={() => void forget(forgetting!)}>Forget meeting</Button>
+            <Button variant="danger" disabled={busy} onClick={() => void forget(forgetting!)}>Forget meeting</Button>
           </>
         )}
       />
