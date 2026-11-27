@@ -16,7 +16,7 @@ const step = FLOW[0]!;
 
 const Section = ({ title, children }: { title: string; children: ReactNode }) => (
   <fieldset className="flex flex-col gap-4">
-    <legend className="mb-3 text-[13px] font-medium text-muted">{title}</legend>
+    <legend className="mb-3.5 text-[13px] font-semibold text-ink">{title}</legend>
     {children}
   </fieldset>
 );
@@ -44,8 +44,8 @@ const Existing = () => {
             </div>
           ))}
         </dl>
+        <p className="border-t border-line-subtle px-4 py-2.5 text-xs text-faint">Change these in Settings</p>
       </Card>
-      <p className="text-[13px] text-muted">Change these any time in Settings.</p>
       <StepFooter back={SETUP_PATH}>
         <Button variant="primary" onClick={() => void navigate(nextPath(progress, step.path))}>Continue</Button>
       </StepFooter>
@@ -156,7 +156,7 @@ const ProfileForm = () => {
   };
 
   return (
-    <form className="flex flex-col gap-8" noValidate onSubmit={(event) => { event.preventDefault(); void create(); }}>
+    <form className="flex flex-1 flex-col gap-8" noValidate onSubmit={(event) => { event.preventDefault(); void create(); }}>
       <Section title="You">
         <div className="grid gap-4 sm:grid-cols-2">
           <Input label="Your name" autoComplete="name" value={draft.ownerName} onChange={set('ownerName')} error={errors.ownerName} />
@@ -170,24 +170,25 @@ const ProfileForm = () => {
         <div className="flex items-start gap-2">
           <Input label="Folder" placeholder="/Users/you/project" inputClassName="font-mono" className="min-w-0 flex-1" value={draft.projectPath}
             onChange={set('projectPath')} onBlur={() => void detect()} error={errors.projectPath}
-            hint={repoNote ?? 'The repository you open in T3 Code.'} spellCheck={false} />
-          <Button className="mt-6 h-9" icon={<FolderOpen size={14} aria-hidden />} onClick={() => void choose()}>Choose…</Button>
+            hint={repoNote ?? 'The repository you open in T3 Code'} spellCheck={false} />
+          {/* Level with the field: its label (16px) and the gap under it (6px). */}
+          <Button className="mt-[22px]" icon={<FolderOpen size={14} aria-hidden />} onClick={() => void choose()}>Choose…</Button>
         </div>
         <div className="grid gap-4 sm:grid-cols-2">
-          <Input label="Base branch" placeholder="origin/main" inputClassName="font-mono" value={draft.baseRef} onChange={set('baseRef')} spellCheck={false} />
-          <Input label="GitHub repository" placeholder="owner/repo" inputClassName="font-mono" value={draft.githubRepo}
+          <Input label="Base branch (optional)" placeholder="origin/main" inputClassName="font-mono" value={draft.baseRef} onChange={set('baseRef')} spellCheck={false} />
+          <Input label="GitHub repository (optional)" placeholder="owner/repo" inputClassName="font-mono" value={draft.githubRepo}
             onChange={set('githubRepo')} error={errors.githubRepo} spellCheck={false} />
         </div>
       </Section>
 
       <Section title="Bot">
         <Input label="Name" placeholder="Friday" value={draft.botName} onChange={set('botName')} error={errors.botName ?? errors.botId}
-          hint={`How it appears in Slack. ID: ${draft.botId.trim() || suggestId(draft.botName)}`} />
+          hint="How it appears in Slack" />
         <details className="group text-[13px]">
-          <summary className="w-fit cursor-pointer rounded text-muted hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus">More options</summary>
+          <summary className="w-fit cursor-pointer rounded text-[13px] font-medium text-muted hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus">More options</summary>
           <div className="mt-4 grid gap-4 sm:grid-cols-2">
             <Input label="Bot ID" placeholder={suggestId(draft.botName)} inputClassName="font-mono" value={draft.botId} onChange={set('botId')}
-              error={errors.botId} hint="Names the service and job branches." spellCheck={false} />
+              error={errors.botId} hint="Names the service and job branches" spellCheck={false} />
             <Input label="Git remote" inputClassName="font-mono" value={draft.remote} onChange={set('remote')} onBlur={() => void detect()} error={errors.remote} spellCheck={false} />
             <Input label="Profile folder" inputClassName="font-mono" placeholder={root ? profileFolder(draft, root) : ''} value={draft.directory}
               onChange={set('directory')} error={errors.directory} spellCheck={false} />
@@ -207,7 +208,7 @@ const ProfileForm = () => {
 export const YouStep = () => {
   const { progress } = useSetup();
   return (
-    <div className="flex flex-col gap-8">
+    <div className="flex flex-1 flex-col gap-8">
       <StepHeader step={step} icon={<UserRound size={18} strokeWidth={1.75} />} />
       {hasProfile(progress) ? <Existing /> : <ProfileForm />}
     </div>

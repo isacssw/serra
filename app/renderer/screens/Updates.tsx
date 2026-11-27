@@ -3,7 +3,7 @@
 // in developer mode (Settings › Worker › Developer: update from a checkout) the owner builds from a checkout and switches by hand.
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { useNavigate } from 'react-router';
-import {
+import { ArrowUpRight,
   ArrowDownToLine, CircleCheck, ExternalLink, GitBranch, GitCommitHorizontal, Hammer, Info, LoaderCircle, Play, RefreshCw,
   RotateCw, TriangleAlert, Undo2,
 } from 'lucide-react';
@@ -42,6 +42,7 @@ const StarLink = ({ onError, onSaveFailed }: { onError: (error: unknown) => void
     >
       <GitHubMark size={13} />
       Star on GitHub
+      <ArrowUpRight size={12} aria-hidden className="text-muted" />
     </button>
   </p>
 );
@@ -94,7 +95,7 @@ const AppUpdateCard = ({ status, card, onAction, onLink, children }: {
     if (!document.activeElement || document.activeElement === document.body) heading.current?.focus();
   }, [status.state]);
   return (
-    <section aria-labelledby="app-update-title" className="flex flex-col gap-3 rounded-lg border border-line bg-panel p-4">
+    <section aria-labelledby="app-update-title" className="flex flex-col gap-3 rounded-xl border border-line bg-panel p-5 shadow-card">
       <div className="flex items-start gap-3">
         <span className="mt-0.5"><ToneIcon tone={card.tone} /></span>
         <div className="flex min-w-0 flex-1 flex-col gap-1">
@@ -163,7 +164,7 @@ const LogPanel = ({ lines, running, open, onToggle }: { lines: string[]; running
         ref={ref}
         aria-label="Details"
         tabIndex={0}
-        className="mt-2 max-h-72 overflow-auto rounded-lg border border-line bg-panel px-4 py-3 font-mono text-xs leading-relaxed whitespace-pre-wrap text-ink focus-visible:outline-2 focus-visible:outline-focus"
+        className="mt-2 max-h-72 overflow-auto rounded-xl border border-line bg-panel px-4 py-3 shadow-card font-mono text-xs leading-relaxed whitespace-pre-wrap text-ink focus-visible:outline-2 focus-visible:outline-focus"
       >
         {lines.join('\n') || ' '}
       </pre>
@@ -406,7 +407,7 @@ export const Updates = () => {
         </p>
       )}
       {developer && status.followsApp && (
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg border border-line bg-panel px-4 py-3">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl border border-line bg-panel px-4 py-3 shadow-card">
           <GitBranch size={16} aria-hidden className="shrink-0 text-muted" />
           <span className="min-w-0 flex-1 text-[13px]">{DEVELOPER_LINE}</span>
           <Button size="sm" disabled={running !== null} onClick={() => void ask('follow')}>Follow app updates</Button>
@@ -426,7 +427,7 @@ export const Updates = () => {
         if (app && card) return <AppUpdateCard status={app} card={card} onAction={(action) => void appAction(action)} onLink={openLink}>{botSection}</AppUpdateCard>;
         if (developer) return null;
         return (
-          <section className="flex flex-col gap-3 rounded-lg border border-line bg-panel p-4">
+          <section className="flex flex-col gap-3 rounded-xl border border-line bg-panel p-5 shadow-card">
             <div className="flex items-start gap-3">
               <span className="mt-0.5"><Info size={18} aria-hidden className="text-muted" /></span>
               <div className="flex flex-col gap-1">
@@ -449,7 +450,7 @@ export const Updates = () => {
           />
           <span className="flex flex-col gap-0.5">
             <span>Include pre-releases</span>
-            <span className="text-xs text-muted">Alpha and beta versions. On by default while you're on one.</span>
+            <span className="text-xs text-muted">Alpha and beta builds</span>
           </span>
         </label>
       )}
@@ -509,7 +510,7 @@ const DeveloperMode = ({ releases, running, lines, details, setDetails, notice, 
   const states = actionStates({ ...releases, running });
   return (
     <>
-      <div className="rounded-lg border border-line bg-panel" role="group" aria-label="Bot builds">
+      <div className="rounded-xl border border-line bg-panel shadow-card" role="group" aria-label="Bot builds">
         <Row label="Bot runs">
           {releases.active
             ? <><span className="font-mono text-[13px] font-semibold">{releaseLabel(releases.active)}</span><span className="text-xs text-muted">{preparedLabel(releases.active)}</span></>
@@ -543,7 +544,7 @@ const DeveloperMode = ({ releases, running, lines, details, setDetails, notice, 
         {releases.commitsProblem
           ? <p className="text-[13px] text-muted">{releases.commitsProblem}</p>
           : releases.newCommits.length > 0 && (
-            <ul className="overflow-hidden rounded-lg border border-line bg-panel">
+            <ul className="overflow-hidden rounded-xl border border-line bg-panel shadow-card">
               {releases.newCommits.map((commit) => (
                 <li key={commit.sha} className="flex items-center gap-3 border-t border-line px-4 py-2.5 first:border-t-0">
                   <GitCommitHorizontal size={16} className="shrink-0 text-muted" aria-hidden />

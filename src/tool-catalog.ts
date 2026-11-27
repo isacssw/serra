@@ -98,7 +98,7 @@ export interface Recommendation {
 }
 
 export const RECOMMENDATIONS: readonly Recommendation[] = [
-  { id: 'github', label: 'GitHub', icon: 'github', always: true, needsCli: true, reason: 'Serra opens pull requests with gh', cli: 'gh', server: /github/i },
+  { id: 'github', label: 'GitHub', icon: 'github', always: true, needsCli: true, reason: 'Opens pull requests', cli: 'gh', server: /github/i },
   {
     id: 'sentry', label: 'Sentry', icon: 'sentry', always: false, cli: 'sentry-cli', server: /sentry/i,
     mcp: { name: 'sentry', url: 'https://mcp.sentry.dev/mcp', docs: 'https://docs.sentry.io/product/sentry-mcp/' },

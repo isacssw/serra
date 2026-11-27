@@ -7,7 +7,7 @@ import { diagnosticsHandlers, MAX_LOG_LINES } from '../app/main/ipc/diagnostics.
 import type { HandlerContext } from '../app/main/ipc/context.ts';
 import { memoryPrefs } from '../app/main/prefs.ts';
 import { stoppedStatusSource } from '../app/main/status.ts';
-import { reportText, statusKey, summarize } from '../app/renderer/screens/diagnostics.logic.ts';
+import { explainFailure, orderChecks, passValue, sharedCauses, reportText, runtimeLine, statusKey, summarize, tildePaths } from '../app/renderer/screens/diagnostics.logic.ts';
 import { loadConfig, type Config, type Profile } from '../src/config.ts';
 import type { Diagnostic } from '../src/contracts.ts';
 import { diagnose, type DiagnoseOptions } from '../src/doctor.ts';
@@ -204,4 +204,57 @@ test('the copied report lists every check and the log tail', () => {
     'a',
     'b',
   ].join('\n'));
+});
+
+test('failing checks come first, each group in the order diagnose() gave', () => {
+  assert.deepEqual(orderChecks(results).map((result) => result.name), ['Tokens', 'GitHub CLI', 'Node']);
+  assert.deepEqual(orderChecks([results[0]!]).map((result) => result.name), ['Node']);
+});
+
+test('paths under the home folder read as ~, and nothing else changes', () => {
+  assert.equal(tildePaths('24.1.0 (/Users/you/.nvm/bin/node)', '/Users/you'), '24.1.0 (~/.nvm/bin/node)');
+  assert.equal(tildePaths("cannot change to '/Users/you'", '/Users/you/'), "cannot change to '~'");
+  assert.equal(tildePaths('/Users/you-two/code', '/Users/you'), '/Users/you-two/code');
+  assert.equal(tildePaths('/Users/you/a and /Users/you/b', '/Users/you'), '~/a and ~/b');
+  assert.equal(tildePaths('/opt/homebrew/bin/node', undefined), '/opt/homebrew/bin/node');
+  assert.equal(tildePaths('/x', '/'), '/x');
+});
+
+test('the runtime line is one short line, and the report hides the home folder too', () => {
+  assert.equal(runtimeLine({ version: '0.1.0', electron: '45.4.1', node: '24.22.3' }), 'App 0.1.0 · Electron 45.4.1 · bundled Node 24.22.3');
+  const text = reportText({
+    results: [{ name: 'Node', ok: true, detail: '24.1.0 (/Users/you/.nvm/bin/node)' }], checkedAt: null,
+    info: { version: '0.1.0', electron: '45.4.1', node: '24.22.3', platform: 'darwin', home: '/Users/you' }, log: ['read /Users/you/x'],
+  });
+  assert.ok(!text.includes('/Users/you'), text);
+  assert.match(text, /~\/\.nvm\/bin\/node/);
+  assert.match(text, /read ~\/x/);
+});
+
+test('a failing check reads as a reason first, with the raw output kept for Details', () => {
+  const gh = 'gh api user exited 4: To get started with GitHub CLI, please run: gh auth login';
+  assert.deepEqual(explainFailure(gh), { reason: 'GitHub CLI isn’t signed in. Run gh auth login.', raw: gh, action: { label: 'Tools', path: '/settings/tools' } });
+  const git = "git -C ~/code/web exited 128: fatal: cannot change to '~/code/web': No such file or directory";
+  assert.deepEqual(explainFailure(git), { reason: 'Folder not found: ~/code/web', raw: git, action: { label: 'Repositories', path: '/settings/repositories' } });
+  const keychain = "Can't read SLACK_BOT_TOKEN from Keychain: Keychain (security) failed: security: SecKeychainSearchCopyNext: The specified item could not be found in the keychain.";
+  assert.equal(explainFailure(keychain).reason, 'The bot token isn’t in the Keychain.');
+  assert.deepEqual(explainFailure(keychain).action, { label: 'Add token', path: '/setup/slack' });
+  assert.deepEqual(explainFailure('t3 thread list exited 1: boom'), { reason: 't3 failed (exit 1)', raw: 't3 thread list exited 1: boom' });
+  assert.deepEqual(explainFailure('Set git user.name and user.email in the project'), { reason: 'Set git user.name and user.email in the project', raw: null });
+});
+
+test('a passing check reads as a short value', () => {
+  assert.equal(passValue('24.1.0 (/opt/homebrew/bin/node, the Node the bot runs on)'), '24.1.0 · /opt/homebrew/bin/node');
+  assert.equal(passValue('An author identity is configured'), 'Configured');
+  assert.equal(passValue('Writable; job state parses'), 'Writable · job state parses');
+  assert.equal(passValue('24 pages, 19 drafts'), '24 pages, 19 drafts');
+});
+
+test('failing checks with the same error point at the first one instead of repeating it', () => {
+  const failing = [
+    { name: 'Tokens', ok: false, detail: 'no token' },
+    { name: 'Repository web', ok: false, detail: 'missing' },
+    { name: 'Slack account', ok: false, detail: 'no token' },
+  ];
+  assert.deepEqual([...sharedCauses(failing)], [['Slack account', 'Tokens']]);
 });

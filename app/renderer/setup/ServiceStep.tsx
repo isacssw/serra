@@ -81,7 +81,7 @@ export const ServiceStep = () => {
   const latest = log.at(-1);
 
   return (
-    <div className="flex flex-col gap-8">
+    <div className="flex flex-1 flex-col gap-8">
       <StepHeader step={step} icon={<Power size={18} strokeWidth={1.75} />} />
       <Card className="flex flex-col gap-3 px-4 py-3.5">
         <div className="flex items-center gap-3">

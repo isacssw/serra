@@ -5,6 +5,7 @@ Serra follows [Semantic Versioning](https://semver.org) once it reaches 1.0. Unt
 ## Unreleased
 
 - **A calmer, high-end look:** new dark and light colours, 32px fields with a soft focus ring, one dropdown style everywhere, and buttons that read as off when disabled. **Settings** is now one sidebar entry (⌘,) with its own grouped menu; Esc goes back. Each settings page has one **Save** bar (⌘S) that says once when changes apply.
+- **Setup, Diagnostics, Tools and ⌘K, tidied:** setup keeps Back and Continue in view, says where each Slack token is right under its field, and keeps a field's hint when it shows an error. **Diagnostics** lists failing checks first, each with a plain reason, its raw output under **Details** and a button to the screen that fixes it; paths in your home folder show as `~`, in the copied report too. **Tools** lists GitHub once. The command palette shows an icon per row and its keys in a footer. Shorter copy on New task, Meetings, Updates and Appearance.
 - **Knowledge › Graph:** what your bot knows, as a map. One island per area, pages linked by what they mention, where they came from, which replies used them together, and rules that disagree. The first visit replays how it grew; later visits replay only new pages. Click a page (or use the arrow keys) to see its links, open it, or keep one of two rules that disagree.
 
 ## 0.1.0-alpha.6 (2026-11-26)

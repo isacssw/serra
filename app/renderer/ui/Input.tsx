@@ -19,18 +19,21 @@ export const Input = ({ label, error, hint, className, inputClassName, id, ...re
   const generated = useId();
   const inputId = id ?? generated;
   const noteId = `${inputId}-note`;
-  const note = error || hint;
+  const hintId = `${inputId}-hint`;
+  // An error goes above the hint, and the hint stays: it's often what says how to fix it.
+  const described = [error && noteId, hint && hintId].filter(Boolean).join(' ') || undefined;
   return (
     <div className={cx('flex min-w-0 flex-col gap-1.5', className)}>
       {label && <label htmlFor={inputId} className={labelClass}>{label}</label>}
       <input
         id={inputId}
         aria-invalid={error ? true : undefined}
-        aria-describedby={note ? noteId : undefined}
+        aria-describedby={described}
         className={cx('h-8 min-w-0 px-2.5', fieldClass(Boolean(error)), inputClassName)}
         {...rest}
       />
-      {note && <p id={noteId} className={noteClass(Boolean(error))}>{note}</p>}
+      {error && <p id={noteId} className={noteClass(true)}>{error}</p>}
+      {hint && <p id={hintId} className={noteClass(false)}>{hint}</p>}
     </div>
   );
 };

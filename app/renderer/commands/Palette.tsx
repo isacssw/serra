@@ -1,8 +1,13 @@
 // The command palette (⌘K): a search over the action registry, opened from any screen by the shortcut or the
 // sidebar's hint. An action that needs a value (Add allowed user) asks for it as a second step.
-import { useCallback, useEffect, useId, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type ComponentType, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react';
 import { useNavigate } from 'react-router';
-import { ArrowLeft, CornerDownLeft, LoaderCircle, Search } from 'lucide-react';
+import {
+  ArrowLeft, CircleCheck, CirclePlay, Command, CornerDownLeft, FolderOpen, Inbox, LoaderCircle, RotateCw, Search, SquarePen, Star, SunMoon, UserPlus,
+  type LucideProps,
+} from 'lucide-react';
+import { routes } from '../routes.ts';
+import { routeIcons } from '../shell/Sidebar.tsx';
 import { serra } from '../bridge.ts';
 import { CLOSE_COMMAND_PALETTE, OPEN_COMMAND_PALETTE } from '../shell/events.ts';
 import { Button, cx, useToast } from '../ui/index.ts';
@@ -22,6 +27,7 @@ interface Step {
 
 interface Row {
   key: string;
+  icon?: ComponentType<LucideProps>;
   label: string;
   indices: number[];
   hint?: string;
@@ -31,6 +37,35 @@ interface Row {
 }
 
 const messageOf = (error: unknown): string => (error instanceof Error ? error.message : String(error));
+
+/** The shell's own actions' icons; a screen's action without one gets the ⌘ glyph. */
+const actionIcons: Record<string, ComponentType<LucideProps>> = {
+  'bot:restart': RotateCw, 'app:open-profile-folder': FolderOpen, 'people:add': UserPlus, 'app:star-on-github': Star, 'app:theme': SunMoon,
+};
+
+/** A Go to row shows its screen's sidebar icon; other actions their own. */
+const iconFor = (action: Action): ComponentType<LucideProps> => {
+  const route = routes.find((entry) => `go:${entry.id}` === action.id);
+  // The Jobs tabs share one sidebar item; here each gets its own glyph.
+  if (route) return { 'new-task': SquarePen, 'jobs-running': CirclePlay, 'jobs-done': CircleCheck }[route.id as string] ?? routeIcons[route.id] ?? Inbox;
+  return actionIcons[action.id] ?? Command;
+};
+
+/** A hint's shortcut part (⌘N, ⌘,) as keycaps, its words (the section) as quiet text. */
+const Hint = ({ text }: { text: string }) => {
+  const parts = text.split(' · ');
+  return (
+    <span className="flex shrink-0 items-center gap-2 text-xs text-faint">
+      {parts.map((part) => (/^[⌘⌥⇧⌃]/.test(part)
+        ? <span key={part} className="flex gap-0.5">{(part.match(/./gu) ?? []).map((key, index) => <Key key={index}>{key}</Key>)}</span>
+        : <span key={part}>{part}</span>))}
+    </span>
+  );
+};
+
+const Key = ({ children }: { children: ReactNode }) => (
+  <kbd className="inline-grid h-[18px] min-w-[18px] place-items-center rounded border border-line-strong bg-raised px-1 font-sans text-[10px] leading-none text-muted">{children}</kbd>
+);
 
 const Label = ({ text, indices }: { text: string; indices: number[] }) => (
   <span className="flex-1 truncate">
@@ -131,7 +166,7 @@ export const CommandPalette = () => {
     rows = searchActions(actionRegistry.list(), query).map(({ action, indices }) => {
       const heading = query.trim() === '' && action.group !== lastGroup ? action.group : undefined;
       lastGroup = action.group;
-      return { key: action.id, label: action.title, indices, ...(action.hint ? { hint: action.hint } : {}), ...(heading ? { heading } : {}), pick: () => choose(action) };
+      return { key: action.id, icon: iconFor(action), label: action.title, indices, ...(action.hint ? { hint: action.hint } : {}), ...(heading ? { heading } : {}), pick: () => choose(action) };
     });
   } else if (open && step?.choices) {
     const action = step.action;
@@ -170,17 +205,17 @@ export const CommandPalette = () => {
       // reopened it. Only a dialog that is still shut means the palette closed.
       onClose={() => { if (!dialogRef.current?.open) setOpen(false); }}
       onClick={(event) => { if (event.target === dialogRef.current) close(); }}
-      className="mx-auto mt-[12vh] w-[min(36rem,calc(100vw-2rem))] overflow-hidden rounded-2xl border-0 bg-overlay p-0 text-ink shadow-overlay backdrop:bg-scrim"
+      className="mx-auto mt-[12vh] w-[min(38rem,calc(100vw-2rem))] overflow-hidden rounded-2xl border-0 bg-overlay p-0 text-ink shadow-overlay backdrop:bg-scrim"
     >
       {open && (
         <div className="flex flex-col">
-          <div className="flex items-center gap-2 border-b border-line px-3">
+          <div className="flex items-center gap-2.5 border-b border-line px-4">
             {step ? (
               <>
-                <Button variant="ghost" size="sm" aria-label="Back" onClick={back} icon={<ArrowLeft size={14} />} />
-                <span className="shrink-0 rounded bg-raised px-1.5 py-0.5 text-xs font-medium">{step.action.title}</span>
+                <Button variant="ghost" size="sm" className="-ml-2" aria-label="Back" onClick={back} icon={<ArrowLeft size={14} />} />
+                <span className="shrink-0 rounded-md border border-line bg-raised px-1.5 py-0.5 text-xs font-medium">{step.action.title}</span>
               </>
-            ) : <Search size={16} aria-hidden className="shrink-0 text-muted" />}
+            ) : <Search size={16} strokeWidth={1.75} aria-hidden className="shrink-0 text-faint" />}
             <input
               ref={inputRef}
               role="combobox"
@@ -193,29 +228,26 @@ export const CommandPalette = () => {
               readOnly={busy}
               onChange={(event) => { setQuery(event.target.value); setSelected(0); setError(null); }}
               onKeyDown={onKeyDown}
-              placeholder={step ? step.action.argument?.placeholder : 'Type a command or a screen'}
+              placeholder={step ? step.action.argument?.placeholder : 'Search commands and screens…'}
               spellCheck={false}
               autoComplete="off"
-              className="h-12 min-w-0 flex-1 bg-transparent text-sm text-ink outline-none placeholder:text-muted"
+              className="h-[52px] min-w-0 flex-1 bg-transparent text-[15px] text-ink outline-none placeholder:text-faint"
             />
             {busy && <LoaderCircle size={16} aria-label="Working" className="shrink-0 animate-spin text-muted" />}
           </div>
           {error && <p role="alert" className="border-b border-line px-4 py-2 text-xs text-down">{error}</p>}
           {freeText && step && (
-            <div className="flex items-center justify-between gap-4 px-4 py-3 text-xs text-muted">
-              <span>{step.action.argument?.hint}</span>
-              <span className="flex shrink-0 items-center gap-1">Enter to {step.action.title.toLowerCase()} <CornerDownLeft size={12} aria-hidden /></span>
-            </div>
+            <p className="px-4 py-3 text-xs text-muted">{step.action.argument?.hint}</p>
           )}
-          {step?.loading && <p className="px-4 py-6 text-center text-sm text-muted">Loading…</p>}
+          {step?.loading && <p className="px-4 py-8 text-center text-[13px] text-muted">Loading…</p>}
           {!freeText && !step?.loading && rows.length === 0 && (
-            <p className="px-4 py-6 text-center text-sm text-muted">{query ? `Nothing matches “${query}”.` : 'Nothing to pick.'}</p>
+            <p className="px-4 py-8 text-center text-[13px] text-muted">{query ? `No results for “${query}”` : 'Nothing to pick'}</p>
           )}
           {rows.length > 0 && (
-            <ul id={listId} role="listbox" aria-label={step ? step.action.title : 'Commands'} className="max-h-80 overflow-y-auto p-1.5">
+            <ul id={listId} role="listbox" aria-label={step ? step.action.title : 'Commands'} className="max-h-[22rem] scroll-py-1.5 overflow-y-auto p-1.5 [mask-image:linear-gradient(to_bottom,black_calc(100%-24px),transparent)] [&:not(:has(li:nth-child(10)))]:[mask-image:none]">
               {rows.map((row, index) => (
                 <li key={row.key} role="presentation">
-                  {row.heading && <div className="px-2.5 pt-2 pb-1 text-xs font-medium text-muted">{row.heading}</div>}
+                  {row.heading && <div className="px-2.5 pt-2.5 pb-1.5 text-[11px] font-medium tracking-[0.02em] text-faint first:pt-1.5">{row.heading}</div>}
                   <div
                     id={`${listId}-${index}`}
                     role="option"
@@ -224,16 +256,21 @@ export const CommandPalette = () => {
                     onMouseMove={() => { if (index !== active) setSelected(index); }}
                     onMouseDown={(event) => event.preventDefault()}
                     onClick={row.pick}
-                    className={cx('flex h-9 cursor-default items-center gap-3 rounded-md px-2.5 text-sm', index === active && 'bg-selected')}
+                    className={cx('flex h-9 cursor-default items-center gap-2.5 rounded-lg px-2.5 text-[13px]', index === active && 'bg-ink/[0.08]')}
                   >
+                    {row.icon && <row.icon size={15} strokeWidth={1.75} aria-hidden className={cx('shrink-0', index === active ? 'text-ink' : 'text-muted')} />}
                     <Label text={row.label} indices={row.indices} />
-                    {row.hint && <span className="shrink-0 text-xs text-muted">{row.hint}</span>}
-                    {index === active && <CornerDownLeft size={14} aria-hidden className="shrink-0 text-muted" />}
+                    {row.hint && <Hint text={row.hint} />}
                   </div>
                 </li>
               ))}
             </ul>
           )}
+          <footer aria-hidden className="flex h-9 items-center gap-4 border-t border-line px-4 text-[11px] text-faint">
+            {!freeText && <span className="flex items-center gap-1.5"><Key>↑</Key><Key>↓</Key> Move</span>}
+            <span className="flex items-center gap-1.5"><Key><CornerDownLeft size={10} /></Key> {step ? step.action.title : 'Open'}</span>
+            <span className="ml-auto flex items-center gap-1.5"><Key>esc</Key> {step ? 'Back' : 'Close'}</span>
+          </footer>
         </div>
       )}
     </dialog>

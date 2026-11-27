@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react';
 import type { RunTranscript } from '../../../src/agent/runs-view.ts';
 import { serra } from '../bridge.ts';
 import { Button, Dialog, cx, useToast } from '../ui/index.ts';
+import { fieldClass } from '../ui/field.ts';
 
 const message = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
@@ -46,18 +47,18 @@ export const TranscriptDialog = ({ threadId, title, onClose }: { threadId: strin
       open={threadId !== null}
       onClose={onClose}
       title={title || 'Transcript'}
-      description={run ? (run.running ? 'Working…' : question ? 'Waiting for you.' : 'Idle.') : 'Loading…'}
+      description={run ? (run.running ? 'Working…' : question ? 'Waiting for you' : 'Idle') : 'Loading…'}
     >
-      <ol className="flex max-h-[50vh] flex-col gap-3 overflow-y-auto text-sm" aria-live="polite">
+      <ol className="flex max-h-[50vh] flex-col gap-3 overflow-y-auto text-[13px] leading-5" aria-live="polite">
         {run?.entries.map((entry, index) => (
-          <li key={`${entry.at}-${index}`} className={cx(entry.role === 'tool' ? 'text-xs text-muted' : 'whitespace-pre-wrap', entry.role === 'user' && 'rounded-md bg-raised px-3 py-2')}>
+          <li key={`${entry.at}-${index}`} className={cx(entry.role === 'tool' ? 'font-mono text-xs text-faint' : 'whitespace-pre-wrap', entry.role === 'user' && 'self-end rounded-xl bg-raised px-3 py-2')}>
             {entry.role === 'tool' ? `· ${entry.text}` : entry.text}
           </li>
         ))}
       </ol>
       {question && current && (
-        <div className="flex flex-col gap-2 rounded-md border border-line p-3">
-          <p className="text-sm font-medium">{current.question}</p>
+        <div className="flex flex-col gap-2.5 rounded-xl border border-line-strong bg-raised p-3.5">
+          <p className="text-[13px] font-medium">{current.question}</p>
           <div className="flex flex-wrap gap-2">
             {current.options.map((option) => (
               <Button key={option.label} size="sm" disabled={busy} onClick={() => void act(async () => {
@@ -70,7 +71,7 @@ export const TranscriptDialog = ({ threadId, title, onClose }: { threadId: strin
       <form className="flex items-end gap-2" onSubmit={(event) => { event.preventDefault(); void send(); }}>
         <textarea
           aria-label={question ? 'Your answer' : 'Reply'}
-          className="min-h-9 flex-1 resize-y rounded-md border border-line-control bg-panel px-2 py-1.5 text-sm text-ink focus:outline-2 focus:outline-offset-1 focus:outline-focus"
+          className={cx('min-h-9 flex-1 resize-y px-2.5 py-1.5 leading-5', fieldClass())}
           rows={2}
           value={reply}
           placeholder={question ? 'Or type an answer' : 'Reply'}

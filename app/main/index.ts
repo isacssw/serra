@@ -104,7 +104,7 @@ const start = async (): Promise<void> => {
   const appUpdater: AppUpdater = createAppUpdater({
     current: app.getVersion(),
     arch: process.arch,
-    unavailable: smoke ? 'Updates are off in the smoke test.' : app.isPackaged || feed ? null : 'This copy runs from source. Pull the repository to update it.',
+    unavailable: smoke ? 'Updates are off in the smoke test.' : app.isPackaged || feed ? null : 'Running from source. Pull the repository to update.',
     dir: join(app.getPath('userData'), 'updates'),
     // Electron's net follows the system's proxy settings. Files it writes carry no quarantine flag.
     fetch: (url, init) => net.fetch(url, init),
@@ -156,7 +156,7 @@ const start = async (): Promise<void> => {
     },
     prefs,
     status,
-    runtime: { version: app.getVersion(), electron: process.versions.electron ?? '', node: process.versions.node, platform: process.platform },
+    runtime: { version: app.getVersion(), electron: process.versions.electron ?? '', node: process.versions.node, platform: process.platform, home: homedir() },
     openExternal: (url) => shell.openExternal(url),
     openPath: async (path) => {
       const error = await shell.openPath(path);

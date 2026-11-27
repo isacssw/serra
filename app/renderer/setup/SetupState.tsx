@@ -47,3 +47,6 @@ export const SetupProvider = ({ initial, children }: { initial: SetupProgress | 
 };
 
 export const useSetup = (): SetupState => useContext(Context);
+
+/** The bot's name for copy ("What should Atlas do?"), or Serra before a profile exists. */
+export const useBotName = (): string => useSetup().progress?.bot?.name || 'Serra';

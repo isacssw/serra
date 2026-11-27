@@ -5,6 +5,7 @@ import { useCallback, useEffect, useId, useState, type ReactNode } from 'react';
 import { ChevronDown, CircleAlert, Cloud, Copy, ExternalLink, Info, Plug, RefreshCw, Terminal, TriangleAlert } from 'lucide-react';
 import type { CliOverview } from '../../../src/clis.ts';
 import type { McpOverview, McpServer } from '../../../src/mcp.ts';
+import { useNavigate } from 'react-router';
 import { serra } from '../bridge.ts';
 import { Badge, Button, cx, Page, useToast } from '../ui/index.ts';
 import { ToolIcon } from '../ui/ToolIcon.tsx';
@@ -35,13 +36,13 @@ const useCopy = () => {
   };
 };
 
-/** A command to copy and run yourself. `compact`: in a narrow container only the copy button shows, named for the command. */
-const Command = ({ command, label, compact }: { command: string; label?: string; compact?: boolean }) => {
+/** A command to copy and run yourself. */
+const Command = ({ command, label }: { command: string; label?: string }) => {
   const copy = useCopy();
   return (
     <div className="flex min-w-0 items-center gap-2">
       {label && <span className="w-28 shrink-0 text-xs text-muted">{label}</span>}
-      <code className={cx(compact && 'hidden @2xl:block', 'min-w-0 flex-1 truncate rounded-md border border-line-subtle bg-raised px-2 py-1 font-mono text-xs')} title={command}>{command}</code>
+      <code className="min-w-0 flex-1 truncate rounded-md border border-line-subtle bg-raised px-2 py-1 font-mono text-xs" title={command}>{command}</code>
       <Button size="sm" variant="ghost" icon={<Copy size={13} aria-hidden />} aria-label={`Copy: ${command}`} title={`Copy: ${command}`} onClick={() => copy(command)} />
     </div>
   );
@@ -69,18 +70,23 @@ const Row = ({ icon, title, sub, meta, status, badge, more, moreLabel }: {
   const panel = useId();
   return (
     <li className="px-4 py-3">
-      <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 @2xl:grid-cols-[auto_minmax(0,1fr)_minmax(0,15rem)_6.5rem_8.5rem]">
+      {/* Name, its line and a quiet detail on the left; the disclosure, then the status in a fixed column on the right. */}
+      <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 @xl:grid-cols-[auto_minmax(0,1fr)_auto_7.5rem]">
         {icon}
         <div className="flex min-w-0 flex-col">
           <span className="flex min-w-0 items-center gap-2">
-            <span className="truncate text-sm font-medium">{title}</span>
+            <span className="truncate text-[13px] font-medium">{title}</span>
             {badge}
           </span>
-          {sub && <span className="text-xs break-words text-muted @2xl:truncate">{sub}</span>}
-          {meta && <span className="text-xs break-words text-muted @2xl:hidden">{meta}</span>}
+          {(sub || meta) && (
+            <span className="flex min-w-0 flex-wrap items-baseline gap-x-2 text-xs text-muted">
+              {sub && <span className="min-w-0 break-words">{sub}</span>}
+              {sub && meta && <span aria-hidden className="text-faint">·</span>}
+              {meta && <span className="min-w-0 truncate text-faint">{meta}</span>}
+            </span>
+          )}
         </div>
-        <span className="hidden truncate text-xs text-muted @2xl:block">{meta}</span>
-        <span className="hidden justify-end @2xl:flex">
+        <span className="hidden justify-end @xl:flex">
           {more && (
             <Button
               size="sm" variant="ghost" aria-expanded={open} aria-controls={panel} aria-label={`${moreLabel}: ${title}`}
@@ -91,10 +97,10 @@ const Row = ({ icon, title, sub, meta, status, badge, more, moreLabel }: {
             </Button>
           )}
         </span>
-        <span className="col-start-3 flex justify-end @2xl:col-start-auto"><StatusPill status={status} /></span>
+        <span className="col-start-3 flex justify-end @xl:col-start-auto"><StatusPill status={status} /></span>
       </div>
       {more && (
-        <div className="mt-2 flex pl-10 @2xl:hidden">
+        <div className="mt-2 flex pl-10 @xl:hidden">
           <Button size="sm" variant="ghost" aria-expanded={open} aria-controls={panel} aria-label={`${moreLabel}: ${title}`} onClick={() => setOpen((value) => !value)}>{moreLabel}</Button>
         </div>
       )}
@@ -117,10 +123,24 @@ const Section = ({ title, aside, children }: { title: string; aside?: ReactNode;
 };
 
 const List = ({ label, children }: { label: string; children: ReactNode }) => (
-  <ul aria-label={label} className="@container divide-y divide-line-subtle rounded-xl border border-line">{children}</ul>
+  <ul aria-label={label} className="@container divide-y divide-line-subtle rounded-xl border border-line bg-panel shadow-card">{children}</ul>
 );
 
-const Pending = ({ text }: { text: string }) => <p className="rounded-xl border border-line px-4 py-5 text-sm text-muted">{text}</p>;
+/** Placeholder rows in a list's shape while it loads; `label` is for screen readers only. */
+const Pending = ({ label, rows = 2 }: { label: string; rows?: number }) => (
+  <div role="status" aria-label={label} className="divide-y divide-line-subtle rounded-xl border border-line bg-panel shadow-card">
+    {Array.from({ length: rows }, (_, index) => (
+      <div key={index} aria-hidden className="flex items-center gap-3 px-4 py-3">
+        <span className="size-7 shrink-0 rounded-lg bg-raised" />
+        <span className="flex flex-1 flex-col gap-1.5">
+          <span className="h-3 w-32 rounded bg-raised motion-safe:animate-pulse" />
+          <span className="h-2.5 w-52 rounded bg-raised motion-safe:animate-pulse" />
+        </span>
+        <span className="h-6 w-20 rounded-full bg-raised motion-safe:animate-pulse" />
+      </div>
+    ))}
+  </div>
+);
 
 const Failed = ({ text }: { text: string }) => (
   <p role="alert" className="flex items-center gap-2 rounded-xl border border-down/40 px-4 py-3 text-sm text-down">
@@ -128,11 +148,13 @@ const Failed = ({ text }: { text: string }) => (
   </p>
 );
 
-const RecommendationItem = ({ row }: { row: RecommendationRow }) => (
+/** A recommendation, with its CLI's version and path folded in: the CLI isn't listed again below. */
+const RecommendationItem = ({ row, cli }: { row: RecommendationRow; cli: CliRow | undefined }) => (
   <Row
     icon={<ToolIcon brand={brandFor(row.rec.icon)} fallback={<Cloud size={14} />} label={row.rec.label} />}
     title={row.rec.label}
-    sub={row.reason}
+    sub={[row.reason, cli?.status?.path && cli.status.version && `${cli.spec.bins[0] ?? cli.spec.label} v${cli.status.version}`].filter(Boolean).join(' · ')}
+    meta={cli?.status?.path ? <span className="font-mono" title={cli.status.path}>{cli.status.path}</span> : undefined}
     status={row.state}
     more={row.setup.length ? row.setup.map((step) => <Command key={step.command} label={step.label} command={step.command} />) : undefined}
     moreLabel="Set up"
@@ -159,7 +181,8 @@ const ServerItem = ({ server }: { server: McpServer }) => (
   <Row
     icon={<ToolIcon brand={serverBrand(server)} fallback={<Plug size={14} />} label={serverLabel(server)} />}
     title={serverLabel(server)}
-    sub={serverOrigin(server)}
+    // Under its provider's heading, "Added by Claude" says nothing new.
+    sub={server.scope === 'provider' ? undefined : serverOrigin(server)}
     meta={transportLabel(server)}
     status={serverStatus(server)}
     more={server.note ? <p className="flex items-start gap-2 text-xs text-muted"><Info size={13} aria-hidden className="mt-0.5 shrink-0" />{server.note}</p> : undefined}
@@ -171,31 +194,28 @@ const ProviderGroup = ({ group, onError }: { group: DriverGroup; onError: (messa
   const id = useId();
   return (
     <div className="@container flex flex-col gap-2" data-driver={group.driver ?? group.key}>
-      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+      <div className="flex items-center justify-between gap-4">
         <h3 id={id} className="text-[13px] font-medium">
           {group.title} <span className="font-normal text-muted">· {group.summary}</span>
         </h3>
         {group.hint && (
-          <div className="flex min-w-0 items-center gap-1 text-xs text-muted">
-            <span className="shrink-0">Managed in {group.title}</span>
-            <div className="min-w-0 max-w-[24rem]"><Command command={group.hint.command} compact /></div>
-            <Button size="sm" variant="ghost" icon={<ExternalLink size={13} aria-hidden />} aria-label={`${group.title} MCP docs`} onClick={() => openDocs(group.hint!.docs, onError)}>Docs</Button>
-          </div>
+          <Button size="sm" variant="ghost" className="-mr-2.5" icon={<ExternalLink size={13} aria-hidden />} aria-label={`${group.title} MCP docs`} onClick={() => openDocs(group.hint!.docs, onError)}>Docs</Button>
         )}
       </div>
       {group.listingNote && <p className="flex items-center gap-2 text-xs text-warn"><TriangleAlert size={13} aria-hidden /> {group.listingNote}</p>}
       {group.unreadable.map((path) => <p key={path} className="text-xs text-warn">Couldn&apos;t read {path}.</p>)}
       {group.unsupported
         ? <p className="flex items-start gap-2 rounded-xl border border-dashed border-line px-4 py-4 text-sm text-muted"><Info size={14} aria-hidden className="mt-0.5 shrink-0" />{group.unsupported}</p>
-        : group.servers.length === 0
-        ? <p className="rounded-xl border border-dashed border-line px-4 py-4 text-sm text-muted">No MCP servers in {group.title} yet.</p>
-        : <ul aria-labelledby={id} className="@container divide-y divide-line-subtle rounded-xl border border-line">{group.servers.map((server) => <ServerItem key={`${server.scope}:${server.name}`} server={server} />)}</ul>}
+        : group.servers.length > 0 && <ul aria-labelledby={id} className="@container divide-y divide-line-subtle rounded-xl border border-line bg-panel shadow-card">{group.servers.map((server) => <ServerItem key={`${server.scope}:${server.name}`} server={server} />)}</ul>}
+      {/* How to add one: managed in the provider, never here. Copy it and run it yourself. */}
+      {group.hint && !group.unsupported && <Command label={group.servers.length ? 'Add in terminal' : `Add one to ${group.title}`} command={group.hint.command} />}
     </div>
   );
 };
 
 export const Tools = () => {
   const toast = useToast();
+  const navigate = useNavigate();
   const [mcp, setMcp] = useState<McpOverview | null>(null);
   const [clis, setClis] = useState<CliOverview | null>(null);
   const [mcpError, setMcpError] = useState<string | null>(null);
@@ -223,7 +243,9 @@ export const Tools = () => {
   useEffect(() => { load(); }, [load]);
 
   const recommendations = clis || mcp ? recommendationRows(mcp, clis, undefined, undefined, !mcp && !mcpError) : [];
-  const cliList = clis ? cliRows(clis, recommendedCliIds(recommendations)) : [];
+  const allClis = clis ? cliRows(clis, recommendedCliIds(recommendations)) : [];
+  // A recommended CLI is shown in its recommendation's row, not twice.
+  const cliList = allClis.filter((row) => !row.recommended);
   const installed = cliList.filter((row) => row.status?.path);
   const notInstalled = cliList.filter((row) => !row.status?.path);
   const onError = (message: string) => toast({ message, tone: 'error' });
@@ -231,7 +253,6 @@ export const Tools = () => {
   return (
     <Page
       title="Tools"
-      subtitle="What the worker can use in a job. Read-only."
       actions={(
         <Button
           icon={<RefreshCw size={14} aria-hidden className={cx(loading > 0 && 'motion-safe:animate-spin')} />}
@@ -252,13 +273,20 @@ export const Tools = () => {
 
       <Section title="Recommended">
         {recommendations.length
-          ? <List label="Recommended tools">{recommendations.map((row) => <RecommendationItem key={row.rec.id} row={row} />)}</List>
-          : <Pending text="Checking…" />}
+          ? <List label="Recommended tools">{recommendations.map((row) => <RecommendationItem key={row.rec.id} row={row} cli={allClis.find((entry) => entry.spec.id === row.rec.cli)} />)}</List>
+          : <Pending label="Checking recommended tools" rows={1} />}
       </Section>
 
-      <Section title="MCP servers" aside={mcp ? providerLine(mcp.worker) : undefined}>
+      <Section
+        title="MCP servers"
+        aside={mcp ? (
+          <button type="button" onClick={() => void navigate('/settings/worker')} className="rounded underline-offset-2 hover:text-ink hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus">
+            {providerLine(mcp.worker)}
+          </button>
+        ) : undefined}
+      >
         {mcpError && <Failed text={mcpError} />}
-        {!mcp && !mcpError && <Pending text="Asking T3's providers for their servers…" />}
+        {!mcp && !mcpError && <Pending label="Loading MCP servers" rows={3} />}
         {mcp && (
           <div className="flex flex-col gap-6">
             {driverGroups(mcp).map((group) => <ProviderGroup key={group.key} group={group} onError={onError} />)}
@@ -269,10 +297,10 @@ export const Tools = () => {
 
       <Section title="Command-line tools" aside={clis ? `${installed.length} of ${cliList.length} installed` : undefined}>
         {cliError && <Failed text={cliError} />}
-        {!clis && !cliError && <Pending text="Looking for command-line tools…" />}
+        {!clis && !cliError && <Pending label="Looking for command-line tools" rows={2} />}
         {clis && installed.length > 0 && <List label="Installed command-line tools">{installed.map((row) => <CliItem key={row.spec.id} row={row} />)}</List>}
         {clis && notInstalled.length > 0 && (
-          <details className="group rounded-xl border border-line">
+          <details className="group rounded-xl border border-line bg-panel shadow-card">
             <summary className="flex cursor-default list-none items-center gap-2 rounded-xl px-4 py-3 text-sm text-muted hover:bg-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus [&::-webkit-details-marker]:hidden">
               <ChevronDown size={14} aria-hidden className="-rotate-90 transition-transform group-open:rotate-0" />
               Not installed <span className="text-faint">· {notInstalled.length}</span>

@@ -49,7 +49,7 @@ const Rail = ({ pathname }: { pathname: string }) => {
                   aria-hidden
                   className={cx(
                     'grid size-4 shrink-0 place-items-center rounded-full text-[10px] font-semibold tabular-nums',
-                    done ? 'bg-ink text-canvas' : current ? 'border-[1.5px] border-ink text-ink' : 'border border-line-strong',
+                    done ? 'bg-ink text-canvas' : current ? 'border-[1.5px] border-ink text-ink' : 'border border-line-control text-muted',
                   )}
                 >
                   {done ? <Check size={10} strokeWidth={3.5} /> : index + 1}

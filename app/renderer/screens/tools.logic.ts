@@ -112,8 +112,7 @@ export const providerLine = (worker: McpOverview['worker']): string => {
   const labels = worker.providers.map((provider) => provider.label);
   if (worker.provider) return `Worker: ${labels[0] ?? worker.provider}`;
   if (labels.length) return `No worker provider set: every provider on in T3 (${labels.join(', ')})`;
-  if (worker.drivers.length > 1) return 'No worker provider set, so both are listed';
-  return 'No worker provider set';
+  return 'Worker provider not set';
 };
 
 /** Where a server comes from, in a few words: "User config · ~/.claude.json", "claude.ai connector", "Added by Codex". */
@@ -219,7 +218,7 @@ export const recommendationRows = (
         else if (!existing.length && rec.mcp) setup.push({ label: `Add to ${DRIVER_NAMES[driver]}`, command: PROVIDER_MCP[driver].add(rec.mcp.name, rec.mcp.url) });
       }
     }
-    rows.push({ rec, reason: rec.reason ?? signal ?? 'An MCP server for it is set up', state, setup });
+    rows.push({ rec, reason: rec.reason ?? signal ?? 'MCP server set up', state, setup });
   }
   return rows;
 };

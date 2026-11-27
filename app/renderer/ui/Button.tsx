@@ -35,8 +35,9 @@ export const Button = ({ variant = 'secondary', size = 'md', flush, icon, classN
       'inline-flex shrink-0 select-none items-center justify-center border font-medium whitespace-nowrap transition-colors duration-150',
       'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus',
       variants[variant], sizes[size],
-      'disabled:cursor-not-allowed disabled:bg-transparent disabled:text-faint disabled:opacity-70 disabled:shadow-none',
-      'aria-disabled:cursor-not-allowed aria-disabled:opacity-50',
+      'disabled:cursor-not-allowed disabled:border-line disabled:bg-transparent disabled:text-faint disabled:shadow-none',
+      // A button kept focusable while off (aria-disabled, so it can say why) looks like a disabled one, and takes no hover.
+      'aria-disabled:cursor-not-allowed aria-disabled:border-line aria-disabled:bg-transparent aria-disabled:text-faint aria-disabled:shadow-none aria-disabled:hover:bg-transparent',
       flush && (size === 'sm' ? '-mx-2.5' : '-mx-3'),
       className,
     )}

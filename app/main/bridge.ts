@@ -97,6 +97,8 @@ export interface AppInfo {
   electron: string;
   node: string;
   platform: string;
+  /** This Mac's home folder, so screens can show paths under it as `~`. */
+  home?: string;
   /** The profile folder in use, or null when none is selected. */
   profileDir: string | null;
 }

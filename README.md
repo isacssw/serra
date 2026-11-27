@@ -98,7 +98,7 @@ Setup doesn't ask for Claude or Codex keys: the bot uses whatever provider is si
 
 Then try it: invite the bot to a test channel (`/invite @friday`) and ask `@friday what does this repository do?`. You get 👀, then an answer in the thread. Reply in the thread to continue.
 
-If something fails, open **Settings › Diagnostics**: each check says PASS or FAIL with the fix. Setup stays under **Serra › Set Up Serra…** and **Diagnostics › Setup**.
+If something fails, open **Settings › Diagnostics**: failing checks come first, each with the reason and a button to the screen that fixes it. Setup stays under **Serra › Set Up Serra…** and **Diagnostics › Setup**.
 
 **Settings** is the last item in the sidebar (⌘,). It opens its own menu; **Back** or Esc returns. Each settings page has one **Save** bar (⌘S) that appears when something changed and says when the change applies.
 
