@@ -71,6 +71,6 @@ test('Overview: proposals and pages to confirm fold into one row each, in the pl
   assert.equal(grouped[2]!.href, '/knowledge/pages');
   // One of a kind stays its own row.
   assert.deepEqual(groupFixes([item('proposal:1', 'Sentry')]).map((one) => [one.title, one.why]), [['Sentry', 'Proposal']]);
-  assert.equal(todoSummary(items), '2 proposals · 2 to confirm');
+  assert.equal(todoSummary(items), '2 proposals · 1 conflict · 2 to confirm');
   assert.equal(todoSummary([]), 'Nothing to do');
 });

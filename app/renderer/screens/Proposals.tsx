@@ -32,10 +32,10 @@ import { taskLink } from './newTask.logic.ts';
 const message = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
 const Queue = ({ proposals, selected, onSelect }: { proposals: Proposal[]; selected: string | null; onSelect: (path: string) => void }) => (
-  <nav aria-label="Proposals" className="-mx-2.5 flex w-[calc(100%+20px)] shrink-0 flex-col gap-4 self-start pt-4 lg:sticky lg:top-0 lg:mr-6 lg:w-64">
+  <nav aria-label="Proposals" className="flex w-full shrink-0 flex-col gap-4 pt-3 lg:mr-6 lg:h-full lg:w-64 lg:overflow-y-auto lg:overscroll-contain lg:pb-6">
     {groupByDate(proposals).map((group) => (
       <section key={group.date ?? 'undated'} aria-label={group.label} className="flex flex-col gap-px">
-        <h2 className="px-2.5 pb-1 text-xs font-medium text-faint">{group.label}</h2>
+        <h2 className="sticky top-0 z-10 bg-canvas px-2.5 pt-1 pb-1 text-xs font-medium text-faint">{group.label}</h2>
         {group.proposals.map((proposal) => {
           const active = proposal.path === selected;
           return (
@@ -235,9 +235,9 @@ export const Proposals = () => {
         <EmptyState icon={<Inbox size={18} />} title="Nothing waiting" />
       )}
       {proposals && proposals.length > 0 && (
-        <div className="flex flex-col gap-6 border-t border-line lg:flex-row lg:items-stretch lg:gap-0">
+        <div className="flex flex-col gap-6 border-t border-line lg:h-[calc(100vh-148px)] lg:min-h-96 lg:flex-row lg:gap-0">
           <Queue proposals={proposals} selected={selected} onSelect={setSelected} />
-          <div className="flex min-w-0 flex-1 flex-col gap-5 pt-5 lg:min-h-[calc(100vh-120px)] lg:border-l lg:border-line lg:pl-8">
+          <div className="flex min-w-0 flex-1 flex-col gap-5 pt-5 lg:h-full lg:overflow-y-auto lg:overscroll-contain lg:border-l lg:border-line lg:pr-1 lg:pl-8">
             {diffError && <p role="alert" className="text-sm text-down">{diffError}</p>}
             {!diff && !diffError && <p className="text-[13px] text-muted">Loading…</p>}
             {diff && bridge && (
@@ -274,7 +274,7 @@ export const Proposals = () => {
                 {landing(diff, folder) === null
                   ? <NewPage text={asWritten(diff, folder, picked)} />
                   : <RuleDiff current={landing(diff, folder)} proposed={asWritten(diff, folder, picked)} />}
-                <footer className="sticky bottom-0 -mx-1 flex flex-col gap-3 border-t border-line bg-canvas px-1 pt-4 pb-4">
+                <footer className="sticky bottom-0 mt-auto flex flex-col gap-3 border-t border-line bg-canvas pt-4 pb-4">
                   <div className="flex flex-wrap items-end gap-x-3 gap-y-3">
                     {/* A rewrite of a page goes where the page is; only a new page asks where. */}
                     {diff.proposal.target ? null : folders.length > 0 ? (
@@ -394,19 +394,11 @@ const sourcesOf = (text: string): string[] => {
 };
 
 /** A new page as it will read once added; its header (dates, sources) on request. */
-const NewPage = ({ text }: { text: string }) => {
-  const [header, setHeader] = useState(false);
-  return (
-    <section aria-label="Proposed page" className="relative rounded-xl border border-line bg-panel shadow-card">
-      <Button size="sm" variant="ghost" aria-pressed={header} className="absolute top-2 right-2" onClick={() => setHeader(!header)}>{header ? 'Hide front matter' : 'Front matter'}</Button>
-      <div className="max-w-[76ch] pt-1 pr-28">
-        {header
-          ? <pre className="overflow-x-auto px-4 py-3 font-mono text-xs leading-5 whitespace-pre-wrap text-ink">{text}</pre>
-          : <PageBody text={pageBody(text)} onOpen={(href) => void serra()?.app.openExternal(href)} />}
-      </div>
-    </section>
-  );
-};
+const NewPage = ({ text }: { text: string }) => (
+  <section aria-label="Proposed page" className="rounded-xl border border-line bg-panel shadow-card">
+    <div className="max-w-[76ch] pt-1"><PageBody text={pageBody(text)} onOpen={(href) => void serra()?.app.openExternal(href)} /></div>
+  </section>
+);
 
 /** Where the proposal came from and when, in one line; nothing for what wasn't recorded. Its sources on hover. */
 const Meta = ({ diff }: { diff: ProposalDiff }) => {

@@ -290,8 +290,8 @@ const GraphMap = ({ graph, controller, onOpen, onChanged }: { graph: CanvasGraph
       <header className="flex min-h-8 flex-wrap items-center gap-x-4 gap-y-2">
         <div className="flex items-baseline gap-2.5">
           <h1 tabIndex={-1} className="text-xl leading-7 font-semibold tracking-[-0.012em]">Graph</h1>
-          <span className="text-[13px] text-faint tabular-nums">
-            {graph.nodes.length} {graph.nodes.length === 1 ? 'page' : 'pages'} · {graph.areas.filter((area) => graph.nodes.some((node) => node.area === area.area)).length} areas
+          <span className="text-[13px] text-faint">
+            <span className="tabular-nums">{graph.nodes.length}</span> {graph.nodes.length === 1 ? 'page' : 'pages'} · {graph.areas.filter((area) => graph.nodes.some((node) => node.area === area.area)).length} areas
             {graph.conflicts.length > 0 && <span className="text-warn"> · {graph.conflicts.length} {graph.conflicts.length === 1 ? 'conflict' : 'conflicts'}</span>}
           </span>
         </div>

@@ -246,16 +246,17 @@ export const groupFixes = (items: readonly FixItem[]): FixItem[] => {
   return out;
 };
 
-/** To do's count in words for the stat tile: "3 proposals · 19 to confirm · 1 conflict". */
+/** To do's count in words for the stat tile, adding up to its number: "3 proposals · 1 conflict · 19 to confirm". */
 export const todoSummary = (items: readonly FixItem[]): string => {
   const count = (test: (item: FixItem) => boolean): number => items.filter(test).length;
   const proposals = count((item) => item.id.startsWith('proposal:'));
   const drafts = count((item) => item.id.startsWith('draft:'));
-  const conflicts = count((item) => fixKind(item) === 'conflict' || fixKind(item) === 'replace');
+  const conflicts = count((item) => ['conflict', 'duplicate', 'replace'].includes(fixKind(item)));
   const rest = items.length - proposals - drafts - conflicts;
   return [
     proposals && `${proposals} proposal${proposals === 1 ? '' : 's'}`,
-    drafts && `${drafts} to confirm`,
     conflicts && `${conflicts} conflict${conflicts === 1 ? '' : 's'}`,
-  ].filter(Boolean).concat(rest ? [`${rest} other`] : []).slice(0, 2).join(' · ') || 'Nothing to do';
+    drafts && `${drafts} to confirm`,
+    rest && `${rest} other`,
+  ].filter(Boolean).join(' · ') || 'Nothing to do';
 };

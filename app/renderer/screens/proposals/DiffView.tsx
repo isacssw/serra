@@ -15,7 +15,7 @@ const marker: Record<DiffCell['kind'], string> = { same: ' ', removed: '-', adde
 /** One side of one row: its line number, marker and text, which wraps instead of scrolling. */
 const Cell = ({ cell }: { cell: DiffCell | null }) => (
   <div className={cx('flex min-h-6 min-w-0', cell && cellTone[cell.kind])} data-kind={cell?.kind ?? 'gap'}>
-    <span className="w-10 shrink-0 pr-2 text-right text-faint select-none">{cell?.number ?? ''}</span>
+    <span className="w-10 shrink-0 pr-2 text-right text-muted select-none">{cell?.number ?? ''}</span>
     <span className={cx('w-4 shrink-0 select-none', cell?.kind === 'removed' && 'text-down', cell?.kind === 'added' && 'text-up')}>
       {cell ? marker[cell.kind] : ''}
     </span>

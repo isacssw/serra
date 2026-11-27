@@ -48,7 +48,7 @@ export const Segmented = <V extends string>({
       aria-label={ariaLabel}
       aria-labelledby={labelledBy}
       onKeyDown={onKeyDown}
-      className={cx('inline-flex shrink-0 items-center gap-0.5 rounded-lg border border-line-strong bg-raised p-0.5', disabled && 'opacity-60', className)}
+      className={cx('inline-flex shrink-0 items-center gap-0.5 rounded-lg border border-line-control bg-raised p-0.5', disabled && 'opacity-60', className)}
     >
       {options.map((option) => {
         const on = option.value === value;

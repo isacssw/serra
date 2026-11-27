@@ -99,7 +99,7 @@ const PageList = ({ pages, selected, onSelect }: { pages: KnowledgePage[]; selec
   <div className="flex flex-col gap-4">
     {groupByArea(pages).map((group) => (
       <section key={group.area} aria-label={group.area} className="flex flex-col gap-px">
-        <h2 className="px-2.5 pb-1 text-xs font-medium text-faint">{group.area}</h2>
+        <h2 className="sticky top-0 z-10 bg-canvas px-2.5 pt-1 pb-1 text-xs font-medium text-faint">{group.area}</h2>
         {group.pages.map((page) => {
           const active = page.path === selected;
           const detail = pageDetail(page);
@@ -329,6 +329,7 @@ export const Pages = () => {
     const el = detailRef.current;
     if (!selected || !el) return;
     const top = el.getBoundingClientRect().top;
+    if (el.scrollHeight > el.clientHeight) { el.scrollTo({ top: 0 }); return; }
     if (top > window.innerHeight * 0.6 || top < 0) el.scrollIntoView({ block: 'start', behavior: 'smooth' });
   }, [selected]);
 
@@ -372,8 +373,8 @@ export const Pages = () => {
         <EmptyState icon={<Pencil size={18} />} title="No pages yet" action={<Button variant="primary" onClick={() => void navigate('/knowledge/proposals?interview=1')}>Start interview</Button>} />
       )}
       {pages && pages.length > 0 && (
-        <div className="flex flex-col gap-6 border-t border-line lg:flex-row lg:items-start lg:gap-0">
-          <nav aria-label="Pages" className="-mx-2.5 flex w-[calc(100%+20px)] shrink-0 flex-col gap-3 pt-4 lg:sticky lg:top-0 lg:mr-6 lg:max-h-[calc(100vh-40px)] lg:w-72 lg:overflow-y-auto lg:overscroll-contain lg:pb-6 lg:[scroll-padding-block:24px] lg:[mask-image:linear-gradient(to_bottom,transparent,#000_14px,#000_calc(100%-28px),transparent)]">
+        <div className="flex flex-col gap-6 border-t border-line lg:h-[calc(100vh-148px)] lg:min-h-96 lg:flex-row lg:gap-0">
+          <nav aria-label="Pages" className="flex w-full shrink-0 flex-col gap-3 pt-3 lg:mr-6 lg:h-full lg:w-72 lg:overflow-y-auto lg:overscroll-contain lg:pb-6 lg:[mask-image:linear-gradient(to_bottom,#000_calc(100%-32px),transparent)]">
             {visible.length > 0
               ? <>
                 <PageList pages={visible} selected={selected} onSelect={select} />
@@ -392,7 +393,7 @@ export const Pages = () => {
               : <p className="px-2.5 text-[13px] text-muted">No pages match.</p>}
           </nav>
 
-          <div ref={detailRef} className="flex min-w-0 flex-1 scroll-mt-4 flex-col gap-5 pt-5 lg:min-h-[calc(100vh-120px)] lg:border-l lg:border-line lg:pl-8">
+          <div ref={detailRef} className="flex min-w-0 flex-1 scroll-mt-4 flex-col gap-5 pt-5 lg:h-full lg:overflow-y-auto lg:overscroll-contain lg:border-l lg:border-line lg:pr-1 lg:pl-8">
             {readError && <p role="alert" className="text-sm text-down">{readError}</p>}
             {!page && !readError && <p className="pt-1 text-[13px] text-muted">Pick a page.</p>}
             {page && (
@@ -408,12 +409,10 @@ export const Pages = () => {
                     )}
                   </div>
                   {state && (
-                    <div className="ml-auto flex items-center gap-1.5">
-                      {!editing && !state.dirty && confirmable && <Button size="sm" variant="ghost" icon={<CheckCircle2 size={13} aria-hidden />} disabled={saving} title="It still holds: mark it confirmed today" onClick={() => void confirmToday()}>Still true</Button>}
+                    <div className="ml-auto flex flex-wrap items-center justify-end gap-1.5">
+                      {!editing && !state.dirty && confirmable && page.badge !== 'verified' && <Button size="sm" variant="ghost" icon={<CheckCircle2 size={13} aria-hidden />} disabled={saving} title="It still holds: mark it confirmed today" onClick={() => void confirmToday()}>Still true</Button>}
                       <AudiencePicker text={draft} disabled={saving} onChange={setDraft} />
-                      {editing || state.dirty
-                        ? <Button size="sm" disabled={saving} className="w-[66px]" onClick={() => { if (state.dirty && selected) setPendingSelect(selected); else setEditing(false); }}>Cancel</Button>
-                        : <Button size="sm" icon={<Pencil size={13} aria-hidden />} className="w-[66px]" onClick={() => setEditing(true)}>Edit</Button>}
+                      {!(editing || state.dirty) && <Button size="sm" icon={<Pencil size={13} aria-hidden />} onClick={() => setEditing(true)}>Edit</Button>}
                       <Button size="sm" variant="ghost" aria-label="Retire…" title={state.dirty ? 'Save or cancel your edits first' : 'Retire: the bot stops using it'} disabled={saving || state.dirty} icon={<Archive size={14} aria-hidden />} className="px-1.5 enabled:hover:bg-down/10 enabled:hover:text-down" onClick={() => setRetiring(true)} />
                     </div>
                   )}
@@ -450,7 +449,7 @@ export const Pages = () => {
                   aria-label={`Markdown of ${page.path}`}
                   aria-invalid={state.problems.length > 0 ? true : undefined}
                   aria-describedby="page-editor-status"
-                  className={cx('min-h-64 w-full px-3.5 py-3 font-mono leading-5 [field-sizing:content] resize-none', fieldClass(state.problems.length > 0))}
+                  className={cx('min-h-64 w-full px-3.5 py-3 font-mono leading-5 [field-sizing:content] resize-none text-[12.5px]!', fieldClass(state.problems.length > 0))}
                 />
                 <div id="page-editor-status" className="-mt-2 flex flex-col gap-2">
                   {state.refusal ? (
@@ -465,11 +464,12 @@ export const Pages = () => {
                     </p>
                   )}
                 </div>
-                <div className="sticky bottom-0 -mx-1 flex flex-wrap items-center gap-2 border-t border-line bg-canvas px-1 py-3">
-                  <Button variant="primary" disabled={!state.canSave || saving} title={state.refusal ?? undefined} onClick={() => void save()}>
+                <div className="sticky bottom-0 mt-auto flex flex-wrap items-center gap-2 border-t border-line bg-canvas py-3">
+                  <Button variant="primary" className="disabled:bg-raised! disabled:text-faint! disabled:opacity-100!" disabled={!state.canSave || saving} title={state.refusal ?? undefined} onClick={() => void save()}>
                     {saving ? 'Saving…' : 'Save'}
                   </Button>
-                  <Button disabled={!state.dirty || saving} onClick={() => setDraft(saved ?? '')}>Revert</Button>
+                  <Button disabled={saving} onClick={() => { if (state.dirty && selected) setPendingSelect(selected); else setEditing(false); }}>Cancel</Button>
+                  <span aria-hidden className="mx-1 h-5 w-px bg-line" />
                   <Button
                     variant="ghost"
                     icon={<CheckCircle2 size={14} aria-hidden />}

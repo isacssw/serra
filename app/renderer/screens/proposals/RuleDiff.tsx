@@ -11,7 +11,7 @@ export const RuleDiff = ({ current, proposed, labels, emptyCurrent }: { current:
     <div className="flex flex-col gap-1.5">
       <DiffView current={current === null ? null : header ? current : pageBody(current)} proposed={header ? proposed : pageBody(proposed)} {...(labels ? { labels } : {})} {...(emptyCurrent ? { emptyCurrent } : {})} />
       <Button size="sm" variant="ghost" flush className="self-start" aria-pressed={header} onClick={() => setHeader(!header)}>
-        {header ? 'Hide front matter' : 'Front matter'}
+        {header ? 'Hide dates and sources' : 'Show dates and sources'}
       </Button>
     </div>
   );

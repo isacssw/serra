@@ -24,7 +24,7 @@ const message = (error: unknown): string => (error instanceof Error ? error.mess
 
 /** How much of the brief's room About me takes, as a small meter. */
 const Meter = ({ used }: { used: number }) => (
-  <span className="flex items-center gap-2">
+  <span className="flex items-center gap-2" title="How much of the brief\u2019s room About me takes">
     In every brief
     <span aria-hidden className="h-1.5 w-24 overflow-hidden rounded-full bg-line-strong"><span className="block h-full rounded-full bg-muted" style={{ width: `max(6px, ${used}%)` }} /></span>
     <span className="tabular-nums">{used}%</span>
@@ -102,16 +102,17 @@ export const AboutMe = () => {
               <span className="inline-flex items-center gap-1">
                 {leftOut}
                 <span aria-hidden className="text-faint">·</span>
-                <button type="button" aria-expanded={review} onClick={() => setReview(!review)} className="rounded-sm font-medium text-ink underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-focus">
+                <button type="button" aria-expanded={review} onClick={() => setReview(!review)} className="rounded-sm font-medium text-ink underline decoration-line-control underline-offset-[3px] hover:decoration-ink focus-visible:outline-2 focus-visible:outline-focus">
                   {review ? 'Hide' : 'Review'}
                 </button>
               </span>
             )}
+            {leftOut && untagged.length > 0 && <span aria-hidden className="-mx-3 text-faint">·</span>}
             {untagged.length > 0 && (
               <span className="inline-flex items-center gap-1" title="Teammates\u2019 briefs leave these out until you choose">
                 {untagged.length === 1 ? '1 page' : `${untagged.length} pages`} {visibility === 'owner' ? 'only you may hear' : 'not shared yet'}
                 <span aria-hidden className="text-faint">·</span>
-                <button type="button" onClick={() => { setShareTo('team'); setSharing(new Set()); }} className="rounded-sm font-medium text-ink underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-focus">Share…</button>
+                <button type="button" onClick={() => { setShareTo('team'); setSharing(new Set()); }} className="rounded-sm font-medium text-ink underline decoration-line-control underline-offset-[3px] hover:decoration-ink focus-visible:outline-2 focus-visible:outline-focus">Share…</button>
               </span>
             )}
           </p>
