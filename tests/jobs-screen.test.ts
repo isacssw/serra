@@ -9,7 +9,8 @@ import { jobsHandlers } from '../app/main/ipc/jobs.ts';
 import { memoryPrefs } from '../app/main/prefs.ts';
 import { stoppedStatusSource } from '../app/main/status.ts';
 import {
-  ageLabel, channelOptions, cleanupView, filterJobs, groupJobs, linkButtons, rowDetail, rowIcon, rowParts, verdictLabel,
+  ageLabel, channelOptions, channelTag, cleanupView, filterJobs, groupJobs, linkButtons, rowDetail, rowIcon, rowNote, rowParts, rowPill,
+  verdictLabel,
   type JobRow,
 } from '../app/renderer/screens/jobs.logic.ts';
 import type { Runner } from '../src/cleanup.ts';
@@ -214,4 +215,24 @@ test('jobs.cleanupWorktrees: dry run removes nothing, apply removes, bad input i
 
   await assert.rejects(Promise.resolve().then(() => handlers.cleanupWorktrees({ apply: false, days: -1 })), /days/);
   await assert.rejects(Promise.resolve().then(() => handlers.cleanupWorktrees({} as { apply: boolean })), /apply/);
+});
+
+test('row pill and note: a Needs-you row says why in 1-3 words, and its question or failure in the meta line', () => {
+  assert.deepEqual(rowPill(row('q', 'needs you', { needsYouReason: 'question', ownerQuestion: 'Which timer?' })), { label: 'Asked in Slack', tone: 'warn' });
+  assert.deepEqual(rowPill(row('t', 'needs you', { needsYouReason: 'waiting in T3' })), { label: 'Waiting in T3', tone: 'warn' });
+  assert.deepEqual(rowPill(row('p', 'needs you', { needsYouReason: 'owner pinged' })), { label: 'Blocked in Slack', tone: 'warn' });
+  assert.deepEqual(rowPill(row('f', 'needs you', { needsYouReason: 'failed', error: 'boom' })), { label: 'Failed', tone: 'down' });
+  assert.deepEqual(rowPill(row('r', 'running'), 'running'), { label: 'Working', tone: 'neutral' });
+  assert.deepEqual(rowPill(row('r', 'running'), 'paused'), { label: 'Paused', tone: 'neutral' });
+  assert.equal(rowPill(row('d', 'done')), undefined);
+  assert.equal(rowNote(row('q', 'needs you', { needsYouReason: 'question', ownerQuestion: '\nWhich timer?\nMore' })), 'Which timer?');
+  assert.equal(rowNote(row('t', 'needs you', { needsYouReason: 'waiting in T3' })), undefined, 'the pill already says why');
+  assert.equal(rowNote(row('d', 'done', { error: 'old' })), undefined);
+});
+
+test('channel tag: #name once Slack named it, the raw ID before, the app for app tasks', () => {
+  assert.equal(channelTag(row('a', 'done', { channelName: 'eng' })), '#eng');
+  assert.equal(channelTag(row('b', 'done', { channelName: '#eng' })), '#eng');
+  assert.equal(channelTag(row('c', 'done')), 'C0123456789');
+  assert.equal(channelTag(row('d', 'done', { channel: 'app' })), 'Serra app');
 });
