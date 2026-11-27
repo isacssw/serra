@@ -12,7 +12,7 @@ import { pagesHandlers } from '../app/main/ipc/pages.ts';
 import type { HandlerContext } from '../app/main/ipc/context.ts';
 import { memoryPrefs } from '../app/main/prefs.ts';
 import { stoppedStatusSource } from '../app/main/status.ts';
-import { groupLine, groupPairs, repeatsLine, isSafe, keepNames, keepNewerForAll, rowNames, sideNames, versus, wordDiff, type PairIssue } from '../app/renderer/screens/conflicts.logic.ts';
+import { checkReason, groupLine, groupPairs, repeatsLine, isSafe, keepNewerForAll, sideNames, versus, wordDiff, type PairIssue } from '../app/renderer/screens/conflicts.logic.ts';
 import { keepNewerOnPages, keepOne, keepOver } from '../app/renderer/screens/keep.ts';
 import { fixItems, needsYou, todoTally } from '../app/renderer/screens/overview.logic.ts';
 import { currentRules, keepRule } from '../app/renderer/screens/pages.logic.ts';
@@ -163,7 +163,7 @@ test('"Keep newer for all" only takes pairs where the newer line says everything
   assert.equal(drops.covers, false);
   assert.ok(!isSafe(drops) && !prs.safe.includes(drops), 'a newer line that drops "lowercase only" is never kept in bulk');
   assert.equal(prs.dropsDetail, 1);
-  assert.equal(groupLine(prs), '4 rules learned again · 1 needs a look');
+  assert.deepEqual(prs.rows.map(checkReason).filter(Boolean), ['Drops “lowercase only”'], 'the one row to check says why, in two words');
   // A newer line that drops a small word ("before", "all") never covers the older one.
   const flip = pairsOf([{ path: 'a.md', text: '---\ntype: rule\n---\n- Ping all reviewers when the PR is ready (2026-11-16)\n- Ping reviewers when the PR is ready (2026-11-17)\n' }]);
   assert.equal(flip.length, 1);
@@ -190,7 +190,7 @@ test('bulk keep moves only the intended lines, keeps the newest of a chain, and 
     'Say in the PR description which agent and model did the work (2026-11-17)',
   ]);
   const kept = currentRules(text);
-  assert.ok(kept.includes('Open every PR as a draft, link the Linear issue and attach proof (2026-11-18)'), 'the newest of the chain stays');
+  assert.ok(kept.includes('Open every PR as a draft and link the Linear issue, and attach proof (2026-11-18)'), 'the newest of the chain stays');
   assert.ok(kept.includes('Branch names use type/short-name, lowercase only (2026-11-16)') && kept.includes('Branch names use type/short-name (2026-11-17)'), 'a pair that drops detail is left for the owner');
   assert.deepEqual(kept, currentRules(page.text).filter((line) => !moved.includes(line)), 'nothing else left the page, and the order holds');
   // Everything above the new section is the page as it was, minus the moved lines.
@@ -303,11 +303,9 @@ test('the changed words are marked, older on the left, with buttons that say old
   assert.deepEqual(wordDiff('Open every PR as a draft and link the Linear issue', 'Open every PR as a draft, link the Linear issue and attach proof'), [
     { op: 'same', text: 'Open every PR as a draft' }, { op: 'del', text: ' and' }, { op: 'add', text: ',' }, { op: 'same', text: ' link the Linear issue' }, { op: 'add', text: ' and attach proof' },
   ]);
-  assert.equal(versus('Each exercise runs 3 hours', 'Each exercise runs 4 hours'), '“3” vs “4”');
+  assert.equal(versus('Each exercise runs 3 hours', 'Each exercise runs 4 hours'), '“3 hours” vs “4 hours”');
   assert.equal(versus('Never merge a PR before Sam reviews it', 'Merge a PR before Sam reviews it when CI is green and the fix is small'), '“Never” vs “when CI is green…”');
   assert.deepEqual(sideNames({ order: 'date', older: { learned: '2026-11-16' }, newer: { learned: '2026-11-17' } } as Parameters<typeof sideNames>[0]), ['Nov 16', 'Nov 17']);
-  assert.deepEqual(keepNames({ order: 'date' }), ['Keep older', 'Keep newer']);
-  assert.deepEqual(keepNames({ order: 'length' }), ['Keep shorter', 'Keep longer'], 'a rule written twice offers the longer one');
 });
 
 test('Needs you shows a row per disagreement, one for all repeats and one to tidy, and counts what it shows', () => {
@@ -316,11 +314,11 @@ test('Needs you shows a row per disagreement, one for all repeats and one to tid
   const view = needsYou(items);
   assert.deepEqual(view.repeats.map((group) => group.pages[0]).sort(), ['decisions/payments.md', 'owner/pr-rules.md', 'owner/quick-vs-right.md', 'product/squad-products.md']);
   assert.deepEqual(view.disagree.map((group) => group.pages[0]).sort(), ['projects/live-breach.md', 'workflows/code-change.md']);
-  assert.equal(view.disagree.find((group) => group.pages[0] === 'projects/live-breach.md') && groupLine(view.disagree.find((group) => group.pages[0] === 'projects/live-breach.md')!), '“3” vs “4”');
+  assert.equal(view.disagree.find((group) => group.pages[0] === 'projects/live-breach.md') && groupLine(view.disagree.find((group) => group.pages[0] === 'projects/live-breach.md')!), '“3 hours” vs “4 hours”');
   // To review and Needs you count the same rows: all repeats are one row, however many pages and pairs.
   assert.equal(view.rows, 2 + 1 + view.items.length + (view.tidy.length > 0 ? 1 : 0));
   assert.deepEqual(todoTally(items), { count: view.rows, text: '2 to decide' });
-  assert.equal(repeatsLine(view.repeats), '11 rules on 4 pages');
+  assert.equal(repeatsLine(view.repeats), '4 pages');
 });
 
 test('a rule restated three times is one row, Nov 16, Nov 17 → Nov 18, and Keep newer moves both older lines in one save', async (t) => {
@@ -330,8 +328,8 @@ test('a rule restated three times is one row, Nov 16, Nov 17 → Nov 18, and Kee
   assert.equal(prs.pairs.length, 6);
   assert.equal(prs.rows.length, 4, 'three versions of the PR rule are one row');
   const chain = prs.rows.find((row) => row.olders.length === 2)!;
-  assert.deepEqual(rowNames(chain), ['Nov 16, Nov 17', 'Nov 18']);
-  assert.equal(chain.newer.text, 'Open every PR as a draft, link the Linear issue and attach proof (2026-11-18)');
+  assert.deepEqual(chain.olders.map((side) => side.learned), ['2026-11-16', '2026-11-17']);
+  assert.equal(chain.newer.text, 'Open every PR as a draft and link the Linear issue, and attach proof (2026-11-18)');
   assert.equal(chain.all.length, 3, '"Both hold" on the row sets aside the Nov 16 / Nov 17 pair too');
   const left = groupPairs(pairsOf(oldFormatKnowledge(), new Set(chain.all.map((pair) => pair.id)))).repeats.find((group) => group.pages[0] === 'owner/pr-rules.md')!;
   assert.ok(!left.rows.some((row) => row.newer.text.startsWith('Open every PR') || row.olders.some((side) => side.text.startsWith('Open every PR'))), 'the rule does not come back as a shorter chain');
@@ -422,7 +420,7 @@ test('a line pasted twice word for word is one row that Keep can settle, never a
   const { repeats } = groupPairs(pairsOf([{ path: 'a.md', text: `---\ntype: rule\n---\n- ${line}\n- ${line}\n` }]));
   assert.equal(repeats.length, 1);
   assert.equal(repeats[0]!.rows.length, 1);
-  assert.equal(groupLine(repeats[0]!), '1 rule learned again or written twice');
+  assert.equal(checkReason(repeats[0]!.rows[0]!), 'Written twice');
   assert.equal(repeats[0]!.safeRows, 0, 'two identical undated lines are never kept in bulk');
 });
 
@@ -605,8 +603,15 @@ test('"Keep newer for all" only takes a newer line that adds plain words: no add
     ['Ship the payouts migration by (2026-11-20).', 'Ship the payouts migration by (2026-11-25).'],
     ['Payouts migration deadline: (2026-11-20)', 'Payouts migration deadline: (2026-11-25)'],
   ] as [string, string][]) assert.equal(safe(older, newer), false, `${older} / ${newer}`);
-  // Plain added words are still a safe restatement.
-  assert.equal(safe('Open every PR as a draft and link the Linear issue (2026-11-16)', 'Open every PR as a draft, link the Linear issue and attach proof (2026-11-18)'), true);
+  // Hedges, carve-outs and a swapped "or" are never safe either, however plain they look.
+  for (const [older, newer] of [
+    ['Run the tests before merging a PR (2026-11-16)', 'Run the tests before merging a PR, and it is optional (2026-11-17)'],
+    ['Run the tests before merging a PR (2026-11-16)', 'Run the tests before merging a PR, ideally (2026-11-17)'],
+    ['Ask Sam or Lee before a payouts release (2026-11-16)', 'Ask Sam and Lee before a payouts release (2026-11-17)'],
+    ['Run the payouts dry run before each release (2026-11-16)', 'Try to run the payouts dry run before each release (2026-11-17)'],
+  ] as [string, string][]) assert.equal(safe(older, newer), false, `${older} / ${newer}`);
+  // A plain clause added with "and" is still a safe restatement.
+  assert.equal(safe('Open every PR as a draft and link the Linear issue (2026-11-16)', 'Open every PR as a draft and link the Linear issue, and attach proof (2026-11-18)'), true);
   assert.equal(ruleText('The Q4 review (2026-11-16) covers billing (2026-11-16)'), 'The Q4 review (2026-11-16) covers billing', 'only the end note goes');
 });
 

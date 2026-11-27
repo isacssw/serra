@@ -13,7 +13,7 @@ export const OLD_FORMAT_PAGES: KnowledgeFile[] = [
     text: `${header('rule', "Sam's rules on attribution, proof, branch names, PRs")}# PRs\n\n`
       + '- Open every PR as a draft and link the Linear issue (2026-11-16)\n'
       + '- Open every PR as a draft and link the Linear issue (2026-11-17)\n'
-      + '- Open every PR as a draft, link the Linear issue and attach proof (2026-11-18)\n'
+      + '- Open every PR as a draft and link the Linear issue, and attach proof (2026-11-18)\n'
       + '- Branch names use type/short-name, lowercase only (2026-11-16)\n'
       + '- Branch names use type/short-name (2026-11-17)\n'
       + '- End each commit message with the co-author line for the agent (2026-11-16)\n'

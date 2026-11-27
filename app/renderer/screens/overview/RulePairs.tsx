@@ -5,7 +5,7 @@ import { useState } from 'react';
 import { MoreHorizontal } from 'lucide-react';
 import type { PairInfo } from '../../../../src/knowledge-health.ts';
 import { Button, cx } from '../../ui/index.ts';
-import { droppedWords, sideNames, wordDiff, type ChainRow, type DiffPart } from '../conflicts.logic.ts';
+import { checkReason, sideNames, wordDiff, type ChainRow, type DiffPart } from '../conflicts.logic.ts';
 
 export interface PairActions {
   busy: boolean;
@@ -15,6 +15,8 @@ export interface PairActions {
   keepRow: (row: ChainRow, side: 'older' | 'newer') => void;
   /** Both lines hold: the pairs stop being listed. No page changes. */
   bothHold: (pairs: PairInfo[]) => void;
+  /** Open a page, for a rule a click can't move. */
+  open: (page: string) => void;
 }
 
 /** One side of two rules that disagree, what sets it apart in bold. */
@@ -29,24 +31,23 @@ const Newest = ({ row }: { row: ChainRow }) => (
 
 const RepeatRow = ({ row, actions }: { row: ChainRow; actions: PairActions }) => {
   const [more, setMore] = useState(false);
-  const dropped = row.covers ? null : droppedWords(row);
-  // A rule "Use newer for N" already settles needs no button of its own; its other choices stay behind "…".
-  const own = !row.safe || more;
+  const reason = checkReason(row);
+  const prose = reason === 'Inside longer text';
+  // A rule "Use newer for all" settles has no button of its own. One that loses detail shows both choices.
+  const both = !row.covers && !row.twice && !prose;
+  const newer = row.twice ? 'Remove copy' : row.order === 'length' ? 'Use longer' : 'Use newer';
+  const older = row.order === 'length' ? 'Use shorter' : 'Use older';
   return (
     <li className="flex items-start gap-3 py-2">
       <div className="flex min-w-0 flex-1 flex-col gap-0.5" title={[...row.olders.map((side) => side.text), row.newer.text].join('\n')}>
-        <p className="text-[13px] leading-5 text-ink">{row.twice ? row.newer.plain : <Newest row={row} />}</p>
-        {row.twice && <p className="text-xs text-faint">Written twice</p>}
-        {dropped && <p className="text-xs text-warn">Drops “{dropped}”</p>}
+        <p className="text-[13px] leading-5 text-ink">{row.covers && !row.twice ? <Newest row={row} /> : row.newer.plain}</p>
+        {reason && <p className="text-xs text-muted">{reason}</p>}
       </div>
       <div className="flex shrink-0 items-center gap-0.5">
-        {more && !row.twice && <Button size="sm" variant="ghost" disabled={actions.busy} title={row.latest.older.text} onClick={() => actions.keepRow(row, 'older')}>{row.order === 'length' ? 'Use shorter' : 'Use older'}</Button>}
+        {prose && <Button size="sm" disabled={actions.busy} onClick={() => actions.open(row.newer.page)}>Open page</Button>}
+        {!prose && (both || (more && !row.twice)) && <Button size="sm" variant={both ? 'secondary' : 'ghost'} disabled={actions.busy} title={row.latest.older.text} onClick={() => actions.keepRow(row, 'older')}>{older}</Button>}
+        {!prose && (reason !== null || more) && <Button size="sm" variant={reason !== null ? 'secondary' : 'ghost'} disabled={actions.busy} title={row.newer.text} onClick={() => actions.keepRow(row, 'newer')}>{newer}</Button>}
         {more && <Button size="sm" variant="ghost" disabled={actions.busy} title="Leave the page as it is" onClick={() => actions.bothHold(row.all)}>Keep both</Button>}
-        {own && (
-          <Button size="sm" disabled={actions.busy} title={row.newer.text} onClick={() => actions.keepRow(row, 'newer')}>
-            {row.twice ? 'Remove copy' : row.order === 'length' ? 'Use longer' : 'Use newer'}
-          </Button>
-        )}
         <Button size="sm" variant="ghost" aria-label="Other choices" aria-expanded={more} className="px-1.5" onClick={() => setMore(!more)}><MoreHorizontal size={14} aria-hidden /></Button>
       </div>
     </li>
@@ -79,7 +80,11 @@ export const DisagreePairs = ({ pairs, titleOf, actions }: { pairs: PairInfo[]; 
       return (
         <li key={pair.id} className="flex flex-col gap-1.5">
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">{card('older')}{card('newer')}</div>
-          <Button size="sm" variant="ghost" flush className="self-start" disabled={actions.busy} title="Both stay; the page is unchanged" onClick={() => actions.bothHold([pair])}>Both are right</Button>
+          <div className="flex flex-wrap items-center gap-x-3">
+            <Button size="sm" variant="ghost" flush disabled={actions.busy} title="Both stay; the page is unchanged" onClick={() => actions.bothHold([pair])}>Keep both</Button>
+            <Button size="sm" variant="ghost" flush disabled={actions.busy} onClick={() => actions.open(pair.newer.page)}>Open page</Button>
+            <span className="text-xs text-faint">The other moves to “Replaced”. You can undo.</span>
+          </div>
         </li>
       );
     })}

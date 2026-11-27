@@ -64,8 +64,12 @@ const clip = (text: string, words = 4): string => {
 /** Two rules that disagree in a few words: `“3 hours” vs “4 hours”`, `“never” vs “when CI is green…”`. */
 export const versus = (older: string, newer: string): string => {
   const parts = wordDiff(older, newer);
-  const gone = parts.find((part) => part.op === 'del')?.text;
-  const added = parts.find((part) => part.op === 'add')?.text;
+  const at = parts.findIndex((part) => part.op === 'del');
+  let gone = at === -1 ? undefined : parts[at]!.text;
+  let added = parts.find((part) => part.op === 'add')?.text;
+  // A bare number says little: "3" vs "4" reads as "3 hours" vs "4 hours", with the word that follows both.
+  const after = parts.slice(at + 1).find((part) => part.op === 'same')?.text.trim().split(/\s+/)[0];
+  if (gone && added && /^\s*[\d.,]+\s*$/.test(gone) && /^\s*[\d.,]+\s*$/.test(added) && after) [gone, added] = [`${gone.trim()} ${after}`, `${added.trim()} ${after}`];
   if (gone && added) return `“${clip(gone)}” vs “${clip(added)}”`;
   if (added) return `Newer adds “${clip(added)}”`;
   if (gone) return `Newer drops “${clip(gone)}”`;
@@ -186,28 +190,33 @@ export const groupPairs = (issues: readonly PairIssue[]): { repeats: PairGroup[]
 };
 
 /** The row's one line under the page's name: "3 repeat · 1 drops detail", or the words two rules disagree on. */
-export const groupLine = (group: PairGroup): string => {
-  if (group.kind === 'disagree') {
-    return group.pairs.length === 1 ? versus(group.pairs[0]!.older.plain, group.pairs[0]!.newer.plain) : `${group.pairs.length} pairs say different things`;
-  }
-  const count = group.rows.length;
-  const dated = group.rows.every((row) => row.order === 'date');
-  return [`${count} ${count === 1 ? 'rule' : 'rules'} learned again${dated ? '' : ' or written twice'}`, group.dropsDetail > 0 ? `${group.dropsDetail} ${group.dropsDetail === 1 ? 'needs' : 'need'} a look` : null]
-    .filter(Boolean).join(' · ');
+/** What two rules that disagree differ on, in a few words: `“3 hours” vs “4 hours”`. */
+export const groupLine = (group: PairGroup): string =>
+  (group.pairs.length === 1 ? versus(group.pairs[0]!.older.plain, group.pairs[0]!.newer.plain) : `${group.pairs.length} pairs differ`);
+
+/**
+ * Why a repeated rule waits for the owner, in two or three words, or null when "Use newer for all" settles it:
+ * "Inside longer text", "Written twice", "Drops “lowercase only”", "Link changed", "Reworded", "No date".
+ */
+export const checkReason = (row: ChainRow): string | null => {
+  if (row.safe) return null;
+  if (row.pairs.some((pair) => !pair.older.whole || !pair.newer.whole)) return 'Inside longer text';
+  if (row.twice) return 'Written twice';
+  if (row.covers) return row.order === 'date' ? null : 'No date';
+  const dropped = droppedWords(row);
+  if (dropped) return `Drops “${dropped}”`;
+  return row.pairs.every((pair) => pair.older.plain === pair.newer.plain) ? 'Link changed' : 'Reworded';
 };
 
 /** What a row's newest line leaves out of an older version, in a few words: "lowercase only". Null when nothing. */
-export const droppedWords = (row: Pick<ChainRow, 'pairs' | 'latest' | 'newer'>): string | null => {
+const droppedWords = (row: Pick<ChainRow, 'pairs' | 'latest' | 'newer'>): string | null => {
   const pair = row.pairs.find((one) => !one.covers) ?? row.latest;
   const gone = wordDiff(pair.older.plain, row.newer.plain).filter((part) => part.op === 'del').map((part) => part.text.trim()).join(' ').replace(/^[,;:.]\s*|\s*[,;:.]$/g, '').trim();
   return gone ? clip(gone) : null;
 };
 
-/** All of Needs you's repeats in one line: "9 rules on 5 pages". */
-export const repeatsLine = (groups: readonly PairGroup[]): string => {
-  const rules = groups.reduce((sum, group) => sum + group.rows.length, 0);
-  return `${rules} ${rules === 1 ? 'rule' : 'rules'} on ${groups.length} ${groups.length === 1 ? 'page' : 'pages'}`;
-};
+/** All of Needs you's repeats in one line: "5 pages". */
+export const repeatsLine = (groups: readonly PairGroup[]): string => `${groups.length} ${groups.length === 1 ? 'page' : 'pages'}`;
 
 /** `2026-11-17` as "Nov 17". */
 const day = (date: string): string => new Date(`${date}T00:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
@@ -217,16 +226,6 @@ export const sideNames = (pair: Pick<PairInfo, 'order' | 'older' | 'newer'>): [s
   if (pair.order === 'length') return ['Shorter', 'Longer'];
   return [pair.older.learned ? day(pair.older.learned) : 'Earlier', pair.newer.learned ? day(pair.newer.learned) : 'Later'];
 };
-
-/** A row's versions in a few words: "Nov 16, Nov 17 → Nov 18", "Nov 16 → Nov 17", "Shorter → Longer". */
-export const rowNames = (row: Pick<ChainRow, 'order' | 'olders' | 'newer'>): [string, string] => {
-  if (row.order === 'length') return ['Shorter', 'Longer'];
-  const olders = row.olders.map((side) => (side.learned ? day(side.learned) : 'Earlier'));
-  return [olders.length > 2 ? `${olders[0]} … ${olders.at(-1)}` : olders.join(', '), row.newer.learned ? day(row.newer.learned) : 'Later'];
-};
-
-/** The Keep buttons, older (or shorter) first. */
-export const keepNames = (pair: Pick<PairInfo, 'order'>): [string, string] => (pair.order === 'length' ? ['Keep shorter', 'Keep longer'] : ['Keep older', 'Keep newer']);
 
 // ---------------------------------------------------------------------------------------------------------------
 // Keep newer for all

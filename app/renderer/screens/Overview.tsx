@@ -188,7 +188,7 @@ export const Overview = () => {
         <Stat label="Pages" value={health.pages} note={grown === null ? `${health.facts} facts` : grown > 0 ? `+${grown} in 30 days` : `${health.facts} facts`} />
         <Stat label="Used in replies" value={head?.used ?? 0} note={head ? `of ${head.replies} replies ${head.period}` : 'No replies yet'} />
         <Stat label="Health" value={health.score} unit="%" note={word.word} />
-        <Stat label="To review" value={tally.count} note={tally.text} />
+        <Stat label="To review" value={tally.count} note="" />
       </section>
 
       {example && (

@@ -1,7 +1,6 @@
-// Overview's "Needs you": the one place to act on the knowledge. The weekly review's fixes, proposals waiting, what
-// replies were missing (Tell it) and hand edits come first, one line and one button each. Rules that repeat or disagree
-// follow one row per page, in two groups: "Same rule, learned again" (safe: Keep newer for all) and "Really disagree"
-// (your call, side by side). Jobs that can wait fold away under "Tidy up".
+// Overview's "Needs you": the one place to act on the knowledge, one quiet row per job. Review fixes, proposals and
+// pages to confirm come first; then each pair of rules that disagree (Compare); then every repeated rule in one row
+// (Review, with one "Use newer for all"); then what can wait ("N pages to tidy"). A row opens in place.
 import { useEffect, useState, type ReactNode } from 'react';
 import { useNavigate } from 'react-router';
 import { PROPOSAL_PARAM } from '../proposals.logic.ts';
@@ -33,18 +32,6 @@ const KindIcon = ({ item }: { item: FixItem }) => {
   if (kind === 'unreviewed') return <PenLine {...props} className={cx(props.className, 'text-muted')} />;
   if (kind === 'confirm' || kind === 'stale' || kind === 'draft' || kind === 'drafts') return <CircleCheck {...props} className={cx(props.className, 'text-muted')} />;
   return <Sparkles {...props} className={cx(props.className, 'text-muted')} />;
-};
-
-/** "Tidy up": what can wait, as one line until opened ("2 pages near the size limit · 3 pages of long prose"). */
-const tidyLine = (items: FixItem[]): string => {
-  const count = (kind: string): number => items.filter((item) => fixKind(item) === kind).length;
-  const pages = (n: number): string => `${n} page${n === 1 ? '' : 's'}`;
-  return [
-    count('long') && `${pages(count('long'))} near the size limit`,
-    count('unstructured') && `${pages(count('unstructured'))} of long prose`,
-    count('overlap') && `${count('overlap')} to merge`,
-    count('unindexed') && `${pages(count('unindexed'))} not in the index`,
-  ].filter(Boolean).join(' · ');
 };
 
 export const FixList = ({ overview, onOpen, onChanged }: { overview: KnowledgeOverview; onOpen: (path: string) => void; onChanged: () => void }) => {
@@ -198,7 +185,7 @@ export const FixList = ({ overview, onOpen, onChanged }: { overview: KnowledgeOv
     else void apply([suggestion]);
   };
 
-  const actions: PairActions = { busy: busy !== null, keep: (pair, side) => void keep(pair, side), keepRow: (row, side) => void keepRow(row, side), bothHold: (pairs) => void bothHold(pairs) };
+  const actions: PairActions = { busy: busy !== null, keep: (pair, side) => void keep(pair, side), keepRow: (row, side) => void keepRow(row, side), bothHold: (pairs) => void bothHold(pairs), open: onOpen };
   const safePages = view.repeats.filter((group) => group.safe.length > 0 && group.pages.length === 1);
   const safeRows = safePages.reduce((sum, group) => sum + group.safeRows, 0);
   const askKeepNewer = (groups: PairGroup[]) => setAsking({
@@ -245,7 +232,7 @@ export const FixList = ({ overview, onOpen, onChanged }: { overview: KnowledgeOv
             <p className="truncate text-[13px] leading-5 font-medium text-ink" title={name}>{name}</p>
             <p className="truncate text-xs leading-4 text-muted">{line}</p>
           </div>
-          <Button size="sm" variant="ghost" aria-expanded={isOpen} className="pr-1.5" onClick={() => setOpened(isOpen ? null : id)}>
+          <Button size="sm" variant="ghost" aria-expanded={isOpen} className="pr-1.5" onClick={() => { setOpened(isOpen ? null : id); if (!isOpen && id === 'repeats') setOpenPage(view.repeats[0]?.key ?? null); }}>
             {isOpen ? 'Close' : action}
             <ChevronRight size={13} aria-hidden className={cx('-ml-0.5 transition-transform', isOpen && 'rotate-90')} />
           </Button>
@@ -269,7 +256,8 @@ export const FixList = ({ overview, onOpen, onChanged }: { overview: KnowledgeOv
       <ul className="flex flex-col divide-y divide-line-subtle border-y border-line">
         {shown.map(itemRow)}
         {view.disagree.map((group) => row({
-          id: group.key, icon: <AlertTriangle size={15} aria-hidden className="mt-0.5 shrink-0 text-warn" />, name: groupTitle(group), line: groupLine(group), action: 'Compare',
+          // What differs leads; the page it's on comes second.
+          id: group.key, icon: <AlertTriangle size={15} aria-hidden className="mt-0.5 shrink-0 text-warn" />, name: groupLine(group), line: groupTitle(group), action: 'Compare',
           panel: <DisagreePairs pairs={group.pairs} titleOf={title} actions={actions} />,
         }))}
         {view.repeats.length > 0 && row({
@@ -278,8 +266,8 @@ export const FixList = ({ overview, onOpen, onChanged }: { overview: KnowledgeOv
             <>
               {safeRows > 0 && (
                 <div className="flex items-center gap-3">
-                  <Button size="sm" variant="primary" disabled={busy !== null} onClick={() => askKeepNewer(safePages)}>{busy === 'bulk' ? 'Working…' : `Use newer for ${safeRows}`}</Button>
-                  <span className="text-xs text-faint">Older lines move to “Replaced”. Undoable.</span>
+                  <Button size="sm" variant="primary" disabled={busy !== null} onClick={() => askKeepNewer(safePages)}>{busy === 'bulk' ? 'Working…' : 'Use newer for all'}</Button>
+                  <span className="text-xs text-faint">Older lines move to “Replaced”. You can undo.</span>
                 </div>
               )}
               {/* One line per page; a page opens to its rules, so the list stays short. */}
@@ -292,7 +280,7 @@ export const FixList = ({ overview, onOpen, onChanged }: { overview: KnowledgeOv
                       <button type="button" aria-expanded={isOpen} onClick={() => setOpenPage(isOpen ? null : group.key)} className="flex items-center gap-2 py-2 text-left text-[13px] text-ink hover:text-ink focus-visible:outline-2 focus-visible:outline-focus">
                         <ChevronRight size={13} aria-hidden className={cx('shrink-0 text-faint transition-transform', isOpen && 'rotate-90')} />
                         <span className="min-w-0 flex-1 truncate">{groupTitle(group)}</span>
-                        <span className="shrink-0 text-xs tabular-nums text-faint">{needs > 0 ? `${group.rows.length} · ${needs} to check` : group.rows.length}</span>
+                        {needs > 0 && <span className="shrink-0 text-xs tabular-nums text-faint">{needs} to check</span>}
                       </button>
                       {isOpen && <div className="pb-2 pl-5"><RepeatPairs rows={group.rows} actions={actions} /></div>}
                     </li>
@@ -303,7 +291,7 @@ export const FixList = ({ overview, onOpen, onChanged }: { overview: KnowledgeOv
           ),
         })}
         {view.tidy.length > 0 && row({
-          id: 'tidy', icon: <Sparkles {...quiet} />, name: `${view.tidy.length} ${view.tidy.length === 1 ? 'page' : 'pages'} to tidy`, line: tidyLine(view.tidy), action: 'Show',
+          id: 'tidy', icon: <Sparkles {...quiet} />, name: `${view.tidy.length} ${view.tidy.length === 1 ? 'page' : 'pages'} to tidy`, line: 'Can wait', action: 'Show',
           panel: <ul className="flex flex-col divide-y divide-line-subtle">{view.tidy.map(itemRow)}</ul>,
         })}
       </ul>

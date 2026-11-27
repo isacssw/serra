@@ -551,29 +551,28 @@ const sideOf = (fact: { page: string; text: string }, today: string, whole: (pag
 const sequence = (text: string): string[] => (text.toLowerCase().replace(/[’']/g, '').replace(/`/g, '')
   .match(/[<>]=?|[!=]=|[≠≤≥$€£¥%±]|[+-](?=\d)|[\p{L}\p{N}]+/gu) ?? [])
   .filter((word) => !['a', 'an', 'the'].includes(word)).map((word) => (/^[\p{L}]/u.test(word) ? stem(word) : word));
-/** Words that narrow or turn a rule when added: "… unless approved", "only on Fridays", "if CI is green". */
-const NEGATION_STEMS = new Set([...NEGATIONS].map(stem));
-const CARVE_OUTS = new Set(['unless', 'except', 'only', 'but', 'if', 'when', 'until', 'excluding', 'apart', 'save'].map(stem));
+/**
+ * Words that change a rule when added, however plain they look: negations, carve-outs ("unless", "only", "if"),
+ * hedges ("optional", "ideally", "try", "rarely") and number words.
+ */
+const CHANGERS = new Set([...NEGATIONS, 'unless', 'except', 'only', 'but', 'if', 'when', 'whenever', 'until', 'excluding', 'apart', 'save', 'besides',
+  'or', 'optional', 'optionally', 'ideally', 'preferably', 'try', 'rarely', 'sometimes', 'usually', 'often', 'may', 'might', 'can', 'could', 'should',
+  'other', 'than', 'after', 'before', 'plus', 'first', 'later', 'once', 'twice', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine',
+  'ten', 'eleven', 'twelve', 'any', 'some', 'most', 'all', 'every', 'each', 'none', 'more', 'less', 'fewer'].map(stem));
 
 /**
- * Whether `wide` says everything `narrow` does and nothing that changes it: `narrow`'s words, numbers and signs all
- * appear in `wide` in the same order ("and" and "or" may move, as a clause is added), and what `wide` adds is only
- * plain words: no negation, number, sign or carve-out ("unless", "only", "if"). "Open every PR as a draft and link the
- * issue" is said by "…, link the issue and attach proof"; "… is valid" isn't by "… is not valid", nor "10 seconds" by
- * "> 10 seconds", nor "never on Friday" by "never on Friday unless approved". Anything else waits for the owner.
+ * Whether `wide` says everything `narrow` does and nothing that changes it. Strict on purpose, since "Keep newer for
+ * all" moves lines on it: `wide` is `narrow` word for word (numbers and signs too), or `narrow` and then one added
+ * clause that starts with "and" and holds only plain words: "Branch names use type/short-name" is said by "…, and stay
+ * lowercase"; nothing reworded, swapped or hedged ("or" → "and", "…, ideally", "… unless approved") is. Anything else
+ * waits for the owner.
  */
 const says = (wide: string, narrow: string): boolean => {
-  const [w, n] = [sequence(wide), sequence(narrow).filter((word) => word !== 'and' && word !== 'or')];
-  const used = new Set<number>();
-  let at = 0;
-  for (const word of n) {
-    const found = w.indexOf(word, at);
-    if (found === -1) return false;
-    used.add(found);
-    at = found + 1;
-  }
-  return w.every((word, index) => used.has(index) || word === 'and' || word === 'or'
-    || !(NEGATION_STEMS.has(word) || CARVE_OUTS.has(word) || /^[\d<>=!≠≤≥$€£¥%±+-]/.test(word)));
+  const [w, n] = [sequence(wide), sequence(narrow)];
+  if (w.length < n.length || n.some((word, at) => w[at] !== word)) return false;
+  const added = w.slice(n.length);
+  if (added.length === 0) return true;
+  return added[0] === 'and' && added.length >= 2 && added.slice(1).every((word) => !CHANGERS.has(word) && !/^[\d<>=!≠≤≥$€£¥%±+-]/.test(word));
 };
 /** The links a line gives, which `ruleText` leaves out of the comparison: a newer line that drops or changes one doesn't cover the older. */
 const links = (text: string, today: string): Set<string> => {
