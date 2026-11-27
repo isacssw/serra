@@ -25,6 +25,20 @@ Any command that speaks ACP over stdio can be added:
 { "agents": [{ "id": "my-agent", "name": "My agent", "command": "my-agent", "args": ["acp"], "env": {} }] }
 ```
 
+### An agent bound to one app (eve)
+
+Some agents run one app and refuse any other folder: [eve](https://eve.dev)'s `eve acp` must start in the eve app's
+folder and opens sessions only there. Give such an agent a `cwd`, an absolute path:
+
+```json
+{ "agents": [{ "id": "eve", "name": "eve", "command": "/Users/you/my-agent/node_modules/.bin/eve", "args": ["acp"], "cwd": "/Users/you/my-agent" }] }
+```
+
+Serra then starts the agent in that folder and opens every job there instead of a worktree. Since there's no throwaway
+worktree, Serra never allows what the agent asks on its own: each approval waits as a card for a person. eve has no
+model choice, image input or restart resume over ACP. It also runs one local server per app, and a meeting run or
+**Test** starts its own copy of the agent, so those can't run on eve while a job does.
+
 The agent cards update as soon as the file is saved, and an edit to an agent, or its model, applies to the next job
 without a restart; a turn already going finishes on the setup it started with. `env` values stay in your file and are
 never shown or logged. An agent can't be removed while it has a run going, since the run needs its command to carry on.

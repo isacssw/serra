@@ -4,7 +4,8 @@
 // answer to `permission-<n>`. A prompt with `TOOL:<id>` records a tool call that read meeting <id>. A cancel ends the
 // running turn with `cancelled`. `FAIL:<kind>` fails the turn with that error kind, `CODEX_ERROR=<info>` as Codex's adapter
 // does (its `codexErrorInfo`). `ELICIT` asks a form question like
-// Claude Code's AskUserQuestion and writes the answer to `elicit-<n>`. `session/load` reopens a session (writes
+// Claude Code's AskUserQuestion and writes the answer to `elicit-<n>`; `ELICIT_EVE` asks one the way eve does (one
+// `answer` field titled with the question). `session/load` reopens a session (writes
 // `load-<id>`). Images a prompt carries are written to `images-<n>` (their MIME types); `IMAGE_OUT` sends a PNG back.
 // `STREAM` sends part of the reply and starts a tool before the turn's text is known; the tool fails when it ends.
 // FAKE_ACP_NO_IMAGES: the agent says it takes no images. Run: node tests/fakes/acp-agent.ts
@@ -38,6 +39,7 @@ const app = acp.agent({ name: 'fake-acp' })
   .onRequest(acp.methods.agent.session.new, ({ params }) => {
     const session = next('session');
     put(join(dir, `session-${session}`), params.cwd);
+    put(join(dir, `process-cwd-${session}`), process.cwd());
     // FAKE_ACP_MODES: the agent's modes as JSON, like Claude Code's (starting in `auto`); a default and a read-only mode otherwise.
     const modes = process.env.FAKE_ACP_MODES ? JSON.parse(process.env.FAKE_ACP_MODES) as acp.SessionModeState : { currentModeId: 'default', availableModes: [{ id: 'default', name: 'Default' }, { id: 'read-only', name: 'Read only' }] };
     return { sessionId: `session-${session}`, modes };
@@ -77,7 +79,7 @@ const app = acp.agent({ name: 'fake-acp' })
       });
       put(join(dir, `permission-${turn}`), answer.outcome.outcome === 'selected' ? answer.outcome.optionId : 'cancelled');
     }
-    if (text.includes('ELICIT')) {
+    if (/\bELICIT\b/.test(text)) {
       const answer = await client.request(acp.methods.client.elicitation.create, {
         sessionId: params.sessionId, mode: 'form', message: 'Which colour?',
         requestedSchema: { type: 'object', properties: {
@@ -86,6 +88,15 @@ const app = acp.agent({ name: 'fake-acp' })
         } },
       } as acp.CreateElicitationRequest);
       put(join(dir, `elicit-${turn}`), JSON.stringify(answer));
+    }
+    if (text.includes('ELICIT_EVE')) {
+      const answer = await client.request(acp.methods.client.elicitation.create, {
+        sessionId: params.sessionId, mode: 'form', message: 'Which colour?',
+        requestedSchema: { type: 'object', required: ['answer'], properties: {
+          answer: { type: 'string', title: 'Which colour?', oneOf: [{ const: 'red', title: 'Red' }, { const: 'blue', title: 'Blue' }] },
+        } },
+      } as acp.CreateElicitationRequest);
+      put(join(dir, `elicit-eve-${turn}`), JSON.stringify(answer));
     }
     const tool = /TOOL:([\w-]+)/.exec(text)?.[1] ?? /meeting with ID "([\w-]+)"/.exec(text)?.[1];
     if (tool) {
