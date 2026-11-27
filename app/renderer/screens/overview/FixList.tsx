@@ -115,7 +115,7 @@ export const FixList = ({ overview, onOpen, onChanged }: { overview: KnowledgeOv
   };
 
   return (
-    <section id="todo" aria-labelledby="todo-title" className="flex min-w-0 flex-col gap-2">
+    <section id="todo" aria-labelledby="todo-title" className="flex min-w-0 flex-col gap-3">
       <div className="flex min-h-7 items-center justify-between gap-2">
         <h2 id="todo-title" className="text-sm font-semibold">Needs you <span className="ml-1 font-normal tabular-nums text-faint">{open.length}</span></h2>
         {oneClick.length > 1 && (

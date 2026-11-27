@@ -189,9 +189,9 @@ export const pageDetail = (page: Pick<KnowledgePage, 'path' | 'title' | 'descrip
 /** `2026-11-03` as "Nov 3". */
 const dayName = (date: string): string => new Date(`${date}T00:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
 
-/** A page's one meta line: "Processes · written Nov 3 · verified Nov 20". */
+/** A page's one meta line: "Processes · written Nov 3 · verified Nov 20". The badge says when it isn't verified. */
 export const pageMeta = (page: Pick<KnowledgePage, 'area' | 'written' | 'verified'>): string => [
   page.area,
   page.written && /^\d{4}-\d{2}-\d{2}$/.test(page.written) ? `written ${dayName(page.written)}` : null,
-  page.verified ? `verified ${dayName(page.verified)}` : 'not verified',
+  page.verified ? `verified ${dayName(page.verified)}` : null,
 ].filter(Boolean).join(' · ');

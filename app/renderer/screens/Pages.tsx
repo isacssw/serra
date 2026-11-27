@@ -90,7 +90,7 @@ const DriftNotice = ({ files, busy, onAccept, onRestore, name }: {
 const RowMark = ({ page }: { page: KnowledgePage }) => {
   if (page.problems.length > 0) return <AlertTriangle size={14} aria-label="Fails the knowledge check" className="mt-0.5 shrink-0 text-down" />;
   if (page.disputed) return <span aria-label="Rules disagree" title="Rules disagree" className="mt-1.5 size-1.5 shrink-0 rounded-full bg-warn" />;
-  if (page.badge === 'verified') return <Check size={14} strokeWidth={2} aria-label="Verified" className="mt-0.5 shrink-0 text-faint" />;
+  if (page.badge === 'verified') return <Check size={14} strokeWidth={2.25} aria-label="Verified" className="mt-0.5 shrink-0 text-muted" />;
   if (page.badge === 'stale') return <span aria-label="Stale" title={badgeTitle(page)} className="mt-1.5 size-1.5 shrink-0 rounded-full bg-warn" />;
   return null;
 };
@@ -108,6 +108,7 @@ const PageList = ({ pages, selected, onSelect }: { pages: KnowledgePage[]; selec
               key={page.path}
               type="button"
               aria-current={active ? 'true' : undefined}
+              ref={active ? (row) => { row?.scrollIntoView({ block: 'nearest' }); } : undefined}
               onClick={() => onSelect(page.path)}
               title={page.path}
               className={cx(
@@ -195,7 +196,8 @@ export const Pages = () => {
       setDrifted(drift);
       setArchived(gone);
       setLoadError(null);
-      setSelected((current) => keepSelection(list, current));
+      // The first visit opens the page the list shows first.
+      setSelected((current) => (current === null ? (groupByArea(list)[0]?.pages[0]?.path ?? null) : keepSelection(list, current)));
     } catch (error) {
       setLoadError(message(error));
     }
@@ -370,8 +372,8 @@ export const Pages = () => {
         <EmptyState icon={<Pencil size={18} />} title="No pages yet" action={<Button variant="primary" onClick={() => void navigate('/knowledge/proposals?interview=1')}>Start interview</Button>} />
       )}
       {pages && pages.length > 0 && (
-        <div className="flex flex-col gap-6 lg:flex-row lg:items-start">
-          <nav aria-label="Pages" className="-mx-2.5 flex w-[calc(100%+20px)] shrink-0 flex-col gap-3 lg:sticky lg:top-3 lg:max-h-[calc(100vh-88px)] lg:w-72 lg:overflow-y-auto lg:overscroll-contain lg:pb-4">
+        <div className="flex flex-col gap-6 border-t border-line lg:flex-row lg:items-start lg:gap-0">
+          <nav aria-label="Pages" className="-mx-2.5 flex w-[calc(100%+20px)] shrink-0 flex-col gap-3 pt-4 lg:sticky lg:top-0 lg:mr-6 lg:max-h-[calc(100vh-40px)] lg:w-72 lg:overflow-y-auto lg:overscroll-contain lg:pb-6 lg:[scroll-padding-block:24px] lg:[mask-image:linear-gradient(to_bottom,transparent,#000_14px,#000_calc(100%-28px),transparent)]">
             {visible.length > 0
               ? <>
                 <PageList pages={visible} selected={selected} onSelect={select} />
@@ -390,7 +392,7 @@ export const Pages = () => {
               : <p className="px-2.5 text-[13px] text-muted">No pages match.</p>}
           </nav>
 
-          <div ref={detailRef} className="flex min-w-0 flex-1 scroll-mt-4 flex-col gap-5 lg:min-h-[calc(100vh-88px)] lg:border-l lg:border-line lg:pl-8">
+          <div ref={detailRef} className="flex min-w-0 flex-1 scroll-mt-4 flex-col gap-5 pt-5 lg:min-h-[calc(100vh-120px)] lg:border-l lg:border-line lg:pl-8">
             {readError && <p role="alert" className="text-sm text-down">{readError}</p>}
             {!page && !readError && <p className="pt-1 text-[13px] text-muted">Pick a page.</p>}
             {page && (
@@ -406,13 +408,13 @@ export const Pages = () => {
                     )}
                   </div>
                   {state && (
-                    <div className="flex items-center gap-1.5">
+                    <div className="ml-auto flex items-center gap-1.5">
+                      {!editing && !state.dirty && confirmable && <Button size="sm" variant="ghost" icon={<CheckCircle2 size={13} aria-hidden />} disabled={saving} title="It still holds: mark it confirmed today" onClick={() => void confirmToday()}>Still true</Button>}
                       <AudiencePicker text={draft} disabled={saving} onChange={setDraft} />
-                      {!editing && !state.dirty && <>
-                        {confirmable && <Button size="sm" variant="ghost" disabled={saving} title="It still holds: mark it confirmed today" onClick={() => void confirmToday()}>Still true</Button>}
-                        <Button size="sm" icon={<Pencil size={13} aria-hidden />} onClick={() => setEditing(true)}>Edit</Button>
-                        <Button size="sm" variant="ghost" aria-label="Retire…" title="Retire: the bot stops using it" disabled={saving} icon={<Archive size={14} aria-hidden />} className="px-1.5 enabled:hover:bg-down/10 enabled:hover:text-down" onClick={() => setRetiring(true)} />
-                      </>}
+                      {editing || state.dirty
+                        ? <Button size="sm" disabled={saving} className="w-[66px]" onClick={() => { if (state.dirty && selected) setPendingSelect(selected); else setEditing(false); }}>Cancel</Button>
+                        : <Button size="sm" icon={<Pencil size={13} aria-hidden />} className="w-[66px]" onClick={() => setEditing(true)}>Edit</Button>}
+                      <Button size="sm" variant="ghost" aria-label="Retire…" title={state.dirty ? 'Save or cancel your edits first' : 'Retire: the bot stops using it'} disabled={saving || state.dirty} icon={<Archive size={14} aria-hidden />} className="px-1.5 enabled:hover:bg-down/10 enabled:hover:text-down" onClick={() => setRetiring(true)} />
                     </div>
                   )}
                 </div>
@@ -438,7 +440,7 @@ export const Pages = () => {
                   onSettle={() => void navigate('/knowledge/overview#todo')}
                 />
                 {!editing && !state.dirty && (
-                  <div className="-mx-4 text-sm"><PageBody text={readBody(page, pageBody(draft))} onOpen={(href) => void serra()?.app.openExternal(href)} /></div>
+                  <div className="-mx-4 max-w-[76ch] text-sm"><PageBody text={readBody(page, pageBody(draft))} onOpen={(href) => void serra()?.app.openExternal(href)} /></div>
                 )}
                 {(editing || state.dirty) && <>
                 <textarea
@@ -448,7 +450,7 @@ export const Pages = () => {
                   aria-label={`Markdown of ${page.path}`}
                   aria-invalid={state.problems.length > 0 ? true : undefined}
                   aria-describedby="page-editor-status"
-                  className={cx('min-h-[28rem] w-full resize-y px-3 py-2.5 font-mono leading-5', fieldClass(state.problems.length > 0))}
+                  className={cx('min-h-64 w-full px-3.5 py-3 font-mono leading-5 [field-sizing:content] resize-none', fieldClass(state.problems.length > 0))}
                 />
                 <div id="page-editor-status" className="-mt-2 flex flex-col gap-2">
                   {state.refusal ? (
@@ -463,13 +465,14 @@ export const Pages = () => {
                     </p>
                   )}
                 </div>
-                <div className="flex flex-wrap items-center gap-2">
+                <div className="sticky bottom-0 -mx-1 flex flex-wrap items-center gap-2 border-t border-line bg-canvas px-1 py-3">
                   <Button variant="primary" disabled={!state.canSave || saving} title={state.refusal ?? undefined} onClick={() => void save()}>
                     {saving ? 'Saving…' : 'Save'}
                   </Button>
-                  {state.dirty ? <Button disabled={saving} onClick={() => setDraft(saved ?? '')}>Revert</Button> : <Button onClick={() => setEditing(false)}>Done</Button>}
+                  <Button disabled={!state.dirty || saving} onClick={() => setDraft(saved ?? '')}>Revert</Button>
                   <Button
                     variant="ghost"
+                    icon={<CheckCircle2 size={14} aria-hidden />}
                     disabled={saving}
                     title="Sets the verified date. Save to keep it."
                     onClick={() => setDraft((text) => markVerified(text, localDate(new Date())))}
@@ -509,7 +512,8 @@ export const Pages = () => {
               onClick={() => {
                 const next = pendingSelect;
                 setPendingSelect(null);
-                if (next) setSelected(next);
+                // Cancel on the open page asks this too: discarding there closes the editor.
+                if (next && next === selected) { setDraft(saved ?? ''); setEditing(false); } else if (next) setSelected(next);
               }}
             >
               Discard

@@ -21,7 +21,7 @@ const Section = ({ title, aside, children, className }: { title: string; aside?:
   const id = useId();
   return (
     <section aria-labelledby={id} className={cx('flex min-w-0 flex-col gap-3', className)}>
-      <div className="flex items-baseline justify-between gap-3">
+      <div className="flex min-h-7 items-center justify-between gap-3">
         <h2 id={id} className="text-sm font-semibold">{title}</h2>
         {aside && <div className="text-xs text-muted">{aside}</div>}
       </div>
@@ -35,7 +35,7 @@ const Section = ({ title, aside, children, className }: { title: string; aside?:
 const Stat = ({ label, value, unit, note }: { label: string; value: number; unit?: string; note: string }) => (
   <div className="flex min-w-0 flex-col gap-1 border-line px-5 py-4 not-first:border-l max-sm:nth-3:border-l-0 max-sm:nth-[n+3]:border-t">
     <p className="text-xs font-medium text-muted">{label}</p>
-    <p className="text-[28px] leading-8 font-semibold tracking-[-0.02em] tabular-nums text-ink">{value}{unit && <span className="ml-0.5 text-base font-medium text-faint">{unit}</span>}</p>
+    <p className="text-[28px] leading-8 font-semibold tracking-[-0.02em] tabular-nums text-ink">{value}{unit && <span className="text-base font-medium text-faint">{unit}</span>}</p>
     <p className="truncate text-xs text-faint" title={note}>{note}</p>
   </div>
 );
@@ -198,7 +198,7 @@ export const Overview = () => {
         <FixList overview={overview} onOpen={open} onChanged={() => void load()} />
         <div className="flex min-w-0 flex-col gap-8">
           <Section title="Coverage" aside={`${health.areas.length} areas`}>
-            <ul className="flex flex-col gap-2.5" aria-label="Pages by area">
+            <ul className="flex flex-col gap-2.5 border-t border-line pt-3" aria-label="Pages by area">
               {health.areas.map((area) => (
                 <li key={area.area} title={area.headline ?? undefined} className="grid grid-cols-[7.5rem_minmax(0,1fr)_1.5rem] items-center gap-3 text-[13px]">
                   <span className="flex min-w-0 items-center gap-1 truncate text-muted">
@@ -215,7 +215,7 @@ export const Overview = () => {
           </Section>
           {overview.points.length > 1 && (
             <Section title="Growth" aside={`${health.facts} facts`}>
-              <ScoreChart overview={overview} />
+              <div className="border-t border-line pt-3"><ScoreChart overview={overview} /></div>
             </Section>
           )}
         </div>

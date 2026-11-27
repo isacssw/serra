@@ -220,7 +220,7 @@ export const fixItems = (overview: Pick<KnowledgeOverview, 'review' | 'health' |
 /** What kind of job a To do item is, from its id: `proposal`, `conflict`, `draft`, `missing`, a review fix's id… */
 export const fixKind = (item: Pick<FixItem, 'id' | 'suggestion'>): string => item.suggestion?.kind ?? item.id.split(':')[0]!;
 
-const names = (titles: string[], shown = 3): string =>
+const names = (titles: string[], shown = 2): string =>
   titles.length > shown ? `${titles.slice(0, shown).join(', ')} and ${titles.length - shown} more` : titles.join(', ');
 
 /**
@@ -257,5 +257,5 @@ export const todoSummary = (items: readonly FixItem[]): string => {
     proposals && `${proposals} proposal${proposals === 1 ? '' : 's'}`,
     drafts && `${drafts} to confirm`,
     conflicts && `${conflicts} conflict${conflicts === 1 ? '' : 's'}`,
-  ].filter(Boolean).concat(rest && !(proposals && drafts && conflicts) ? [`${rest} other`] : []).join(' · ') || 'Nothing to do';
+  ].filter(Boolean).concat(rest ? [`${rest} other`] : []).slice(0, 2).join(' · ') || 'Nothing to do';
 };

@@ -32,7 +32,7 @@ import { taskLink } from './newTask.logic.ts';
 const message = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
 const Queue = ({ proposals, selected, onSelect }: { proposals: Proposal[]; selected: string | null; onSelect: (path: string) => void }) => (
-  <nav aria-label="Proposals" className="-mx-2.5 flex w-[calc(100%+20px)] shrink-0 flex-col gap-4 lg:sticky lg:top-3 lg:w-64">
+  <nav aria-label="Proposals" className="-mx-2.5 flex w-[calc(100%+20px)] shrink-0 flex-col gap-4 self-start pt-4 lg:sticky lg:top-0 lg:mr-6 lg:w-64">
     {groupByDate(proposals).map((group) => (
       <section key={group.date ?? 'undated'} aria-label={group.label} className="flex flex-col gap-px">
         <h2 className="px-2.5 pb-1 text-xs font-medium text-faint">{group.label}</h2>
@@ -226,6 +226,7 @@ export const Proposals = () => {
   return (
     <Page
       title="Proposals"
+      meta={proposals && proposals.length > 0 ? proposals.length : undefined}
       actions={<InterviewButton autoOpen={search.get('interview') === '1'} onOpened={() => setSearch((params) => { params.delete('interview'); return params; }, { replace: true })} />}
     >
       {loadError && <p role="alert" className="text-sm text-down">{loadError}</p>}
@@ -234,9 +235,9 @@ export const Proposals = () => {
         <EmptyState icon={<Inbox size={18} />} title="Nothing waiting" />
       )}
       {proposals && proposals.length > 0 && (
-        <div className="flex flex-col gap-6 lg:flex-row lg:items-start">
+        <div className="flex flex-col gap-6 border-t border-line lg:flex-row lg:items-stretch lg:gap-0">
           <Queue proposals={proposals} selected={selected} onSelect={setSelected} />
-          <div className="flex min-w-0 flex-1 flex-col gap-5 lg:border-l lg:border-line lg:pl-8">
+          <div className="flex min-w-0 flex-1 flex-col gap-5 pt-5 lg:min-h-[calc(100vh-120px)] lg:border-l lg:border-line lg:pl-8">
             {diffError && <p role="alert" className="text-sm text-down">{diffError}</p>}
             {!diff && !diffError && <p className="text-[13px] text-muted">Loading…</p>}
             {diff && bridge && (
@@ -273,7 +274,7 @@ export const Proposals = () => {
                 {landing(diff, folder) === null
                   ? <NewPage text={asWritten(diff, folder, picked)} />
                   : <RuleDiff current={landing(diff, folder)} proposed={asWritten(diff, folder, picked)} />}
-                <footer className="flex flex-col gap-3 border-t border-line pt-4">
+                <footer className="sticky bottom-0 -mx-1 flex flex-col gap-3 border-t border-line bg-canvas px-1 pt-4 pb-4">
                   <div className="flex flex-wrap items-end gap-x-3 gap-y-3">
                     {/* A rewrite of a page goes where the page is; only a new page asks where. */}
                     {diff.proposal.target ? null : folders.length > 0 ? (
@@ -289,16 +290,19 @@ export const Proposals = () => {
                       <p className="text-[13px] text-muted">No folders yet.</p>
                     )}
                     <AudienceChoice id="proposal-audience" label value={picked ?? approvalAudience(diff.proposed, landing(diff, folder)).audience} disabled={busy} onChange={setPicked} />
-                    <div className="ml-auto flex flex-wrap items-center gap-2">
-                      <Button
-                        variant="ghost"
-                        icon={<Trash2 size={14} aria-hidden />}
-                        className="enabled:hover:bg-down/10 enabled:hover:text-down"
-                        disabled={busy}
-                        onClick={() => void act((path) => bridge.proposals.discard(path), `Discarded ${title}.`)}
-                      >
-                        Discard
-                      </Button>
+                  </div>
+                  {picked === null && asks(diff, folder) && <p className="-mt-1 text-xs text-muted">{asks(diff, folder)}</p>}
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Button
+                      variant="ghost"
+                      icon={<Trash2 size={14} aria-hidden />}
+                      className="-ml-3 enabled:hover:bg-down/10 enabled:hover:text-down"
+                      disabled={busy}
+                      onClick={() => void act((path) => bridge.proposals.discard(path), `Discarded ${title}.`)}
+                    >
+                      Discard
+                    </Button>
+                    <div className="ml-auto flex items-center gap-2">
                       <Button disabled={busy || targets.pages.length === 0} onClick={() => setMergeOpen(true)}>Merge into…</Button>
                       <Button
                         variant="primary"
@@ -312,7 +316,6 @@ export const Proposals = () => {
                       </Button>
                     </div>
                   </div>
-                  {picked === null && asks(diff, folder) && <p className="text-xs text-muted">{asks(diff, folder)}</p>}
                 </footer>
               </>
             )}
@@ -394,14 +397,13 @@ const sourcesOf = (text: string): string[] => {
 const NewPage = ({ text }: { text: string }) => {
   const [header, setHeader] = useState(false);
   return (
-    <section aria-label="Proposed page" className="overflow-hidden rounded-xl border border-line bg-panel shadow-card">
-      <div className="flex items-center justify-between gap-3 border-b border-line-subtle py-1.5 pr-1.5 pl-4">
-        <span className="text-xs font-medium text-muted">New page</span>
-        <Button size="sm" variant="ghost" aria-pressed={header} onClick={() => setHeader(!header)}>{header ? 'Hide header' : 'Show header'}</Button>
+    <section aria-label="Proposed page" className="relative rounded-xl border border-line bg-panel shadow-card">
+      <Button size="sm" variant="ghost" aria-pressed={header} className="absolute top-2 right-2" onClick={() => setHeader(!header)}>{header ? 'Hide front matter' : 'Front matter'}</Button>
+      <div className="max-w-[76ch] pt-1 pr-28">
+        {header
+          ? <pre className="overflow-x-auto px-4 py-3 font-mono text-xs leading-5 whitespace-pre-wrap text-ink">{text}</pre>
+          : <PageBody text={pageBody(text)} onOpen={(href) => void serra()?.app.openExternal(href)} />}
       </div>
-      {header
-        ? <pre className="overflow-x-auto px-4 py-3 font-mono text-xs leading-5 whitespace-pre-wrap text-ink">{text}</pre>
-        : <PageBody text={pageBody(text)} onOpen={(href) => void serra()?.app.openExternal(href)} />}
     </section>
   );
 };

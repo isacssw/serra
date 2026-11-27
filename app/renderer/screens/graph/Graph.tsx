@@ -286,7 +286,7 @@ const GraphMap = ({ graph, controller, onOpen, onChanged }: { graph: CanvasGraph
   const atRest = !playing && progress >= 1;
 
   return (
-    <div className="flex h-full flex-col gap-3 px-8 pt-3 pb-6">
+    <div className="mx-auto flex h-full w-full max-w-5xl flex-col gap-6 px-8 pt-3 pb-6">
       <header className="flex min-h-8 flex-wrap items-center gap-x-4 gap-y-2">
         <div className="flex items-baseline gap-2.5">
           <h1 tabIndex={-1} className="text-xl leading-7 font-semibold tracking-[-0.012em]">Graph</h1>

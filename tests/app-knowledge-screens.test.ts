@@ -50,7 +50,7 @@ test('Pages: a row is the page name with its description under it, only when it 
 
 test('Pages: the meta line says the area, when it was written and whether it is verified', () => {
   assert.equal(pageMeta({ area: 'Processes', written: '2026-10-24', verified: '2026-11-18' }), 'Processes · written Oct 24 · verified Nov 18');
-  assert.equal(pageMeta({ verified: null }), 'not verified');
+  assert.equal(pageMeta({ area: 'People', verified: null }), 'People');
 });
 
 test('Proposals: the meta line leaves out a source that was not recorded', () => {
@@ -71,6 +71,6 @@ test('Overview: proposals and pages to confirm fold into one row each, in the pl
   assert.equal(grouped[2]!.href, '/knowledge/pages');
   // One of a kind stays its own row.
   assert.deepEqual(groupFixes([item('proposal:1', 'Sentry')]).map((one) => [one.title, one.why]), [['Sentry', 'Proposal']]);
-  assert.equal(todoSummary(items), '2 proposals · 2 to confirm · 1 conflict');
+  assert.equal(todoSummary(items), '2 proposals · 2 to confirm');
   assert.equal(todoSummary([]), 'Nothing to do');
 });

@@ -1,7 +1,7 @@
 // Knowledge → About me (SERRA-41): what every job's brief carries about the owner, exactly as a worker gets it, for
 // each audience a reply can have. It's built from the owner's confirmed pages under owner/, so it's edited there.
 import { useCallback, useEffect, useState } from 'react';
-import { Building2, ChevronDown, FileText, Pencil, User, Users } from 'lucide-react';
+import { Building2, FileText, Pencil, User, Users } from 'lucide-react';
 import { useNavigate } from 'react-router';
 import {
   ABOUT_MAX_CHARS, OFFLIMITS_PREFACE, PEOPLE_PREFACE, type AboutMe as AboutMeData, type Audience, type Visibility,
@@ -10,7 +10,7 @@ import { PageBody } from './PageBody.tsx';
 import { AudienceChoice } from './AudienceChoice.tsx';
 import { aboutCard, leftOutLine, sectionTitle } from './about.logic.ts';
 import { serra } from '../bridge.ts';
-import { Button, cx, Dialog, EmptyState, Page, Segmented, useToast } from '../ui/index.ts';
+import { Badge, Button, Dialog, EmptyState, Page, Segmented, useToast } from '../ui/index.ts';
 
 const AUDIENCES = [
   { value: 'owner', label: 'You', icon: <User size={14} />, title: 'Your DMs and tasks you start in the app' },
@@ -26,7 +26,7 @@ const message = (error: unknown): string => (error instanceof Error ? error.mess
 const Meter = ({ used }: { used: number }) => (
   <span className="flex items-center gap-2">
     In every brief
-    <span aria-hidden className="h-1 w-16 overflow-hidden rounded-full bg-selected"><span className="block h-full rounded-full bg-muted" style={{ width: `${Math.max(2, used)}%` }} /></span>
+    <span aria-hidden className="h-1.5 w-24 overflow-hidden rounded-full bg-line-strong"><span className="block h-full rounded-full bg-muted" style={{ width: `max(6px, ${used}%)` }} /></span>
     <span className="tabular-nums">{used}%</span>
   </span>
 );
@@ -97,22 +97,21 @@ export const AboutMe = () => {
       {error && <p role="alert" className="text-sm text-down">{error}</p>}
       {(leftOut || untagged.length > 0) && (
         <div className="-mt-2 flex flex-col gap-2">
-          <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[13px] text-muted">
+          <p className="flex flex-wrap items-center gap-x-6 gap-y-1 text-[13px] text-muted">
             {leftOut && (
               <span className="inline-flex items-center gap-1">
                 {leftOut}
                 <span aria-hidden className="text-faint">·</span>
-                <button type="button" aria-expanded={review} onClick={() => setReview(!review)} className="inline-flex items-center gap-0.5 rounded-sm font-medium text-ink hover:underline focus-visible:outline-2 focus-visible:outline-focus">
-                  Review<ChevronDown size={13} aria-hidden className={cx('transition-transform', review && 'rotate-180')} />
+                <button type="button" aria-expanded={review} onClick={() => setReview(!review)} className="rounded-sm font-medium text-ink underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-focus">
+                  {review ? 'Hide' : 'Review'}
                 </button>
               </span>
             )}
-            {leftOut && untagged.length > 0 && <span aria-hidden className="text-line-control">|</span>}
             {untagged.length > 0 && (
               <span className="inline-flex items-center gap-1" title="Teammates\u2019 briefs leave these out until you choose">
-                {untagged.length === 1 ? '1 page only you may hear' : `${untagged.length} pages only you may hear`}
+                {untagged.length === 1 ? '1 page' : `${untagged.length} pages`} {visibility === 'owner' ? 'only you may hear' : 'not shared yet'}
                 <span aria-hidden className="text-faint">·</span>
-                <button type="button" onClick={() => { setShareTo('team'); setSharing(new Set()); }} className="rounded-sm font-medium text-ink hover:underline focus-visible:outline-2 focus-visible:outline-focus">Share…</button>
+                <button type="button" onClick={() => { setShareTo('team'); setSharing(new Set()); }} className="rounded-sm font-medium text-ink underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-focus">Share…</button>
               </span>
             )}
           </p>
@@ -146,13 +145,14 @@ export const AboutMe = () => {
             const editable = section.path !== 'people/' && section.path !== 'outsiders' && section.path !== 'private topics';
             return (
               <section key={section.path} aria-label={card.title} className="group rounded-xl border border-line bg-panel shadow-card">
-                <header className="flex min-h-11 items-center justify-between gap-3 pt-2 pr-2 pl-4">
+                <header className="flex items-center justify-between gap-3 pt-2.5 pr-2.5 pl-5">
                   <h2 className="min-w-0 truncate text-sm font-semibold" title={section.path}>{card.title}</h2>
+                  {(section.path === 'outsiders' || section.path === 'private topics') && <Badge title="Serra adds this rule for these replies">Built-in</Badge>}
                   {editable && (
                     <Button size="sm" variant="ghost" icon={<Pencil size={13} aria-hidden />} aria-label={`Edit ${card.title}`} onClick={() => edit(section.path)}>Edit</Button>
                   )}
                 </header>
-                <div className="-mt-1.5"><PageBody text={card.body} onOpen={(href) => { serra()?.app.openExternal(href).catch((failure: unknown) => toast({ message: message(failure), tone: 'error' })); }} /></div>
+                <div className="-mt-2.5 max-w-[76ch] px-1 pb-1"><PageBody text={card.body} onOpen={(href) => { serra()?.app.openExternal(href).catch((failure: unknown) => toast({ message: message(failure), tone: 'error' })); }} /></div>
               </section>
             );
           })}
