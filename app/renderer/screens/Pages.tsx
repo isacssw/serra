@@ -23,7 +23,7 @@ import { Badge, Button, cx, Dialog, EmptyState, Page, useToast } from '../ui/ind
 import { fieldClass } from '../ui/field.ts';
 import {
   badgeLabel, currentRules, badgeTitle, badgeTone, editorState, filterPages, groupByArea, keepSelection, localDate, markVerified,
-  pageDetail, pageLabel, pageMeta,
+  joinHeader, pageDetail, pageLabel, pageMeta, splitHeader,
 } from './pages.logic.ts';
 
 const message = (error: unknown): string => (error instanceof Error ? error.message : String(error));
@@ -37,6 +37,46 @@ const AudiencePicker = ({ text, disabled, onChange }: { text: string; disabled: 
     onChange={(audience) => onChange(setHeaderField(text, 'audience', audience))}
   />
 );
+
+/**
+ * The Markdown editor: the page's body in the main field, its header (type, dates, sources) folded under "Page
+ * header" until asked for, since the title row above already shows what's in it. Both edit the one draft.
+ */
+const PageEditor = ({ draft, invalid, path, onChange }: { draft: string; invalid: boolean; path: string; onChange: (text: string) => void }) => {
+  const [open, setOpen] = useState(false);
+  const { header, body } = splitHeader(draft);
+  const fields = header === null ? [] : header.split('\n').flatMap((line) => { const key = /^([A-Za-z_-]+):/.exec(line)?.[1]; return key ? [key] : []; });
+  return (
+    <div className="flex flex-1 flex-col gap-2">
+      {header !== null && (
+        <div className="flex flex-col gap-2">
+          <Button size="sm" variant="ghost" flush className="self-start" aria-expanded={open} onClick={() => setOpen(!open)}>
+            <ChevronRight size={13} aria-hidden className={cx('transition-transform', open && 'rotate-90')} />Page header
+            <span className="font-normal text-faint">{fields.join(', ')}</span>
+          </Button>
+          {open && (
+            <textarea
+              value={header}
+              onChange={(event) => onChange(joinHeader(event.target.value, body))}
+              spellCheck={false}
+              aria-label={`Header of ${path}`}
+              className={cx('w-full resize-none px-3.5 py-2.5 font-mono leading-5 text-[12px]! text-muted! [field-sizing:content]', fieldClass(false))}
+            />
+          )}
+        </div>
+      )}
+      <textarea
+        value={body}
+        onChange={(event) => onChange(joinHeader(header, event.target.value))}
+        spellCheck={false}
+        aria-label={`Markdown of ${path}`}
+        aria-invalid={invalid ? true : undefined}
+        aria-describedby="page-editor-status"
+        className={cx('min-h-64 w-full flex-1 resize-none px-3.5 py-3 font-mono leading-5 text-[12.5px]! [field-sizing:content]', fieldClass(invalid))}
+      />
+    </div>
+  );
+};
 
 type Drifted = { path: string; approved: string | null; current: string | null };
 
@@ -361,6 +401,8 @@ export const Pages = () => {
     </div>
   );
   const conflicted = pairs.some((issue) => issue.kind === 'conflict');
+  // Today's date, for the editor's "Verified today" box.
+  const [today] = useState(() => localDate(new Date()));
   const detail = page ? pageDetail(page) : null;
 
   return (
@@ -439,18 +481,10 @@ export const Pages = () => {
                   onSettle={() => void navigate('/knowledge/overview#todo')}
                 />
                 {!editing && !state.dirty && (
-                  <div className="-mx-4 max-w-[76ch] text-sm"><PageBody text={readBody(page, pageBody(draft))} onOpen={(href) => void serra()?.app.openExternal(href)} /></div>
+                  <div className="-mx-4 max-w-[76ch] text-sm"><PageBody strong text={readBody(page, pageBody(draft))} onOpen={(href) => void serra()?.app.openExternal(href)} /></div>
                 )}
                 {(editing || state.dirty) && <>
-                <textarea
-                  value={draft}
-                  onChange={(event) => setDraft(event.target.value)}
-                  spellCheck={false}
-                  aria-label={`Markdown of ${page.path}`}
-                  aria-invalid={state.problems.length > 0 ? true : undefined}
-                  aria-describedby="page-editor-status"
-                  className={cx('min-h-64 w-full px-3.5 py-3 font-mono leading-5 [field-sizing:content] resize-none text-[12.5px]!', fieldClass(state.problems.length > 0))}
-                />
+                <PageEditor draft={draft} invalid={state.problems.length > 0} path={page.path} onChange={setDraft} />
                 <div id="page-editor-status" className="-mt-2 flex flex-col gap-2">
                   {state.refusal ? (
                     <div role="alert" className="flex flex-col gap-1 text-[13px] text-down">
@@ -465,21 +499,25 @@ export const Pages = () => {
                   )}
                 </div>
                 <div className="sticky bottom-0 mt-auto flex flex-wrap items-center gap-2 border-t border-line bg-canvas py-3">
-                  <Button variant="primary" className="disabled:bg-raised! disabled:text-faint! disabled:opacity-100!" disabled={!state.canSave || saving} title={state.refusal ?? undefined} onClick={() => void save()}>
-                    {saving ? 'Saving…' : 'Save'}
-                  </Button>
-                  <Button disabled={saving} onClick={() => { if (state.dirty && selected) setPendingSelect(selected); else setEditing(false); }}>Cancel</Button>
-                  <span aria-hidden className="mx-1 h-5 w-px bg-line" />
-                  <Button
-                    variant="ghost"
-                    icon={<CheckCircle2 size={14} aria-hidden />}
-                    disabled={saving}
-                    title="Sets the verified date. Save to keep it."
-                    onClick={() => setDraft((text) => markVerified(text, localDate(new Date())))}
-                  >
-                    Mark verified today
-                  </Button>
-                  <span className={cx('ml-auto text-xs tabular-nums', state.overCap ? 'text-down' : 'text-faint')}>{state.linesLabel}</span>
+                  <label className="flex cursor-pointer items-center gap-2 text-[13px] text-ink" title="Sets the verified date. Save to keep it.">
+                    <input
+                      type="checkbox"
+                      disabled={saving}
+                      checked={frontmatter(draft)?.get('verified')?.trim() === today}
+                      onChange={(event) => setDraft((text) => (event.target.checked
+                        ? markVerified(text, today)
+                        : setHeaderField(text, 'verified', frontmatter(saved ?? '')?.get('verified')?.trim() || 'no')))}
+                      className="size-4 accent-[var(--color-accent)]"
+                    />
+                    Verified today
+                  </label>
+                  <span className={cx('text-xs tabular-nums', state.overCap ? 'text-down' : 'text-faint')}>{state.linesLabel}</span>
+                  <span className="ml-auto flex items-center gap-2">
+                    <Button disabled={saving} onClick={() => { if (state.dirty && selected) setPendingSelect(selected); else setEditing(false); }}>Cancel</Button>
+                    <Button variant="primary" className="disabled:bg-raised! disabled:text-faint! disabled:opacity-100!" disabled={!state.canSave || saving} title={state.refusal ?? undefined} onClick={() => void save()}>
+                      {saving ? 'Saving…' : 'Save'}
+                    </Button>
+                  </span>
                 </div>
                 </>}
               </>

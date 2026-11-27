@@ -66,7 +66,7 @@ export const Segmented = <V extends string>({
               'inline-flex items-center gap-1.5 rounded-md font-medium whitespace-nowrap transition-colors duration-150',
               'focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-focus disabled:cursor-not-allowed',
               size === 'sm' ? 'h-[22px] px-2 text-xs' : 'h-[26px] px-2.5 text-[13px]',
-              on ? 'bg-[light-dark(#ffffff,#2a2a31)] text-ink shadow-[0_1px_2px_rgb(0_0_0/0.14),0_0_0_1px_var(--color-line-strong)]' : 'text-muted enabled:hover:text-ink',
+              on ? 'bg-[light-dark(#ffffff,#2a2a31)] text-ink shadow-[inset_0_1px_0_light-dark(#ffffff00,#ffffff1a),0_1px_2px_rgb(0_0_0/0.14),0_0_0_1px_var(--color-line-strong)]' : 'text-muted enabled:hover:text-ink',
             )}
           >
             {option.icon && <span aria-hidden className={cx('flex', on ? 'text-ink' : 'text-faint')}>{option.icon}</span>}

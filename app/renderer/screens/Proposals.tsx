@@ -12,6 +12,7 @@ import { serra } from '../bridge.ts';
 import { REFRESH_COUNTS, announceTaskStart } from '../shell/events.ts';
 import { Button, cx, Dialog, EmptyState, Page, Select, TextArea, useToast } from '../ui/index.ts';
 import { PageBody } from './PageBody.tsx';
+import { aboutCard } from './about.logic.ts';
 import { RuleDiff } from './proposals/RuleDiff.tsx';
 import { MeetingReview } from './proposals/MeetingReview.tsx';
 import { AudienceChoice } from './AudienceChoice.tsx';
@@ -32,7 +33,7 @@ import { taskLink } from './newTask.logic.ts';
 const message = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
 const Queue = ({ proposals, selected, onSelect }: { proposals: Proposal[]; selected: string | null; onSelect: (path: string) => void }) => (
-  <nav aria-label="Proposals" className="flex w-full shrink-0 flex-col gap-4 pt-3 lg:mr-6 lg:h-full lg:w-64 lg:overflow-y-auto lg:overscroll-contain lg:pb-6">
+  <nav aria-label="Proposals" className="flex w-full shrink-0 flex-col gap-4 pt-3 lg:mr-6 lg:h-full lg:w-72 lg:overflow-y-auto lg:overscroll-contain lg:pb-6">
     {groupByDate(proposals).map((group) => (
       <section key={group.date ?? 'undated'} aria-label={group.label} className="flex flex-col gap-px">
         <h2 className="sticky top-0 z-10 bg-canvas px-2.5 pt-1 pb-1 text-xs font-medium text-faint">{group.label}</h2>
@@ -272,9 +273,9 @@ export const Proposals = () => {
                 )}
                 {/* The proposed text first: a new page as it will read, a change as a diff against the page now. */}
                 {landing(diff, folder) === null
-                  ? <NewPage text={asWritten(diff, folder, picked)} />
+                  ? <NewPage title={title} text={asWritten(diff, folder, picked)} />
                   : <RuleDiff current={landing(diff, folder)} proposed={asWritten(diff, folder, picked)} />}
-                <footer className="sticky bottom-0 mt-auto flex flex-col gap-3 border-t border-line bg-canvas pt-4 pb-4">
+                <footer className="sticky bottom-0 flex flex-col gap-3 border-t border-line bg-canvas pt-4 pb-4">
                   <div className="flex flex-wrap items-end gap-x-3 gap-y-3">
                     {/* A rewrite of a page goes where the page is; only a new page asks where. */}
                     {diff.proposal.target ? null : folders.length > 0 ? (
@@ -394,11 +395,18 @@ const sourcesOf = (text: string): string[] => {
 };
 
 /** A new page as it will read once added; its header (dates, sources) on request. */
-const NewPage = ({ text }: { text: string }) => (
+const NewPage = ({ text, title }: { text: string; title: string }) => (
   <section aria-label="Proposed page" className="rounded-xl border border-line bg-panel shadow-card">
-    <div className="max-w-[76ch] pt-1"><PageBody text={pageBody(text)} onOpen={(href) => void serra()?.app.openExternal(href)} /></div>
+    <div className="max-w-[76ch] pt-1"><PageBody strong text={withoutTitle(pageBody(text), title)} onOpen={(href) => void serra()?.app.openExternal(href)} /></div>
   </section>
 );
+
+/** The body without its first heading when that heading only repeats the proposal's title ("On-call handover"). */
+const withoutTitle = (body: string, title: string): string => {
+  const card = aboutCard('', body);
+  const [a, b] = [card.title.toLowerCase(), title.toLowerCase()];
+  return card.body && (a === b || b.startsWith(a) || a.startsWith(b)) ? card.body : body;
+};
 
 /** Where the proposal came from and when, in one line; nothing for what wasn't recorded. Its sources on hover. */
 const Meta = ({ diff }: { diff: ProposalDiff }) => {

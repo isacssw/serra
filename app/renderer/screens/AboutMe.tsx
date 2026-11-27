@@ -99,9 +99,8 @@ export const AboutMe = () => {
         <div className="-mt-2 flex flex-col gap-2">
           <p className="flex flex-wrap items-center gap-x-6 gap-y-1 text-[13px] text-muted">
             {leftOut && (
-              <span className="inline-flex items-center gap-1">
+              <span className="inline-flex items-center gap-2">
                 {leftOut}
-                <span aria-hidden className="text-faint">·</span>
                 <button type="button" aria-expanded={review} onClick={() => setReview(!review)} className="rounded-sm font-medium text-ink underline decoration-line-control underline-offset-[3px] hover:decoration-ink focus-visible:outline-2 focus-visible:outline-focus">
                   {review ? 'Hide' : 'Review'}
                 </button>
@@ -109,9 +108,8 @@ export const AboutMe = () => {
             )}
             {leftOut && untagged.length > 0 && <span aria-hidden className="-mx-3 text-faint">·</span>}
             {untagged.length > 0 && (
-              <span className="inline-flex items-center gap-1" title="Teammates\u2019 briefs leave these out until you choose">
+              <span className="inline-flex items-center gap-2" title="Teammates\u2019 briefs leave these out until you choose">
                 {untagged.length === 1 ? '1 page' : `${untagged.length} pages`} {visibility === 'owner' ? 'only you may hear' : 'not shared yet'}
-                <span aria-hidden className="text-faint">·</span>
                 <button type="button" onClick={() => { setShareTo('team'); setSharing(new Set()); }} className="rounded-sm font-medium text-ink underline decoration-line-control underline-offset-[3px] hover:decoration-ink focus-visible:outline-2 focus-visible:outline-focus">Share…</button>
               </span>
             )}
@@ -148,7 +146,7 @@ export const AboutMe = () => {
               <section key={section.path} aria-label={card.title} className="group rounded-xl border border-line bg-panel shadow-card">
                 <header className="flex items-center justify-between gap-3 pt-2.5 pr-2.5 pl-5">
                   <h2 className="min-w-0 truncate text-sm font-semibold" title={section.path}>{card.title}</h2>
-                  {(section.path === 'outsiders' || section.path === 'private topics') && <Badge title="Serra adds this rule for these replies">Built-in</Badge>}
+                  {(section.path === 'outsiders' || section.path === 'private topics') && <Badge title="Serra adds this rule for these replies" className="my-1 mr-2">Built-in</Badge>}
                   {editable && (
                     <Button size="sm" variant="ghost" icon={<Pencil size={13} aria-hidden />} aria-label={`Edit ${card.title}`} onClick={() => edit(section.path)}>Edit</Button>
                   )}

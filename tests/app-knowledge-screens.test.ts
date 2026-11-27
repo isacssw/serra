@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { aboutCard, leftOutLine, sectionTitle } from '../app/renderer/screens/about.logic.ts';
 import { groupFixes, todoSummary, type FixItem } from '../app/renderer/screens/overview.logic.ts';
-import { groupByArea, pageDetail, pageLabel, pageMeta } from '../app/renderer/screens/pages.logic.ts';
+import { groupByArea, joinHeader, pageDetail, pageLabel, pageMeta, splitHeader } from '../app/renderer/screens/pages.logic.ts';
 import { proposalMeta, sourceLine } from '../app/renderer/screens/proposals.logic.ts';
 import type { KnowledgePage } from '../src/contracts.ts';
 import { OFFLIMITS_PREFACE, PEOPLE_PREFACE } from '../src/owner-model.ts';
@@ -73,4 +73,16 @@ test('Overview: proposals and pages to confirm fold into one row each, in the pl
   assert.deepEqual(groupFixes([item('proposal:1', 'Sentry')]).map((one) => [one.title, one.why]), [['Sentry', 'Proposal']]);
   assert.equal(todoSummary(items), '2 proposals · 1 conflict · 2 to confirm');
   assert.equal(todoSummary([]), 'Nothing to do');
+});
+
+test('Pages: the editor folds the header away and puts the page back exactly', () => {
+  const text = '---\ntype: process\nverified: 2026-11-18\n---\n\n# Deploys\n\nTuesdays.\n';
+  const { header, body } = splitHeader(text);
+  assert.equal(header, 'type: process\nverified: 2026-11-18');
+  assert.equal(body, '\n# Deploys\n\nTuesdays.\n');
+  assert.equal(joinHeader(header, body), text);
+  assert.equal(joinHeader(header, '\n# Deploys\n\nThursdays.\n'), text.replace('Tuesdays', 'Thursdays'));
+  // A page without a header is all body; the editor's checks then say it needs one.
+  assert.deepEqual(splitHeader('no header at all\n'), { header: null, body: 'no header at all\n' });
+  assert.equal(joinHeader(null, 'no header at all\n'), 'no header at all\n');
 });

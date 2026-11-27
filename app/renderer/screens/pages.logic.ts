@@ -195,3 +195,12 @@ export const pageMeta = (page: Pick<KnowledgePage, 'area' | 'written' | 'verifie
   page.written && /^\d{4}-\d{2}-\d{2}$/.test(page.written) ? `written ${dayName(page.written)}` : null,
   page.verified ? `verified ${dayName(page.verified)}` : null,
 ].filter(Boolean).join(' · ');
+
+/** A page's text as its header (the lines between the `---` fences) and its body, so the editor can fold the header away. */
+export const splitHeader = (text: string): { header: string | null; body: string } => {
+  const match = /^---\n([\s\S]*?)\n---\n([\s\S]*)$/.exec(text);
+  return match ? { header: match[1]!, body: match[2]! } : { header: null, body: text };
+};
+
+/** The page again from its header and body: `splitHeader`'s inverse. */
+export const joinHeader = (header: string | null, body: string): string => (header === null ? body : `---\n${header}\n---\n${body}`);
