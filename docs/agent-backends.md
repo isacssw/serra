@@ -34,8 +34,7 @@ folder and opens sessions only there. Give such an agent a `cwd`, an absolute pa
 { "agents": [{ "id": "eve", "name": "eve", "command": "/Users/you/my-agent/node_modules/.bin/eve", "args": ["acp"], "cwd": "/Users/you/my-agent" }] }
 ```
 
-Serra then starts the agent in that folder and opens every job there instead of a worktree. Since there's no throwaway
-worktree, Serra never allows what the agent asks on its own: each approval waits as a card for a person. eve has no
+Serra then starts the agent in that folder and opens every job there instead of a worktree. eve has no
 model choice, image input or restart resume over ACP. It also runs one local server per app, and a meeting run or
 **Test** starts its own copy of the agent, so those can't run on eve while a job does.
 
@@ -75,7 +74,9 @@ the weekly review. A job keeps the backend it started on, so switching never mov
 Never wider than T3 gives the same kind of run:
 
 - **Jobs, tasks, the interview:** the agent's full-access mode, as a T3 job runs. What it still asks for, and every
-  question it asks, waits as a question card in Slack (or in Jobs › Chat for an app task).
+  question it asks, waits as a question card in Slack (or in Jobs › Chat for an app task). Serra never allows a tool on
+  its own, also for an agent with no full-access mode, such as eve, with or without a `cwd`. A request the card can't
+  show, a stop, or the agent going away is a Deny.
 - **Meeting extraction, Test, the weekly review:** read-only. The agent is put in a mode that asks before any tool,
   Serra refuses every request, and stops the run, as in T3's approval-required mode.
 - **A meeting link read:** may use a read, search or fetch tool once per request; anything else is refused.

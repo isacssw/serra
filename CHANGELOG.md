@@ -4,6 +4,7 @@ Serra follows [Semantic Versioning](https://semver.org) once it reaches 1.0. Unt
 
 ## Unreleased
 
+- Fixed: an ACP agent with no full-access mode, such as eve by URL without a `cwd`, ran every tool it asked for without a card. Each approval now waits for **Allow** in Slack or Jobs › Chat, whatever the agent's setup.
 - **Knowledge conflicts, calmer:** a rule the bot learned again on a later day, with the day written in the line, is no longer a conflict. Dates, `(date, source)` notes, links and meeting tags are left out when lines are compared; real changes (a number, a day, a name, a "never") are still caught. Your pages aren't rewritten: old dated lines simply stop being flagged.
 - **Needs you, calmer:** one quiet row per job, and far fewer words. Each pair of rules that disagree leads with what differs ("3 hours" vs "4 hours") and opens to **Compare**: two cards, one **Keep** each. Every repeated rule is in one **Repeated rules** row: **Keep newer for all** handles the safe ones (one backup per page, undoable), and only the rules that need a choice show, each saying why in a few words. **Keep both** stops listing a pair without touching the page. Overview's tiles drop the duplicate **To review** count.
 - Fixed: **Keep** on one pair hid every other row for that page until Overview reloaded. The weekly review can now tidy part of a page, and the brief asks the bot to keep the learned date in `sources:` and reword a rule in place instead of adding it again.

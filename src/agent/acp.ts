@@ -17,7 +17,8 @@
 // - ask (a meeting link read; narrower than T3's default): the same mode, and Serra allows a read, search, fetch,
 //   think or other tool once, and refuses edits, deletes, moves, commands and mode switches;
 // - full (jobs, tasks, the interview; T3's default full access): the agent's full-access mode. What it still asks,
-//   and every question it asks, waits as a question card (Slack, or the app's transcript view) for a person.
+//   and every question it asks, waits as a question card (Slack, or the app's transcript view) for a person. Serra
+//   never allows a tool itself, even for an agent with no full-access mode (eve, local or by URL): it asks.
 // Serra offers the agent no file system or terminal of its own, and opens no server: stdio only.
 import { spawn, type ChildProcess } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
@@ -125,8 +126,6 @@ interface Session {
   queue: string[];
   /** What the running turn cost so far, as the agent reports it. */
   cost: { amount: number; currency: string } | null;
-  /** The agent couldn't be put in a full-access mode, so Serra allows what it asks, as T3's full access would. */
-  allowAll: boolean;
   /** A write of the streaming turn that's due (`saveSoon`). */
   saveTimer: ReturnType<typeof setTimeout> | null;
 }
@@ -447,13 +446,20 @@ export const createAcpBackend = ({
         log(`${agent.name} asked to use ${title} (${kind}): ${allow ? 'allowed once' : 'refused'}.`);
         return allow ? pick(['allow_once']) : pick(['reject_once', 'reject_always']);
       }
-      if (current.allowAll) return pick(['allow_once', 'allow_always']);
-      // Full access, and the agent still asks: a person decides, on a question card.
+      // Full access, and the agent still asks: a person decides, on a question card. Never allowed by Serra itself.
+      const question = `${agent.name} wants to: ${title}`;
       const allowOption = params.options.find((choice) => choice.kind === 'allow_once') ?? params.options.find((choice) => choice.kind === 'allow_always');
       const rejectOption = params.options.find((choice) => choice.kind === 'reject_once') ?? params.options.find((choice) => choice.kind === 'reject_always');
-      if (!allowOption || !rejectOption) return pick(['reject_once', 'reject_always']);
+      if (!allowOption || !rejectOption) {
+        // No card can offer both answers: refused, and the chat says so.
+        note(current, 'tool', current.active ?? `run-${current.record.runs}`, `Asked: ${question}`, { ask: 'permission', outcome: 'denied' });
+        save(current);
+        changed();
+        log(`${agent.name} asked to use ${title} (${kind}) without both an allow and a reject choice: refused.`);
+        return pick(['reject_once', 'reject_always']);
+      }
       const answers = await ask(current, [{
-        id: 'permission', header: 'Permission', question: `${agent.name} wants to: ${title}`,
+        id: 'permission', header: 'Permission', question,
         options: [{ label: 'Allow', description: '', value: allowOption.optionId }, { label: 'Deny', description: '', value: rejectOption.optionId }],
         allowCustomAnswer: false,
       }], 'permission');
@@ -574,20 +580,20 @@ export const createAcpBackend = ({
     })();
   };
 
-  /** Puts a new or reopened session in the mode its access needs, and on the owner's model. */
-  const configure = async (open: acp.ClientConnection, sessionId: string, modes: acp.SessionModeState | null | undefined, configOptions: acp.SessionConfigOption[] | null | undefined, access: RunAccess): Promise<boolean> => {
-    let allowAll = false;
+  /**
+   * Puts a new or reopened session in the mode its access needs, and on the owner's model. A full-access run on an
+   * agent with no such mode (eve) stays in the mode it has: what it asks, a person answers.
+   */
+  const configure = async (open: acp.ClientConnection, sessionId: string, modes: acp.SessionModeState | null | undefined, configOptions: acp.SessionConfigOption[] | null | undefined, access: RunAccess): Promise<void> => {
     const mode = modes ? modeFor(modes, access) : null;
     if (mode && mode !== modes?.currentModeId) {
       try { await open.agent.request(acp.methods.agent.session.setMode, { sessionId, modeId: mode }); } catch (error) {
         if (access !== 'full') throw new Error(`${agent.name} wouldn't switch to a mode that asks before using tools, so Serra can't run this safely. ${plain(error).message}`);
-        allowAll = true;
+        log(`${agent.name} kept its own mode: ${plain(error).message}`);
       }
     } else if (!mode && modes && access !== 'full' && PERMISSIVE.test(modes.currentModeId)) {
       throw new Error(`${agent.name} runs in "${modes.currentModeId}" mode and has none that asks before using tools, so Serra can't make this run read-only.`);
-    } else if (!mode && access === 'full') allowAll = true;
-    // An agent bound to its own folder works outside a throwaway worktree: what it asks, a person answers.
-    if (agent.cwd) allowAll = false;
+    }
     if (model) {
       const option = configOptions?.find((choice) => choice.category === 'model' || choice.id === 'model');
       if (option) {
@@ -595,11 +601,10 @@ export const createAcpBackend = ({
           .catch((error: unknown) => log(`${agent.name} kept its own model: ${plain(error).message}`));
       } else log(`${agent.name} offers no model choice over ACP; it uses its own default.`);
     }
-    return allowAll;
   };
 
-  const newSession = (record: RunRecord, allowAll: boolean): Session => ({
-    sessionId: record.sessionId, record, active: null, refused: 0, waiting: new Map(), failed: record.failed ?? null, reply: '', tools: new Map(), queue: [], cost: null, allowAll, saveTimer: null,
+  const newSession = (record: RunRecord): Session => ({
+    sessionId: record.sessionId, record, active: null, refused: 0, waiting: new Map(), failed: record.failed ?? null, reply: '', tools: new Map(), queue: [], cost: null, saveTimer: null,
   });
 
   /** A run this backend follows, reopened from its record after a restart. Throws a plain sentence when it can't be. */
@@ -613,8 +618,8 @@ export const createAcpBackend = ({
       if (!hello?.agentCapabilities?.loadSession) throw new Error(`${agent.name} can't reopen a run after a restart.`);
       let loaded: acp.LoadSessionResponse;
       try { loaded = await open.agent.request(acp.methods.agent.session.load, { sessionId: threadId, cwd: record.cwd, mcpServers }); } catch (error) { throw plain(error); }
-      const allowAll = await configure(open, threadId, loaded.modes, loaded.configOptions, record.access);
-      const current = newSession({ ...record, waiting: [] }, allowAll);
+      await configure(open, threadId, loaded.modes, loaded.configOptions, record.access);
+      const current = newSession({ ...record, waiting: [] });
       sessions.set(threadId, current);
       save(current);
       log(`Reopened ${agent.name} run ${threadId} after a restart.`);
@@ -637,9 +642,9 @@ export const createAcpBackend = ({
       created = await open.agent.request(acp.methods.agent.session.new, { cwd, mcpServers });
     } catch (error) { throw plain(error); }
     const { sessionId } = created;
-    const allowAll = await configure(open, sessionId, created.modes, created.configOptions, access);
+    await configure(open, sessionId, created.modes, created.configOptions, access);
     const record: RunRecord = { version: 1, agent: agent.id, sessionId, title: input.title, cwd, access, createdAt: now().toISOString(), runs: 0, active: null, entries: [] };
-    const current = newSession(record, allowAll);
+    const current = newSession(record);
     sessions.set(sessionId, current);
     turn(current, input.brief);
     return sessionId;
