@@ -12,7 +12,7 @@ import { pagesHandlers } from '../app/main/ipc/pages.ts';
 import type { HandlerContext } from '../app/main/ipc/context.ts';
 import { memoryPrefs } from '../app/main/prefs.ts';
 import { stoppedStatusSource } from '../app/main/status.ts';
-import { groupLine, groupPairs, isSafe, keepNames, keepNewerForAll, rowNames, sideNames, versus, wordDiff, type PairIssue } from '../app/renderer/screens/conflicts.logic.ts';
+import { groupLine, groupPairs, repeatsLine, isSafe, keepNames, keepNewerForAll, rowNames, sideNames, versus, wordDiff, type PairIssue } from '../app/renderer/screens/conflicts.logic.ts';
 import { keepNewerOnPages, keepOne, keepOver } from '../app/renderer/screens/keep.ts';
 import { fixItems, needsYou, todoTally } from '../app/renderer/screens/overview.logic.ts';
 import { currentRules, keepRule } from '../app/renderer/screens/pages.logic.ts';
@@ -310,15 +310,17 @@ test('the changed words are marked, older on the left, with buttons that say old
   assert.deepEqual(keepNames({ order: 'length' }), ['Keep shorter', 'Keep longer'], 'a rule written twice offers the longer one');
 });
 
-test('Needs you shows one row per page, in "learned again", "really disagree" and "tidy up", and counts what it shows', () => {
+test('Needs you shows a row per disagreement, one for all repeats and one to tidy, and counts what it shows', () => {
   const files = oldFormatKnowledge();
   const items = fixItems({ value: [], review: null, health: assessKnowledge(files, NOW) } as unknown as Parameters<typeof fixItems>[0]);
   const view = needsYou(items);
   assert.deepEqual(view.repeats.map((group) => group.pages[0]).sort(), ['decisions/payments.md', 'owner/pr-rules.md', 'owner/quick-vs-right.md', 'product/squad-products.md']);
   assert.deepEqual(view.disagree.map((group) => group.pages[0]).sort(), ['projects/live-breach.md', 'workflows/code-change.md']);
   assert.equal(view.disagree.find((group) => group.pages[0] === 'projects/live-breach.md') && groupLine(view.disagree.find((group) => group.pages[0] === 'projects/live-breach.md')!), '“3” vs “4”');
-  // To review and Needs you count the same rows: a page of repeats is one, however many pairs it has.
-  assert.deepEqual(todoTally(items), { count: view.rows, text: '2 disagree · 4 repeat' });
+  // To review and Needs you count the same rows: all repeats are one row, however many pages and pairs.
+  assert.equal(view.rows, 2 + 1 + view.items.length + (view.tidy.length > 0 ? 1 : 0));
+  assert.deepEqual(todoTally(items), { count: view.rows, text: '2 to decide' });
+  assert.equal(repeatsLine(view.repeats), '11 rules on 4 pages');
 });
 
 test('a rule restated three times is one row, Nov 16, Nov 17 → Nov 18, and Keep newer moves both older lines in one save', async (t) => {

@@ -1,10 +1,11 @@
-// Needs you's rule pairs, opened: a page's repeats as before → after lines with what changed marked (Keep older /
-// Keep newer, older always first), and two rules that disagree side by side (Keep this, or Both hold). FixList.tsx owns
-// what a click does; this file only draws the pairs. The pure half is conflicts.logic.ts.
-import { Check } from 'lucide-react';
+// Needs you's rule pairs, opened. Repeats: each rule once, as its newest line reads, with one "Use newer" and the
+// other choices behind "More". Disagreements: the two rules side by side, older on the left, one Keep each. FixList.tsx
+// owns what a click does; this file only draws. The pure half is conflicts.logic.ts.
+import { useState } from 'react';
+import { MoreHorizontal } from 'lucide-react';
 import type { PairInfo } from '../../../../src/knowledge-health.ts';
 import { Button, cx } from '../../ui/index.ts';
-import { keepNames, rowNames, sideNames, wordDiff, type ChainRow, type DiffPart } from '../conflicts.logic.ts';
+import { droppedWords, sideNames, wordDiff, type ChainRow, type DiffPart } from '../conflicts.logic.ts';
 
 export interface PairActions {
   busy: boolean;
@@ -16,90 +17,69 @@ export interface PairActions {
   bothHold: (pairs: PairInfo[]) => void;
 }
 
-/** A line with its changed words marked: struck out (gone) and highlighted (new) in one line, or bold on one side. */
-const Marked = ({ parts }: { parts: DiffPart[] }) => (
-  <>
-    {parts.map((part, at) => {
-      if (part.op === 'same') return <span key={at}>{part.text}</span>;
-      if (part.op === 'del') return <del key={at} className="rounded-sm bg-down/10 text-down decoration-down/70">{part.text}</del>;
-      return <ins key={at} className="rounded-sm bg-up/12 text-up no-underline">{part.text}</ins>;
-    })}
-  </>
-);
-
 /** One side of two rules that disagree, what sets it apart in bold. */
 const Side = ({ parts }: { parts: DiffPart[] }) => (
   <>{parts.map((part, at) => (part.op === 'same' ? <span key={at}>{part.text}</span> : <strong key={at} className="font-semibold text-ink">{part.text}</strong>))}</>
 );
 
-/** A page's repeated rules, one row each, read older → newer. "Keep newer" leads where it loses nothing. */
-export const RepeatPairs = ({ rows, titleOf, actions }: { rows: ChainRow[]; titleOf: (page: string) => string; actions: PairActions }) => (
-  <ul className="flex flex-col gap-2">
-    {rows.map((row) => {
-      const [from, to] = rowNames(row);
-      const [keepOlder, keepNewer] = keepNames(row);
-      // Where the newest drops detail, show the version it drops it from, so the struck words are the lost ones.
-      const shown = row.covers ? row.latest : row.pairs.find((pair) => !pair.covers) ?? row.latest;
-      const parts = wordDiff(shown.older.plain, row.newer.plain);
-      const same = parts.every((part) => part.op === 'same');
-      return (
-        <li key={row.key} className={cx('flex flex-col gap-2 rounded-lg border px-3 py-2.5', row.covers ? 'border-line' : 'border-warn/50')}>
-          {row.twice ? <p className="text-xs text-faint">Written twice, word for word</p> : (
-          <p className="flex flex-wrap items-center gap-x-1.5 text-xs text-faint">
-            {!row.covers && <span className="font-medium text-warn">Newer drops detail ·</span>}
-            <span>{from}</span><span aria-hidden>→</span>
-            <span className={cx(row.covers && 'text-up')}>{to}</span>
-            {row.covers && <Check size={12} aria-label="Says everything the older lines do" className="text-up" />}
-            {same && <span>{row.covers ? '· same words' : '· a link changed'}</span>}
-            {/* Two pages: which one each version sits on, so Keep says where the rule stays. */}
-            {row.latest.older.page !== row.newer.page && <span className="truncate">· {titleOf(row.latest.older.page)} → {titleOf(row.newer.page)}</span>}
-          </p>
-          )}
-          <p className="text-[13px] leading-5 text-ink" title={[...row.olders.map((side) => side.text), row.newer.text].join('\n')}><Marked parts={parts} /></p>
-          <div className="flex flex-wrap gap-1.5">
-            {row.twice
-              ? <Button size="sm" variant="primary" disabled={actions.busy} title="Moves one copy under “Replaced”" onClick={() => actions.keepRow(row, 'newer')}>Keep one</Button>
-              : (
-                <>
-                  <Button size="sm" disabled={actions.busy} title={row.olders.length > 1 ? `Keeps “${row.latest.older.text}”. Only the newest line moves.` : row.latest.older.text} onClick={() => actions.keepRow(row, 'older')}>{keepOlder}</Button>
-                  <Button size="sm" variant={row.covers ? 'primary' : 'secondary'} disabled={actions.busy} title={row.newer.text} onClick={() => actions.keepRow(row, 'newer')}>{keepNewer}</Button>
-                </>
-              )}
-            <Button size="sm" variant="ghost" disabled={actions.busy} title="Leave the lines as they are and stop listing them" onClick={() => actions.bothHold(row.all)}>Both hold</Button>
-          </div>
-        </li>
-      );
-    })}
-  </ul>
+/** The newest line, its added words in quiet green: what "Use newer" keeps. */
+const Newest = ({ row }: { row: ChainRow }) => (
+  <>{wordDiff(row.latest.older.plain, row.newer.plain, 'newer').map((part, at) => <span key={at} className={cx(part.op === 'add' && 'text-up')}>{part.text}</span>)}</>
+);
+
+const RepeatRow = ({ row, actions }: { row: ChainRow; actions: PairActions }) => {
+  const [more, setMore] = useState(false);
+  const dropped = row.covers ? null : droppedWords(row);
+  // A rule "Use newer for N" already settles needs no button of its own; its other choices stay behind "…".
+  const own = !row.safe || more;
+  return (
+    <li className="flex items-start gap-3 py-2">
+      <div className="flex min-w-0 flex-1 flex-col gap-0.5" title={[...row.olders.map((side) => side.text), row.newer.text].join('\n')}>
+        <p className="text-[13px] leading-5 text-ink">{row.twice ? row.newer.plain : <Newest row={row} />}</p>
+        {row.twice && <p className="text-xs text-faint">Written twice</p>}
+        {dropped && <p className="text-xs text-warn">Drops “{dropped}”</p>}
+      </div>
+      <div className="flex shrink-0 items-center gap-0.5">
+        {more && !row.twice && <Button size="sm" variant="ghost" disabled={actions.busy} title={row.latest.older.text} onClick={() => actions.keepRow(row, 'older')}>{row.order === 'length' ? 'Use shorter' : 'Use older'}</Button>}
+        {more && <Button size="sm" variant="ghost" disabled={actions.busy} title="Leave the page as it is" onClick={() => actions.bothHold(row.all)}>Keep both</Button>}
+        {own && (
+          <Button size="sm" disabled={actions.busy} title={row.newer.text} onClick={() => actions.keepRow(row, 'newer')}>
+            {row.twice ? 'Remove copy' : row.order === 'length' ? 'Use longer' : 'Use newer'}
+          </Button>
+        )}
+        <Button size="sm" variant="ghost" aria-label="Other choices" aria-expanded={more} className="px-1.5" onClick={() => setMore(!more)}><MoreHorizontal size={14} aria-hidden /></Button>
+      </div>
+    </li>
+  );
+};
+
+/** One page's repeated rules, each once. */
+export const RepeatPairs = ({ rows, actions }: { rows: ChainRow[]; actions: PairActions }) => (
+  <ul className="flex flex-col divide-y divide-line-subtle">{rows.map((row) => <RepeatRow key={row.key} row={row} actions={actions} />)}</ul>
 );
 
 /** Two rules that disagree, side by side, older on the left; what tells them apart in bold. */
 export const DisagreePairs = ({ pairs, titleOf, actions }: { pairs: PairInfo[]; titleOf: (page: string) => string; actions: PairActions }) => (
-  <ul className="flex flex-col gap-4">
+  <ul className="flex flex-col gap-3">
     {pairs.map((pair) => {
       const [from, to] = sideNames(pair);
-      const where = (page: string): string => (pair.older.page === pair.newer.page ? '' : ` · ${titleOf(page)}`);
       const card = (side: 'older' | 'newer') => {
         const rule = pair[side];
         const lead = side === 'newer' && pair.order === 'date';
         return (
-          <div className={cx('flex min-w-0 flex-col gap-2 rounded-lg border px-3 py-2.5', lead ? 'border-up/50 bg-up/5' : 'border-line')}>
+          <div className="flex min-w-0 flex-col gap-1.5 rounded-lg border border-line px-3 py-2.5">
             <p className="truncate text-xs text-faint">
-              {pair.order === 'date' ? `Learned ${side === 'older' ? from : to}` : side === 'older' ? from : to}{where(rule.page)}
-              {lead && <span className="text-up"> · newer</span>}
+              {side === 'older' ? from : to}{pair.older.page === pair.newer.page ? '' : ` · ${titleOf(rule.page)}`}{lead && ' · newer'}
             </p>
             <p className="text-[13px] leading-5 text-ink" title={rule.text}><Side parts={wordDiff(pair.older.plain, pair.newer.plain, side)} /></p>
-            <Button size="sm" variant={lead ? 'primary' : 'secondary'} className="self-start" disabled={actions.busy} onClick={() => actions.keep(pair, side)}>Keep this</Button>
+            <Button size="sm" variant={lead ? 'primary' : 'secondary'} className="mt-0.5 self-start" disabled={actions.busy} onClick={() => actions.keep(pair, side)}>Keep</Button>
           </div>
         );
       };
       return (
-        <li key={pair.id} className="flex flex-col gap-2">
+        <li key={pair.id} className="flex flex-col gap-1.5">
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">{card('older')}{card('newer')}</div>
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-            <Button size="sm" disabled={actions.busy} onClick={() => actions.bothHold([pair])}>Both hold, not a conflict</Button>
-            <span className="text-xs text-faint">The other moves under “Replaced” on its page.</span>
-          </div>
+          <Button size="sm" variant="ghost" flush className="self-start" disabled={actions.busy} title="Both stay; the page is unchanged" onClick={() => actions.bothHold([pair])}>Both are right</Button>
         </li>
       );
     })}

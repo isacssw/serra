@@ -72,7 +72,7 @@ test('Overview: proposals and pages to confirm fold into one row each, in the pl
   // One of a kind stays its own row.
   assert.deepEqual(groupFixes([item('proposal:1', 'Sentry')]).map((one) => [one.title, one.why]), [['Sentry', 'Proposal']]);
   // To review counts the rows Needs you shows: two proposals fold into one, and so do two pages to confirm.
-  assert.deepEqual(todoTally(items), { count: 3, text: '3 other' });
+  assert.deepEqual(todoTally(items), { count: 3, text: 'All quick' });
   assert.deepEqual(todoTally([]), { count: 0, text: 'Nothing to do' });
 });
 

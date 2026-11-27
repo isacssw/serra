@@ -5,7 +5,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { useNavigate } from 'react-router';
 import { PROPOSAL_PARAM } from '../proposals.logic.ts';
-import { AlertTriangle, Check, ChevronRight, CircleCheck, CircleHelp, FileText, PenLine, Sparkles } from 'lucide-react';
+import { AlertTriangle, Check, ChevronRight, CircleCheck, CircleHelp, Copy, FileText, PenLine, Sparkles } from 'lucide-react';
 import type { KnowledgeOverview } from '../../../../src/knowledge-overview.ts';
 import type { PairInfo } from '../../../../src/knowledge-health.ts';
 import type { ReviewSuggestion } from '../../../../src/knowledge-review-store.ts';
@@ -14,7 +14,7 @@ import { Button, cx, Dialog, useToast } from '../../ui/index.ts';
 import { DiffView } from '../proposals/DiffView.tsx';
 import { pageBody } from '../../../../src/knowledge-rules.ts';
 import { fixItems, fixKind, needsYou, type FixItem } from '../overview.logic.ts';
-import { groupLine, type ChainRow, type PairGroup } from '../conflicts.logic.ts';
+import { groupLine, repeatsLine, type ChainRow, type PairGroup } from '../conflicts.logic.ts';
 import { keepNewerOnPages, keepOne, keepOver } from '../keep.ts';
 import { localDate } from '../pages.logic.ts';
 import { DisagreePairs, RepeatPairs, type PairActions } from './RulePairs.tsx';
@@ -22,8 +22,6 @@ import { settle } from './WeekDigest.tsx';
 
 const message = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 const SHOWN = 5;
-/** Pages shown per rules group before "N more pages". */
-const PAGES_SHOWN = 3;
 
 /** One icon per kind of job, so a long list scans by shape. */
 const KindIcon = ({ item }: { item: FixItem }) => {
@@ -36,14 +34,6 @@ const KindIcon = ({ item }: { item: FixItem }) => {
   if (kind === 'confirm' || kind === 'stale' || kind === 'draft' || kind === 'drafts') return <CircleCheck {...props} className={cx(props.className, 'text-muted')} />;
   return <Sparkles {...props} className={cx(props.className, 'text-muted')} />;
 };
-
-/** A group's small heading: "SAME RULE, LEARNED AGAIN · safe", with its one action on the right. */
-const GroupHead = ({ id, title, hint, action }: { id: string; title: string; hint: string; action?: ReactNode }) => (
-  <div className="flex min-h-7 items-center justify-between gap-2 pt-2">
-    <h3 id={id} className="text-[11px] font-medium tracking-wide text-faint uppercase">{title}<span className="ml-1.5 normal-case tracking-normal">· {hint}</span></h3>
-    {action}
-  </div>
-);
 
 /** "Tidy up": what can wait, as one line until opened ("2 pages near the size limit · 3 pages of long prose"). */
 const tidyLine = (items: FixItem[]): string => {
@@ -67,8 +57,7 @@ export const FixList = ({ overview, onOpen, onChanged }: { overview: KnowledgeOv
   // Pages' "Review in Overview" link lands here with the whole list open (#todo).
   const [all, setAll] = useState(() => window.location.hash.endsWith('#todo'));
   const [opened, setOpened] = useState<string | null>(null);
-  const [more, setMore] = useState<Set<string>>(new Set());
-  const [tidyOpen, setTidyOpen] = useState(false);
+  const [openPage, setOpenPage] = useState<string | null>(null);
   // Fresh data says what is still open: rows hidden after a click are judged again from it.
   useEffect(() => { setDone(new Set()); }, [overview]);
   const items = fixItems(overview);
@@ -128,7 +117,7 @@ export const FixList = ({ overview, onOpen, onChanged }: { overview: KnowledgeOv
       if (result === 'open') { onOpen(drop.page); return; }
       // Only this pair leaves the list: the page's other pairs stay until the reload says they're settled too.
       markDone([pair.id]);
-      toast({ message: 'Kept.', tone: 'success', action: { label: 'Undo', onClick: () => { void result.undo().then(() => { unmark([pair.id]); onChanged(); }, (failure: unknown) => toast({ message: message(failure), tone: 'error' })); } } });
+      toast({ message: 'Moved to “Replaced”.', tone: 'success', action: { label: 'Undo', onClick: () => { void result.undo().then(() => { unmark([pair.id]); onChanged(); }, (failure: unknown) => toast({ message: message(failure), tone: 'error' })); } } });
       onChanged();
     } catch (failure) { toast({ message: message(failure), tone: 'error' }); } finally { setBusy(null); }
   };
@@ -147,7 +136,7 @@ export const FixList = ({ overview, onOpen, onChanged }: { overview: KnowledgeOv
       if (result === 'open') { onOpen(drops[0]!.page); return; }
       const ids = (side === 'newer' ? row.all : row.pairs).map((pair) => pair.id);
       markDone(ids);
-      toast({ message: 'Kept.', tone: 'success', action: { label: 'Undo', onClick: () => { void result.undo().then(() => { unmark(ids); onChanged(); }, (failure: unknown) => toast({ message: message(failure), tone: 'error' })); } } });
+      toast({ message: 'Moved to “Replaced”.', tone: 'success', action: { label: 'Undo', onClick: () => { void result.undo().then(() => { unmark(ids); onChanged(); }, (failure: unknown) => toast({ message: message(failure), tone: 'error' })); } } });
       onChanged();
     } catch (failure) { toast({ message: message(failure), tone: 'error' }); } finally { setBusy(null); }
   };
@@ -162,7 +151,7 @@ export const FixList = ({ overview, onOpen, onChanged }: { overview: KnowledgeOv
     try {
       for (const id of new Set(pairs.map((pair) => pair.id))) { await bridge.pages.bothHold(id); set.push(id); }
       markDone(set);
-      toast({ message: 'Both kept. Not listed again.', tone: 'success', action: { label: 'Undo', onClick: () => { void undo().then(() => { unmark(set); onChanged(); }, (failure: unknown) => toast({ message: message(failure), tone: 'error' })); } } });
+      toast({ message: 'Both kept. Page unchanged.', tone: 'success', action: { label: 'Undo', onClick: () => { void undo().then(() => { unmark(set); onChanged(); }, (failure: unknown) => toast({ message: message(failure), tone: 'error' })); } } });
       onChanged();
     } catch (failure) {
       await undo().catch(() => {});
@@ -181,11 +170,11 @@ export const FixList = ({ overview, onOpen, onChanged }: { overview: KnowledgeOv
     markDone(settled);
     setBusy(null);
     const undo = { label: 'Undo', onClick: () => { void result.undo().then(() => { unmark(settled); onChanged(); }, (failure: unknown) => toast({ message: message(failure), tone: 'error' })); } };
-    const moved = `${result.lines} older line${result.lines === 1 ? '' : 's'} moved under “Replaced”`;
+    const moved = `${result.lines} older line${result.lines === 1 ? '' : 's'} moved to “Replaced”`;
     // One toast: what was done, what stopped it, and Undo for what was saved.
     if (result.error !== undefined) toast({ message: result.pages.length > 0 ? `${moved}, then stopped: ${message(result.error)}` : message(result.error), tone: 'error', ...(result.pages.length > 0 ? { action: undo } : {}) });
     else if (result.lines === 0) toast({ message: 'Nothing moved: those lines sit inside longer text. Open the page to tidy them.', tone: 'error' });
-    else toast({ message: `Kept newer: ${moved}.`, tone: 'success', action: undo });
+    else toast({ message: `${moved}.`, tone: 'success', action: undo });
     onChanged();
   };
 
@@ -211,12 +200,11 @@ export const FixList = ({ overview, onOpen, onChanged }: { overview: KnowledgeOv
 
   const actions: PairActions = { busy: busy !== null, keep: (pair, side) => void keep(pair, side), keepRow: (row, side) => void keepRow(row, side), bothHold: (pairs) => void bothHold(pairs) };
   const safePages = view.repeats.filter((group) => group.safe.length > 0 && group.pages.length === 1);
-  const safeLines = (groups: PairGroup[]): number => new Set(groups.flatMap((group) => group.safe.map((pair) => `${group.key}\n${pair.older.text}`))).size;
-  const safeRows = (groups: PairGroup[]): number => groups.reduce((sum, group) => sum + group.safeRows, 0);
+  const safeRows = safePages.reduce((sum, group) => sum + group.safeRows, 0);
   const askKeepNewer = (groups: PairGroup[]) => setAsking({
-    title: groups.length === 1 ? `Keep newer on ${groupTitle(groups[0]!)}?` : `Keep newer on ${groups.length} pages?`,
-    description: `${safeLines(groups)} older line${safeLines(groups) === 1 ? '' : 's'} move under “Replaced”, only where the newer line says everything they do${groups.length > 1 ? `, on ${groups.map(groupTitle).join('; ')}` : ''}. Each page is backed up first.`,
-    confirm: 'Keep newer', run: () => void keepNewer(groups),
+    title: `Use the newer line for ${safeRows} ${safeRows === 1 ? 'rule' : 'rules'}?`,
+    description: `Only where it says everything the older one does. Older lines move to “Replaced” on ${groups.length === 1 ? groupTitle(groups[0]!) : `${groups.length} pages`}. You can undo.`,
+    confirm: 'Use newer', run: () => void keepNewer(groups),
   });
 
   const itemRow = (item: FixItem) => {
@@ -246,55 +234,28 @@ export const FixList = ({ overview, onOpen, onChanged }: { overview: KnowledgeOv
     );
   };
 
-  const groupRows = (groups: PairGroup[], kind: 'repeat' | 'disagree') => {
-    const showAll = more.has(kind);
-    const list = showAll ? groups : groups.slice(0, PAGES_SHOWN);
+  /** One quiet row that opens in place: its icon, its name, one short line, and its one action. */
+  const row = ({ id, icon, name, line, action, panel }: { id: string; icon: ReactNode; name: string; line: string; action: string; panel: ReactNode }) => {
+    const isOpen = opened === id;
     return (
-      <ul aria-labelledby={`todo-${kind}`} className="flex flex-col divide-y divide-line-subtle border-y border-line">
-        {list.map((group, at) => {
-          const isOpen = opened === group.key;
-          return (
-            <li key={group.key} className="flex flex-col gap-2.5 py-2.5">
-              <div className="flex items-start gap-3">
-                <AlertTriangle size={15} aria-hidden className="mt-0.5 shrink-0 text-warn" />
-                <div className="flex min-w-0 flex-1 flex-col">
-                  <p className="truncate text-[13px] leading-5 font-medium text-ink" title={groupTitle(group)}>{groupTitle(group)}</p>
-                  <p className="truncate text-xs leading-4 text-muted">{groupLine(group)}</p>
-                </div>
-                <Button size="sm" variant={at === 0 && !isOpen ? 'secondary' : 'ghost'} aria-expanded={isOpen} className="pr-1.5" onClick={() => setOpened(isOpen ? null : group.key)}>
-                  {kind === 'repeat' ? `Review ${group.rows.length}` : 'Compare'}
-                  <ChevronRight size={13} aria-hidden className={cx('-ml-0.5 transition-transform', isOpen && 'rotate-90')} />
-                </Button>
-              </div>
-              {isOpen && (
-                <div className="flex flex-col gap-2.5 pl-7">
-                  <div className="flex flex-wrap gap-1.5">
-                    {kind === 'repeat' && group.safe.length > 0 && group.pages.length === 1 && (
-                      <Button size="sm" variant="primary" disabled={busy !== null} onClick={() => askKeepNewer([group])}>Keep newer for all {safeRows([group])}</Button>
-                    )}
-                    {group.pages.map((page) => (
-                      <Button key={page} size="sm" variant="ghost" className="pr-1.5" onClick={() => onOpen(page)}>
-                        {group.pages.length === 1 ? 'Open page' : `Open ${title(page)}`}<ChevronRight size={13} aria-hidden className="-ml-0.5" />
-                      </Button>
-                    ))}
-                  </div>
-                  {kind === 'repeat' ? <RepeatPairs rows={group.rows} titleOf={title} actions={actions} /> : <DisagreePairs pairs={group.pairs} titleOf={title} actions={actions} />}
-                </div>
-              )}
-            </li>
-          );
-        })}
-        {groups.length > PAGES_SHOWN && (
-          <li className="py-1.5">
-            <Button size="sm" variant="ghost" flush onClick={() => setMore((set) => { const next = new Set(set); if (showAll) next.delete(kind); else next.add(kind); return next; })}>
-              {showAll ? 'Show fewer' : `${groups.length - PAGES_SHOWN} more page${groups.length - PAGES_SHOWN === 1 ? '' : 's'}`}
-            </Button>
-          </li>
-        )}
-      </ul>
+      <li key={id} className="flex flex-col gap-2 py-2.5">
+        <div className="flex items-start gap-3">
+          {icon}
+          <div className="flex min-w-0 flex-1 flex-col">
+            <p className="truncate text-[13px] leading-5 font-medium text-ink" title={name}>{name}</p>
+            <p className="truncate text-xs leading-4 text-muted">{line}</p>
+          </div>
+          <Button size="sm" variant="ghost" aria-expanded={isOpen} className="pr-1.5" onClick={() => setOpened(isOpen ? null : id)}>
+            {isOpen ? 'Close' : action}
+            <ChevronRight size={13} aria-hidden className={cx('-ml-0.5 transition-transform', isOpen && 'rotate-90')} />
+          </Button>
+        </div>
+        {isOpen && <div className="flex flex-col gap-3 pl-7">{panel}</div>}
+      </li>
     );
   };
 
+  const quiet = { size: 15, 'aria-hidden': true as const, className: 'mt-0.5 shrink-0 text-muted' };
   return (
     <section id="todo" aria-labelledby="todo-title" className="flex min-w-0 flex-col gap-3">
       <div className="flex min-h-7 items-center justify-between gap-2">
@@ -305,39 +266,49 @@ export const FixList = ({ overview, onOpen, onChanged }: { overview: KnowledgeOv
           </Button>
         )}
       </div>
-      {view.items.length > 0 && (
-        <>
-          <ul className="flex flex-col divide-y divide-line-subtle border-y border-line">{shown.map(itemRow)}</ul>
-          {view.items.length > SHOWN && (
-            <Button size="sm" variant="ghost" className="self-start" flush onClick={() => setAll(!all)}>{all ? 'Show fewer' : `Show all ${view.items.length}`}</Button>
-          )}
-        </>
-      )}
-      {view.repeats.length > 0 && (
-        <div className="flex flex-col gap-1.5">
-          <GroupHead
-            id="todo-repeat" title="Same rule, learned again" hint={view.repeats.some((group) => group.dropsDetail > 0) ? 'mostly safe' : 'safe'}
-            action={safePages.length > 1 && <Button size="sm" disabled={busy !== null} onClick={() => askKeepNewer(safePages)}>{busy === 'bulk' ? 'Working…' : `Keep newer on all ${safePages.length} pages`}</Button>}
-          />
-          {groupRows(view.repeats, 'repeat')}
-        </div>
-      )}
-      {view.disagree.length > 0 && (
-        <div className="flex flex-col gap-1.5">
-          <GroupHead id="todo-disagree" title="Really disagree" hint="your call" />
-          {groupRows(view.disagree, 'disagree')}
-        </div>
-      )}
-      {view.tidy.length > 0 && (
-        <div className="flex flex-col gap-1.5">
-          <GroupHead
-            id="todo-tidy" title="Tidy up" hint="later"
-            action={<Button size="sm" variant="ghost" aria-expanded={tidyOpen} className="pr-1.5" onClick={() => setTidyOpen(!tidyOpen)}>{tidyOpen ? 'Hide' : `Show ${view.tidy.length}`}<ChevronRight size={13} aria-hidden className={cx('-ml-0.5 transition-transform', tidyOpen && 'rotate-90')} /></Button>}
-          />
-          {tidyOpen
-            ? <ul aria-labelledby="todo-tidy" className="flex flex-col divide-y divide-line-subtle border-y border-line">{view.tidy.map(itemRow)}</ul>
-            : <p className="flex items-center gap-3 border-y border-line py-2.5 text-[13px] text-muted"><Sparkles size={15} aria-hidden className="shrink-0 text-faint" />{tidyLine(view.tidy)}</p>}
-        </div>
+      <ul className="flex flex-col divide-y divide-line-subtle border-y border-line">
+        {shown.map(itemRow)}
+        {view.disagree.map((group) => row({
+          id: group.key, icon: <AlertTriangle size={15} aria-hidden className="mt-0.5 shrink-0 text-warn" />, name: groupTitle(group), line: groupLine(group), action: 'Compare',
+          panel: <DisagreePairs pairs={group.pairs} titleOf={title} actions={actions} />,
+        }))}
+        {view.repeats.length > 0 && row({
+          id: 'repeats', icon: <Copy {...quiet} />, name: 'Repeated rules', line: repeatsLine(view.repeats), action: 'Review',
+          panel: (
+            <>
+              {safeRows > 0 && (
+                <div className="flex items-center gap-3">
+                  <Button size="sm" variant="primary" disabled={busy !== null} onClick={() => askKeepNewer(safePages)}>{busy === 'bulk' ? 'Working…' : `Use newer for ${safeRows}`}</Button>
+                  <span className="text-xs text-faint">Older lines move to “Replaced”. Undoable.</span>
+                </div>
+              )}
+              {/* One line per page; a page opens to its rules, so the list stays short. */}
+              <ul className="flex flex-col divide-y divide-line-subtle border-y border-line-subtle">
+                {view.repeats.map((group) => {
+                  const isOpen = openPage === group.key;
+                  const needs = group.rows.length - group.safeRows;
+                  return (
+                    <li key={group.key} className="flex flex-col">
+                      <button type="button" aria-expanded={isOpen} onClick={() => setOpenPage(isOpen ? null : group.key)} className="flex items-center gap-2 py-2 text-left text-[13px] text-ink hover:text-ink focus-visible:outline-2 focus-visible:outline-focus">
+                        <ChevronRight size={13} aria-hidden className={cx('shrink-0 text-faint transition-transform', isOpen && 'rotate-90')} />
+                        <span className="min-w-0 flex-1 truncate">{groupTitle(group)}</span>
+                        <span className="shrink-0 text-xs tabular-nums text-faint">{needs > 0 ? `${group.rows.length} · ${needs} to check` : group.rows.length}</span>
+                      </button>
+                      {isOpen && <div className="pb-2 pl-5"><RepeatPairs rows={group.rows} actions={actions} /></div>}
+                    </li>
+                  );
+                })}
+              </ul>
+            </>
+          ),
+        })}
+        {view.tidy.length > 0 && row({
+          id: 'tidy', icon: <Sparkles {...quiet} />, name: `${view.tidy.length} ${view.tidy.length === 1 ? 'page' : 'pages'} to tidy`, line: tidyLine(view.tidy), action: 'Show',
+          panel: <ul className="flex flex-col divide-y divide-line-subtle">{view.tidy.map(itemRow)}</ul>,
+        })}
+      </ul>
+      {view.items.length > SHOWN && (
+        <Button size="sm" variant="ghost" className="self-start" flush onClick={() => setAll(!all)}>{all ? 'Show fewer' : `Show all ${view.items.length}`}</Button>
       )}
       <Dialog
         open={asking !== null}

@@ -98,6 +98,8 @@ export interface ChainRow {
   covers: boolean;
   /** The same line pasted twice, word for word: Keep one takes out a copy. */
   twice: boolean;
+  /** "Keep newer for all" settles it whole (set by `groupPairs`). */
+  safe: boolean;
   order: PairInfo['order'];
 }
 
@@ -128,7 +130,7 @@ const chainRows = (pairs: readonly PairInfo[]): ChainRow[] => {
     const lines = new Set([sideKey(latest.newer), ...sorted.map((pair) => sideKey(pair.older))]);
     // A line pasted twice stays out of other rows' sets: Keep newer there moves its own older versions, not a copy.
     const all = list.some(self) ? list : pairs.filter((pair) => !self(pair) && lines.has(sideKey(pair.older)) && lines.has(sideKey(pair.newer)));
-    return { key, newer: latest.newer, olders: sorted.map((pair) => pair.older), pairs: sorted, all, latest, covers: sorted.every((pair) => pair.covers), twice: list.some(self), order: latest.order };
+    return { key, newer: latest.newer, olders: sorted.map((pair) => pair.older), pairs: sorted, all, latest, covers: sorted.every((pair) => pair.covers), twice: list.some(self), safe: false, order: latest.order };
   });
 };
 
@@ -175,6 +177,7 @@ export const groupPairs = (issues: readonly PairIssue[]): { repeats: PairGroup[]
     group.dropsDetail = group.rows.filter((row) => !row.covers).length;
     // Only whole rows: a rule with one version the newest leaves detail out of waits for the owner, all its versions.
     const safeRows = group.rows.filter((row) => row.covers && row.pairs.every(isSafe));
+    for (const row of safeRows) row.safe = true;
     group.safe = safeRows.flatMap((row) => row.pairs);
     group.safeRows = safeRows.length;
   }
@@ -191,6 +194,19 @@ export const groupLine = (group: PairGroup): string => {
   const dated = group.rows.every((row) => row.order === 'date');
   return [`${count} ${count === 1 ? 'rule' : 'rules'} learned again${dated ? '' : ' or written twice'}`, group.dropsDetail > 0 ? `${group.dropsDetail} ${group.dropsDetail === 1 ? 'needs' : 'need'} a look` : null]
     .filter(Boolean).join(' · ');
+};
+
+/** What a row's newest line leaves out of an older version, in a few words: "lowercase only". Null when nothing. */
+export const droppedWords = (row: Pick<ChainRow, 'pairs' | 'latest' | 'newer'>): string | null => {
+  const pair = row.pairs.find((one) => !one.covers) ?? row.latest;
+  const gone = wordDiff(pair.older.plain, row.newer.plain).filter((part) => part.op === 'del').map((part) => part.text.trim()).join(' ').replace(/^[,;:.]\s*|\s*[,;:.]$/g, '').trim();
+  return gone ? clip(gone) : null;
+};
+
+/** All of Needs you's repeats in one line: "9 rules on 5 pages". */
+export const repeatsLine = (groups: readonly PairGroup[]): string => {
+  const rules = groups.reduce((sum, group) => sum + group.rows.length, 0);
+  return `${rules} ${rules === 1 ? 'rule' : 'rules'} on ${groups.length} ${groups.length === 1 ? 'page' : 'pages'}`;
 };
 
 /** `2026-11-17` as "Nov 17". */

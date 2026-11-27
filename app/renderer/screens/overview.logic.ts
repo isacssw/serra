@@ -259,7 +259,7 @@ export interface NeedsYou {
   disagree: PairGroup[];
   /** "Tidy up", folded away. */
   tidy: FixItem[];
-  /** The rows the owner sees, which is what Needs you counts: a page of repeats is one. */
+  /** The rows the owner sees, which is what Needs you counts: all repeats are one, and so is Tidy up. */
   rows: number;
 }
 
@@ -274,20 +274,13 @@ export const needsYou = (items: readonly FixItem[]): NeedsYou => {
   const rest = items.filter((item) => !(item.pair && (fixKind(item) === 'conflict' || fixKind(item) === 'duplicate')));
   const tidy = rest.filter((item) => TIDY.has(fixKind(item)));
   const others = groupFixes(rest.filter((item) => !TIDY.has(fixKind(item))));
-  return { items: others, repeats, disagree, tidy, rows: others.length + repeats.length + disagree.length + tidy.length };
+  // Repeats are one row however many pages have them, and so is what can wait.
+  return { items: others, repeats, disagree, tidy, rows: others.length + disagree.length + (repeats.length > 0 ? 1 : 0) + (tidy.length > 0 ? 1 : 0) };
 };
 
-/**
- * To review's number and its words: the rows Needs you shows, so the two always agree ("2 disagree · 5 repeat ·
- * 6 other" over 13 rows). Disagreements and repeats count pages, the way Needs you lists them.
- */
+/** To review's number and one short line: how many need a decision, else that the rest is quick. */
 export const todoTally = (items: readonly FixItem[]): { count: number; text: string } => {
   const view = needsYou(items);
-  const other = view.items.length + view.tidy.length;
-  const text = [
-    view.disagree.length && `${view.disagree.length} disagree`,
-    view.repeats.length && `${view.repeats.length} repeat`,
-    other && `${other} other`,
-  ].filter(Boolean).join(' · ') || 'Nothing to do';
-  return { count: view.rows, text };
+  if (view.rows === 0) return { count: 0, text: 'Nothing to do' };
+  return { count: view.rows, text: view.disagree.length > 0 ? `${view.disagree.length} to decide` : 'All quick' };
 };
