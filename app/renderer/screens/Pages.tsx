@@ -44,7 +44,10 @@ const AudiencePicker = ({ text, disabled, onChange }: { text: string; disabled: 
  */
 const PageEditor = ({ draft, invalid, path, onChange }: { draft: string; invalid: boolean; path: string; onChange: (text: string) => void }) => {
   const [open, setOpen] = useState(false);
-  const { header, body } = splitHeader(draft);
+  const { header, body: whole } = splitHeader(draft);
+  // The blank line after the header is kept in the page but not shown, so the field opens on the first line of text.
+  const lead = /^\n*/.exec(whole)![0];
+  const body = whole.slice(lead.length);
   const fields = header === null ? [] : header.split('\n').flatMap((line) => { const key = /^([A-Za-z_-]+):/.exec(line)?.[1]; return key ? [key] : []; });
   return (
     <div className="flex flex-1 flex-col gap-2">
@@ -57,7 +60,7 @@ const PageEditor = ({ draft, invalid, path, onChange }: { draft: string; invalid
           {open && (
             <textarea
               value={header}
-              onChange={(event) => onChange(joinHeader(event.target.value, body))}
+              onChange={(event) => onChange(joinHeader(event.target.value, whole))}
               spellCheck={false}
               aria-label={`Header of ${path}`}
               className={cx('w-full resize-none px-3.5 py-2.5 font-mono leading-5 text-[12px]! text-muted! [field-sizing:content]', fieldClass(false))}
@@ -67,7 +70,7 @@ const PageEditor = ({ draft, invalid, path, onChange }: { draft: string; invalid
       )}
       <textarea
         value={body}
-        onChange={(event) => onChange(joinHeader(header, event.target.value))}
+        onChange={(event) => onChange(joinHeader(header, lead + event.target.value))}
         spellCheck={false}
         aria-label={`Markdown of ${path}`}
         aria-invalid={invalid ? true : undefined}
@@ -454,7 +457,7 @@ export const Pages = () => {
                     <div className="ml-auto flex flex-wrap items-center justify-end gap-1.5">
                       {!editing && !state.dirty && confirmable && page.badge !== 'verified' && <Button size="sm" variant="ghost" icon={<CheckCircle2 size={13} aria-hidden />} disabled={saving} title="It still holds: mark it confirmed today" onClick={() => void confirmToday()}>Still true</Button>}
                       <AudiencePicker text={draft} disabled={saving} onChange={setDraft} />
-                      {!(editing || state.dirty) && <Button size="sm" icon={<Pencil size={13} aria-hidden />} onClick={() => setEditing(true)}>Edit</Button>}
+                      <Button size="sm" icon={<Pencil size={13} aria-hidden />} disabled={editing || state.dirty} aria-pressed={editing || state.dirty} onClick={() => setEditing(true)}>{editing || state.dirty ? 'Editing' : 'Edit'}</Button>
                       <Button size="sm" variant="ghost" aria-label="Retire…" title={state.dirty ? 'Save or cancel your edits first' : 'Retire: the bot stops using it'} disabled={saving || state.dirty} icon={<Archive size={14} aria-hidden />} className="px-1.5 enabled:hover:bg-down/10 enabled:hover:text-down" onClick={() => setRetiring(true)} />
                     </div>
                   )}
@@ -512,10 +515,11 @@ export const Pages = () => {
                     <Check size={12} strokeWidth={3} aria-hidden className="pointer-events-none absolute left-0.5 hidden text-accent-ink peer-checked:block" />
                     Verified today
                   </label>
+                  <span aria-hidden className="text-faint">·</span>
                   <span className={cx('text-xs tabular-nums', state.overCap ? 'text-down' : 'text-faint')}>{state.linesLabel}</span>
                   <span className="ml-auto flex items-center gap-2">
                     <Button disabled={saving} onClick={() => { if (state.dirty && selected) setPendingSelect(selected); else setEditing(false); }}>Cancel</Button>
-                    <Button variant="primary" className="disabled:bg-raised! disabled:text-faint! disabled:opacity-100!" disabled={!state.canSave || saving} title={state.refusal ?? undefined} onClick={() => void save()}>
+                    <Button variant="primary" className="disabled:border-transparent! disabled:bg-accent! disabled:text-accent-ink! disabled:opacity-35!" disabled={!state.canSave || saving} title={state.refusal ?? undefined} onClick={() => void save()}>
                       {saving ? 'Saving…' : 'Save'}
                     </Button>
                   </span>

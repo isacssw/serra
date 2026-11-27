@@ -1,7 +1,7 @@
 // Knowledge → About me (SERRA-41): what every job's brief carries about the owner, exactly as a worker gets it, for
 // each audience a reply can have. It's built from the owner's confirmed pages under owner/, so it's edited there.
 import { useCallback, useEffect, useState } from 'react';
-import { Building2, FileText, Pencil, User, Users } from 'lucide-react';
+import { Building2, ChevronRight, FileText, Pencil, User, Users } from 'lucide-react';
 import { useNavigate } from 'react-router';
 import {
   ABOUT_MAX_CHARS, OFFLIMITS_PREFACE, PEOPLE_PREFACE, type AboutMe as AboutMeData, type Audience, type Visibility,
@@ -10,7 +10,7 @@ import { PageBody } from './PageBody.tsx';
 import { AudienceChoice } from './AudienceChoice.tsx';
 import { aboutCard, leftOutLine, sectionTitle } from './about.logic.ts';
 import { serra } from '../bridge.ts';
-import { Badge, Button, Dialog, EmptyState, Page, Segmented, useToast } from '../ui/index.ts';
+import { Badge, Button, cx, Dialog, EmptyState, Page, Segmented, useToast } from '../ui/index.ts';
 
 const AUDIENCES = [
   { value: 'owner', label: 'You', icon: <User size={14} />, title: 'Your DMs and tasks you start in the app' },
@@ -25,7 +25,7 @@ const message = (error: unknown): string => (error instanceof Error ? error.mess
 /** How much of the brief's room About me takes, as a small meter. */
 const Meter = ({ used }: { used: number }) => (
   <span className="flex items-center gap-2" title="How much of the brief\u2019s room About me takes">
-    In every brief
+    Brief space
     <span aria-hidden className="h-1.5 w-24 overflow-hidden rounded-full bg-line-strong"><span className="block h-full rounded-full bg-muted" style={{ width: `max(6px, ${used}%)` }} /></span>
     <span className="tabular-nums">{used}%</span>
   </span>
@@ -101,16 +101,16 @@ export const AboutMe = () => {
             {leftOut && (
               <span className="inline-flex items-center gap-2">
                 {leftOut}
-                <button type="button" aria-expanded={review} onClick={() => setReview(!review)} className="rounded-sm font-medium text-ink underline decoration-line-control underline-offset-[3px] hover:decoration-ink focus-visible:outline-2 focus-visible:outline-focus">
-                  {review ? 'Hide' : 'Review'}
+                <button type="button" aria-expanded={review} onClick={() => setReview(!review)} className="inline-flex items-center gap-0.5 rounded-sm font-medium text-ink hover:underline focus-visible:outline-2 focus-visible:outline-focus">
+                  Review<ChevronRight size={13} aria-hidden className={cx('transition-transform', review && 'rotate-90')} />
                 </button>
               </span>
             )}
             {leftOut && untagged.length > 0 && <span aria-hidden className="-mx-3 text-faint">·</span>}
             {untagged.length > 0 && (
               <span className="inline-flex items-center gap-2" title="Teammates\u2019 briefs leave these out until you choose">
-                {untagged.length === 1 ? '1 page' : `${untagged.length} pages`} {visibility === 'owner' ? 'only you may hear' : 'not shared yet'}
-                <button type="button" onClick={() => { setShareTo('team'); setSharing(new Set()); }} className="rounded-sm font-medium text-ink underline decoration-line-control underline-offset-[3px] hover:decoration-ink focus-visible:outline-2 focus-visible:outline-focus">Share…</button>
+                {untagged.length === 1 ? '1 page' : `${untagged.length} pages`} not shared
+                <button type="button" onClick={() => { setShareTo('team'); setSharing(new Set()); }} className="inline-flex items-center gap-0.5 rounded-sm font-medium text-ink hover:underline focus-visible:outline-2 focus-visible:outline-focus">Share<ChevronRight size={13} aria-hidden /></button>
               </span>
             )}
           </p>
@@ -151,7 +151,7 @@ export const AboutMe = () => {
                     <Button size="sm" variant="ghost" icon={<Pencil size={13} aria-hidden />} aria-label={`Edit ${card.title}`} onClick={() => edit(section.path)}>Edit</Button>
                   )}
                 </header>
-                <div className="-mt-2.5 max-w-[76ch] px-1 pb-1"><PageBody text={card.body} onOpen={(href) => { serra()?.app.openExternal(href).catch((failure: unknown) => toast({ message: message(failure), tone: 'error' })); }} /></div>
+                <div className="-mt-2.5 max-w-[76ch] px-1 pb-1"><PageBody strong text={card.body} onOpen={(href) => { serra()?.app.openExternal(href).catch((failure: unknown) => toast({ message: message(failure), tone: 'error' })); }} /></div>
               </section>
             );
           })}

@@ -185,7 +185,7 @@ export const Overview = () => {
         </>
       )}
     >
-      <section aria-label="At a glance" className="grid grid-cols-2 overflow-hidden rounded-xl border border-line bg-panel shadow-card sm:grid-cols-4">
+      <section aria-label="At a glance" className="grid grid-cols-2 overflow-hidden rounded-xl border border-line bg-panel shadow-card sm:grid-cols-[1fr_1fr_1fr_1.35fr]">
         <Stat label="Pages" value={health.pages} note={grown === null ? `${health.facts} facts` : grown > 0 ? `+${grown} in 30 days` : `${health.facts} facts`} />
         <Stat label="Used in replies" value={head?.used ?? 0} note={head ? `of ${head.replies} ${head.period}` : 'No replies yet'} />
         <Stat label="Health" value={health.score} unit="%" note={conflicts > 0 ? `${word.word} · ${conflicts} conflict${conflicts === 1 ? '' : 's'}` : word.word} />

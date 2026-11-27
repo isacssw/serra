@@ -174,6 +174,9 @@ const versus = (a: string, b: string): string => {
   return x === 'Keep this one' || y === 'Keep this one' ? 'Two rules disagree' : `${x.slice(5)} vs ${y.slice(5)}`;
 };
 
+/** Page names in one phrase: "Database migrations and how deploys go out". A name that starts with an acronym keeps it. */
+const andJoin = (names: string[]): string => names.map((name, at) => (at > 0 && !/^[A-Z]{2}/.test(name) ? name.charAt(0).toLowerCase() + name.slice(1) : name)).join(' and ');
+
 export const fixItems = (overview: Pick<KnowledgeOverview, 'review' | 'health' | 'value'> & Partial<Pick<KnowledgeOverview, 'confirmHeldBack' | 'proposals' | 'unreviewed'>>): FixItem[] => {
   const title = (path: string): string => overview.value.find((page) => page.path === path)?.title ?? path;
   // A rewrite that settles two rules says which, in three words, like the rule pair itself.
@@ -194,7 +197,7 @@ export const fixItems = (overview: Pick<KnowledgeOverview, 'review' | 'health' |
     const held = overview.confirmHeldBack?.includes(page) ?? false;
     const stale: ReviewSuggestion | undefined = issue.kind === 'stale' && !held ? { id: `confirm:${page}`, kind: 'confirm', page, title: title(page), why } : undefined;
     return [{
-      id: `${issue.kind}:${issue.pages.join(',')}`, title: page === 'index.md' ? 'Knowledge index' : issue.pages.map(title).join(' and '), why, lines: issue.detail ?? [],
+      id: `${issue.kind}:${issue.pages.join(',')}`, title: page === 'index.md' ? 'Knowledge index' : andJoin(issue.pages.map(title)), why, lines: issue.detail ?? [],
       pages: issue.pages, action: stale ? 'Still true' : issue.kind === 'conflict' || issue.kind === 'duplicate' ? 'Settle' : 'Open', ...(stale ? { suggestion: stale } : {}),
       ...(issue.kind === 'conflict' && issue.facts?.length === 2 ? { keep: issue.facts, why: versus(issue.facts[0]!.text, issue.facts[1]!.text) } : {}),
       ...(issue.kind === 'stale' && held ? { why: `${why}, and a newer page on its topic may have changed it` } : {}),

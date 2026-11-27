@@ -275,9 +275,8 @@ export const sourceLine = (from: ProposalSource | undefined): { text: string; ca
   return { text: `From ${from.who}\u2019s thread`, careful: true };
 };
 
-/** The proposal's one meta line, empty parts left out: "From your task · Nov 25 · New page". */
-export const proposalMeta = (proposal: Pick<Proposal, 'date' | 'target' | 'from'>): string[] => [
+/** The proposal's one meta line, empty parts left out: "From your task · Nov 25". What it changes is on its list row. */
+export const proposalMeta = (proposal: Pick<Proposal, 'date' | 'from'>): string[] => [
   sourceLine(proposal.from)?.text ?? null,
   proposal.date ? dateLabel(proposal.date) : null,
-  proposal.target ? `Changes ${proposal.target.split('/').pop()?.replace(/\.md$/, '') ?? proposal.target}` : 'New page',
 ].filter((part): part is string => part !== null);

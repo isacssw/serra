@@ -12,7 +12,7 @@ import { serra } from '../bridge.ts';
 import { REFRESH_COUNTS, announceTaskStart } from '../shell/events.ts';
 import { Button, cx, Dialog, EmptyState, Page, Select, TextArea, useToast } from '../ui/index.ts';
 import { PageBody } from './PageBody.tsx';
-import { aboutCard } from './about.logic.ts';
+import { aboutCard, sectionTitle } from './about.logic.ts';
 import { RuleDiff } from './proposals/RuleDiff.tsx';
 import { MeetingReview } from './proposals/MeetingReview.tsx';
 import { AudienceChoice } from './AudienceChoice.tsx';
@@ -53,7 +53,7 @@ const Queue = ({ proposals, selected, onSelect }: { proposals: Proposal[]; selec
               )}
             >
               <span className={cx('truncate text-[13px] leading-5 text-ink', active && 'font-medium')}>{proposalTitle(proposal)}</span>
-              <span className="truncate text-xs leading-4 text-muted">{proposal.target ? `Changes ${proposal.target}` : 'New page'}</span>
+              <span className="truncate text-xs leading-4 text-muted" title={proposal.target ?? undefined}>{proposal.target ? `Changes ${sectionTitle(proposal.target)}` : 'New page'}</span>
             </button>
           );
         })}
@@ -396,8 +396,8 @@ const sourcesOf = (text: string): string[] => {
 
 /** A new page as it will read once added; its header (dates, sources) on request. */
 const NewPage = ({ text, title }: { text: string; title: string }) => (
-  <section aria-label="Proposed page" className="rounded-xl border border-line bg-panel shadow-card">
-    <div className="max-w-[76ch] pt-1"><PageBody strong text={withoutTitle(pageBody(text), title)} onOpen={(href) => void serra()?.app.openExternal(href)} /></div>
+  <section aria-label="Proposed page" className="-mx-4 -my-3">
+    <div className="max-w-[76ch]"><PageBody strong text={withoutTitle(pageBody(text), title)} onOpen={(href) => void serra()?.app.openExternal(href)} /></div>
   </section>
 );
 

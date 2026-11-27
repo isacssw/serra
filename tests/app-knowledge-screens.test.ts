@@ -48,15 +48,15 @@ test('Pages: a row is the page name with its description under it, only when it 
   assert.deepEqual(groupByArea([tom, page('people/ana.md', { title: 'Ana Silva', description: 'Zed', area: 'People' })])[0]!.pages.map(pageLabel), ['Ana Silva', 'Tom Reyes']);
 });
 
-test('Pages: the meta line says the area, when it was written and whether it is verified', () => {
-  assert.equal(pageMeta({ area: 'Processes', written: '2026-10-24', verified: '2026-11-18' }), 'Processes · written Oct 24 · verified Nov 18');
-  assert.equal(pageMeta({ area: 'People', verified: null }), 'People');
+test('Pages: the meta line says the area and when it was written (the badge says whether it is verified)', () => {
+  assert.equal(pageMeta({ area: 'Processes', written: '2026-10-24' }), 'Processes · written Oct 24');
+  assert.equal(pageMeta({ area: 'People' }), 'People');
 });
 
 test('Proposals: the meta line leaves out a source that was not recorded', () => {
   assert.equal(sourceLine(undefined), null);
-  assert.deepEqual(proposalMeta({ date: '2026-11-25', target: null }), ['Nov 25', 'New page']);
-  assert.deepEqual(proposalMeta({ date: null, target: 'owner/reviews.md', from: { who: 'Robin', owner: true, via: 'app' } }), ['From your task', 'Changes reviews']);
+  assert.deepEqual(proposalMeta({ date: '2026-11-25' }), ['Nov 25']);
+  assert.deepEqual(proposalMeta({ date: null, from: { who: 'Robin', owner: true, via: 'app' } }), ['From your task']);
   assert.deepEqual(sourceLine({ who: 'Sam Okafor', owner: false, via: 'slack' }), { text: 'From Sam Okafor’s thread', careful: true });
 });
 
