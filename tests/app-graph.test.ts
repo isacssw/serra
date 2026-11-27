@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import test from 'node:test';
 import { writeGraphFixture } from '../app/main/graph-fixture.ts';
 import { growthPlan, nextInDirection, placeLabel, replayMs, startPage, toCanvasGraph, type Box } from '../app/renderer/screens/graph/graph.logic.ts';
-import { createSim, islandAnchors, islandSim, shoresOf } from '../app/renderer/screens/graph/layout.logic.ts';
+import { createSim, fitCamera, islandAnchors, islandSim, shoresOf } from '../app/renderer/screens/graph/layout.logic.ts';
 import { knowledgeGraph } from '../src/knowledge-overview.ts';
 
 const NOW = new Date('2026-11-26T12:00:00Z');
@@ -79,6 +79,31 @@ test('the islands sit apart, one per area, and each page settles on its own isla
   });
   const shores = shoresOf(graph, sim, placed);
   assert.deepEqual(shores.map((shore) => shore.count), graph.areas.map(({ area }) => graph.nodes.filter((node) => node.area === area).length));
+});
+
+test('a wide view spreads the islands sideways to fill it, without pushing any two together', () => {
+  const graph = fixture();
+  const box = (shape?: number) => {
+    const list = [...islandAnchors(graph, 30, shape).centres.values()];
+    for (let i = 0; i < list.length; i++) for (let j = i + 1; j < list.length; j++) {
+      assert.ok(Math.hypot(list[i]!.x - list[j]!.x, list[i]!.y - list[j]!.y) > list[i]!.r + list[j]!.r, 'islands overlap');
+    }
+    const points = list.flatMap((c) => [{ x: c.x - c.r, y: c.y - c.r }, { x: c.x + c.r, y: c.y + c.r }]);
+    const xs = points.map((p) => p.x); const ys = points.map((p) => p.y);
+    return { points, width: Math.max(...xs) - Math.min(...xs), height: Math.max(...ys) - Math.min(...ys) };
+  };
+  const round = box();
+  const wide = box(1.8);
+  assert.ok(wide.width / wide.height > round.width / round.height + 0.5, 'the map takes the shape of a wide view');
+  assert.equal(wide.height, round.height, 'and keeps its height');
+  assert.deepEqual(box(0.5), round, 'a tall view keeps the ring round');
+  assert.deepEqual(box(Number.NaN), round);
+  assert.ok(box(5).width <= round.width * 2 + 1e-6, 'stretched at most twice');
+  // Fitted to a large display's map area, the spread map uses most of its width as well as its height.
+  const [w, h] = [1810, 1130];
+  const fit = fitCamera(wide.points, w, h, 40, 1.6);
+  assert.ok(wide.width * fit.k > w * 0.75, `${Math.round(wide.width * fit.k)} of ${w} px wide`);
+  assert.ok(round.width * fitCamera(round.points, w, h, 40, 1.6).k < w * 0.6, 'the round ring left the sides empty');
 });
 
 test('an area with no page yet keeps a small, empty island', () => {

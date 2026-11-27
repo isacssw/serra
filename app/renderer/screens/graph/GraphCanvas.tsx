@@ -431,7 +431,7 @@ export const GraphCanvas = ({ graph, controller, selected, onSelect, onBackgroun
         tabIndex={0}
         role="img"
         aria-label={label}
-        className="block h-full w-full cursor-grab touch-none rounded-lg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
+        className="block h-full w-full cursor-grab touch-none focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-focus"
       />
       <span ref={probeRef} aria-hidden className="hidden" />
     </>

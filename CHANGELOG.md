@@ -4,6 +4,8 @@ Serra follows [Semantic Versioning](https://semver.org) once it reaches 1.0. Unt
 
 ## Unreleased
 
+- **Knowledge › Graph** now uses the whole window: the map fills the space beside the sidebar, spreads its islands to the window's shape and refits when you resize it, instead of sitting in a box in the middle.
+
 ## 0.1.0-alpha.8 (2026-11-27)
 
 - **Images in Jobs › Chat:** pictures a worker saves in its worktree, a QA run or a temp folder now show in the chat, as they do in Slack, even when the path has spaces. Attached images keep their own name.
