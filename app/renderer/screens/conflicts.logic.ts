@@ -90,6 +90,8 @@ export interface ChainRow {
   olders: PairSide[];
   /** The newest line against each older one. */
   pairs: PairInfo[];
+  /** Every pair among the row's lines, the older versions against each other too: what Keep newer and Both hold settle. */
+  all: PairInfo[];
   /** The most recent older version against the newest: the change the row shows. */
   latest: PairInfo;
   /** The newest line says everything every older one does. */
@@ -104,9 +106,12 @@ const sideKey = (side: Pick<PairSide, 'page' | 'text'>): string => `${side.page}
  * when its older line is paired with that later one too: the row for the later line already shows it.
  */
 const chainRows = (pairs: readonly PairInfo[]): ChainRow[] => {
+  // A line pasted twice word for word pairs with itself: it never hides another pair, and is a row of its own.
   const has = new Set(pairs.map((pair) => `${sideKey(pair.older)}\u0000${sideKey(pair.newer)}`));
   const later = new Map<string, string[]>();
-  for (const pair of pairs) later.set(sideKey(pair.older), [...(later.get(sideKey(pair.older)) ?? []), sideKey(pair.newer)]);
+  for (const pair of pairs) {
+    if (sideKey(pair.older) !== sideKey(pair.newer)) later.set(sideKey(pair.older), [...(later.get(sideKey(pair.older)) ?? []), sideKey(pair.newer)]);
+  }
   const shown = pairs.filter((pair) => !(later.get(sideKey(pair.newer)) ?? []).some((next) => has.has(`${sideKey(pair.older)}\u0000${next}`)));
   const rows = new Map<string, PairInfo[]>();
   for (const pair of shown) rows.set(sideKey(pair.newer), [...(rows.get(sideKey(pair.newer)) ?? []), pair]);
@@ -114,7 +119,9 @@ const chainRows = (pairs: readonly PairInfo[]): ChainRow[] => {
   return [...rows].map(([key, list]) => {
     const sorted = [...list].sort((a, b) => age(a).localeCompare(age(b)));
     const latest = sorted.at(-1)!;
-    return { key, newer: latest.newer, olders: sorted.map((pair) => pair.older), pairs: sorted, latest, covers: sorted.every((pair) => pair.covers), order: latest.order };
+    const lines = new Set([key, ...sorted.map((pair) => sideKey(pair.older))]);
+    const all = [...new Map(pairs.filter((pair) => lines.has(sideKey(pair.older)) && lines.has(sideKey(pair.newer))).map((pair) => [pair.id, pair])).values()];
+    return { key, newer: latest.newer, olders: sorted.map((pair) => pair.older), pairs: sorted, all, latest, covers: sorted.every((pair) => pair.covers), order: latest.order };
   });
 };
 

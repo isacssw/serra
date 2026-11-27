@@ -72,16 +72,18 @@ export const currentText = (text: string): string => text
 // ---------------------------------------------------------------------------------------------------------------
 
 const ISO_DAY = '\\d{4}-\\d{2}-\\d{2}';
-const MONTH_DAY = '(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\\.?\\s+\\d{1,2}(?:,?\\s+\\d{4})?';
+// Whole month names only: "(margin 16)" or "(decision 4)" is a value, not a day.
+const MONTH_DAY = '\\b(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\\.?\\s+\\d{1,2}\\b(?:,?\\s+\\d{4})?';
 const NOTE_DAY = `(?:${ISO_DAY}|${MONTH_DAY})`;
 /** Text in a bracket that holds no date: the source part of a note ("Payments sync: Ana; LIN-482"). */
 const NO_DAY = `(?:(?!${NOTE_DAY})[^()\\[\\]])*`;
 /**
  * A note saying when (and where) a rule was learned: a bracket holding one date, alone or beside a source after a
- * comma, "(2026-11-16)", "(2026-11-20, Payments sync: Ana)", "(from #team-dx, Nov 16)", "(since 2026-10-01)". A
- * bracket with two dates ("(2026-12-01 – 2026-12-15)") or a date inside a phrase is what the rule is about: it stays.
+ * comma, "(2026-11-16)", "(2026-11-20, Payments sync: Ana)", "(from #team-dx, Nov 16)", "(learned 2026-11-16)". A
+ * bracket with two dates ("(2026-12-01 – 2026-12-15)"), a "since" date ("(since 2026-12-01)") or a date inside a
+ * phrase is what the rule is about: it stays.
  */
-const NOTE = new RegExp(`\\s*[(\\[]\\s*(?:(?:learned|added|noted|confirmed|updated|since|as of|on|from)\\s+)?${NOTE_DAY}(?:\\s*[,;·]${NO_DAY})?\\s*[)\\]]`
+const NOTE = new RegExp(`\\s*[(\\[]\\s*(?:(?:learned|added|noted|confirmed|updated)\\s+)?${NOTE_DAY}(?:\\s*[,;·]${NO_DAY})?\\s*[)\\]]`
   + `|\\s*[(\\[]${NO_DAY}[,;·]\\s*${NOTE_DAY}\\s*[)\\]]`, 'gi');
 /**
  * "… — learned 2026-11-16" at the end of a line. A bare date at either end ("2026-12-01: code freeze begins") may be
@@ -113,7 +115,8 @@ export const ruleText = (text: string): string => text
  * when there are several; null without one. A date the rule is about ("the freeze starts 2026-12-01") isn't it.
  */
 export const learnedOn = (text: string): string | null => {
-  const notes = [...text.replace(/<!--[\s\S]*?-->/g, ' ').matchAll(NOTE)].map((match) => match[0]);
+  // Read the way `ruleText` reads it: a link inside a note ("(2026-11-17, [PR #42](…))") is just its words.
+  const notes = [...text.replace(/<!--[\s\S]*?-->/g, ' ').replace(/!?\[([^\]]*)\]\([^)]*\)/g, '$1').matchAll(NOTE)].map((match) => match[0]);
   const edges = [TRAILING_NOTE.exec(text.replace(/<!--[\s\S]*?-->/g, ' ').trimEnd())?.[0] ?? ''];
   const days = [...notes, ...edges].flatMap((note) => note.match(ISO_IN) ?? []).sort();
   return days.at(-1) ?? null;
@@ -195,8 +198,9 @@ const OPPOSITES: [string, string][] = [['before', 'after'], ['always', 'never'],
   ['min', 'max'], ['minimum', 'maximum'], ['earlier', 'later'], ['first', 'last'], ['enable', 'disable'], ['enabled', 'disabled'], ['allow', 'forbid'],
   ['allowed', 'forbidden'], ['public', 'private'], ['required', 'optional'], ['include', 'exclude'], ['start', 'stop']];
 /** Every word of a rule, lower case and stemmed, the small ones ("before", "all", "if") included. */
-const allWords = (text: string): Set<string> => new Set((text.toLowerCase().replace(/[’']/g, '').match(/[\p{L}\p{N}]+/gu) ?? [])
-  .filter((word) => !['a', 'an', 'the'].includes(word)).map((word) => (/^\d/.test(word) ? word : stem(word))));
+const wordList = (text: string): string[] => (text.toLowerCase().replace(/[’']/g, '').match(/[\p{L}\p{N}]+/gu) ?? [])
+  .filter((word) => !['a', 'an', 'the'].includes(word)).map((word) => (/^\d/.test(word) ? word : stem(word)));
+const allWords = (text: string): Set<string> => new Set(wordList(text));
 const opposed = (a: Set<string>, b: Set<string>): boolean => OPPOSITES.some(([x, y]) => {
   const [sx, sy] = [stem(x), stem(y)];
   return (a.has(sx) && !a.has(sy) && b.has(sy) && !b.has(sx)) || (a.has(sy) && !a.has(sx) && b.has(sx) && !b.has(sy));
@@ -453,7 +457,12 @@ const sideOf = (fact: { page: string; text: string }): PairSide => ({ ...fact, p
 const says = (wide: string, narrow: string): boolean => {
   const [w, n] = [allWords(wide), allWords(narrow)];
   const [ws, ns] = [slots(wide), slots(narrow)];
-  return [...n].every((word) => w.has(word)) && [...ns].every((slot) => ws.has(slot)) && negated(w) === negated(n) && !opposed(w, n);
+  // Its words that carry meaning in the same order, too: "migrations before the deploy" isn't said by "the deploy
+  // before migrations", while "a draft and link" is said by "a draft, link … and attach".
+  const order = words(wide);
+  let at = 0;
+  const inOrder = words(narrow).every((word) => { at = order.indexOf(word, at); return at++ !== -1; });
+  return inOrder && [...n].every((word) => w.has(word)) && [...ns].every((slot) => ws.has(slot)) && negated(w) === negated(n);
 };
 /** The links a line gives, which `ruleText` leaves out of the comparison: a newer line that drops or changes one doesn't cover the older. */
 const links = (text: string): Set<string> => new Set(text.match(/https?:\/\/[^\s)>\]]+/g) ?? []);

@@ -143,7 +143,7 @@ export const FixList = ({ overview, onOpen, onChanged }: { overview: KnowledgeOv
     try {
       const result = await keepOver(bridge, kept, drops);
       if (result === 'open') { onOpen(drops[0]!.page); return; }
-      const ids = row.pairs.map((pair) => pair.id);
+      const ids = (side === 'newer' ? row.all : row.pairs).map((pair) => pair.id);
       markDone(ids);
       toast({ message: 'Kept.', tone: 'success', action: { label: 'Undo', onClick: () => { void result.undo().then(() => { unmark(ids); onChanged(); }, (failure: unknown) => toast({ message: message(failure), tone: 'error' })); } } });
       onChanged();
@@ -158,7 +158,7 @@ export const FixList = ({ overview, onOpen, onChanged }: { overview: KnowledgeOv
     const set: string[] = [];
     const undo = async (): Promise<void> => { for (const id of set) await bridge.pages.undoBothHold(id); };
     try {
-      for (const pair of pairs) { await bridge.pages.bothHold(pair.id); set.push(pair.id); }
+      for (const id of new Set(pairs.map((pair) => pair.id))) { await bridge.pages.bothHold(id); set.push(id); }
       markDone(set);
       toast({ message: 'Both kept. Not listed again.', tone: 'success', action: { label: 'Undo', onClick: () => { void undo().then(() => { unmark(set); onChanged(); }, (failure: unknown) => toast({ message: message(failure), tone: 'error' })); } } });
       onChanged();
@@ -175,16 +175,15 @@ export const FixList = ({ overview, onOpen, onChanged }: { overview: KnowledgeOv
     setBusy('bulk');
     const result = await keepNewerOnPages(bridge, groups, localDate(new Date()));
     // Only the pairs whose older line really moved leave the list; a rule inside a sentence of prose stays for the page.
-    const settled = groups.flatMap((group) => group.safe.filter((pair) => result.moved.some((line) => line.page === pair.older.page && line.text === pair.older.text.trim())).map((pair) => pair.id));
+    const settled = groups.flatMap((group) => group.pairs.filter((pair) => result.moved.some((line) => [pair.older, pair.newer].some((side) => line.page === side.page && line.text === side.text.trim()))).map((pair) => pair.id));
     markDone(settled);
     setBusy(null);
-    if (result.error !== undefined) toast({ message: message(result.error), tone: 'error' });
+    const undo = { label: 'Undo', onClick: () => { void result.undo().then(() => { unmark(settled); onChanged(); }, (failure: unknown) => toast({ message: message(failure), tone: 'error' })); } };
+    const moved = `${result.lines} older line${result.lines === 1 ? '' : 's'} moved under “Replaced”`;
+    // One toast: what was done, what stopped it, and Undo for what was saved.
+    if (result.error !== undefined) toast({ message: result.pages.length > 0 ? `${moved}, then stopped: ${message(result.error)}` : message(result.error), tone: 'error', ...(result.pages.length > 0 ? { action: undo } : {}) });
     else if (result.lines === 0) toast({ message: 'Nothing moved: those lines sit inside longer text. Open the page to tidy them.', tone: 'error' });
-    if (result.pages.length > 0) {
-      toast({ message: `Kept newer: ${result.lines} older line${result.lines === 1 ? '' : 's'} moved under “Replaced”.`, tone: 'success', action: { label: 'Undo', onClick: () => {
-        void result.undo().then(() => { unmark(settled); onChanged(); }, (failure: unknown) => toast({ message: message(failure), tone: 'error' }));
-      } } });
-    }
+    else toast({ message: `Kept newer: ${moved}.`, tone: 'success', action: undo });
     onChanged();
   };
 

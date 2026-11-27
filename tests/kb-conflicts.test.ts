@@ -111,6 +111,7 @@ test('real conflicts are still caught with dated notes on every line: a number, 
     ['Code freeze for releases runs (2026-12-01 – 2026-12-15)', 'Code freeze for releases runs (2026-12-08 – 2026-12-22)', 'conflict'],
     ['2026-12-01: code freeze for mobile releases begins', '2026-12-08: code freeze for mobile releases begins', 'conflict'],
     ['Code freeze for mobile releases begins - 2026-12-01', 'Code freeze for mobile releases begins - 2026-12-08', 'conflict'],
+    ['Code freeze for payments service begins (since 2026-12-01)', 'Code freeze for payments service begins (since 2026-12-15)', 'conflict'],
     ['Open every PR as a draft (2026-11-16)', 'Open every PR as a draft (2026-11-17)', 'duplicate'],
     ['Webhooks retry 5 times (2026-11-16)', 'Invoices retry 3 times (2026-11-17)', 'neither'],
   ];
@@ -167,6 +168,14 @@ test('"Keep newer for all" only takes pairs where the newer line says everything
   const flip = pairsOf([{ path: 'a.md', text: '---\ntype: rule\n---\n- Ping all reviewers when the PR is ready (2026-11-16)\n- Ping reviewers when the PR is ready (2026-11-17)\n' }]);
   assert.equal(flip.length, 1);
   assert.equal(flip[0]!.pair.covers, false, '"all" was dropped');
+  // The same words in another order say something else: never safe to keep in bulk.
+  for (const [older, newer] of [
+    ['Run database migrations before the deploy starts (2026-11-16)', 'Run the deploy before database migrations starts (2026-11-17)'],
+    ['Ana reviews code from Ben on the payouts team (2026-11-16)', 'Ben reviews code from Ana on the payouts team (2026-11-17)'],
+  ]) {
+    const swapped = pairsOf([{ path: 'a.md', text: `---\ntype: rule\n---\n- ${older}\n- ${newer}\n` }]);
+    assert.ok(swapped.every((issue) => !issue.pair.covers && !isSafe(issue.pair)), `${older} / ${newer}`);
+  }
 });
 
 test('bulk keep moves only the intended lines, keeps the newest of a chain, and leaves every other byte', () => {
@@ -321,6 +330,9 @@ test('a rule restated three times is one row, Nov 16, Nov 17 → Nov 18, and Kee
   const chain = prs.rows.find((row) => row.olders.length === 2)!;
   assert.deepEqual(rowNames(chain), ['Nov 16, Nov 17', 'Nov 18']);
   assert.equal(chain.newer.text, 'Open every PR as a draft, link the Linear issue and attach proof (2026-11-18)');
+  assert.equal(chain.all.length, 3, '"Both hold" on the row sets aside the Nov 16 / Nov 17 pair too');
+  const left = groupPairs(pairsOf(oldFormatKnowledge(), new Set(chain.all.map((pair) => pair.id)))).repeats.find((group) => group.pages[0] === 'owner/pr-rules.md')!;
+  assert.ok(!left.rows.some((row) => row.newer.text.startsWith('Open every PR') || row.olders.some((side) => side.text.startsWith('Open every PR'))), 'the rule does not come back as a shorter chain');
   const before = readFileSync(join(knowledge, 'owner/pr-rules.md'), 'utf8');
   const result = await keepOver(bridge, chain.newer, chain.olders);
   assert.notEqual(result, 'open');
@@ -394,4 +406,20 @@ test('each side of a disagreement reads as written: its own case and spacing, it
   assert.deepEqual(older.filter((part) => part.op !== 'same').map((part) => part.text.trim()), ['Never', 'before']);
   const newer = wordDiff('Never merge a PR (before review)', 'Merge a PR (after review)', 'newer');
   assert.equal(newer.map((part) => part.text).join(''), 'Merge a PR (after review)');
+});
+
+test('a value in brackets that starts like a month is not a date note, and a link inside a note still dates it', () => {
+  assert.equal(ruleText('Cards use the wide padding (margin 16) (2026-11-16)'), 'Cards use the wide padding (margin 16)');
+  const pairs = pairsOf([{ path: 'a.md', text: '---\ntype: rule\n---\n- Cards use the wide padding (margin 16) (2026-11-16)\n- Cards use the wide padding (margin 24) (2026-11-17)\n' }]);
+  assert.deepEqual(pairs.map((issue) => issue.kind), ['conflict']);
+  assert.equal(learnedOn('Ship it behind a flag (2026-11-17, [PR #42](https://github.com/acme/project/pull/42))'), '2026-11-17');
+});
+
+test('a line pasted twice word for word is one row that Keep can settle, never an empty "Review 0"', () => {
+  const line = 'Tag each release in git with its version number';
+  const { repeats } = groupPairs(pairsOf([{ path: 'a.md', text: `---\ntype: rule\n---\n- ${line}\n- ${line}\n` }]));
+  assert.equal(repeats.length, 1);
+  assert.equal(repeats[0]!.rows.length, 1);
+  assert.equal(groupLine(repeats[0]!), '1 rule learned again or written twice');
+  assert.equal(repeats[0]!.safeRows, 0, 'two identical undated lines are never kept in bulk');
 });

@@ -38,7 +38,9 @@ export const RepeatPairs = ({ rows, titleOf, actions }: { rows: ChainRow[]; titl
     {rows.map((row) => {
       const [from, to] = rowNames(row);
       const [keepOlder, keepNewer] = keepNames(row);
-      const parts = wordDiff(row.latest.older.plain, row.newer.plain);
+      // Where the newest drops detail, show the version it drops it from, so the struck words are the lost ones.
+      const shown = row.covers ? row.latest : row.pairs.find((pair) => !pair.covers) ?? row.latest;
+      const parts = wordDiff(shown.older.plain, row.newer.plain);
       const same = parts.every((part) => part.op === 'same');
       return (
         <li key={row.key} className={cx('flex flex-col gap-2 rounded-lg border px-3 py-2.5', row.covers ? 'border-line' : 'border-warn/50')}>
@@ -53,9 +55,9 @@ export const RepeatPairs = ({ rows, titleOf, actions }: { rows: ChainRow[]; titl
           </p>
           <p className="text-[13px] leading-5 text-ink" title={[...row.olders.map((side) => side.text), row.newer.text].join('\n')}><Marked parts={parts} /></p>
           <div className="flex flex-wrap gap-1.5">
-            <Button size="sm" disabled={actions.busy} title={row.latest.older.text} onClick={() => actions.keepRow(row, 'older')}>{keepOlder}</Button>
+            <Button size="sm" disabled={actions.busy} title={row.olders.length > 1 ? `Keeps “${row.latest.older.text}”. Only the newest line moves.` : row.latest.older.text} onClick={() => actions.keepRow(row, 'older')}>{keepOlder}</Button>
             <Button size="sm" variant={row.covers ? 'primary' : 'secondary'} disabled={actions.busy} title={row.newer.text} onClick={() => actions.keepRow(row, 'newer')}>{keepNewer}</Button>
-            <Button size="sm" variant="ghost" disabled={actions.busy} title="Leave both lines and stop listing them" onClick={() => actions.bothHold(row.pairs)}>Both stay</Button>
+            <Button size="sm" variant="ghost" disabled={actions.busy} title="Leave the lines as they are and stop listing them" onClick={() => actions.bothHold(row.all)}>Both hold</Button>
           </div>
         </li>
       );
