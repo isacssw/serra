@@ -53,7 +53,7 @@ const Queue = ({ proposals, selected, onSelect }: { proposals: Proposal[]; selec
               )}
             >
               <span className={cx('truncate text-[13px] leading-5 text-ink', active && 'font-medium')}>{proposalTitle(proposal)}</span>
-              <span className="truncate text-xs leading-4 text-muted" title={proposal.target ?? undefined}>{proposal.target ? `Changes ${sectionTitle(proposal.target)}` : 'New page'}</span>
+              <span className="truncate text-xs leading-4 text-muted" title={proposal.target ?? undefined}>{proposal.target ? `Edits the ${sectionTitle(proposal.target)} page` : 'New page'}</span>
             </button>
           );
         })}
@@ -245,7 +245,7 @@ export const Proposals = () => {
               <>
                 <header className="flex flex-col gap-1">
                   <h2 className="text-lg leading-7 font-semibold tracking-[-0.01em]">{title}</h2>
-                  <Meta diff={diff} />
+                  {(diff.proposal.from || sourcesOf(diff.proposed).length > 0) && <Meta diff={diff} />}
                 </header>
                 {stale && (
                   <p role="status" className="flex items-center gap-2 rounded-xl border border-warn/40 bg-warn/5 px-4 py-2.5 text-[13px] text-warn">

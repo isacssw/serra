@@ -106,11 +106,11 @@ export const AboutMe = () => {
                 </button>
               </span>
             )}
-            {leftOut && untagged.length > 0 && <span aria-hidden className="-mx-3 text-faint">·</span>}
+            {leftOut && untagged.length > 0 && <span aria-hidden className="-mx-3 text-muted">·</span>}
             {untagged.length > 0 && (
               <span className="inline-flex items-center gap-2" title="Teammates\u2019 briefs leave these out until you choose">
                 {untagged.length === 1 ? '1 page' : `${untagged.length} pages`} not shared
-                <button type="button" onClick={() => { setShareTo('team'); setSharing(new Set()); }} className="inline-flex items-center gap-0.5 rounded-sm font-medium text-ink hover:underline focus-visible:outline-2 focus-visible:outline-focus">Share<ChevronRight size={13} aria-hidden /></button>
+                <button type="button" onClick={() => { setShareTo(visibility === 'external' ? 'external' : 'team'); setSharing(new Set()); }} className="inline-flex items-center gap-0.5 rounded-sm font-medium text-ink hover:underline focus-visible:outline-2 focus-visible:outline-focus">{visibility === 'external' ? 'Share outside' : 'Share with team'}<ChevronRight size={13} aria-hidden /></button>
               </span>
             )}
           </p>

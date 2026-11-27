@@ -75,7 +75,7 @@ export const ReviewControls = ({ weekly, ran, onChanged }: { weekly: boolean; ra
         <span aria-hidden className={cx('relative h-4 w-7 rounded-full border transition-colors duration-150', weekly ? 'border-transparent bg-accent' : 'border-line-control bg-field')}>
           <span className={cx('absolute top-1/2 size-3 -translate-y-1/2 rounded-full shadow-sm transition-[left] duration-150', weekly ? 'left-[13px] bg-accent-ink' : 'left-0.5 bg-faint')} />
         </span>
-        Weekly
+        Weekly review
       </button>
       <Button disabled={running} onClick={() => void run()} icon={<RefreshCw size={14} aria-hidden className={cx(running && 'animate-spin')} />}>{running ? 'Reviewing…' : ran ? 'Run again' : 'Run review'}</Button>
     </div>

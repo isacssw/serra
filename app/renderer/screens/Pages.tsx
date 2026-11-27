@@ -403,7 +403,8 @@ export const Pages = () => {
       />
     </div>
   );
-  const conflicted = pairs.some((issue) => issue.kind === 'conflict');
+  // A page whose rules disagree or repeat isn't settled, however recently it was confirmed: its badge says so.
+  const disagree = pairs.some((issue) => (issue.kind === 'conflict' || issue.kind === 'duplicate') && (issue.facts?.length ?? 0) === 2);
   // Today's date, for the editor's "Verified today" box.
   const [today] = useState(() => localDate(new Date()));
   const detail = page ? pageDetail(page) : null;
@@ -446,8 +447,9 @@ export const Pages = () => {
                 <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
                   <div className="flex min-w-0 items-center gap-2">
                     <h2 className="min-w-0 text-lg leading-7 font-semibold tracking-[-0.01em]">{pageLabel(page)}</h2>
-                    {/* A page whose rules disagree isn't settled, however recently it was confirmed. */}
-                    {!conflicted && (
+                    {disagree
+                      ? <Badge tone="warn" title="Two rules on this page disagree or repeat">Conflict</Badge>
+                      : (
                       <Badge tone={badgeTone(page.badge)} title={badgeTitle(page)} className="gap-1">
                         {page.badge === 'verified' && <Check size={11} strokeWidth={2.5} aria-hidden />}{badgeLabel(page.badge)}
                       </Badge>
@@ -457,7 +459,7 @@ export const Pages = () => {
                     <div className="ml-auto flex flex-wrap items-center justify-end gap-1.5">
                       {!editing && !state.dirty && confirmable && page.badge !== 'verified' && <Button size="sm" variant="ghost" icon={<CheckCircle2 size={13} aria-hidden />} disabled={saving} title="It still holds: mark it confirmed today" onClick={() => void confirmToday()}>Still true</Button>}
                       <AudiencePicker text={draft} disabled={saving} onChange={setDraft} />
-                      <Button size="sm" icon={<Pencil size={13} aria-hidden />} disabled={editing || state.dirty} aria-pressed={editing || state.dirty} onClick={() => setEditing(true)}>{editing || state.dirty ? 'Editing' : 'Edit'}</Button>
+                      <Button size="sm" icon={<Pencil size={13} aria-hidden />} className="w-[84px]" disabled={editing || state.dirty} aria-pressed={editing || state.dirty} onClick={() => setEditing(true)}>{editing || state.dirty ? 'Editing' : 'Edit'}</Button>
                       <Button size="sm" variant="ghost" aria-label="Retire…" title={state.dirty ? 'Save or cancel your edits first' : 'Retire: the bot stops using it'} disabled={saving || state.dirty} icon={<Archive size={14} aria-hidden />} className="px-1.5 enabled:hover:bg-down/10 enabled:hover:text-down" onClick={() => setRetiring(true)} />
                     </div>
                   )}
