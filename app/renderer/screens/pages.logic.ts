@@ -40,12 +40,12 @@ export const pagesSummary = (pages: readonly KnowledgePage[]): string => {
   return parts.join(' · ');
 };
 
-/** Pages with the chosen badge whose path or description contains `query` (any case). */
+/** Pages with the chosen badge whose path, name or description contains `query` (any case). */
 export const filterPages = (pages: readonly KnowledgePage[], filter: PageFilter, query = ''): KnowledgePage[] => {
   const needle = query.trim().toLowerCase();
   return pages.filter((page) =>
     (filter === 'all' || (page.badge === filter && !(filter === 'verified' && page.disputed)))
-    && (!needle || page.path.toLowerCase().includes(needle) || (page.description ?? '').toLowerCase().includes(needle)));
+    && (!needle || page.path.toLowerCase().includes(needle) || (page.description ?? '').toLowerCase().includes(needle) || (page.title ?? '').toLowerCase().includes(needle)));
 };
 
 export interface PageFolder {
@@ -77,11 +77,11 @@ export const groupByArea = (pages: readonly KnowledgePage[]): { area: string; pa
   for (const page of pages) groups.set(page.area ?? 'Other', [...(groups.get(page.area ?? 'Other') ?? []), page]);
   const rank = (area: string): number => (AREA_ORDER.includes(area) ? AREA_ORDER.indexOf(area) : AREA_ORDER.length);
   return [...groups].sort(([a], [b]) => rank(a) - rank(b) || a.localeCompare(b))
-    .map(([area, list]) => ({ area, pages: [...list].sort((x, y) => (x.description ?? x.path).localeCompare(y.description ?? y.path)) }));
+    .map(([area, list]) => ({ area, pages: [...list].sort((x, y) => pageLabel(x).localeCompare(pageLabel(y))) }));
 };
 
 /** The page's file name, as the list shows it under its folder. */
-export const pageName = (path: string): string => path.split('/').pop() ?? path;
+const pageName = (path: string): string => path.split('/').pop() ?? path;
 
 export interface EditorState {
   /** The draft differs from the saved text (line endings and trailing blank lines don't count). */
@@ -178,3 +178,20 @@ export const keepLabel = (rule: string, other: string): string => {
 /** Which page to show after the list reloads: the current one if it's still there, else the first. */
 export const keepSelection = (pages: readonly KnowledgePage[], current: string | null): string | null =>
   current && pages.some((page) => page.path === current) ? current : (pages[0]?.path ?? null);
+
+/** What a page is called in the list and its header: its own heading ("Tom Reyes"), else its description. */
+export const pageLabel = (page: Pick<KnowledgePage, 'path' | 'title' | 'description'>): string => page.title ?? page.description ?? pageName(page.path);
+
+/** The muted line under a page's name: its description, when it says something the name doesn't. */
+export const pageDetail = (page: Pick<KnowledgePage, 'path' | 'title' | 'description'>): string | null =>
+  page.description && page.description.toLowerCase() !== pageLabel(page).toLowerCase() ? page.description : null;
+
+/** `2026-11-03` as "Nov 3". */
+const dayName = (date: string): string => new Date(`${date}T00:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
+
+/** A page's one meta line: "Processes · written Nov 3 · verified Nov 20". */
+export const pageMeta = (page: Pick<KnowledgePage, 'area' | 'written' | 'verified'>): string => [
+  page.area,
+  page.written && /^\d{4}-\d{2}-\d{2}$/.test(page.written) ? `written ${dayName(page.written)}` : null,
+  page.verified ? `verified ${dayName(page.verified)}` : 'not verified',
+].filter(Boolean).join(' · ');

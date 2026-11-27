@@ -7,6 +7,7 @@ export { Dialog } from './Dialog.tsx';
 export { EmptyState } from './EmptyState.tsx';
 export { GitHubMark } from './GitHubMark.tsx';
 export { Input } from './Input.tsx';
+export { Segmented } from './Segmented.tsx';
 export { Select } from './Select.tsx';
 export { TextArea } from './TextArea.tsx';
 export { Page } from './Page.tsx';

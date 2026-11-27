@@ -354,10 +354,12 @@ export const createKnowledge = (knowledgeDir: string, { backupDir }: KnowledgeOp
     const type = field('type');
     const description = field('description');
     const written = field('written');
+    const title = /^#\s+(.+?)\s*#*\s*$/m.exec(text.replace(/^---\n[\s\S]*?\n---\n/, ''))?.[1];
     return {
       path: page,
       ...(type ? { type } : {}),
       ...(description ? { description } : {}),
+      ...(title ? { title } : {}),
       ...(written ? { written } : {}),
       verified: verified && DATE.test(verified) ? verified : null,
       badge: pageBadge(verified, options.now),

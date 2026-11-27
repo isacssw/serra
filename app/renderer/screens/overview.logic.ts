@@ -216,3 +216,46 @@ export const fixItems = (overview: Pick<KnowledgeOverview, 'review' | 'health' |
   const kind = (item: FixItem): string => item.suggestion?.kind === 'confirm' && !overview.review?.suggestions.some((suggestion) => suggestion.id === item.id) ? 'stale' : item.suggestion?.kind ?? item.id.split(':')[0]!;
   return [...unreviewed, ...fromReview, ...fromProposals, ...missing, ...fromHealth].sort((a, b) => (FIX_RANK[kind(a)] ?? 20) - (FIX_RANK[kind(b)] ?? 20));
 };
+
+/** What kind of job a To do item is, from its id: `proposal`, `conflict`, `draft`, `missing`, a review fix's id… */
+export const fixKind = (item: Pick<FixItem, 'id' | 'suggestion'>): string => item.suggestion?.kind ?? item.id.split(':')[0]!;
+
+const names = (titles: string[], shown = 3): string =>
+  titles.length > shown ? `${titles.slice(0, shown).join(', ')} and ${titles.length - shown} more` : titles.join(', ');
+
+/**
+ * To do with the jobs that come in numbers folded into one row each: "3 proposals" (Review opens Proposals) and
+ * "19 pages to confirm" (Review opens Pages). A single one stays its own row; everything keeps its place in the order.
+ */
+export const groupFixes = (items: readonly FixItem[]): FixItem[] => {
+  const proposals = items.filter((item) => item.id.startsWith('proposal:'));
+  const drafts = items.filter((item) => item.id.startsWith('draft:'));
+  const out: FixItem[] = [];
+  for (const item of items) {
+    if (item.id.startsWith('proposal:')) {
+      if (proposals.length === 1) out.push({ ...item, why: 'Proposal' });
+      else if (item === proposals[0]) out.push({ id: 'proposals:', title: `${proposals.length} proposals`, why: names(proposals.map((one) => one.title)), lines: [], pages: [], action: 'Review', href: '/knowledge/proposals' });
+      continue;
+    }
+    if (item.id.startsWith('draft:') && drafts.length > 1) {
+      if (item === drafts[0]) out.push({ id: 'drafts:', title: `${drafts.length} pages to confirm`, why: names(drafts.map((one) => one.title)), lines: [], pages: drafts.flatMap((one) => one.pages), action: 'Review', href: '/knowledge/pages' });
+      continue;
+    }
+    out.push(item);
+  }
+  return out;
+};
+
+/** To do's count in words for the stat tile: "3 proposals · 19 to confirm · 1 conflict". */
+export const todoSummary = (items: readonly FixItem[]): string => {
+  const count = (test: (item: FixItem) => boolean): number => items.filter(test).length;
+  const proposals = count((item) => item.id.startsWith('proposal:'));
+  const drafts = count((item) => item.id.startsWith('draft:'));
+  const conflicts = count((item) => fixKind(item) === 'conflict' || fixKind(item) === 'replace');
+  const rest = items.length - proposals - drafts - conflicts;
+  return [
+    proposals && `${proposals} proposal${proposals === 1 ? '' : 's'}`,
+    drafts && `${drafts} to confirm`,
+    conflicts && `${conflicts} conflict${conflicts === 1 ? '' : 's'}`,
+  ].filter(Boolean).concat(rest && !(proposals && drafts && conflicts) ? [`${rest} other`] : []).join(' · ') || 'Nothing to do';
+};

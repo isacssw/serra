@@ -1,6 +1,6 @@
 // The Proposals screen's logic: grouping the queue by date, titles, and the side-by-side diff line model.
 // Pure data and functions: imported by `node --test` as well as the renderer.
-import type { Proposal } from '../../../src/contracts.ts';
+import type { Proposal, ProposalSource } from '../../../src/contracts.ts';
 import type { Action } from '../commands/registry.ts';
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -263,3 +263,21 @@ export const changeSummary = (current: string | null, proposed: string): { kind:
     ...before.now.filter((line) => !after.now.includes(line)).map((text) => ({ kind: after.replaced.includes(text) ? 'replaces' as const : 'removes' as const, text })),
   ];
 };
+
+/**
+ * Where a proposal came from, in a few words, or null when it wasn't recorded (the screen then says nothing).
+ * `careful` marks someone else's thread: the owner should approve only what they said there.
+ */
+export const sourceLine = (from: ProposalSource | undefined): { text: string; careful: boolean } | null => {
+  if (!from) return null;
+  if (from.via === 'review') return { text: 'Weekly review', careful: false };
+  if (from.owner) return { text: from.via === 'app' ? 'From your task' : 'From your Slack thread', careful: false };
+  return { text: `From ${from.who}\u2019s thread`, careful: true };
+};
+
+/** The proposal's one meta line, empty parts left out: "From your task · Nov 25 · New page". */
+export const proposalMeta = (proposal: Pick<Proposal, 'date' | 'target' | 'from'>): string[] => [
+  sourceLine(proposal.from)?.text ?? null,
+  proposal.date ? dateLabel(proposal.date) : null,
+  proposal.target ? `Changes ${proposal.target.split('/').pop()?.replace(/\.md$/, '') ?? proposal.target}` : 'New page',
+].filter((part): part is string => part !== null);
