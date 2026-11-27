@@ -9,14 +9,10 @@ import type { AppliesWhen, BotStatus, MessageTrigger, Profile, ProfileSection, R
 // When a change applies
 // ---------------------------------------------------------------------------------------------------------------
 
-export type AppliesTone = 'up' | 'neutral';
-
-/** The badge text next to a section. Same wording as the CLI (`appliesLabel` in src/profile-settings.ts). */
+/** When a section's change applies, as the save bar and Appearance say it. Same wording as the CLI (`appliesLabel` in src/profile-settings.ts). */
 export const appliesLabel = (when: AppliesWhen): string =>
   when === 'now' ? 'Applies now' : when === 'next job' ? 'Applies on the next job' : 'Applies after a restart';
 
-/** Live changes read green; the rest are neutral, and the restart banner calls out what is still waiting. */
-export const appliesTone = (when: AppliesWhen): AppliesTone => (when === 'now' ? 'up' : 'neutral');
 
 /** One save of a section that only takes effect when the daemon starts again. */
 export interface RestartSave { section: ProfileSection; savedAt: string }

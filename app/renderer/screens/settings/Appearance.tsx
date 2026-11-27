@@ -6,7 +6,6 @@ import { registerActions } from '../../commands/registry.ts';
 import { switchThemeAction, themeLabels, themes } from '../../theme.logic.ts';
 import { themeStore, useTheme } from '../../theme.ts';
 import { cx, Page, useToast } from '../../ui/index.ts';
-import { AppliesBadge } from './SettingsKit.tsx';
 
 const unregister = registerActions([switchThemeAction(themeStore)]);
 import.meta.hot?.dispose(unregister);
@@ -58,11 +57,10 @@ const ThemeControl = () => {
 
 export const Appearance = () => (
   <Page title="Appearance" subtitle="Saved for this app on this Mac, not in the bot's profile.">
-    <section className="flex flex-col gap-4 rounded-lg border border-line bg-panel p-5">
+    <section className="flex flex-col gap-4 rounded-xl border border-line bg-panel p-5">
       <header className="flex flex-col gap-1">
         <div className="flex flex-wrap items-center gap-2">
-          <h2 className="text-lg font-semibold">Theme</h2>
-          <AppliesBadge when="now" />
+          <h2 className="text-[15px] leading-5 font-semibold">Theme</h2>
         </div>
         <p className="text-sm text-muted">
           System follows macOS. Light and Dark keep Serra that way, including its menus, dialogs and scrollbars.

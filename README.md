@@ -100,6 +100,8 @@ Then try it: invite the bot to a test channel (`/invite @friday`) and ask `@frid
 
 If something fails, open **Settings › Diagnostics**: each check says PASS or FAIL with the fix. Setup stays under **Serra › Set Up Serra…** and **Diagnostics › Setup**.
 
+**Settings** is the last item in the sidebar (⌘,). It opens its own menu; **Back** or Esc returns. Each settings page has one **Save** bar (⌘S) that appears when something changed and says when the change applies.
+
 ## 4. Teach it how you work (optional)
 
 Open **Knowledge › Proposals › Start interview**. A T3 thread interviews you, one question at a time, about your role, workflows and limits. Each summary you confirm becomes a proposal; approve it in **Proposals** and it becomes a knowledge page every job can read. **Knowledge › About me** shows what jobs know about you. More: [docs/knowledge-interview.md](docs/knowledge-interview.md).

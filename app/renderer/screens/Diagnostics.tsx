@@ -8,7 +8,7 @@ import type { Diagnostic } from '../../../src/contracts.ts';
 import type { AppInfo } from '../../main/bridge.ts';
 import { serra } from '../bridge.ts';
 import { useBotStatus } from '../shell/live.ts';
-import { Button, cx, Page, useToast } from '../ui/index.ts';
+import { Button, cx, Page, Select, useToast } from '../ui/index.ts';
 import { SETUP_PATH } from '../setup/setup.logic.ts';
 import {
   DEFAULT_LOG_LINES, LOG_LINE_CHOICES, reportText, runtimeLine, statusKey, summarize,
@@ -151,7 +151,7 @@ export const Diagnostics = () => {
       )}
 
       {checks.results && summary && (
-        <section className="flex flex-col rounded-lg border border-line bg-panel" aria-label="Checks">
+        <section className="flex flex-col rounded-xl border border-line bg-panel" aria-label="Checks">
           <header className={cx('flex items-center gap-2 border-b border-line px-5 py-3 text-sm font-medium', summary.tone === 'up' ? 'text-up' : 'text-down')} data-diagnostics-summary={summary.tone}>
             {summary.tone === 'up' ? <CircleCheck size={16} aria-hidden /> : <CircleAlert size={16} aria-hidden />}
             {summary.text}
@@ -167,19 +167,19 @@ export const Diagnostics = () => {
       <section className="flex flex-col gap-3" aria-label="Daemon log">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex flex-col">
-            <h2 className="text-lg font-semibold">Daemon log</h2>
+            <h2 className="text-[15px] leading-5 font-semibold">Daemon log</h2>
             <p className="text-xs text-muted">logs/bot.log in the profile folder. Anything shaped like a token is hidden.</p>
           </div>
           <div className="flex items-center gap-2">
-            <label htmlFor="log-lines" className="text-sm text-muted">Lines</label>
-            <select
+            <Select
               id="log-lines"
-              value={lines}
-              onChange={(event) => setLines(Number(event.target.value))}
-              className="h-7 rounded-md border border-line bg-panel px-2 text-xs text-ink focus:outline-2 focus:outline-offset-1 focus:outline-focus"
-            >
-              {LOG_LINE_CHOICES.map((choice) => <option key={choice} value={choice}>{choice}</option>)}
-            </select>
+              aria-label="Lines"
+              size="sm"
+              className="w-28"
+              value={String(lines)}
+              options={LOG_LINE_CHOICES.map((choice) => ({ value: String(choice), label: `${choice} lines` }))}
+              onChange={(choice) => setLines(Number(choice))}
+            />
             <Button size="sm" icon={<RefreshCw size={12} aria-hidden />} onClick={() => void reloadLog()}>Reload</Button>
           </div>
         </div>

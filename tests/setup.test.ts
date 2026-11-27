@@ -674,7 +674,7 @@ test('Set Up Serra… is in the app menu on macOS, and in File elsewhere', () =>
 
 test('every screen that reads the profile is gated; Updates and Appearance work without one', () => {
   const open = routes.filter((route) => !('needs' in route)).map((route) => route.id);
-  assert.deepEqual(open, ['updates', 'settings-appearance']);
+  assert.deepEqual(open, ['settings-appearance', 'updates']);
   for (const route of routes) if ('needs' in route) assert.equal(route.needs, 'profile', route.id);
 });
 

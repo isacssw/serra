@@ -6,10 +6,10 @@ await app.evaluate(({ shell }) => { globalThis.__opened = []; shell.openExternal
 await page.waitForTimeout(1000);
 await go(page, '/jobs/needs-you'); await page.waitForTimeout(1500);
 // C2 channel filter
-await page.locator('select').first().selectOption('C0999999999'); await page.waitForTimeout(800);
+await page.getByRole('combobox', { name: 'Channel' }).click(); await page.getByRole('option').last().click(); await page.waitForTimeout(800);
 console.log('FILTERED:', (await text(page)).replace(/\n+/g, ' | ').slice(0, 400));
 await shot(page, 'C2-jobs-channel-filter');
-await page.locator('select').first().selectOption({ index: 0 }); await page.waitForTimeout(800);
+await page.getByRole('combobox', { name: 'Channel' }).click(); await page.getByRole('option', { name: 'All channels' }).click(); await page.waitForTimeout(800);
 // C3 links
 await page.getByRole('button', { name: 'T3' }).first().click(); await page.getByRole('button', { name: 'PR' }).nth(2).click().catch((e) => console.log('PR click', e.message.split('\n')[0]));
 await page.waitForTimeout(300);

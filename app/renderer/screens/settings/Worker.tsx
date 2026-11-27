@@ -9,7 +9,7 @@ const forms = [workerForm, branchPatternForm, t3BinForm, updatesForm];
 export const Worker = () => {
   const state = useSettings();
   return (
-    <SettingsPage title="Worker" sections={forms.map((form) => form.section)} state={state}>
+    <SettingsPage title="Worker" state={state}>
       {(profile, settings) => (
         <>
           <AgentBackendCard />

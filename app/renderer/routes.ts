@@ -5,6 +5,10 @@
 
 export type SidebarSection = 'jobs' | 'knowledge' | 'settings';
 
+/** Settings' own sub-menu, in order: what the bot is, what it knows, what it may reach, and the app itself. */
+export type SettingsGroup = 'Bot' | 'Knowledge' | 'Access' | 'App';
+export const settingsGroups: readonly SettingsGroup[] = ['Bot', 'Knowledge', 'Access', 'App'];
+
 /** The live counts a sidebar item can show (see badges.logic.ts). */
 export type BadgeKey = 'needsYou' | 'running' | 'proposals' | 'untagged' | 'drift';
 
@@ -17,6 +21,8 @@ export interface Route {
   badge?: BadgeKey;
   /** The sidebar's name for the item when it differs from the screen's (Needs you is the sidebar's Jobs). */
   navLabel?: string;
+  /** Where a settings screen sits in Settings' sub-menu. */
+  group?: SettingsGroup;
   /** False for a screen reached from inside another (a Jobs tab, New task's button), not from its own sidebar item. */
   nav?: false;
   /** The ticket that builds the screen, shown on its placeholder. */
@@ -41,28 +47,35 @@ export const routes = [
   { id: 'about-me', path: '/knowledge/about', label: 'About me', section: 'knowledge', needs: 'profile', ticket: 'SERRA-41' },
   { id: 'proposals', path: '/knowledge/proposals', label: 'Proposals', section: 'knowledge', badge: 'proposals', needs: 'profile', ticket: 'APP-13' },
   { id: 'pages', path: '/knowledge/pages', label: 'Pages', section: 'knowledge', needs: 'profile', ticket: 'APP-20' },
-  { id: 'settings-bot', path: '/settings/bot', label: 'Bot & Slack', section: 'settings', needs: 'profile', ticket: 'APP-14' },
-  { id: 'settings-people', path: '/settings/people', label: 'People', section: 'settings', needs: 'profile', ticket: 'APP-14' },
-  { id: 'settings-repositories', path: '/settings/repositories', label: 'Repositories', section: 'settings', needs: 'profile', ticket: 'APP-14' },
-  { id: 'settings-alerts', path: '/settings/alerts', label: 'Alerts', section: 'settings', needs: 'profile', ticket: 'APP-14' },
-  { id: 'settings-worker', path: '/settings/worker', label: 'Worker', section: 'settings', needs: 'profile', ticket: 'APP-14' },
-  { id: 'brief', path: '/settings/brief', label: 'Brief & policy', section: 'settings', needs: 'profile', ticket: 'APP-21' },
-  { id: 'settings-meetings', path: '/settings/meetings', label: 'Meetings', section: 'settings', needs: 'profile', ticket: 'SERRA-62' },
-  { id: 'secrets', path: '/settings/secrets', label: 'Secrets', section: 'settings', needs: 'profile', ticket: 'APP-15' },
-  { id: 'tools', path: '/settings/tools', label: 'Tools', section: 'settings', needs: 'profile', ticket: 'APP-23' },
-  { id: 'updates', path: '/settings/updates', label: 'Updates', section: 'settings', ticket: 'APP-19' },
-  { id: 'diagnostics', path: '/settings/diagnostics', label: 'Diagnostics', section: 'settings', needs: 'profile', ticket: 'APP-22' },
-  { id: 'settings-appearance', path: '/settings/appearance', label: 'Appearance', section: 'settings', ticket: 'APP-28' },
+  { id: 'settings-bot', path: '/settings/bot', label: 'Bot & Slack', section: 'settings', group: 'Bot', needs: 'profile', ticket: 'APP-14' },
+  { id: 'settings-people', path: '/settings/people', label: 'People', section: 'settings', group: 'Bot', needs: 'profile', ticket: 'APP-14' },
+  { id: 'settings-repositories', path: '/settings/repositories', label: 'Repositories', section: 'settings', group: 'Bot', needs: 'profile', ticket: 'APP-14' },
+  { id: 'settings-worker', path: '/settings/worker', label: 'Worker', section: 'settings', group: 'Bot', needs: 'profile', ticket: 'APP-14' },
+  { id: 'settings-alerts', path: '/settings/alerts', label: 'Alerts', section: 'settings', group: 'Bot', needs: 'profile', ticket: 'APP-14' },
+  { id: 'brief', path: '/settings/brief', label: 'Brief & policy', section: 'settings', group: 'Knowledge', needs: 'profile', ticket: 'APP-21' },
+  { id: 'settings-meetings', path: '/settings/meetings', label: 'Meetings', section: 'settings', group: 'Knowledge', needs: 'profile', ticket: 'SERRA-62' },
+  { id: 'secrets', path: '/settings/secrets', label: 'Secrets', section: 'settings', group: 'Access', needs: 'profile', ticket: 'APP-15' },
+  { id: 'tools', path: '/settings/tools', label: 'Tools', section: 'settings', group: 'Access', needs: 'profile', ticket: 'APP-23' },
+  { id: 'settings-appearance', path: '/settings/appearance', label: 'Appearance', section: 'settings', group: 'App', ticket: 'APP-28' },
+  { id: 'updates', path: '/settings/updates', label: 'Updates', section: 'settings', group: 'App', ticket: 'APP-19' },
+  { id: 'diagnostics', path: '/settings/diagnostics', label: 'Diagnostics', section: 'settings', group: 'App', needs: 'profile', ticket: 'APP-22' },
 ] as const satisfies readonly Route[];
 
 export type RouteId = (typeof routes)[number]['id'];
 
-/** Sidebar group headings, in order. Jobs is a single item under New task. Knowledge holds only what the owner checks: what the bot knows and what to add or remove; Brief & policy is a setting. */
+/**
+ * Sidebar group headings, in order. Jobs is a single item under New task. Knowledge holds only what the owner checks:
+ * what the bot knows and what to add or remove; Brief & policy is a setting. Settings is one entry at the foot of the
+ * sidebar that opens its own grouped sub-menu (`settingsGroups`).
+ */
 export const sections: readonly { id: SidebarSection; heading: string | null }[] = [
   { id: 'jobs', heading: null },
   { id: 'knowledge', heading: 'Knowledge' },
   { id: 'settings', heading: 'Settings' },
 ];
+
+/** True for a path inside Settings, where the sidebar shows Settings' sub-menu. */
+export const inSettings = (path: string): boolean => path.startsWith('/settings/');
 
 /** What the window opens on when it has no saved screen: the jobs that need the owner. */
 export const defaultPath = '/jobs/needs-you';

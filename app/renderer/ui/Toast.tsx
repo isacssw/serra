@@ -47,7 +47,7 @@ const ToastItem = ({ toast, onDismiss }: { toast: ToastEntry; onDismiss: (id: nu
     return () => clearTimeout(timer);
   }, [toast.id, duration, onDismiss]);
   return (
-    <div data-toast role={tone === 'error' ? 'alert' : 'status'} className={cx('flex items-center gap-3 rounded-xl border border-line bg-panel px-3.5 py-2.5 text-[13px] shadow-[0_12px_32px_-8px_rgb(0_0_0/0.35)]')}>
+    <div data-toast role={tone === 'error' ? 'alert' : 'status'} className={cx('flex items-center gap-3 rounded-xl bg-overlay px-3.5 py-2.5 text-[13px] shadow-overlay')}>
       {icons[tone]}
       <span className="flex-1">{toast.message}</span>
       {toast.action && (

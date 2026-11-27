@@ -7,6 +7,8 @@ export { Dialog } from './Dialog.tsx';
 export { EmptyState } from './EmptyState.tsx';
 export { GitHubMark } from './GitHubMark.tsx';
 export { Input } from './Input.tsx';
+export { Select } from './Select.tsx';
+export { TextArea } from './TextArea.tsx';
 export { Page } from './Page.tsx';
 export { Table, TBody, Td, Th, THead, Tr } from './Table.tsx';
 export { ToastProvider, useToast, useToastStack,  } from './Toast.tsx';

@@ -4,10 +4,10 @@ import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { CircleAlert, CircleCheck, CircleDashed, KeyRound, RotateCw } from 'lucide-react';
 import type { SecretStatus } from '../../../src/contracts.ts';
 import { serra } from '../bridge.ts';
-import { Badge, Button, cx, Input, Page, useToast } from '../ui/index.ts';
+import { Badge, Button, cx, Input, Page, Select, useToast } from '../ui/index.ts';
 import {
   draftFor, isDirty, keychainHint, saveRequest, SECRET_LABELS, SECRET_PREFIXES, SOURCE_OPTIONS, statusLine,
-  type SecretDraft, type SourceKind, type StatusTone,
+  type SecretDraft, type StatusTone,
 } from './secrets.logic.ts';
 
 const toneIcon: Record<StatusTone, ReactNode> = {
@@ -77,19 +77,18 @@ export const SecretCard = ({ status, now, onSaved, onChecked }: CardProps) => {
   };
 
   return (
-    <section className="flex flex-col gap-4 rounded-lg border border-line bg-panel px-5 py-4" data-secret={status.name}>
-      <h2 className="text-lg font-semibold">{label}</h2>
+    <section className="flex flex-col gap-4 rounded-xl border border-line bg-panel px-5 py-4" data-secret={status.name}>
+      <h2 className="text-[15px] leading-5 font-semibold">{label}</h2>
       <div className="flex flex-wrap items-center gap-3">
-        <label htmlFor={`${status.name}-source`} className="text-sm text-muted">Source</label>
-        <select
+        <Select
           id={`${status.name}-source`}
+          aria-label={`${label} source`}
+          className="w-60"
           value={draft.kind}
           disabled={busy !== null}
-          onChange={(event) => { setDraft({ ...draft, kind: event.target.value as SourceKind }); setFormError(null); }}
-          className="h-9 w-60 rounded-md border border-line bg-panel px-2.5 text-sm text-ink focus:outline-2 focus:outline-offset-1 focus:outline-focus"
-        >
-          {SOURCE_OPTIONS.map((option) => <option key={option.kind} value={option.kind}>{option.label}</option>)}
-        </select>
+          options={SOURCE_OPTIONS.map((option) => ({ value: option.kind, label: option.label }))}
+          onChange={(kind) => { setDraft({ ...draft, kind }); setFormError(null); }}
+        />
         <Button onClick={() => void check()} disabled={busy !== null || dirty} title={dirty ? 'Save the new source first' : undefined}>
           {busy === 'check' ? 'Checking…' : 'Check'}
         </Button>

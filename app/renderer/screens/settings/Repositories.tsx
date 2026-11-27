@@ -3,7 +3,7 @@ import { Plus, Trash2 } from 'lucide-react';
 import type { Profile } from '../../../../src/contracts.ts';
 import { Button, Input } from '../../ui/index.ts';
 import { emptyRepositoryRow, parseRepositories, projectForm, repositoryRows } from './settings.logic.ts';
-import { FieldsCard, SaveButtons, SectionCard, SettingsPage, useListEditor, useSettings, type SectionSettings, type SettingsState } from './SettingsKit.tsx';
+import { FieldsCard, SectionCard, SettingsPage, useListEditor, useSettings, type SectionSettings, type SettingsState } from './SettingsKit.tsx';
 
 const OtherRepositories = ({ profile, settings, state }: { profile: Profile; settings: SectionSettings; state: SettingsState }) => {
   const list = useListEditor('repositories', profile, repositoryRows, parseRepositories, state);
@@ -12,7 +12,6 @@ const OtherRepositories = ({ profile, settings, state }: { profile: Profile; set
       section="repositories"
       settings={settings}
       description="Other local repositories a worker may open threads in, besides the main project."
-      footer={<SaveButtons changed={list.changed} valid={list.valid} saving={list.saving} onSave={() => { void list.save(); }} onReset={list.reset} />}
     >
       {list.rows.length === 0 && <p className="text-sm text-muted">No other repositories.</p>}
       {list.rows.map((row, index) => (
@@ -23,7 +22,7 @@ const OtherRepositories = ({ profile, settings, state }: { profile: Profile; set
           <Input label="Base ref" spellCheck={false} value={row.baseRef} error={list.errors[`${index}.baseRef`]} onChange={(event) => list.update(index, { baseRef: event.target.value })} />
           <Input label="GitHub repository" hint="Optional." spellCheck={false} placeholder="acme/docs" value={row.githubRepo} error={list.errors[`${index}.githubRepo`]} onChange={(event) => list.update(index, { githubRepo: event.target.value })} />
           <div className="sm:col-span-2">
-            <Button variant="ghost" size="sm" icon={<Trash2 size={14} />} onClick={() => list.remove(index)}>Remove repository</Button>
+            <Button variant="ghost" size="sm" flush icon={<Trash2 size={14} />} onClick={() => list.remove(index)}>Remove repository</Button>
           </div>
         </fieldset>
       ))}
@@ -36,7 +35,7 @@ const OtherRepositories = ({ profile, settings, state }: { profile: Profile; set
 export const Repositories = () => {
   const state = useSettings();
   return (
-    <SettingsPage title="Repositories" sections={['project', 'repositories']} state={state}>
+    <SettingsPage title="Repositories" state={state}>
       {(profile, settings) => (
         <>
           <FieldsCard form={projectForm} profile={profile} settings={settings} state={state} />

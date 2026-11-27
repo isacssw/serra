@@ -34,7 +34,7 @@ export const People = () => {
   const names = useSlackNames(state.profile);
 
   return (
-    <SettingsPage title="People" sections={['allowedUsers']} state={state}>
+    <SettingsPage title="People" state={state}>
       {(profile, settings) => {
         const rows = peopleRows(profile, names);
         const problem = addPersonFieldMessage(input, profile);

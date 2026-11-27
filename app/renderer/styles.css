@@ -6,39 +6,53 @@
  * never raw colours, so both themes stay readable. `electron . --smoke` measures every screen's text in both themes
  * (APP-28).
  *
- * The look is neutral: near-black (dark) or white (light) surfaces, the sidebar the same colour as the content and
- * set apart by one hairline, borders as alpha (#rrggbbaa) on ink so they sit right on any surface, and colour only for meaning
- * (status). The primary action is ink on canvas: near-white in dark mode, near-black in light mode.
+ * The look is neutral: near-black (dark) or white (light), the sidebar the same colour as the content and set apart by
+ * one hairline, borders as alpha (#rrggbbaa) on ink so they sit right on any surface, and colour only for meaning
+ * (status). The primary action is ink on canvas: near-white in dark mode, near-black in light mode. No hue on it.
  */
 @theme {
-  /* Surfaces, back to front. */
-  --color-canvas: light-dark(#ffffff, #0b0b0c);
-  --color-sidebar: light-dark(#ffffff, #0b0b0c);
-  --color-panel: light-dark(#ffffff, #121214);
-  --color-raised: light-dark(#f4f4f5, #1a1a1d);
-  /* Borders and interaction states. */
-  --color-line-subtle: light-dark(#0000000f, #ffffff0f);
-  --color-line: light-dark(#0000001a, #ffffff1a);
-  --color-line-strong: light-dark(#0000002e, #ffffff2e);
-  /* A control's edge where it must stand out at 3:1 (WCAG 1.4.11): setup's fields and choices. */
-  --color-line-control: light-dark(#00000075, #ffffff5c);
-  --color-hover: light-dark(#0000000a, #ffffff0d);
-  --color-selected: light-dark(#00000012, #ffffff17);
-  /* Text, strongest to weakest. `faint` still reads at 4.5:1 or better on canvas, panel and raised. */
-  --color-ink: light-dark(#18181b, #ededef);
-  --color-muted: light-dark(#5c5c64, #a3a3ab);
-  --color-faint: light-dark(#6b6b73, #8a8a93);
-  /* The primary action, selection and focus: ink, not a hue. */
-  --color-accent: light-dark(#18181b, #ededef);
-  --color-accent-ink: light-dark(#ffffff, #0b0b0c);
-  --color-focus: light-dark(#18181b, #ededef);
-  /* Status colours follow assets/brand/README.md, shifted where text needs it: light up and dark down are a step
-     deeper and lighter, so a green or red label on its 15% tint reads at 4.5:1 or better. */
-  --color-up: light-dark(#166534, #22c55e);
-  --color-warn: light-dark(#92400e, #f59e0b);
+  /* Surfaces, back to front: the page, the rare card, a raised row or hover, then menus and dialogs (with a shadow). */
+  --color-canvas: light-dark(#ffffff, #09090b);
+  --color-sidebar: light-dark(#ffffff, #09090b);
+  --color-panel: light-dark(#ffffff, #0f0f11);
+  --color-raised: light-dark(#f6f6f7, #16161a);
+  --color-overlay: light-dark(#ffffff, #1c1c21);
+  /* A secondary button's fill, a step above a card so it lifts on the page and inside cards alike. */
+  --color-control: light-dark(#ffffff, #18181c);
+  --color-control-hover: light-dark(#f6f6f7, #202026);
+  /* A field's fill: set into the surface in dark mode (darker than a card), white with a lift in light mode. */
+  --color-field: light-dark(#ffffff, #0a0a0c);
+  /* Borders and interaction states. Hairlines stay quiet; a control's edge meets 3:1 on every surface (WCAG 1.4.11). */
+  --color-line-subtle: light-dark(#0000000a, #ffffff0a);
+  --color-line: light-dark(#00000014, #ffffff12);
+  --color-line-strong: light-dark(#0000002b, #ffffff1f);
+  --color-line-control: light-dark(#0000006e, #ffffff5c);
+  --color-hover: light-dark(#00000008, #ffffff08);
+  --color-selected: light-dark(#0000000d, #ffffff0f);
+  /* Text, strongest to weakest. `faint` still reads at 4.5:1 or better on every surface, a selected row included. */
+  --color-ink: light-dark(#111113, #ececef);
+  --color-muted: light-dark(#4d4d56, #a1a1aa);
+  --color-faint: light-dark(#64646d, #8b8b95);
+  /* The primary action, selection and focus: ink, not a hue. The ring is the soft halo around a focused field. */
+  --color-accent: light-dark(#111113, #e4e4e7);
+  --color-accent-ink: light-dark(#ffffff, #09090b);
+  --color-focus: light-dark(#111113, #ececef);
+  --color-ring: light-dark(#1111132e, #ececef38);
+  /* A focused field's edge: a mid-tone a step past the resting edge, so the halo carries the state, not a hard rule. */
+  --color-focus-field: light-dark(#3f3f46, #a1a1aa);
+  /* Status colours: the only hue in the app. Light ones are a step deeper, so a label on its 15% tint reads at 4.5:1. */
+  --color-up: light-dark(#166534, #3ecf8e);
+  --color-warn: light-dark(#975a16, #f5a524);
   --color-down: light-dark(#b91c1c, #f87171);
   /* Text on a solid up, warn or down fill (the danger button, a warn badge). */
-  --color-status-ink: light-dark(#ffffff, #14141a);
+  /* What dims the window behind a dialog or the palette: light enough to keep a white window from turning grey. */
+  --color-scrim: light-dark(#09090b1f, #0000008c);
+  --color-status-ink: light-dark(#ffffff, #09090b);
+  /* Depth: a field's lift in light mode, and the floating layer (menus, dialogs, the save bar). */
+  --shadow-field: 0 1px 2px light-dark(#0000000d, #00000000);
+  /* A card's hint of depth on a white page; none in dark, where the surface step does it. */
+  --shadow-card: 0 1px 2px light-dark(#0000000a, #00000000);
+  --shadow-overlay: 0 0 0 1px light-dark(#0000001a, #ffffff24), inset 0 1px 0 light-dark(#ffffff00, #ffffff0d), 0 16px 48px -8px light-dark(#00000038, #000000cc), 0 4px 12px light-dark(#0000001a, #00000080);
   --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", system-ui, sans-serif;
   --font-mono: ui-monospace, "SF Mono", Menlo, monospace;
 }
@@ -64,8 +78,11 @@ body {
 /* Thin scrollbars that keep out of the way, like the system's overlay ones. */
 * { scrollbar-width: thin; scrollbar-color: var(--color-line-strong) transparent; }
 
-/* Setup is many people's first form in Serra: its fields' edges meet 3:1 against the page, not just a hairline. */
-[data-serra-setup] input:not([type="radio"], [aria-invalid="true"]) { border-color: var(--color-line-control); }
+/* Setup is many people's first form in Serra: its fields' edges meet 3:1 against the page, not just a hairline. Kept in
+   the base layer so a field's own focus, hover and disabled edges (ui/field.ts) still win. */
+@layer base {
+  [data-serra-setup] input:not([type="radio"], [aria-invalid="true"]) { border-color: var(--color-line-control); }
+}
 
 /* A heading focused by a shortcut (⌘,) marks where focus went without a ring: it isn't a control. */
 [data-serra-main] h1[tabindex="-1"]:focus { outline: none; }
