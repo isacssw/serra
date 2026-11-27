@@ -222,7 +222,9 @@ test('row pill and note: a Needs-you row says why in 1-3 words, and its question
   assert.deepEqual(rowPill(row('t', 'needs you', { needsYouReason: 'waiting in T3' })), { label: 'Waiting in T3', tone: 'warn' });
   assert.deepEqual(rowPill(row('p', 'needs you', { needsYouReason: 'owner pinged' })), { label: 'Blocked in Slack', tone: 'warn' });
   assert.deepEqual(rowPill(row('f', 'needs you', { needsYouReason: 'failed', error: 'boom' })), { label: 'Failed', tone: 'down' });
-  assert.equal(rowPill(row('r', 'running')), undefined);
+  assert.deepEqual(rowPill(row('r', 'running'), 'running'), { label: 'Working', tone: 'neutral' });
+  assert.deepEqual(rowPill(row('r', 'running'), 'paused'), { label: 'Paused', tone: 'neutral' });
+  assert.equal(rowPill(row('d', 'done')), undefined);
   assert.equal(rowNote(row('q', 'needs you', { needsYouReason: 'question', ownerQuestion: '\nWhich timer?\nMore' })), 'Which timer?');
   assert.equal(rowNote(row('t', 'needs you', { needsYouReason: 'waiting in T3' })), undefined, 'the pill already says why');
   assert.equal(rowNote(row('d', 'done', { error: 'old' })), undefined);

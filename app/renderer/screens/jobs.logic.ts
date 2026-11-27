@@ -114,8 +114,12 @@ const REASON_PILLS: Record<NeedsYouReason, string> = {
   failed: 'Failed',
 };
 
-/** A Needs-you row's status pill, in 1-3 words; none for other rows. */
-export const rowPill = (job: JobRow): { label: string; tone: 'warn' | 'down' } | undefined => {
+/**
+ * A row's status pill, in 1-3 words: why a Needs-you row waits, or that a running job is working (paused while the bot
+ * is stopped, as `rowIcon` says). Done rows have none: the tab says it.
+ */
+export const rowPill = (job: JobRow, icon?: RowIcon): { label: string; tone: 'warn' | 'down' | 'neutral' } | undefined => {
+  if (job.group === 'running') return { label: icon === 'paused' ? 'Paused' : 'Working', tone: 'neutral' };
   if (job.group !== 'needs you') return undefined;
   if (job.needsYouReason === 'failed') return { label: 'Failed', tone: 'down' };
   return { label: job.needsYouReason ? REASON_PILLS[job.needsYouReason] : 'Needs you', tone: 'warn' };

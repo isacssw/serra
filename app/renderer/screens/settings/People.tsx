@@ -29,7 +29,7 @@ const useSlackNames = (profile: Profile | null): Record<string, string> => {
 
 /** A round initial, so the list reads as people at a glance. */
 const Avatar = ({ name }: { name: string | null }) => (
-  <span aria-hidden className="grid size-6 shrink-0 place-items-center rounded-full bg-raised text-[11px] font-semibold text-muted">
+  <span aria-hidden className="grid size-6 shrink-0 place-items-center rounded-full border border-line bg-raised text-[11px] font-semibold text-muted">
     {(name?.trim()[0] ?? '?').toUpperCase()}
   </span>
 );

@@ -53,12 +53,12 @@ const Triggers = ({ profile, state }: { profile: Profile; state: SettingsState }
             icon={<Bell size={18} strokeWidth={1.75} />}
             title="No alerts yet"
             className="border-none bg-transparent py-20"
-            action={<Button variant="primary" size="sm" icon={<Plus size={14} />} onClick={() => open(null)}>Add alert</Button>}
+            action={<Button size="sm" icon={<Plus size={14} />} onClick={() => open(null)}>Add alert</Button>}
           />
         )
         : (
           <>
-            <ul className="flex flex-col divide-y divide-line-subtle overflow-hidden rounded-xl border border-line">
+            <ul className="flex flex-col divide-y divide-line overflow-hidden rounded-xl border border-line">
               {list.rows.map((row, index) => {
                 const summary = triggerSummary(row);
                 const edited = JSON.stringify(row) !== JSON.stringify(saved[index]);
@@ -91,14 +91,14 @@ const Triggers = ({ profile, state }: { profile: Profile; state: SettingsState }
         description="A match starts a read-only investigation."
         actions={(
           <>
-            {editing?.index != null && <Button variant="ghost" icon={<Trash2 size={14} />} className="mr-auto -ml-3 text-down enabled:hover:text-down" onClick={remove}>Remove</Button>}
+            {editing?.index != null && <Button variant="ghost" icon={<Trash2 size={14} />} className="mr-auto -ml-3 text-down! enabled:hover:bg-down/10" onClick={remove}>Remove</Button>}
             <Button variant="ghost" onClick={() => setEditing(null)}>Cancel</Button>
             <Button variant="primary" type="submit" form={formId}>{editing?.index === null ? 'Add' : 'Done'}</Button>
           </>
         )}
       >
         <form id={formId} className="grid gap-4 sm:grid-cols-2" onSubmit={done} noValidate>
-          <Input label="Channel ID" data-autofocus spellCheck={false} inputClassName="font-mono" placeholder="C0123456789" value={draft.channel} error={shown.channel} onChange={(event) => setDraft({ ...draft, channel: event.target.value })} />
+          <Input label="Channel ID" data-autofocus spellCheck={false} inputClassName="font-mono" placeholder="e.g. C0123456789" value={draft.channel} error={shown.channel} onChange={(event) => setDraft({ ...draft, channel: event.target.value })} />
           <Select id="trigger-source" label="Messages from" value={draft.source} options={sources} onChange={(source) => setDraft({ ...draft, source })} />
           {draft.source !== 'any' && (
             <Input
@@ -106,7 +106,7 @@ const Triggers = ({ profile, state }: { profile: Profile; state: SettingsState }
               label={draft.source === 'bot' ? 'Bot ID' : 'Slack member ID'}
               spellCheck={false}
               inputClassName="font-mono"
-              placeholder={draft.source === 'bot' ? 'B0123456789' : 'U0123456789'}
+              placeholder={draft.source === 'bot' ? 'e.g. B0123456789' : 'e.g. U0123456789'}
               value={draft.sourceId}
               error={shown.sourceId}
               onChange={(event) => setDraft({ ...draft, sourceId: event.target.value })}
@@ -116,7 +116,7 @@ const Triggers = ({ profile, state }: { profile: Profile; state: SettingsState }
             className="sm:col-span-2"
             label="Instructions"
             rows={5}
-            placeholder="Find the failing service and the likely cause."
+            placeholder="What to look into, and what to post"
             {...(draft.instructions.length > MAX_INSTRUCTIONS * 0.9 ? { hint: `${draft.instructions.length.toLocaleString()} / ${MAX_INSTRUCTIONS.toLocaleString()}` } : {})}
             value={draft.instructions}
             error={shown.instructions}

@@ -54,7 +54,7 @@ const ModelSection = ({ backend, profile, state }: { backend: AgentBackend; prof
       description={acp ? 'Empty uses the agent’s default.' : workerForm.description}
     >
       {acp ? (
-        <div className="grid gap-4">
+        <div className="grid gap-4 sm:grid-cols-2">
           <Input
             label={`${agentName ?? 'Agent'} model`}
             placeholder="Default"
@@ -111,7 +111,7 @@ const BranchSection = ({ profile, state }: { profile: Profile; state: SettingsSt
               key={token}
               type="button"
               onClick={() => insert(token)}
-              className="h-6 rounded-md border border-line bg-raised px-1.5 font-mono text-[11px] text-muted transition-colors duration-150 hover:border-line-strong hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-focus"
+              className="h-6 rounded-md border border-line-strong bg-raised px-1.5 font-mono text-[11px] text-muted transition-colors duration-150 hover:border-line-strong hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-focus"
             >
               {token}
             </button>
@@ -131,14 +131,17 @@ const WorkerSections = ({ profile, state }: { profile: Profile; state: SettingsS
   const backend = useAgentBackend();
   return (
     <>
-      <SettingsSection title="Agent" description="Runs every new job." action={<ConfigFileButton backend={backend} />}>
+      <SettingsSection title="Agent" description="Runs every new job.">
         <AgentPicker backend={backend}><AddAgentCard backend={backend} /></AgentPicker>
       </SettingsSection>
       <ModelSection backend={backend} profile={profile} state={state} />
       <BranchSection profile={profile} state={state} />
-      <Advanced summary="T3 command, developer checkout">
+      <Advanced summary="T3 command, developer checkout, agents file">
         <FieldsCard form={t3BinForm} profile={profile} state={state} columns={1} />
         <FieldsCard form={updatesForm} profile={profile} state={state} title="Developer checkout" />
+        <SettingsSection title="Agents file" description="Agents with their own environment.">
+          <div><ConfigFileButton backend={backend} /></div>
+        </SettingsSection>
       </Advanced>
     </>
   );

@@ -26,7 +26,7 @@ const BotSection = ({ profile, state }: { profile: Profile; state: SettingsState
   };
   const idField = editor.field('id');
   return (
-    <SettingsSection title="Bot">
+    <SettingsSection title="Bot" description="Its name and ID in Slack.">
       <div className="grid gap-4 sm:grid-cols-2">
         <Input spellCheck={false} {...editor.field('name')} />
         {/* Read-only on purpose: shown as a value, not a field, with Edit… opening the dialog that warns. */}
@@ -44,7 +44,7 @@ const BotSection = ({ profile, state }: { profile: Profile; state: SettingsState
         open={editing}
         onClose={() => setEditing(false)}
         title="Change bot ID"
-        description="Renames the service and branches. Needs a new release."
+        description="Renames the service and branches. Rebuild the release after."
         actions={(
           <>
             <Button variant="ghost" onClick={() => setEditing(false)}>Cancel</Button>

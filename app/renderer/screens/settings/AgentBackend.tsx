@@ -112,10 +112,10 @@ const AgentCard = ({ option, checked, focusable, onPick, onKeyDown, onRemove, bu
         'flex w-full items-center gap-3 rounded-xl border px-3 py-2.5 text-left transition-[border-color,background-color,box-shadow] duration-150',
         'focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring',
         option.disabled
-          ? 'cursor-not-allowed border-dashed border-line-strong bg-transparent'
+          ? 'cursor-not-allowed border-line bg-transparent'
           : checked
-            ? 'border-focus-field bg-raised shadow-field'
-            : 'border-line-control/60 bg-panel shadow-field hover:border-line-control hover:bg-raised',
+            ? 'border-ink bg-raised shadow-field'
+            : 'border-line-control bg-panel shadow-field hover:border-faint hover:bg-raised',
         onRemove && 'pr-16',
       )}
     >
@@ -221,7 +221,7 @@ export const ConfigFileButton = ({ backend }: { backend: AgentBackend }) => {
     try { await serra()?.meetings.openAgentBackendConfig(); } catch (failure) { toast({ message: message(failure), tone: 'error' }); }
   };
   return (
-    <Button variant="ghost" size="sm" flush icon={<FileCode2 size={14} />} title={backend.view.configPath} onClick={() => void openConfig()}>Config file</Button>
+    <Button icon={<FileCode2 size={14} />} title={backend.view.configPath} onClick={() => void openConfig()}>Open agent-backend.json</Button>
   );
 };
 
@@ -266,12 +266,12 @@ export const AddAgentCard = ({ backend }: { backend: AgentBackend }) => {
         type="button"
         onClick={openAdd}
         className={cx(
-          'flex min-h-[3.75rem] items-center gap-3 rounded-xl border border-dashed border-line-strong px-3 py-2.5 text-left text-[13px] font-medium text-muted',
+          'flex min-h-[3.75rem] items-center gap-3 rounded-xl border border-dashed border-line-control px-3 py-2.5 text-left text-[13px] font-medium text-ink',
           'transition-colors duration-150 hover:border-line-control hover:bg-hover hover:text-ink',
           'focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring',
         )}
       >
-        <span aria-hidden className="grid size-8 shrink-0 place-items-center rounded-lg border border-dashed border-line-strong"><Plus size={15} strokeWidth={1.75} /></span>
+        <span aria-hidden className="grid size-8 shrink-0 place-items-center rounded-lg bg-raised text-muted"><Plus size={15} strokeWidth={1.75} /></span>
         Add ACP agent
       </button>
       <Dialog

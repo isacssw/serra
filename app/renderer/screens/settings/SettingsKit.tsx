@@ -321,7 +321,8 @@ export const Advanced = ({ summary, children }: { summary: string; children: Rea
       <span className="font-medium text-ink">Advanced</span>
       <span className="text-faint">{summary}</span>
     </summary>
-    <div className="mt-5 flex flex-col divide-y divide-line-subtle [&>*]:py-6 [&>*:first-child]:pt-1 [&>*:last-child]:pb-0">{children}</div>
+    {/* Inside: set in under the summary, titles a step smaller, so they read as part of Advanced, not new sections. */}
+    <div className="mt-5 ml-1.5 flex flex-col divide-y divide-line-subtle border-l border-line pl-6 [&>*]:py-6 [&>*:first-child]:pt-1 [&>*:last-child]:pb-1 [&_h2]:text-[13px]">{children}</div>
   </details>
 );
 

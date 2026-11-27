@@ -218,7 +218,7 @@ const SecretRow = ({ status, now, onSaved, onChecked }: CardProps) => {
           </Badge>
         </p>
         <p className="truncate text-xs text-faint" title={status.error ?? pill.detail}>
-          {status.set && <span aria-hidden className="mr-1.5 tracking-[0.2em]">••••</span>}{SOURCE_OPTIONS.find((option) => option.kind === status.source.kind)?.label} · {pill.detail}
+          {status.set && <span aria-hidden className="mr-1.5 tracking-[0.2em]">••••</span>}{pill.detail}
         </p>
       </div>
       <div className="flex shrink-0 items-center gap-2">
@@ -333,7 +333,7 @@ export const Secrets = () => {
       )}
       {!statuses && !loadError && <p className="text-[13px] text-muted">Reading token sources…</p>}
       {statuses && (
-        <ul className="flex flex-col divide-y divide-line-subtle rounded-xl border border-line">
+        <ul className="flex flex-col divide-y divide-line rounded-xl border border-line">
           {statuses.map((status) => (
             <SecretRow
               key={status.name}

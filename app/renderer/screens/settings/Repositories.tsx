@@ -29,7 +29,7 @@ const RepositoryTable = ({ lines, onEdit }: { lines: Line[]; onEdit: (key: strin
       </thead>
       <tbody>
         {lines.map((line) => (
-          <tr key={line.key} data-repository={line.key} className="group border-t border-line-subtle first:border-t-0 hover:bg-hover">
+          <tr key={line.key} data-repository={line.key} className="group border-t border-line first:border-t-0 hover:bg-hover">
             <Cell>
               <span className="flex min-w-0 items-center gap-2">
                 <span className="truncate font-medium text-ink">{line.name}</span>
@@ -146,11 +146,11 @@ const RepositoriesTable = ({ profile, state }: { profile: Profile; state: Settin
         open={editing !== null}
         onClose={() => setEditing(null)}
         title={title}
-        description={editing?.kind === 'main' ? 'Where jobs start.' : undefined}
+        description={editing?.kind === 'main' ? 'Where jobs start.' : 'Workers may open threads here.'}
         actions={(
           <>
             {editing?.kind === 'other' && editing.index !== null && (
-              <Button variant="ghost" icon={<Trash2 size={14} />} className="mr-auto -ml-3 text-down enabled:hover:text-down" onClick={remove}>Remove</Button>
+              <Button variant="ghost" icon={<Trash2 size={14} />} className="mr-auto -ml-3 text-down! enabled:hover:bg-down/10" onClick={remove}>Remove</Button>
             )}
             <Button variant="ghost" onClick={() => setEditing(null)}>Cancel</Button>
             <Button variant="primary" type="submit" form={formId}>{editing?.kind === 'other' && editing.index === null ? 'Add' : 'Done'}</Button>

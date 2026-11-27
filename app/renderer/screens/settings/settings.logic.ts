@@ -191,8 +191,8 @@ export const reviewForm: SectionForm<'review'> = {
   section: 'review',
   description: 'Where to post PRs for review. Empty: off.',
   fields: [
-    { key: 'channel', label: 'Channel ID', placeholder: 'C0123456789', mono: true },
-    { key: 'repositories', label: 'Repositories', hint: 'Comma separated', placeholder: 'acme/project' },
+    { key: 'channel', label: 'Channel ID', placeholder: 'e.g. C0123456789', mono: true },
+    { key: 'repositories', label: 'Repositories', hint: 'Comma separated', placeholder: 'e.g. acme/project' },
   ],
   toForm: (profile) => ({ channel: optional(profile.review?.channel), repositories: (profile.review?.repositories ?? []).join(', ') }),
   parse: (form) => {

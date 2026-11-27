@@ -19,23 +19,39 @@ type Drafts = Record<BriefDocument, Draft>;
 type Proposed = Partial<Record<BriefDocument, string>>;
 
 const Tabs = ({ active, drafts, onSelect }: { active: BriefDocument; drafts: Drafts; onSelect: (document: BriefDocument) => void }) => (
-  <div role="tablist" aria-label="Document" className="inline-flex w-fit gap-0.5 rounded-lg border border-line-subtle bg-raised p-0.5">
+  <div
+    role="tablist"
+    aria-label="Document"
+    className="inline-flex w-fit gap-0.5 rounded-lg border border-line bg-hover p-0.5"
+    onKeyDown={(event) => {
+      // Arrows, Home and End move between the two documents, as a tablist does.
+      const at = DOCUMENTS.findIndex((document) => document.id === active);
+      const to = event.key === 'ArrowRight' ? at + 1 : event.key === 'ArrowLeft' ? at - 1 : event.key === 'Home' ? 0 : event.key === 'End' ? DOCUMENTS.length - 1 : null;
+      if (to === null) return;
+      event.preventDefault();
+      const next = DOCUMENTS[(to + DOCUMENTS.length) % DOCUMENTS.length]!;
+      onSelect(next.id);
+      requestAnimationFrame(() => document.getElementById(`brief-tab-${next.id}`)?.focus());
+    }}
+  >
     {DOCUMENTS.map((document) => (
       <button
         key={document.id}
+        id={`brief-tab-${document.id}`}
         type="button"
         role="tab"
         aria-selected={active === document.id}
+        tabIndex={active === document.id ? 0 : -1}
         onClick={() => onSelect(document.id)}
         className={cx(
-          'flex h-7 items-center gap-1.5 rounded-md border px-3 text-[13px] font-medium transition-colors duration-150',
+          'relative flex h-7 items-center rounded-md border px-3 text-[13px] font-medium transition-colors duration-150',
           'focus-visible:outline-2 focus-visible:-outline-offset-1 focus-visible:outline-focus',
           active === document.id ? 'border-line-strong bg-overlay text-ink shadow-field' : 'border-transparent text-muted hover:text-ink',
         )}
       >
         {document.label}
-        {/* The dot's space is kept when clean, so the segments don't shift as you type. */}
-        <span className={cx('size-1.5 rounded-full bg-warn', !isDirty(drafts[document.id]) && 'invisible')} {...(isDirty(drafts[document.id]) ? { 'aria-label': 'unsaved changes' } : { 'aria-hidden': true })} />
+        {/* The dot sits in the corner, taking no width, so the segments don't shift as you type. */}
+        {isDirty(drafts[document.id]) && <span className="absolute top-1 right-1 size-1.5 rounded-full bg-warn" aria-label="unsaved changes" />}
       </button>
     ))}
   </div>
@@ -143,7 +159,7 @@ const ProposedRewrites = ({ names, drafts, onApplied }: { names: string[]; draft
       <h2 id="brief-proposed" className="flex items-center gap-2 text-sm leading-5 font-semibold">
         <Sparkles size={14} className="text-muted" aria-hidden />Proposed rewrites <Badge shape="count">{names.length}</Badge>
       </h2>
-      <ul className="flex flex-col divide-y divide-line-subtle overflow-hidden rounded-xl border border-line">
+      <ul className="flex flex-col divide-y divide-line overflow-hidden rounded-xl border border-line">
         {names.map((name) => {
           const label = proposedLabel(name);
           const active = name === selected;
@@ -284,6 +300,8 @@ export const BriefPolicy = () => {
             <Problems problems={current} dirty={dirty} />
           </section>
           {active === 'brief' && <Preview draft={draft} />}
+          {/* Room for the floating save bar at the end of the page, so the last lines aren't under it. */}
+          {dirty && <div aria-hidden className="h-14" />}
           <SaveBar
             changed={dirty}
             valid={current.length === 0}
