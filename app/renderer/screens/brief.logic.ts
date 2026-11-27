@@ -1,9 +1,9 @@
 // Pure helpers for the Brief & policy screen (APP-21), kept free of React so `node --test` covers them.
 import type { BriefDocument } from '../../main/bridge.ts';
 
-export const DOCUMENTS: { id: BriefDocument; label: string; file: string; about: string }[] = [
-  { id: 'brief', label: 'Brief', file: 'brief.md', about: 'The template every worker gets, filled in for its request. Placeholders like {{REQUEST}} are replaced per job.' },
-  { id: 'policy', label: 'Policy', file: 'policy.md', about: 'Your confirmed workflow choices. Workers read it as written before they change code; it can narrow the brief\'s rules.' },
+export const DOCUMENTS: { id: BriefDocument; label: string; file: string; about: string; hint: string }[] = [
+  { id: 'brief', label: 'Brief', file: 'brief.md', hint: 'brief.md', about: 'The template every worker gets, filled in for its request. Placeholders like {{REQUEST}} are replaced per job.' },
+  { id: 'policy', label: 'Policy', file: 'policy.md', hint: 'policy.md', about: 'Your confirmed workflow choices. Workers read it as written before they change code; it can narrow the brief\'s rules.' },
 ];
 
 export const SAMPLE_REQUEST = 'Why does the export time out for large projects?';

@@ -4,8 +4,8 @@
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { useNavigate } from 'react-router';
 import {
-  CircleCheck, CircleX, CirclePause, GitBranch, GitPullRequest, Hash, Layers, LoaderCircle, MessageSquareText, Radio,
-  ListChecks, Play, Plus, RefreshCw, TriangleAlert,
+  BrushCleaning, CheckCheck, CircleCheck, CirclePause, GitPullRequest, Hash, Layers, LoaderCircle, MessageSquareText, Radio, ListChecks, Play,
+  Plus, RefreshCw,
 } from 'lucide-react';
 import { useSearchParams } from 'react-router';
 import type { CleanupVerdict, JobGroup } from '../../../src/contracts.ts';
@@ -13,12 +13,12 @@ import { serra } from '../bridge.ts';
 import { useBotStatus } from '../shell/live.ts';
 import { resumePath } from '../setup/setup.logic.ts';
 import { useSetup } from '../setup/SetupState.tsx';
-import { Button, Dialog, EmptyState, Page, Select, cx, useToast } from '../ui/index.ts';
+import { Badge, BrandMark, Button, Dialog, EmptyState, Page, Select, cx, useToast } from '../ui/index.ts';
 import { registerActions } from '../commands/registry.ts';
 import { TranscriptDialog } from './Transcript.tsx';
 import {
-  ageLabel, channelChoices, CLEANUP_PARAM, cleanupView, cleanupWorktreesAction, filterJobs, groupJobs, ICON_LABELS,
-  linkButtons, rowDetail, rowIcon, rowParts, verdictLabel, type JobRow, type JobSection, type LinkKind, type RowIcon,
+  ageLabel, channelChoices, channelTag, CLEANUP_PARAM, cleanupView, cleanupWorktreesAction, filterJobs, groupJobs, ICON_LABELS,
+  linkButtons, rowIcon, rowNote, rowParts, rowPill, verdictLabel, type JobRow, type JobSection, type LinkKind, type RowIcon,
 } from './jobs.logic.ts';
 
 const unregister = registerActions([cleanupWorktreesAction]);
@@ -67,18 +67,19 @@ const useJobs = (statusState: string | undefined): { load: Load; reload: () => v
 };
 
 const ROW_ICONS: Record<RowIcon, ReactNode> = {
-  'needs-you': <TriangleAlert size={20} className="text-warn" />,
-  failed: <CircleX size={20} className="text-down" />,
-  running: <LoaderCircle size={20} className="animate-spin text-ink" />,
-  paused: <CirclePause size={20} className="text-muted" />,
-  done: <CircleCheck size={20} className="text-up" />,
+  'needs-you': <span className="size-2 rounded-full bg-warn" />,
+  failed: <span className="size-2 rounded-full bg-down" />,
+  // A frozen spinner reads as broken, so Reduce Motion shows a steady dot instead.
+  running: <><LoaderCircle size={14} strokeWidth={2} className="animate-spin text-ink motion-reduce:hidden" /><span className="hidden size-2 rounded-full bg-up ring-3 ring-up/25 motion-reduce:block" /></>,
+  paused: <CirclePause size={14} strokeWidth={1.75} className="text-muted" />,
+  done: <CircleCheck size={14} strokeWidth={1.75} className="text-up" />,
 };
 
 const LINK_ICONS: Record<LinkKind, ReactNode> = {
-  slack: <Hash size={14} />,
-  t3: <Layers size={14} />,
-  transcript: <MessageSquareText size={14} />,
-  pr: <GitPullRequest size={14} />,
+  slack: <BrandMark brand="slack" size={13} />,
+  t3: <Layers size={14} strokeWidth={1.75} />,
+  transcript: <MessageSquareText size={14} strokeWidth={1.75} />,
+  pr: <GitPullRequest size={14} strokeWidth={1.75} />,
 };
 
 const open = (url: string, onError: (text: string) => void): void => {
@@ -87,45 +88,57 @@ const open = (url: string, onError: (text: string) => void): void => {
   bridge.app.openExternal(url).catch((error: unknown) => onError(message(error)));
 };
 
-const JobRowView = ({ job, icon, now, onError, onTranscript, focused = false }: { job: JobRow; icon: RowIcon; now: Date; onError: (text: string) => void; onTranscript: (threadId: string, title: string) => void; focused?: boolean }) => {
-  const { requester, channel, title, tooltip } = rowParts(job);
-  const detail = rowDetail(job);
+/** One job: the task first, then who asked, where and how long ago; a pill when it waits on you; its links as icons. */
+const JobRowView = ({ job, icon, now, kinds, onError, onTranscript, focused = false }: { job: JobRow; icon: RowIcon; now: Date; kinds: readonly LinkKind[]; onError: (text: string) => void; onTranscript: (threadId: string, title: string) => void; focused?: boolean }) => {
+  const { requester, title, tooltip } = rowParts(job);
+  const note = rowNote(job);
+  const pill = rowPill(job, icon);
+  const age = ageLabel(job.lastActivityAt, now);
   return (
     <li
       data-job-key={job.key}
       aria-current={focused ? 'true' : undefined}
-      className={cx('flex scroll-mt-6 flex-wrap items-center gap-x-4 gap-y-2 rounded-lg border bg-panel px-4 py-3', focused ? 'border-line-strong ring-2 ring-focus/30' : 'border-line')}
+      className={cx(
+        'flex scroll-mt-6 items-center gap-3 py-2.5 pr-2 pl-4 transition-colors duration-150',
+        focused && 'bg-selected shadow-[inset_2px_0_0_var(--color-ink)]',
+      )}
     >
-      <span className="shrink-0" role="img" aria-label={ICON_LABELS[icon]} title={ICON_LABELS[icon]}>{ROW_ICONS[icon]}</span>
-      <div className="flex min-w-[16rem] flex-1 basis-0 flex-col gap-0.5">
-        <p className="truncate text-[0.95rem]">
-          <span className="font-semibold">{requester}</span>
-          <span className="text-muted"> · </span>
-          <span className="font-medium">{channel}</span>
-          <span className="text-muted"> · </span>
-          <span title={tooltip} className={job.title ? undefined : 'text-muted'}>{title}</span>
+      <span className="grid size-4 shrink-0 place-items-center" role="img" aria-label={ICON_LABELS[icon]} title={ICON_LABELS[icon]}>{ROW_ICONS[icon]}</span>
+      <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+        <p title={tooltip} className={cx('truncate text-[13px] leading-5 font-medium', job.title ? 'text-ink' : 'text-muted')}>{title}</p>
+        <p className="flex min-w-0 items-center gap-1.5 text-xs leading-4 text-faint">
+          <span className="shrink-0 text-muted">{requester}</span>
+          <span aria-hidden>·</span>
+          <span className="shrink-0">{channelTag(job)}</span>
+          {note && (
+            <>
+              <span aria-hidden>·</span>
+              <span className={cx('min-w-0 truncate', icon === 'failed' ? 'text-down' : 'text-muted')} title={note}>{note}</span>
+            </>
+          )}
+          {age && (
+            <>
+              <span aria-hidden>·</span>
+              <span className="shrink-0 tabular-nums" title={new Date(job.lastActivityAt).toLocaleString()}>{age}</span>
+            </>
+          )}
         </p>
-        {detail && <p className={cx('truncate text-sm', icon === 'failed' ? 'text-down' : 'text-warn')} title={detail}>{detail}</p>}
       </div>
-      <div className="ml-auto flex shrink-0 items-center gap-4">
-        <span className="w-10 shrink-0 text-right text-sm text-muted tabular-nums" title={new Date(job.lastActivityAt).toLocaleString()}>
-          {ageLabel(job.lastActivityAt, now)}
-        </span>
-        <div className="flex shrink-0 gap-2">
-          {linkButtons(job).map((link) => (
-            <span key={link.kind} title={link.hint}>
-              <Button
-                size="sm"
-                icon={LINK_ICONS[link.kind]}
-                disabled={!link.url && !link.transcript}
-                aria-label={`${link.label}: ${link.hint}`}
-                onClick={() => { if (link.transcript) onTranscript(link.transcript, job.title); else if (link.url) open(link.url, onError); }}
-              >
-                {link.label}
-              </Button>
-            </span>
-          ))}
-        </div>
+      <span className="flex w-28 shrink-0 justify-end">{pill && <Badge tone={pill.tone}>{pill.label}</Badge>}</span>
+      {/* One slot per link kind any row in the list has, so an icon stays in its column; a link this job lacks leaves its slot empty. */}
+      <div className="flex shrink-0 items-center gap-0.5">
+        {kinds.map((kind) => linkButtons(job).find((link) => link.kind === kind)).map((link, index) => (link && (link.url || link.transcript) ? (
+          <Button
+            key={link.kind}
+            variant="ghost"
+            size="sm"
+            className="w-7 px-0!"
+            icon={LINK_ICONS[link.kind]}
+            title={link.hint}
+            aria-label={`${link.label}: ${link.hint}`}
+            onClick={() => { if (link.transcript) onTranscript(link.transcript, job.title); else if (link.url) open(link.url, onError); }}
+          />
+        ) : <span key={`empty-${kinds[index]}`} aria-hidden className="w-7" />))}
       </div>
     </li>
   );
@@ -159,7 +172,7 @@ const CleanupDialog = ({ cleanup, onClose, onApply }: { cleanup: Cleanup; onClos
       open={cleanup.step !== 'closed'}
       onClose={() => { if (!busy) onClose(); }}
       title="Clean up worktrees"
-      description="Removes worktrees of jobs quiet for 3 days that are clean, pushed and have no open PR. This is a dry run: nothing is removed until you confirm."
+      description="Clean, pushed worktrees quiet for 3 days with no open PR. Nothing goes until you confirm."
       actions={(
         <>
           <Button onClick={onClose} disabled={busy}>Cancel</Button>
@@ -197,34 +210,28 @@ const CleanupDialog = ({ cleanup, onClose, onApply }: { cleanup: Cleanup; onClos
 const ChannelFilter = ({ options, value, onChange }: { options: { value: string; label: string }[]; value: string | null; onChange: (channel: string | null) => void }) => (
   <Select
     aria-label="Channel"
-    icon={<Radio size={15} strokeWidth={1.75} />}
+    icon={<Hash size={15} strokeWidth={1.75} />}
     value={value ?? ''}
     options={[{ value: '', label: 'All channels' }, ...options]}
     onChange={(channel) => onChange(channel || null)}
   />
 );
 
-/** Each tab's empty state: good news for Needs you, a way to start for Running, what to expect for Done. */
-const EMPTY_STATES: Record<JobGroup, { icon: ReactNode; title: string; body: string; start: boolean }> = {
-  'needs you': {
-    icon: <CircleCheck size={18} strokeWidth={1.75} className="text-up" />,
-    title: "You're all caught up",
-    body: 'When a worker needs a decision or an answer from you, it shows here, with a count in the sidebar.',
-    start: false,
-  },
-  running: {
-    icon: <Play size={18} strokeWidth={1.75} />,
-    title: 'Nothing running',
-    body: 'Ask the bot in a channel, or start a task here. Running workers show here, with a link to their T3 thread.',
-    start: true,
-  },
-  done: {
-    icon: <GitPullRequest size={18} strokeWidth={1.75} />,
-    title: 'Nothing finished today',
-    body: 'Jobs that finish today show here, with a link to the pull request when there is one.',
-    start: false,
-  },
+/** Each tab's empty state: a title and at most one way forward. */
+const EMPTY_STATES: Record<JobGroup, { icon: ReactNode; title: string; start: boolean }> = {
+  'needs you': { icon: <CircleCheck size={18} strokeWidth={1.75} className="text-up" />, title: "You're all caught up", start: false },
+  running: { icon: <Play size={18} strokeWidth={1.75} />, title: 'Nothing running', start: true },
+  done: { icon: <CheckCheck size={18} strokeWidth={1.75} />, title: 'Nothing finished today', start: true },
 };
+
+/** The link kinds any row in the list has, in their usual order: each gets a column. */
+const linkKinds = (rows: readonly JobRow[]): LinkKind[] => {
+  const present = new Set(rows.flatMap((job) => linkButtons(job).filter((link) => link.url || link.transcript).map((link) => link.kind)));
+  return (['slack', 't3', 'transcript', 'pr'] as const).filter((kind) => present.has(kind));
+};
+
+/** A quiet empty state: a hairline panel, not the dashed drop-zone look. */
+const EMPTY_CLASS = 'border-none bg-transparent py-20';
 
 const PATHS: Record<JobGroup, string> = { 'needs you': '/jobs/needs-you', running: '/jobs/running', done: '/jobs/done' };
 const TAB_IDS: Record<JobGroup, string> = { 'needs you': 'jobs-tab-needs-you', running: 'jobs-tab-running', done: 'jobs-tab-done' };
@@ -240,7 +247,7 @@ const JobTabs = ({ sections, group, onPick }: { sections: JobSection[]; group: J
     if (next) onPick(next.group, true);
   };
   return (
-    <div role="tablist" aria-label="Jobs by state" onKeyDown={onKeyDown} className="flex items-center gap-1 overflow-x-auto overflow-y-hidden [scrollbar-width:none] shadow-[inset_0_-1px_0_var(--color-line)]">
+    <div role="tablist" aria-label="Jobs by state" onKeyDown={onKeyDown} className="flex items-center gap-0.5 rounded-lg border border-line bg-hover p-0.5">
       {sections.map((section) => {
         const selected = section.group === group;
         const urgent = section.group === 'needs you' && section.rows.length > 0;
@@ -255,15 +262,15 @@ const JobTabs = ({ sections, group, onPick }: { sections: JobSection[]; group: J
             tabIndex={selected ? 0 : -1}
             onClick={() => onPick(section.group, false)}
             className={cx(
-              'flex h-9 shrink-0 items-center gap-1.5 rounded-t-md border-b-2 px-2 text-[13px] whitespace-nowrap transition-colors duration-150',
-              'focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-focus',
-              selected ? 'border-ink font-medium text-ink' : 'border-transparent text-muted hover:text-ink',
+              'flex h-7 shrink-0 items-center gap-1.5 rounded-md border px-2.5 text-[13px] whitespace-nowrap transition-colors duration-150',
+              'focus-visible:outline-2 focus-visible:-outline-offset-1 focus-visible:outline-focus',
+              selected ? 'border-line-strong bg-overlay font-medium text-ink shadow-field' : 'border-transparent text-muted hover:text-ink',
             )}
           >
             {section.title}
             <span
               aria-label={`${section.rows.length} ${section.rows.length === 1 ? 'job' : 'jobs'}`}
-              className={cx('min-w-5 rounded-full px-1.5 text-center text-[11px] leading-[18px] tabular-nums', urgent ? 'bg-warn/15 font-semibold text-warn' : 'bg-raised text-muted')}
+              className={cx('min-w-4 text-center text-xs tabular-nums', urgent ? 'font-semibold text-warn' : 'text-faint')}
             >
               {section.rows.length}
             </span>
@@ -357,17 +364,25 @@ export const Jobs = ({ group }: { group: JobGroup }) => {
     <div data-screen-label="Jobs">
       <Page
         title="Jobs"
+        titleAside={ready ? <JobTabs sections={sections} group={group} onPick={pick} /> : undefined}
         actions={(
           <>
-            <ChannelFilter options={channelChoices(rows, channel)} value={channel} onChange={setChannel} />
-            <Button icon={<GitBranch size={15} strokeWidth={1.75} />} onClick={startCleanup}>Clean up worktrees</Button>
+            <ChannelFilter
+              // Named Slack channels carry the # as an icon, so the button reads "# eng" whichever is picked.
+              options={channelChoices(rows, channel).map((option) => (rows.some((job) => job.channel === option.value && job.channelName) && option.value !== 'app'
+                ? { ...option, label: option.label.replace(/^#/, ''), icon: <Hash size={14} strokeWidth={1.75} /> }
+                : option))}
+              value={channel}
+              onChange={setChannel}
+            />
+            <Button icon={<BrushCleaning size={14} strokeWidth={1.75} />} aria-label="Clean up worktrees" title="Clean up worktrees" onClick={startCleanup}>Clean up</Button>
           </>
         )}
       >
         {status?.state === 'stopped' && (
           <p className="-mt-2 flex items-start gap-2 text-[13px] leading-5 text-muted">
             <span className="mt-[7px] size-1.5 shrink-0 rounded-full bg-down" aria-hidden />
-            The bot is stopped, so chat requests wait until it starts. This list comes from the profile's files.
+            Bot is stopped. Showing saved jobs.
           </p>
         )}
         {load.state === 'loading' && <p className="flex items-center gap-2 text-sm text-muted"><LoaderCircle size={14} className="animate-spin" /> Loading jobs…</p>}
@@ -379,7 +394,6 @@ export const Jobs = ({ group }: { group: JobGroup }) => {
         )}
         {ready && (
           <div className="flex flex-col gap-4">
-            <JobTabs sections={sections} group={group} onPick={pick} />
             <div
               id="jobs-panel"
               role="tabpanel"
@@ -392,32 +406,28 @@ export const Jobs = ({ group }: { group: JobGroup }) => {
               {current.rows.length === 0
                 ? (channel
                   ? (
-                    <EmptyState icon={<Radio size={16} strokeWidth={1.75} />} title={`Nothing here in ${channelChoices(rows, channel).find((c) => c.value === channel)?.label ?? 'this channel'}`} action={<Button size="sm" onClick={() => setChannel(null)}>Show all channels</Button>}>
-                      Other channels may have jobs in this state.
-                    </EmptyState>
+                    <EmptyState className={EMPTY_CLASS} icon={<Radio size={16} strokeWidth={1.75} />} title={`Nothing here in ${channelChoices(rows, channel).find((c) => c.value === channel)?.label ?? 'this channel'}`} action={<Button size="sm" onClick={() => setChannel(null)}>Show all channels</Button>} />
                   )
                   : setupLeft && current.group === 'needs you'
                   ? (
                     <EmptyState
+                      className={EMPTY_CLASS}
                       icon={<ListChecks size={18} strokeWidth={1.75} />}
                       title="Finish setup to get requests"
                       action={<Button size="sm" onClick={() => void navigate(resumePath(setup.progress))}>Continue setup</Button>}
-                    >
-                      Requests from Slack show here once the bot is connected and running.
-                    </EmptyState>
+                    />
                   )
                   : (
                     <EmptyState
+                      className={EMPTY_CLASS}
                       icon={empty.icon}
                       title={empty.title}
                       action={empty.start ? <Button size="sm" icon={<Plus size={14} />} onClick={() => void navigate('/jobs/new')}>New task</Button> : undefined}
-                    >
-                      {empty.body}
-                    </EmptyState>
+                    />
                   ))
                 : (
-                  <ul className="flex flex-col gap-1.5">
-                    {current.rows.map((job) => <JobRowView key={job.key} job={job} icon={rowIcon(job, status)} now={now} onError={onLinkError} onTranscript={(threadId, title) => setTranscript({ threadId, title })} focused={job.key === focusedKey} />)}
+                  <ul className="flex flex-col divide-y divide-line overflow-hidden rounded-xl border border-line">
+                    {current.rows.map((job) => <JobRowView key={job.key} job={job} icon={rowIcon(job, status)} now={now} kinds={linkKinds(current.rows)} onError={onLinkError} onTranscript={(threadId, title) => setTranscript({ threadId, title })} focused={job.key === focusedKey} />)}
                   </ul>
                 )}
             </div>

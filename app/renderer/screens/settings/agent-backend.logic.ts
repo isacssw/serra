@@ -89,3 +89,58 @@ export const validateCustomAgentForm = (
 /** Only the agents the owner added themselves (from the UI or `agent-backend.json`). */
 export const customAgents = (agents: readonly AcpAgentChoice[]): AcpAgentChoice[] =>
   agents.filter((agent) => agent.custom);
+
+// ---------------------------------------------------------------------------------------------------------------
+// The Agent picker on Settings › Worker
+// ---------------------------------------------------------------------------------------------------------------
+
+/** Which mark an agent or a T3 provider shows: a brand where Serra has one, else a generic glyph. */
+export type AgentMark = 't3' | 'claude' | 'codex' | 'opencode' | 'gemini' | 'cursor' | 'antigravity' | 'custom';
+
+const MARKS: Record<string, AgentMark> = {
+  claude: 'claude', claudeagent: 'claude', codex: 'codex', opencode: 'opencode', gemini: 'gemini', cursor: 'cursor',
+  antigravity: 'antigravity',
+};
+
+/** The mark for an ACP agent id or a T3 driver kind (`claudeAgent`, `codex`, …). Unknown ones are `custom`. */
+export const agentMark = (id: string): AgentMark => MARKS[id.toLowerCase()] ?? 'custom';
+
+/** One choice in the Agent picker: T3, or an ACP agent. `value` is `t3` or `acp:<id>`. */
+export interface AgentOption {
+  value: string;
+  name: string;
+  /** The muted line under the name: what it is, or why it can't be picked. */
+  detail: string;
+  mark: AgentMark;
+  disabled: boolean;
+  /** A custom agent the owner added, which can be removed. */
+  custom: boolean;
+}
+
+/** T3 first (the default), then the built-in ACP agents, then the owner's own. */
+export const agentOptions = (agents: readonly AcpAgentChoice[]): AgentOption[] => [
+  { value: 't3', name: 'T3 Code', detail: 'Default · any provider', mark: 't3', disabled: false, custom: false },
+  ...[...agents.filter((agent) => !agent.custom), ...agents.filter((agent) => agent.custom)].map((agent): AgentOption => ({
+    value: `acp:${agent.id}`,
+    name: agent.name,
+    detail: !agent.installed ? (agent.custom ? 'Not on PATH' : 'Not installed') : agent.custom ? 'Custom · ACP' : 'ACP',
+    mark: agent.custom ? 'custom' : agentMark(agent.id),
+    disabled: !agent.installed,
+    custom: agent.custom,
+  })),
+];
+
+/** The picker's draft: the chosen option and, for an ACP agent, its model (empty for the agent's default). */
+export interface AgentDraft { choice: string; model: string }
+
+/** What is saved now, as a draft. */
+export const savedAgentDraft = (view: { backend: 't3' | 'acp'; agent: string | null; models: Record<string, string> }): AgentDraft =>
+  view.backend === 'acp' && view.agent ? { choice: `acp:${view.agent}`, model: view.models[view.agent] ?? '' } : { choice: 't3', model: '' };
+
+/** Whether Save has something to send. */
+export const agentDraftChanged = (saved: AgentDraft, draft: AgentDraft): boolean =>
+  saved.choice !== draft.choice || (draft.choice !== 't3' && saved.model !== draft.model.trim());
+
+/** The `setAgentBackend` call for a draft. */
+export const agentChoice = (draft: AgentDraft): { backend: 't3' } | { backend: 'acp'; agent: string; model: string } =>
+  draft.choice === 't3' ? { backend: 't3' } : { backend: 'acp', agent: draft.choice.slice(4), model: draft.model.trim() };

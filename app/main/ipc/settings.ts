@@ -8,6 +8,7 @@ import {
   type SettingChange,
 } from '../../../src/profile-settings.ts';
 import { isSlackUserId } from '../../../src/slack-names.ts';
+import { readT3Providers } from '../../../src/t3-providers.ts';
 import { MAX_NAME_IDS } from '../../../src/status-socket.ts';
 import type { Handlers, SavedSection } from '../bridge.ts';
 import type { HandlerContext } from './context.ts';
@@ -36,9 +37,11 @@ const memberIds = (value: unknown): string[] => {
 export interface SettingsDeps {
   /** The Slack names cache shared with Jobs. Tests pass their own. */
   names?: ProfileNames;
+  /** Reads T3's providers. Tests pass their own. */
+  readProviders?: typeof readT3Providers;
 }
 
-export const settingsHandlers = (context: HandlerContext, { names = profileSlackNames(context) }: SettingsDeps = {}): Handlers<'settings'> => ({
+export const settingsHandlers = (context: HandlerContext, { names = profileSlackNames(context), readProviders = readT3Providers }: SettingsDeps = {}): Handlers<'settings'> => ({
   read: () => readProfileFile(context.profileDir()),
   sections: () => ({ ...PROFILE_SETTINGS }),
   saveSection: (section, value) => {
@@ -55,4 +58,6 @@ export const settingsHandlers = (context: HandlerContext, { names = profileSlack
     void cache.request({ users: ids });
     return Object.fromEntries(ids.flatMap((id) => { const name = cache.userName(id); return name ? [[id, name]] : []; }));
   },
+  // Ids, driver kinds, labels and on/off only: src/t3-providers.ts never reads an instance's config or environment.
+  t3Providers: () => readProviders(),
 });

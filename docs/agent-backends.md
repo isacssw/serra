@@ -1,7 +1,7 @@
 # Agent backends
 
 Serra runs its work on an agent backend. **T3 Code is the default.** You can switch to an agent that speaks the
-[Agent Client Protocol](https://agentclientprotocol.com) (ACP) in Settings › Worker › **Agent backend**.
+[Agent Client Protocol](https://agentclientprotocol.com) (ACP) in Settings › Worker › **Agent**: pick its card, then **Save**.
 
 | Agent | What you need |
 |---|---|
@@ -10,14 +10,14 @@ Serra runs its work on an agent backend. **T3 Code is the default.** You can swi
 | OpenCode | `opencode` on your PATH (`opencode acp`). |
 | Gemini CLI | `gemini` on your PATH (`gemini --acp`). |
 
-Serra installs nothing. Each agent keeps its own login; Serra never reads it. Pick a model per agent next to the
-picker, or leave it empty for the agent's own default.
+Serra installs nothing. Each agent keeps its own login; Serra never reads it. Pick a model per agent under **Model**,
+or leave it empty for the agent's own default. The choice applies to the next job.
 
 ## Adding your own ACP agent
 
 Any command that speaks ACP over stdio can be added:
 
-- **In the app:** Settings › Worker › **Agent backend** › **Add ACP agent**: a name and the command with its
+- **In the app:** Settings › Worker › **Agent** › the **Add ACP agent** card: a name and the command with its
   arguments. Serra shows the exact command in a system dialog and saves it only when you confirm.
 - **In the file:** **Config file** opens `agent-backend.json` in the profile (`~/.local/share/serra/<bot-id>/`):
 
@@ -25,7 +25,7 @@ Any command that speaks ACP over stdio can be added:
 { "agents": [{ "id": "my-agent", "name": "My agent", "command": "my-agent", "args": ["acp"], "env": {} }] }
 ```
 
-The card updates as soon as the file is saved, and an edit to an agent, or its model, applies to the next job
+The agent cards update as soon as the file is saved, and an edit to an agent, or its model, applies to the next job
 without a restart; a turn already going finishes on the setup it started with. `env` values stay in your file and are
 never shown or logged. An agent can't be removed while it has a run going, since the run needs its command to carry on.
 
