@@ -1,4 +1,4 @@
-// Knowledge › Overview, read in five seconds: four numbers (pages, replies they shaped, health, what needs you), the
+// Knowledge › Overview, read in five seconds: three numbers (pages, replies they shaped, health), what needs you, the
 // To do list beside what the bot knows by area and how its health moved. Each page's use, the weekly review's summary
 // and what it learned lately are under Details.
 import { useCallback, useEffect, useId, useState } from 'react';
@@ -33,7 +33,7 @@ const Section = ({ title, aside, children, className }: { title: string; aside?:
 
 /** One number on the stat strip: a label, the figure, and a short note under it. */
 const Stat = ({ label, value, unit, note }: { label: string; value: number; unit?: string; note: string }) => (
-  <div className="flex min-w-0 flex-col gap-1 border-line px-5 py-4 not-first:border-l max-sm:nth-3:border-l-0 max-sm:nth-[n+3]:border-t">
+  <div className="flex min-w-0 flex-col gap-1 border-line px-5 py-4 not-first:border-l max-sm:nth-3:border-l-0 max-sm:nth-[n+3]:border-t max-sm:last:col-span-2">
     <p className="text-xs font-medium text-muted">{label}</p>
     <p className="text-[28px] leading-8 font-semibold tracking-[-0.02em] tabular-nums text-ink">{value}{unit && <span className="text-base font-medium text-faint">{unit}</span>}</p>
     <p className="text-xs leading-4 text-faint" title={note}>

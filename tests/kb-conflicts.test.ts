@@ -634,3 +634,8 @@ test('every repeated rule that waits says why in a few words, and a changed page
   assert.deepEqual(reasons('Read [the policy](owner/v1.md) before a payouts change (2026-11-16)', 'Read [the policy](owner/v2.md) before a payouts change (2026-11-17)'), ['owner/v1.md → owner/v2.md']);
   assert.deepEqual(reasons('Ask Sam or Lee before a payouts release (2026-11-16)', 'Ask Sam and Lee before a payouts release (2026-11-17)'), ['“or” vs “and”']);
 });
+
+test('a day or cadence added to a rule is a new schedule, never kept in bulk', () => {
+  const pairs = pairsOf([{ path: 'a.md', text: '---\ntype: rule\n---\n- Deploy the payouts service on Tuesday (2026-11-16)\n- Deploy the payouts service on Tuesday and Thursday (2026-11-17)\n' }]);
+  assert.ok(pairs.every((issue) => !isSafe(issue.pair)));
+});

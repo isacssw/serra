@@ -1,8 +1,9 @@
-// Needs you's rule pairs, opened. Repeats: each rule once, as its newest line reads, with one "Use newer" and the
-// other choices behind "More". Disagreements: the two rules side by side, older on the left, one Keep each. FixList.tsx
+// Needs you's rule pairs, opened. Repeats: the rules to check, each with its reason and Keep older / Keep newer; the
+// rest folded into one line, their other choices behind the "…" menu. Disagreements: the two rules side by side, older
+// on the left, one Keep each. FixList.tsx
 // owns what a click does; this file only draws. The pure half is conflicts.logic.ts.
 import { useState } from 'react';
-import { MoreHorizontal } from 'lucide-react';
+import { ChevronRight, MoreHorizontal } from 'lucide-react';
 import type { PairInfo } from '../../../../src/knowledge-health.ts';
 import { Button, cx } from '../../ui/index.ts';
 import { checkReason, sideNames, wordDiff, type ChainRow, type DiffPart } from '../conflicts.logic.ts';
@@ -24,7 +25,7 @@ const Side = ({ parts }: { parts: DiffPart[] }) => (
   <>{parts.map((part, at) => (part.op === 'same' ? <span key={at}>{part.text}</span> : <strong key={at} className="font-semibold text-ink">{part.text}</strong>))}</>
 );
 
-/** The newest line, its added words in quiet green: what "Use newer" keeps. */
+/** The newest line, its added words in quiet green: what "Keep newer" keeps. */
 const Newest = ({ row }: { row: ChainRow }) => (
   <>{wordDiff(row.latest.older.plain, row.newer.plain, 'newer').map((part, at) => <span key={at} className={cx(part.op === 'add' && 'text-up')}>{part.text}</span>)}</>
 );
@@ -33,7 +34,7 @@ const RepeatRow = ({ row, actions }: { row: ChainRow; actions: PairActions }) =>
   const [more, setMore] = useState(false);
   const reason = checkReason(row);
   const prose = reason === 'Inside longer text';
-  // A rule "Use newer for all" settles has no button of its own. One that loses detail shows both choices.
+  // A rule "Keep newer for all" settles has no button of its own. One that waits shows both choices.
   const both = !row.safe && !row.twice && !prose;
   const newer = row.twice ? 'Remove copy' : row.order === 'length' ? 'Keep longer' : 'Keep newer';
   const older = row.order === 'length' ? 'Keep shorter' : 'Keep older';
@@ -66,12 +67,13 @@ export const RepeatPairs = ({ rows, actions }: { rows: ChainRow[]; actions: Pair
   return (
     <ul className="flex flex-col divide-y divide-line-subtle">
       {check.map((row) => <RepeatRow key={row.key} row={row} actions={actions} />)}
-      {rest.length > 0 && (shown
+      {/* Nothing to check on the page: its rules show at once. */}
+      {rest.length > 0 && (shown || check.length === 0
         ? rest.map((row) => <RepeatRow key={row.key} row={row} actions={actions} />)
         : (
           <li className="py-2">
             <Button size="sm" variant="ghost" flush aria-expanded={false} onClick={() => setShown(true)}>
-              {rest.length} more {rest.length === 1 ? 'changes' : 'change'} with Keep newer
+              <ChevronRight size={13} aria-hidden />{rest.length} more, safe to keep newer
             </Button>
           </li>
         ))}
@@ -102,7 +104,6 @@ export const DisagreePairs = ({ pairs, titleOf, actions }: { pairs: PairInfo[]; 
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">{card('older')}{card('newer')}</div>
           <div className="flex flex-wrap items-center gap-x-3">
             <Button size="sm" variant="ghost" flush disabled={actions.busy} title="Both stay; the page is unchanged" onClick={() => actions.bothHold([pair])}>Keep both</Button>
-            <Button size="sm" variant="ghost" flush disabled={actions.busy} onClick={() => actions.open(pair.newer.page)}>Open page</Button>
             <span className="text-xs text-faint">The other moves to “Replaced”. You can undo.</span>
           </div>
         </li>

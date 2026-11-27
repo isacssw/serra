@@ -1,10 +1,10 @@
 // Overview's "Needs you": the one place to act on the knowledge, one quiet row per job. Review fixes, proposals and
 // pages to confirm come first; then each pair of rules that disagree (Compare); then every repeated rule in one row
-// (Review, with one "Keep newer for all"); then what can wait ("N pages to tidy"). A row opens in place.
+// (Review, with one "Keep newer for all", or "where safe"); then what can wait ("N pages to tidy"). A row opens in place.
 import { useEffect, useState, type ReactNode } from 'react';
 import { useNavigate } from 'react-router';
 import { PROPOSAL_PARAM } from '../proposals.logic.ts';
-import { AlertTriangle, Check, ChevronRight, CircleCheck, CircleHelp, Copy, FileText, PenLine, Sparkles } from 'lucide-react';
+import { ArrowLeftRight, Check, ChevronRight, CircleCheck, CircleHelp, Copy, FileText, PenLine, Sparkles } from 'lucide-react';
 import type { KnowledgeOverview } from '../../../../src/knowledge-overview.ts';
 import type { PairInfo } from '../../../../src/knowledge-health.ts';
 import type { ReviewSuggestion } from '../../../../src/knowledge-review-store.ts';
@@ -26,7 +26,7 @@ const SHOWN = 5;
 const KindIcon = ({ item }: { item: FixItem }) => {
   const kind = fixKind(item);
   const props = { size: 15, 'aria-hidden': true as const, className: 'mt-0.5 shrink-0' };
-  if (kind === 'conflict' || kind === 'duplicate' || kind === 'replace') return <AlertTriangle {...props} className={cx(props.className, 'text-warn')} />;
+  if (kind === 'conflict' || kind === 'duplicate' || kind === 'replace') return <ArrowLeftRight {...props} className={cx(props.className, 'text-muted')} />;
   if (kind === 'proposal' || kind === 'proposals') return <FileText {...props} className={cx(props.className, 'text-muted')} />;
   if (kind === 'missing') return <CircleHelp {...props} className={cx(props.className, 'text-muted')} />;
   if (kind === 'unreviewed') return <PenLine {...props} className={cx(props.className, 'text-muted')} />;
@@ -257,7 +257,7 @@ export const FixList = ({ overview, onOpen, onChanged }: { overview: KnowledgeOv
         {shown.map(itemRow)}
         {view.disagree.map((group) => row({
           // What differs leads; the page it's on comes second.
-          id: group.key, icon: <AlertTriangle {...quiet} />, name: groupLine(group), line: groupTitle(group), action: 'Compare',
+          id: group.key, icon: <ArrowLeftRight {...quiet} />, name: groupLine(group), line: groupTitle(group), action: 'Compare',
           panel: <DisagreePairs pairs={group.pairs} titleOf={title} actions={actions} />,
         }))}
         {view.repeats.length > 0 && row({

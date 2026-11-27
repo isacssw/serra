@@ -558,7 +558,10 @@ const sequence = (text: string): string[] => (text.toLowerCase().replace(/[’']
 const CHANGERS = new Set([...NEGATIONS, 'unless', 'except', 'only', 'but', 'if', 'when', 'whenever', 'until', 'excluding', 'apart', 'save', 'besides',
   'or', 'optional', 'optionally', 'ideally', 'preferably', 'try', 'rarely', 'sometimes', 'usually', 'often', 'may', 'might', 'can', 'could', 'should',
   'other', 'than', 'after', 'before', 'plus', 'first', 'later', 'once', 'twice', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine',
-  'ten', 'eleven', 'twelve', 'any', 'some', 'most', 'all', 'every', 'each', 'none', 'more', 'less', 'fewer'].map(stem));
+  'ten', 'eleven', 'twelve', 'any', 'some', 'most', 'all', 'every', 'each', 'none', 'more', 'less', 'fewer',
+  // A day or a cadence added is a new schedule, not the same rule said again.
+  'always', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday', 'daily', 'weekly', 'monthly', 'morning', 'afternoon',
+  'evening', 'weekend', 'weekday'].map(stem));
 
 /** Words by which a rule limits itself: a clause added after one of them may widen or narrow what it allows. */
 const LIMITS = new Set([...NEGATIONS, 'only', 'except', 'unless', 'but', 'if', 'when', 'whenever', 'until', 'excluding', 'besides', 'or'].map(stem));

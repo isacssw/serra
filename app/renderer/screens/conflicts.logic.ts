@@ -194,8 +194,12 @@ export const groupLine = (group: PairGroup): string =>
   (group.pairs.length === 1 ? versus(group.pairs[0]!.older.plain, group.pairs[0]!.newer.plain) : `${group.pairs.length} pairs differ`);
 
 /** A line's link targets, without the scheme: "wiki.acme.dev/squad", "owner/v1.md". */
-const targets = (text: string): string[] => [...(text.match(/https?:\/\/[^\s)>\]]+/g) ?? []), ...[...text.matchAll(/\]\(([^)\s]+)\)/g)].map((match) => match[1]!)]
+const targets = (line: string): string[] => {
+  // Not the learned note's own link (the thread it came from): that isn't part of the rule.
+  const text = line.replace(/\s*\((?:[^()]|\([^()]*\))*\)[\s.]*$/, (note) => (/\d{4}-\d{2}-\d{2}/.test(note) ? '' : note));
+  return [...(text.match(/https?:\/\/[^\s)>\]]+/g) ?? []), ...[...text.matchAll(/\]\(([^)\s]+)\)/g)].map((match) => match[1]!)]
   .map((link) => link.replace(/^https?:\/\//, '')).filter((link, at, all) => all.indexOf(link) === at);
+};
 
 /**
  * Why a repeated rule waits for the owner, in a few words, or null when "Keep newer for all" settles it: "Inside
@@ -214,7 +218,7 @@ export const checkReason = (row: ChainRow): string | null => {
   if (parts.some((part) => part.op === 'add') && parts.some((part) => part.op === 'del')) return versus(pair.older.plain, pair.newer.plain);
   const dropped = droppedWords(row);
   if (dropped) return `Drops “${dropped}”`;
-  if (pair.older.plain === pair.newer.plain) {
+  if (pair.older.plain.toLowerCase() === pair.newer.plain.toLowerCase()) {
     const [was, now] = [targets(pair.older.text), targets(pair.newer.text)];
     const gone = was.find((link) => !now.includes(link));
     const came = now.find((link) => !was.includes(link));
