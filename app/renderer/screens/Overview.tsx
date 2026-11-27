@@ -1,8 +1,8 @@
-// Knowledge › Overview, read in five seconds: how many replies the notes shaped, one request answered with and without
-// them, and To do when there is something to do. Everything else (each page's use, health over time, areas, what it
-// learned lately, the weekly review's settings) is under Details.
+// Knowledge › Overview, read in five seconds: four numbers (pages, replies they shaped, health, what needs you), the
+// To do list beside what the bot knows by area and how its health moved. Each page's use, the weekly review's summary
+// and what it learned lately are under Details.
 import { useCallback, useEffect, useId, useState } from 'react';
-import { AlertTriangle, ChevronRight, CircleCheck, CircleDot, Sparkles } from 'lucide-react';
+import { AlertTriangle, ChevronRight, Sparkles } from 'lucide-react';
 import { useNavigate } from 'react-router';
 import type { KnowledgeOverview } from '../../../src/knowledge-overview.ts';
 import { serra } from '../bridge.ts';
@@ -11,7 +11,7 @@ import { ValueList } from './overview/ValueList.tsx';
 import { Proof, ReviewControls } from './overview/WeekDigest.tsx';
 import { Button, cx, EmptyState, Page } from '../ui/index.ts';
 import {
-  changeText, EVENT_LABELS, factsChart, shortDate, groupByDay, headline, scoreChart, scoreWord,
+  EVENT_LABELS, factsChart, fixItems, shortDate, groupByDay, headline, scoreChart, scoreWord, todoSummary,
 } from './overview.logic.ts';
 
 const message = (error: unknown): string => (error instanceof Error ? error.message : String(error));
@@ -21,7 +21,7 @@ const Section = ({ title, aside, children, className }: { title: string; aside?:
   const id = useId();
   return (
     <section aria-labelledby={id} className={cx('flex min-w-0 flex-col gap-3', className)}>
-      <div className="flex items-baseline justify-between gap-3">
+      <div className="flex min-h-7 items-center justify-between gap-3">
         <h2 id={id} className="text-sm font-semibold">{title}</h2>
         {aside && <div className="text-xs text-muted">{aside}</div>}
       </div>
@@ -30,6 +30,17 @@ const Section = ({ title, aside, children, className }: { title: string; aside?:
   );
 };
 
+
+/** One number on the stat strip: a label, the figure, and a short note under it. */
+const Stat = ({ label, value, unit, note }: { label: string; value: number; unit?: string; note: string }) => (
+  <div className="flex min-w-0 flex-col gap-1 border-line px-5 py-4 not-first:border-l max-sm:nth-3:border-l-0 max-sm:nth-[n+3]:border-t">
+    <p className="text-xs font-medium text-muted">{label}</p>
+    <p className="text-[28px] leading-8 font-semibold tracking-[-0.02em] tabular-nums text-ink">{value}{unit && <span className="text-base font-medium text-faint">{unit}</span>}</p>
+    <p className="text-xs leading-4 text-faint" title={note}>
+      {note.split(' · ').map((part, at) => <span key={part} className="whitespace-nowrap">{at > 0 && <span aria-hidden> · </span>}{part}</span>)}
+    </p>
+  </div>
+);
 
 /** An axis label in HTML over the chart, so it stays a readable size however wide the chart is drawn. */
 const Label = ({ x, y, width, height, align, children }: { x: number; y: number; width: number; height: number; align: 'start' | 'middle' | 'end'; children: React.ReactNode }) => (
@@ -156,61 +167,76 @@ export const Overview = () => {
   }
 
   const word = scoreWord(health.score, health.pages);
-  const growthLine = [
-    `Health ${health.score} · ${word.word.toLowerCase()}${monthAgo ? ` (${changeText(health.score, monthAgo.score, monthAgo.at) ?? ''})` : ''}`,
-    `${health.facts} facts${monthAgo ? ` (${changeText(health.facts, monthAgo.facts, monthAgo.at) ?? ''})` : ''}`,
-  ].join(' · ');
   const days = groupByDay(overview.events, now, 5);
   const head = headline(overview, now);
   const example = overview.review?.examples[0];
+  const todo = fixItems(overview);
+  const grown = monthAgo ? health.pages - monthAgo.pages : null;
+  const conflicts = health.issues.filter((issue) => issue.kind === 'conflict' || issue.kind === 'duplicate').length;
+  const most = Math.max(1, ...health.areas.map((area) => area.pages));
 
   return (
-    <Page title="Overview">
-      <section aria-label="What your notes did" className="flex flex-col gap-4 rounded-lg border border-line bg-panel px-5 py-4">
-        {head
-          ? (
-            <p className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-              <span className="text-4xl font-semibold tracking-tight tabular-nums">{head.used}<span className="text-2xl font-normal text-muted"> / {head.replies}</span></span>
-              <span className="text-sm text-muted">replies used your notes {head.period}</span>
-            </p>
-          )
-          : <p className="text-sm text-muted">No replies yet.</p>}
-        {example && <Proof example={example} />}
-        {!overview.review && <ReviewControls weekly={overview.reviewWeekly} first onChanged={() => void load()} />}
+    <Page
+      title="Overview"
+      actions={(
+        <>
+          {overview.review && <span className="text-xs text-faint">Reviewed {shortDate(`${overview.review.to}T00:00:00Z`)}</span>}
+          <ReviewControls weekly={overview.reviewWeekly} ran={overview.review !== null} onChanged={() => void load()} />
+        </>
+      )}
+    >
+      <section aria-label="At a glance" className="grid grid-cols-2 overflow-hidden rounded-xl border border-line bg-panel shadow-card sm:grid-cols-[1fr_1fr_1fr_1.35fr]">
+        <Stat label="Pages" value={health.pages} note={grown === null ? `${health.facts} facts` : grown > 0 ? `+${grown} in 30 days` : `${health.facts} facts`} />
+        <Stat label="Used in replies" value={head?.used ?? 0} note={head ? `of ${head.replies} replies ${head.period}` : 'No replies yet'} />
+        <Stat label="Health" value={health.score} unit="%" note={conflicts > 0 ? `${word.word} · ${conflicts} conflict${conflicts === 1 ? '' : 's'}` : word.word} />
+        <Stat label="To review" value={todo.length} note={todoSummary(todo)} />
       </section>
 
-      <FixList overview={overview} onOpen={open} onChanged={() => void load()} />
+      {example && (
+        <section aria-label="This week" className="rounded-xl border border-line bg-panel px-5 py-4 shadow-card"><Proof example={example} /></section>
+      )}
 
-      <details className="group flex flex-col">
-        <summary className="flex w-fit cursor-pointer list-none items-center gap-1 text-sm text-muted hover:text-ink focus-visible:outline-2 focus-visible:outline-focus [&::-webkit-details-marker]:hidden">
+      <div className="grid grid-cols-1 gap-x-10 gap-y-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,19rem)]">
+        <FixList overview={overview} onOpen={open} onChanged={() => void load()} />
+        <div className="flex min-w-0 flex-col gap-8">
+          <Section title="Coverage" aside={`${health.areas.length} areas`}>
+            <ul className="flex flex-col gap-2.5 border-t border-line pt-3" aria-label="Pages by area">
+              {health.areas.map((area) => (
+                <li key={area.area} title={area.headline ?? undefined} className="grid grid-cols-[7.5rem_minmax(0,1fr)_1.5rem] items-center gap-3 text-[13px]">
+                  <span className="flex min-w-0 items-center gap-1 truncate text-muted">
+                    {area.label}
+                    {area.conflicts > 0 && <AlertTriangle size={12} aria-label="Has rules that disagree" className="shrink-0 text-warn" />}
+                  </span>
+                  <span aria-hidden className={cx('h-1.5 overflow-hidden rounded-full', area.pages ? 'bg-selected' : 'border border-dashed border-line-strong')}>
+                    <span className="block h-full rounded-full bg-ink/70" style={{ width: `${(100 * area.pages) / most}%` }} />
+                  </span>
+                  <span className="text-right text-xs tabular-nums text-faint">{area.pages}</span>
+                </li>
+              ))}
+            </ul>
+          </Section>
+          {overview.points.length > 1 && (
+            <Section title="Growth" aside={`${health.facts} facts`}>
+              <div className="border-t border-line pt-3"><ScoreChart overview={overview} /></div>
+            </Section>
+          )}
+        </div>
+      </div>
+
+      <details className="group flex flex-col border-t border-line pt-4">
+        <summary className="flex w-fit cursor-pointer list-none items-center gap-1 rounded-md text-[13px] font-medium text-muted hover:text-ink focus-visible:outline-2 focus-visible:outline-focus [&::-webkit-details-marker]:hidden">
           <ChevronRight size={14} aria-hidden className="transition-transform group-open:rotate-90" />Details
         </summary>
-        <div className="mt-4 flex flex-col gap-8">
+        <div className="mt-5 flex flex-col gap-8">
           {overview.review && (
             <Section title="Weekly review" aside={`${shortDate(`${overview.review.from}T00:00:00Z`)} – ${shortDate(`${overview.review.to}T00:00:00Z`)}`}>
               <p className="text-[13px] leading-5 text-muted">{overview.review.summary}</p>
               {overview.review.examples.slice(1).map((more) => <Proof key={more.page} example={more} />)}
               {overview.review.error && <p className="text-xs text-warn">The model part didn’t run: {overview.review.error}</p>}
-              <ReviewControls weekly={overview.reviewWeekly} first={false} onChanged={() => void load()} />
             </Section>
           )}
 
           <ValueList value={overview.value} days={usage.days} replies={usage.replies} onOpen={open} onChanged={() => void load()} />
-
-          <Section title="Growth" aside={growthLine}>
-            {overview.points.length > 1 && <div className="rounded-lg border border-line bg-panel px-3 pt-3 pb-1"><ScoreChart overview={overview} /></div>}
-            <ul className="flex flex-wrap gap-1.5" aria-label="What your bot knows about you, by area">
-              {health.areas.map((area) => (
-                <li key={area.area} title={area.headline ?? undefined} className={cx('flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs', area.conflicts > 0 ? 'border-warn/40 text-ink' : 'border-line text-ink')}>
-                  {area.conflicts > 0
-                    ? <AlertTriangle size={12} aria-label="Has rules that disagree" className="text-warn" />
-                    : area.confirmed > 0 ? <CircleCheck size={12} aria-label="Covered" className="text-up" /> : <CircleDot size={12} aria-label="Nothing yet" className="text-faint" />}
-                  {area.label}
-                  <span className="tabular-nums text-muted">{area.facts}</span>
-                </li>
-              ))}
-            </ul>
-          </Section>
 
           {days.length > 0 && (
             <Section title="Recently learned">

@@ -3,25 +3,27 @@
 // Start interview (APP-26) starts the guided knowledge interview as a T3 thread; what the owner confirms there is
 // written to knowledge/proposals/, and the main process tells this screen as soon as a file lands.
 import { useCallback, useEffect, useState } from 'react';
-import { ChevronRight, FileText, Folder, LoaderCircle, MessagesSquare } from 'lucide-react';
-import type { Proposal, ProposalDiff, ProposalSource } from '../../../src/contracts.ts';
+import { AlertTriangle, Folder, Inbox, LoaderCircle, MessagesSquare, Trash2 } from 'lucide-react';
+import type { Proposal, ProposalDiff } from '../../../src/contracts.ts';
 import type { ProposalTargets } from '../../../src/proposals.ts';
 import type { UndoHandle } from '../../main/bridge.ts';
 import type { InterviewPreview } from '../../../src/tasks.ts';
 import { serra } from '../bridge.ts';
 import { REFRESH_COUNTS, announceTaskStart } from '../shell/events.ts';
-import { Button, cx, Dialog, Page, Select, useToast } from '../ui/index.ts';
+import { Button, cx, Dialog, EmptyState, Page, Select, TextArea, useToast } from '../ui/index.ts';
+import { PageBody } from './PageBody.tsx';
+import { aboutCard, sectionTitle } from './about.logic.ts';
 import { RuleDiff } from './proposals/RuleDiff.tsx';
 import { MeetingReview } from './proposals/MeetingReview.tsx';
 import { AudienceChoice } from './AudienceChoice.tsx';
-import { alignHeader, frontmatter, removeHeaderField, setHeaderField } from '../../../src/knowledge-rules.ts';
+import { alignHeader, frontmatter, pageBody, removeHeaderField, setHeaderField } from '../../../src/knowledge-rules.ts';
 import { localDate } from './pages.logic.ts';
 import { approvalAudience, pageAudience, type Audience } from '../../../src/owner-model.ts';
 import { useSearchParams } from 'react-router';
 import { registerActions } from '../commands/registry.ts';
 import {
   defaultFolder, folderChoices, swapRule, folderLabel, groupByDate, interviewStartedText, nextSelection, PROPOSAL_PARAM, promoteProposalAction, proposalBody,
-  proposalTitle, withoutTarget, diffRows, diffStats, changeSummary,
+  proposalTitle, withoutTarget, diffRows, diffStats, proposalMeta, sourceLine,
 } from './proposals.logic.ts';
 
 const unregister = registerActions([promoteProposalAction]);
@@ -31,10 +33,10 @@ import { taskLink } from './newTask.logic.ts';
 const message = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
 const Queue = ({ proposals, selected, onSelect }: { proposals: Proposal[]; selected: string | null; onSelect: (path: string) => void }) => (
-  <nav aria-label="Proposals" className="flex w-full shrink-0 lg:w-72 flex-col gap-5">
+  <nav aria-label="Proposals" className="flex w-full shrink-0 flex-col gap-4 pt-3 lg:mr-6 lg:h-full lg:w-72 lg:overflow-y-auto lg:overscroll-contain lg:pb-6">
     {groupByDate(proposals).map((group) => (
-      <section key={group.date ?? 'undated'} className="flex flex-col gap-2">
-        <h2 className="text-sm font-semibold">{group.label}</h2>
+      <section key={group.date ?? 'undated'} aria-label={group.label} className="flex flex-col gap-px">
+        <h2 className="sticky top-0 z-10 bg-canvas px-2.5 pt-1 pb-1 text-xs font-medium text-faint">{group.label}</h2>
         {group.proposals.map((proposal) => {
           const active = proposal.path === selected;
           return (
@@ -45,14 +47,13 @@ const Queue = ({ proposals, selected, onSelect }: { proposals: Proposal[]; selec
               onClick={() => onSelect(proposal.path)}
               title={proposal.description ?? proposal.path}
               className={cx(
-                'flex items-center gap-2.5 rounded-lg border px-3 py-2.5 text-left text-sm',
-                'focus-visible:outline-2 focus-visible:outline-focus',
-                active ? 'border-line-strong bg-selected' : 'border-line bg-panel hover:bg-raised',
+                'flex flex-col rounded-lg px-2.5 py-1.5 text-left transition-colors duration-150',
+                'focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-focus',
+                active ? 'bg-selected' : 'hover:bg-hover',
               )}
             >
-              <FileText size={16} aria-hidden className="shrink-0 text-muted" />
-              <span className="min-w-0 flex-1 truncate">{proposalTitle(proposal)}</span>
-              <ChevronRight size={16} aria-hidden className="shrink-0 text-muted" />
+              <span className={cx('truncate text-[13px] leading-5 text-ink', active && 'font-medium')}>{proposalTitle(proposal)}</span>
+              <span className="truncate text-xs leading-4 text-muted" title={proposal.target ?? undefined}>{proposal.target ? `Edits the ${sectionTitle(proposal.target)} page` : 'New page'}</span>
             </button>
           );
         })}
@@ -226,86 +227,97 @@ export const Proposals = () => {
   return (
     <Page
       title="Proposals"
+      meta={proposals && proposals.length > 0 ? proposals.length : undefined}
       actions={<InterviewButton autoOpen={search.get('interview') === '1'} onOpened={() => setSearch((params) => { params.delete('interview'); return params; }, { replace: true })} />}
     >
       {loadError && <p role="alert" className="text-sm text-down">{loadError}</p>}
       <MeetingReview stubs={meetingStubs} onChanged={() => { void reload(); }} onCount={setMeetingCount} />
       {proposals && proposals.length === 0 && meetingCount === 0 && (
-        <p className="text-sm text-muted">Nothing waiting.</p>
+        <EmptyState icon={<Inbox size={18} />} title="Nothing waiting" />
       )}
       {proposals && proposals.length > 0 && (
-        <div className="flex flex-col gap-6 border-t border-line pt-5 lg:flex-row lg:items-start">
+        <div className="flex flex-col gap-6 border-t border-line lg:h-[calc(100vh-148px)] lg:min-h-96 lg:flex-row lg:gap-0">
           <Queue proposals={proposals} selected={selected} onSelect={setSelected} />
-          <div className="flex min-w-0 flex-1 flex-col gap-5 border-line lg:border-l lg:pl-6">
+          <div className="flex min-w-0 flex-1 flex-col gap-5 pt-5 lg:h-full lg:overflow-y-auto lg:overscroll-contain lg:border-l lg:border-line lg:pr-1 lg:pl-8">
             {diffError && <p role="alert" className="text-sm text-down">{diffError}</p>}
-            {!diff && !diffError && <p className="text-sm text-muted">Loading…</p>}
+            {!diff && !diffError && <p className="text-[13px] text-muted">Loading…</p>}
             {diff && bridge && (
               <>
-                <div className="flex flex-col gap-1">
-                  <h2 className="text-lg font-semibold tracking-tight">{title}</h2>
-                  <Sources text={diff.proposed} from={diff.proposal.from} />
-                </div>
+                <header className="flex flex-col gap-1">
+                  <h2 className="text-lg leading-7 font-semibold tracking-[-0.01em]">{title}</h2>
+                  {(diff.proposal.from || sourcesOf(diff.proposed).length > 0) && <Meta diff={diff} />}
+                </header>
                 {stale && (
-                  <p role="status" className="rounded-lg border border-warn/40 bg-panel px-3 py-2.5 text-[13px] text-warn">
-                    The page changed since. Approving undoes that change.
+                  <p role="status" className="flex items-center gap-2 rounded-xl border border-warn/40 bg-warn/5 px-4 py-2.5 text-[13px] text-warn">
+                    <AlertTriangle size={14} aria-hidden className="shrink-0" />The page changed since. Approving undoes that change.
                   </p>
                 )}
                 {!diff.proposal.target && similar[0] && (
-                  <div className="flex flex-wrap items-start gap-3 rounded-lg border border-line bg-panel px-3 py-2.5">
-                    <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+                  <div className="flex flex-wrap items-start gap-3 rounded-xl border border-line bg-panel px-4 py-3 shadow-card">
+                    <div className="flex min-w-0 flex-1 flex-col gap-1">
                       {similar[0].disagrees ? (
                         <>
-                          <p className="text-[13px]">Changes a rule on <code className="text-xs">{similar[0].path}</code></p>
-                          <p className="border-l-2 border-line pl-2 text-xs text-muted">On the page: {similar[0].disagrees.page}</p>
-                          <p className="border-l-2 border-line pl-2 text-xs text-muted">Proposed: {similar[0].disagrees.proposal}</p>
+                          <p className="text-[13px] font-medium">Changes a rule on {similar[0].path}</p>
+                          <p className="border-l-2 border-line-strong pl-2.5 text-xs text-muted">Now: {similar[0].disagrees.page}</p>
+                          <p className="border-l-2 border-line-strong pl-2.5 text-xs text-ink">Proposed: {similar[0].disagrees.proposal}</p>
                         </>
                       ) : (
                         <>
-                          <p className="text-[13px]">Already on <code className="text-xs">{similar[0].path}</code></p>
-                          <p className="truncate border-l-2 border-line pl-2 text-xs text-muted">{similar[0].shared[0]}</p>
+                          <p className="text-[13px] font-medium">Already on {similar[0].path}</p>
+                          <p className="truncate border-l-2 border-line-strong pl-2.5 text-xs text-muted">{similar[0].shared[0]}</p>
                         </>
                       )}
                     </div>
                     <Button size="sm" disabled={busy} onClick={() => { setMergeTarget(similar[0]!.path); setMergeOpen(true); }}>Merge into it…</Button>
                   </div>
                 )}
-                <ChangeSummary current={landing(diff, folder)} proposed={asWritten(diff, folder, picked)} />
-                <details className="group">
-                  <summary className="flex w-fit cursor-pointer list-none items-center gap-1 text-xs text-muted hover:text-ink focus-visible:outline-2 focus-visible:outline-focus [&::-webkit-details-marker]:hidden">
-                    <ChevronRight size={13} aria-hidden className="transition-transform group-open:rotate-90" />See change
-                  </summary>
-                  <div className="mt-2"><RuleDiff current={landing(diff, folder)} proposed={asWritten(diff, folder, picked)} /></div>
-                </details>
-                {/* A rewrite of a page goes where the page is; only a new page asks where. */}
-                {diff.proposal.target ? null : folders.length > 0 ? (
-                  <Select
-                    label="Target folder"
-                    value={folder}
-                    onChange={setFolder}
-                    icon={<Folder size={16} />}
-                    options={folders.map((value) => ({ value, label: targets.folders.includes(value) ? folderLabel(value) : `${folderLabel(value)} (new)` }))}
-                  />
-                ) : (
-                  <p className="text-sm text-muted">knowledge/ has no folders yet. Create one to promote into.</p>
-                )}
-                <div className="flex flex-col gap-1">
-                  <AudienceChoice id="proposal-audience" value={picked ?? approvalAudience(diff.proposed, landing(diff, folder)).audience} disabled={busy} onChange={setPicked} />
-                  {picked === null && asks(diff, folder) && <span className="text-xs text-muted">{asks(diff, folder)}</span>}
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  <Button
-                    variant="primary"
-                    disabled={busy || !folder}
-                    onClick={() => void act(
-                      (path) => bridge.proposals.promote(path, folder, { proposal: diff.proposed, path: diff.proposal.target, page: diff.current }, picked ?? undefined),
-                      replaces(diff, folder) ? `Replaced ${diff.proposal.target}.` : `Promoted ${title} to ${folderLabel(folder)}.`,
+                {/* The proposed text first: a new page as it will read, a change as a diff against the page now. */}
+                {landing(diff, folder) === null
+                  ? <NewPage title={title} text={asWritten(diff, folder, picked)} />
+                  : <RuleDiff current={landing(diff, folder)} proposed={asWritten(diff, folder, picked)} />}
+                <footer className="sticky bottom-0 flex flex-col gap-3 border-t border-line bg-canvas pt-4 pb-4">
+                  <div className="flex flex-wrap items-end gap-x-3 gap-y-3">
+                    {/* A rewrite of a page goes where the page is; only a new page asks where. */}
+                    {diff.proposal.target ? null : folders.length > 0 ? (
+                      <Select
+                        label="Folder"
+                        className="w-52"
+                        value={folder}
+                        onChange={setFolder}
+                        icon={<Folder size={14} />}
+                        options={folders.map((value) => ({ value, label: folderLabel(value), icon: <Folder size={14} />, ...(targets.folders.includes(value) ? {} : { detail: 'New' }) }))}
+                      />
+                    ) : (
+                      <p className="text-[13px] text-muted">No folders yet.</p>
                     )}
-                  >
-                    {replaces(diff, folder) ? 'Approve' : 'Add page'}
-                  </Button>
-                  <Button disabled={busy || targets.pages.length === 0} onClick={() => setMergeOpen(true)}>Merge into…</Button>
-                  <Button disabled={busy} onClick={() => void act((path) => bridge.proposals.discard(path), `Discarded ${title}.`)}>Discard</Button>
-                </div>
+                    <AudienceChoice id="proposal-audience" label value={picked ?? approvalAudience(diff.proposed, landing(diff, folder)).audience} disabled={busy} onChange={setPicked} />
+                  </div>
+                  {picked === null && asks(diff, folder) && <p className="-mt-1 text-xs text-muted">{asks(diff, folder)}</p>}
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Button
+                      variant="ghost"
+                      icon={<Trash2 size={14} aria-hidden />}
+                      className="-ml-3 enabled:hover:bg-down/10 enabled:hover:text-down"
+                      disabled={busy}
+                      onClick={() => void act((path) => bridge.proposals.discard(path), `Discarded ${title}.`)}
+                    >
+                      Discard
+                    </Button>
+                    <div className="ml-auto flex items-center gap-2">
+                      <Button disabled={busy || targets.pages.length === 0} onClick={() => setMergeOpen(true)}>Merge into…</Button>
+                      <Button
+                        variant="primary"
+                        disabled={busy || !folder}
+                        onClick={() => void act(
+                          (path) => bridge.proposals.promote(path, folder, { proposal: diff.proposed, path: diff.proposal.target, page: diff.current }, picked ?? undefined),
+                          replaces(diff, folder) ? `Replaced ${diff.proposal.target}.` : `Promoted ${title} to ${folderLabel(folder)}.`,
+                        )}
+                      >
+                        {replaces(diff, folder) ? 'Approve' : 'Add page'}
+                      </Button>
+                    </div>
+                  </div>
+                </footer>
               </>
             )}
           </div>
@@ -315,7 +327,7 @@ export const Proposals = () => {
         open={mergeOpen}
         onClose={() => setMergeOpen(false)}
         title="Merge into an existing page"
-        description="Edit the page as it should read. This text replaces the page, so remove any rule it replaces. Sources are kept and the page is marked verified today."
+        description="Edit the page as it should read. It replaces the page and is marked verified today."
         actions={(
           <>
             <Button onClick={() => setMergeOpen(false)}>Cancel</Button>
@@ -336,23 +348,21 @@ export const Proposals = () => {
         )}
       >
         <Select label="Page" value={mergeTarget} onChange={setMergeTarget} options={targets.pages.map((value) => ({ value, label: value }))} />
-        <label className="mt-3 flex flex-col gap-1.5 text-sm">
-          <span className="font-medium">Page after the merge</span>
-          {mergeStart === null && mergeText !== null && mergeBase !== null && mergeText !== mergeBase && similar[0]?.disagrees && similar[0].path === mergeTarget && <span className="text-xs text-muted">The old rule is swapped for the proposed one. Check the page, then merge.</span>}
-          {mergeStart !== null && <span className="text-xs text-muted">The proposal is below the page. Edit them into one page, removing any rule it replaces, before merging.</span>}
-          {mergeBase !== null && mergeText !== null && <MergeStats before={mergeBase} after={mergeText} />}
-          <textarea
-            value={mergeText ?? ''}
-            onChange={(event) => setMergeText(event.target.value)}
-            disabled={mergeText === null}
-            spellCheck={false}
-            rows={14}
-            aria-label="Page after the merge"
-            className="w-full resize-y rounded-md border border-line bg-panel p-2 font-mono text-xs leading-5 text-ink focus:outline-2 focus:outline-offset-1 focus:outline-focus disabled:opacity-60"
-          />
-        </label>
-        <div className="mt-3 flex flex-col gap-1">
-          <AudienceChoice id="merge-audience" value={mergeAudience} disabled={mergeBase === null} onChange={setMergeAudience} />
+        <TextArea
+          label="Page after the merge"
+          className="mt-3"
+          value={mergeText ?? ''}
+          onChange={(event) => setMergeText(event.target.value)}
+          disabled={mergeText === null}
+          spellCheck={false}
+          hint={mergeStart !== null
+            ? 'The proposal is below the page: edit them into one.'
+            : mergeText !== null && mergeBase !== null && mergeText !== mergeBase && similar[0]?.disagrees && similar[0].path === mergeTarget ? 'The old rule is swapped for the proposed one.' : undefined}
+          textareaClassName="min-h-64 max-h-none resize-y font-mono text-xs leading-5 [field-sizing:fixed]"
+        />
+        {mergeBase !== null && mergeText !== null && <div className="mt-1.5"><MergeStats before={mergeBase} after={mergeText} /></div>}
+        <div className="mt-4 flex flex-col gap-1.5">
+          <AudienceChoice id="merge-audience" label value={mergeAudience} disabled={mergeBase === null} onChange={setMergeAudience} />
           {mergeBase !== null && widens(pageAudience(frontmatter(mergeBase)), mergeAudience) && (
             <span className="text-xs text-warn">This shares {mergeTarget}&rsquo;s existing text more widely than now.</span>
           )}
@@ -384,38 +394,36 @@ const sourcesOf = (text: string): string[] => {
   return items;
 };
 
-/** The change in a few lines: + what it adds, ↺ what it replaces, − what it drops. */
-const ChangeSummary = ({ current, proposed }: { current: string | null; proposed: string }) => {
-  const lines = changeSummary(current, proposed);
-  if (lines.length === 0) return <p className="text-[13px] text-muted">No rule changes</p>;
-  const shown = lines.slice(0, 4);
-  const mark = { adds: '+', replaces: '↺', removes: '−' } as const;
-  const label = { adds: 'Adds', replaces: 'Replaces', removes: 'Removes' } as const;
-  return (
-    <ul className="flex flex-col gap-1 text-[13px]">
-      {shown.map((line) => (
-        <li key={`${line.kind}${line.text}`} className="flex gap-2">
-          <span aria-label={label[line.kind]} className={cx('w-3 shrink-0 text-center font-medium', line.kind === 'adds' ? 'text-up' : line.kind === 'removes' ? 'text-down' : 'text-muted')}>{mark[line.kind]}</span>
-          <span className={cx('min-w-0', line.kind === 'adds' ? 'text-ink' : 'text-muted')}><span className={line.kind === 'adds' ? '' : 'line-through decoration-line-strong'}>{line.text}</span>{line.kind === 'replaces' && <span className="text-xs no-underline"> · kept as old</span>}</span>
-        </li>
-      ))}
-      {lines.length > shown.length && <li className="pl-5 text-xs text-muted">{lines.length - shown.length} more</li>}
-    </ul>
-  );
+/** A new page as it will read once added; its header (dates, sources) on request. */
+const NewPage = ({ text, title }: { text: string; title: string }) => (
+  <section aria-label="Proposed page" className="-mx-4 -my-3">
+    <div className="max-w-[76ch]"><PageBody strong text={withoutTitle(pageBody(text), title)} onOpen={(href) => void serra()?.app.openExternal(href)} /></div>
+  </section>
+);
+
+/** The body without its first heading when that heading only repeats the proposal's title ("On-call handover"). */
+const withoutTitle = (body: string, title: string): string => {
+  const card = aboutCard('', body);
+  const [a, b] = [card.title.toLowerCase(), title.toLowerCase()];
+  return card.body && (a === b || b.startsWith(a) || a.startsWith(b)) ? card.body : body;
 };
 
-/** Where the proposal came from, in a few words; its sources on hover. */
-const Sources = ({ text, from }: { text: string; from?: ProposalSource }) => {
-  const sources = sourcesOf(text);
+/** Where the proposal came from and when, in one line; nothing for what wasn't recorded. Its sources on hover. */
+const Meta = ({ diff }: { diff: ProposalDiff }) => {
+  const sources = sourcesOf(diff.proposed);
+  const from = diff.proposal.from;
+  const careful = sourceLine(from)?.careful ?? false;
   const opened = (href: string) => (event: { preventDefault: () => void }) => { event.preventDefault(); void serra()?.app.openExternal(href); };
   return (
-    <p className={cx('text-xs', !from || from.owner || from.via === 'review' ? 'text-muted' : 'text-warn')} title={sources.length ? `Sources: ${sources.join('; ')}` : 'No sources given'}>
-      {from
-        ? from.via === 'review' ? 'Weekly review · from your own pages' : from.owner
-          ? (from.via === 'app' ? 'From your task' : 'From your Slack thread')
-          : `From ${from.who}’s Slack thread · approve only what you said`
-        : 'Source not recorded'}
-      {from?.link && <>{' · '}<a href={from.link} onClick={opened(from.link)} className="text-ink underline underline-offset-2 hover:no-underline focus-visible:outline-2 focus-visible:outline-focus">Thread</a></>}
+    <p className="flex flex-wrap items-center gap-x-1.5 text-xs text-faint" title={sources.length ? `Sources: ${sources.join('; ')}` : undefined}>
+      {proposalMeta(diff.proposal).map((part, at) => (
+        <span key={part} className="contents">
+          {at > 0 && <span aria-hidden>·</span>}
+          <span className={cx(at === 0 && careful && 'text-warn')}>{part}</span>
+        </span>
+      ))}
+      {from?.link && <><span aria-hidden>·</span><a href={from.link} onClick={opened(from.link)} className="text-ink underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-focus">Thread</a></>}
+      {careful && <span className="text-warn">· approve only what you said</span>}
     </p>
   );
 };
@@ -424,10 +432,10 @@ const Sources = ({ text, from }: { text: string; from?: ProposalSource }) => {
 const asks = (diff: ProposalDiff, folder: string): string | null => {
   const current = landing(diff, folder);
   const { asks: direction } = approvalAudience(diff.proposed, current);
-  if (direction === 'narrower') return 'This proposal asks to share the page less. That\u2019s the default.';
+  if (direction === 'narrower') return 'Asks to share less: set as the default.';
   if (direction === 'wider') return current === null
-    ? 'This proposal asks to share the page with people outside your company. It starts with your team unless you choose.'
-    : 'This proposal asks to share the page more widely. It stays as it is unless you choose.';
+    ? 'Asks to share outside your company. Starts with your team.'
+    : 'Asks to share more widely. Stays as it is unless you choose.';
   return null;
 };
 
@@ -449,7 +457,7 @@ const MergeStats = ({ before, after }: { before: string; after: string }) => {
   return (
     <span className={cx('text-xs', stats.removed === 0 ? 'text-warn' : 'text-muted')}>
       {stats.removed} line{stats.removed === 1 ? '' : 's'} removed, {stats.added} added.
-      {stats.removed === 0 && ' Nothing of the page goes: check that no rule it replaces is left beside the new one.'}
+      {stats.removed === 0 && ' Check no old rule is left beside the new one.'}
     </span>
   );
 };
@@ -507,7 +515,7 @@ const InterviewButton = ({ autoOpen = false, onOpened }: { autoOpen?: boolean; o
         open={dialog.state !== 'closed'}
         onClose={() => { if (!starting) setDialog({ state: 'closed' }); }}
         title={resumes ? 'Resume the knowledge interview' : 'Start the knowledge interview'}
-        description="A T3 thread asks you how you work, one question at a time. Each topic you confirm is written to knowledge/proposals/ and shows up here to promote, merge or discard. It reads the project but changes nothing in it."
+        description="A T3 thread asks how you work, one question at a time. Each topic you confirm lands here to review."
         actions={(
           <>
             <Button disabled={starting} onClick={() => setDialog({ state: 'closed' })}>Cancel</Button>
@@ -529,9 +537,9 @@ const InterviewButton = ({ autoOpen = false, onOpened }: { autoOpen?: boolean; o
             {dialog.preview.resumes && (
               <p className="text-sm">An earlier interview left notes in onboarding-progress.md. This one carries on from them.</p>
             )}
-            <button type="button" className="self-start text-sm text-accent underline-offset-2 hover:underline" onClick={() => setShowBrief((shown) => !shown)}>
+            <Button size="sm" variant="ghost" flush className="self-start" aria-expanded={showBrief} onClick={() => setShowBrief((shown) => !shown)}>
               {showBrief ? 'Hide the brief' : 'Show the brief'}
-            </button>
+            </Button>
             {showBrief && (
               <pre className="max-h-80 overflow-auto rounded-md border border-line bg-canvas px-3 py-2 font-mono text-xs leading-5 whitespace-pre-wrap text-ink">{dialog.preview.brief}</pre>
             )}

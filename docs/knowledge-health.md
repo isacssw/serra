@@ -1,6 +1,6 @@
 # How your knowledge grows
 
-**Knowledge › Overview** is meant to be read in five seconds. It shows one number, how many of the bot's replies used your notes this week (or in the last 30 days before the first review), and under it one real request answered with your notes and without them. **To do** shows only when there is something to do, three items at a time, each one line and one button. Everything else is under **Details**: the weekly review's summary and settings, what each page did, health over time, what the bot knows by area, and what it learned lately.
+**Knowledge › Overview** is meant to be read in five seconds. Four numbers open it: **Pages**, **Used in replies** (how many of the bot's replies used your notes this week, or in the last 30 days before the first review), **Health** and **To review**. Under them, when the weekly review found one, a real request answered with your notes and without them. **Needs you** lists what to do, five items at a time, each one line and one button; several proposals, or several pages not confirmed yet, fold into one row that opens Proposals or Pages. Beside it, **Coverage** shows how many pages each area has, and **Growth** the health trend. **Run review** and **Weekly** sit in the header. Everything else is under **Details**: the weekly review's summary, what each page did, and what it learned lately.
 
 ## The weekly review
 
@@ -18,11 +18,11 @@ Once a week (when the bot replied at least three times that week) Serra looks ba
 
 **Do all** runs every one-click fix together. A fix done once stays done.
 
-The model part runs as a read-only T3 run in Serra's own empty folder, on the worker's provider and model, the same way meetings run, so it works with any T3 provider. Nothing changes until you approve it. Turn it off with **Every week**, or run it any time with **Run again** (both under Details). Digests are kept in `knowledge-reviews/` in the profile.
+The model part runs as a read-only T3 run in Serra's own empty folder, on the worker's provider and model, the same way meetings run, so it works with any T3 provider. Nothing changes until you approve it. Turn it off with **Weekly**, or run it any time with **Run review** (both in Overview's header). Digests are kept in `knowledge-reviews/` in the profile.
 
 ## What your notes do
 
-Under Details, every page with what it did in the last 30 days: **Used in N replies** with a request it answered, **Always in the brief** (About me pages, counted apart: their use isn't measured, so they never count as having helped), **Used once**, or **Not used** once there were enough replies to tell, with **Retire** next to it. Pages lists pages by topic, the same areas as Overview, by their descriptions (the file name is on hover; a search box appears once there are more than eight). A page opens as it reads, with **Edit**, **Still true** and **Retire…**; the Markdown and its header only show when you edit. Everything on it is worked out on your Mac from files Serra already keeps: your pages, the backup each approval or edit leaves in `backups/knowledge/`, and `logs/knowledge-usage.jsonl`. No model is asked and nothing is sent anywhere.
+Under Details, every page with what it did in the last 30 days: **Used in N replies** with a request it answered, **Always in the brief** (About me pages, counted apart: their use isn't measured, so they never count as having helped), **Used once**, or **Not used** once there were enough replies to tell, with **Retire** next to it. Pages lists pages by topic, the same areas as Overview, each by its own name (its `# ` heading) with its description under it and a small check when it's verified (the file name is on hover; a filter appears in the title row once there are more than eight). A page opens as it reads, with who may hear it, **Edit**, **Still true** and **Retire** in its header and one line saying its area and when it was written and verified; the Markdown and its header only show when you edit. Everything on it is worked out on your Mac from files Serra already keeps: your pages, the backup each approval or edit leaves in `backups/knowledge/`, and `logs/knowledge-usage.jsonl`. No model is asked and nothing is sent anywhere.
 
 ## The health score
 

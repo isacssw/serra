@@ -106,7 +106,7 @@ const Shell = () => {
       <div className="flex min-w-0 flex-1 flex-col bg-canvas">
         {/* The title bar's height across the content side: it moves the window, and screens start below it. */}
         <div className="drag h-10 shrink-0" aria-hidden />
-        <main className="min-h-0 flex-1 overflow-y-auto [scrollbar-gutter:stable]" data-serra-main data-path={pathname}>
+        <main className="relative min-h-0 flex-1 overflow-y-auto [scrollbar-gutter:stable]" data-serra-main data-path={pathname}>
           <Routes>
             {routes.map((route) => <Route key={route.id} path={route.path} element={<SetupGate route={route}>{screens[route.id]}</SetupGate>} />)}
             <Route path="*" element={<Navigate to={defaultPath} replace />} />

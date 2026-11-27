@@ -154,3 +154,40 @@ export const pageBlocks = (markdown: string): Block[] => {
   endLoose();
   return blocks;
 };
+
+/** Words a file name can't spell: `pr-style.md` reads "PR style", not "Pr style". */
+const ACRONYMS: Record<string, string> = { pr: 'PR', prs: 'PRs', api: 'API', ui: 'UI', ci: 'CI', qa: 'QA', oncall: 'On-call', offlimits: 'Off-limits' };
+
+/** A path in words: `owner/working-hours.md` reads "Working hours"; the brief's own sections have their own names. */
+export const sectionTitle = (path: string): string => {
+  const named: Record<string, string> = { 'people/': 'People', outsiders: 'Rules for outsiders', 'private topics': 'Private topics', 'owner/off-limits.md': 'Off-limits' };
+  if (named[path]) return named[path];
+  const words = (path.split('/').pop() ?? path).replace(/\.md$/, '').split(/[-_\s]+/).filter(Boolean).map((word) => ACRONYMS[word.toLowerCase()] ?? word.toLowerCase());
+  const text = words.join(' ');
+  return text.charAt(0).toUpperCase() + text.slice(1);
+};
+
+/**
+ * One About me card: a single title, the page's own first heading when it has one (so "Role" isn't said twice), and
+ * the body without that heading or the line the brief adds for the bot (`prefaces`).
+ */
+export const aboutCard = (path: string, body: string, prefaces: readonly string[] = []): { title: string; body: string } => {
+  const lines = body.replace(/\r\n?/g, '\n').split('\n');
+  const strip = (): void => { while (lines.length && !lines[0]!.trim()) lines.shift(); };
+  strip();
+  if (lines.length && prefaces.includes(lines[0]!.trim())) { lines.shift(); strip(); }
+  const heading = lines.length ? /^#{1,3}\s+(.+?)\s*#*\s*$/.exec(lines[0]!.trim()) : null;
+  if (heading) { lines.shift(); strip(); }
+  const title = heading ? inlineSpans(heading[1]!).map((span) => span.text).join('') : sectionTitle(path);
+  return { title, body: lines.join('\n').trimEnd() };
+};
+
+/** The pages About me leaves out, in one line: "3 pages left out until verified". Null when none are. */
+export const leftOutLine = (left: readonly { reason: string }[]): string | null => {
+  if (left.length === 0) return null;
+  const pages = left.length === 1 ? '1 page left out' : `${left.length} pages left out`;
+  const reasons = new Set(left.map((page) => page.reason));
+  if (reasons.size === 1 && reasons.has('not verified yet')) return `${pages} until verified`;
+  if (reasons.size === 1 && reasons.has('over the size limit')) return `${pages}: over the size limit`;
+  return pages;
+};
