@@ -133,6 +133,9 @@ test('the preview is exactly what a worker gets for the same request', async (t)
   assert.match(preview, /You are Friday, Alex's engineering assistant/);
   assert.match(preview, /<request>\nWhy does the login page time out\?\n<\/request>/);
   assert.doesNotMatch(preview, /xoxb-fixture|xapp-fixture/);
+  // What the bot learns keeps its day in the page's sources, not in the rule, and a rule said again replaces its line.
+  assert.match(preview, /Today's date and the Slack link go in the header's `sources:`, never in the rule's own line\./);
+  assert.match(preview, /If the page already says this rule, reword that line in place: never add a second line that says it again\./);
 
   // A draft previews like the same text saved.
   const draft = `${TEMPLATE}\nDraft line for {{BOT_NAME}}.\n`;

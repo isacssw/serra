@@ -174,22 +174,34 @@ const PageList = ({ pages, selected, onSelect }: { pages: KnowledgePage[]; selec
 );
 
 /**
- * Rules on this page that disagree with or repeat another, shown as they read. Overview's To do keeps one in a click
+ * Rules on this page that disagree with or repeat another, shown as they read. Overview's Needs you keeps one in a click
  * where it can; here the page's own Edit settles it, so a rule inside a sentence of prose is never a dead end.
  */
 const RulesNote = ({ issues, oneClick, onSettle }: { issues: KnowledgeOverview['health']['issues']; oneClick: boolean; onSettle: () => void }) => {
   const pairs = issues.filter((issue) => (issue.kind === 'conflict' || issue.kind === 'duplicate') && (issue.facts?.length ?? 0) === 2);
   if (pairs.length === 0) return null;
+  // Rules that disagree are called out; repeats alone read calm.
+  const calm = pairs.every((issue) => issue.kind === 'duplicate');
   return (
-    <section aria-label="Rules to settle" className="flex flex-col gap-2.5 rounded-xl border border-warn/40 bg-warn/5 px-4 py-3">
-      {pairs.map((issue, at) => (
-        <div key={at} className="flex flex-col gap-1">
-          <p className="flex items-center gap-1.5 text-[13px] font-medium text-warn"><AlertTriangle size={14} aria-hidden />{issue.kind === 'conflict' ? 'Two rules disagree' : 'A rule is written twice'}</p>
-          {issue.facts!.map((fact) => <p key={fact.text} className="border-l-2 border-warn/40 pl-2.5 text-[13px] text-ink" title={fact.page}>{fact.text}</p>)}
-        </div>
-      ))}
-      {/* Only where To do can settle it in a click: a rule inside prose stays here, with the page's Edit. */}
-      {oneClick && <Button size="sm" className="self-start" onClick={onSettle}>Settle in To do</Button>}
+    <section aria-label="Rules to settle" className={cx('flex flex-col gap-2.5 rounded-xl border px-4 py-3', calm ? 'border-line' : 'border-warn/40 bg-warn/5')}>
+      {pairs.map((issue, at) => {
+        // Older first, as Overview shows them.
+        const sides = issue.pair ? [issue.pair.older, issue.pair.newer] : issue.facts!;
+        return (
+          <div key={issue.pair?.id ?? at} className="flex flex-col gap-1">
+            {issue.kind === 'conflict'
+              ? <p className="flex items-center gap-1.5 text-[13px] font-medium text-warn"><AlertTriangle size={14} aria-hidden />Two rules disagree</p>
+              : <p className="text-[13px] font-medium text-muted">Said twice</p>}
+            {sides.map((fact, side) => (
+              <p key={side} className={cx('border-l-2 pl-2.5 text-[13px] text-ink', issue.kind === 'conflict' ? 'border-warn/40' : 'border-line-strong')} title={fact.page}>
+                {fact.text}
+              </p>
+            ))}
+          </div>
+        );
+      })}
+      {/* Only where Overview can settle it in a click: a rule inside prose stays here, with the page's Edit. */}
+      {oneClick && <Button size="sm" className="self-start" onClick={onSettle}>Review in Overview</Button>}
     </section>
   );
 };
@@ -404,7 +416,9 @@ export const Pages = () => {
     </div>
   );
   // A page whose rules disagree or repeat isn't settled, however recently it was confirmed: its badge says so.
-  const disagree = pairs.some((issue) => (issue.kind === 'conflict' || issue.kind === 'duplicate') && (issue.facts?.length ?? 0) === 2);
+  // Only rules that disagree mark the page; a rule said twice is a quieter "Repeats".
+  const disagree = pairs.some((issue) => issue.kind === 'conflict' && (issue.facts?.length ?? 0) === 2);
+  const repeats = !disagree && pairs.some((issue) => issue.kind === 'duplicate' && (issue.facts?.length ?? 0) === 2);
   // Today's date, for the editor's "Verified today" box.
   const [today] = useState(() => localDate(new Date()));
   const detail = page ? pageDetail(page) : null;
@@ -447,8 +461,8 @@ export const Pages = () => {
                 <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
                   <div className="flex min-w-0 items-center gap-2">
                     <h2 className="min-w-0 text-lg leading-7 font-semibold tracking-[-0.01em]">{pageLabel(page)}</h2>
-                    {disagree
-                      ? <Badge tone="warn" title="Two rules on this page disagree or repeat">Conflict</Badge>
+                    {disagree || repeats
+                      ? <Badge tone={disagree ? 'warn' : 'neutral'} title={disagree ? 'Two rules on this page disagree' : 'A rule on this page is said twice'}>{disagree ? 'Conflict' : 'Repeats'}</Badge>
                       : (
                       <Badge tone={badgeTone(page.badge)} title={badgeTitle(page)} className="gap-1">
                         {page.badge === 'verified' && <Check size={11} strokeWidth={2.5} aria-hidden />}{badgeLabel(page.badge)}
@@ -482,7 +496,7 @@ export const Pages = () => {
               <>
                 <RulesNote
                   issues={pairs}
-                  oneClick={pairs.some((issue) => issue.kind === 'conflict' && (issue.facts ?? []).length === 2 && issue.facts!.every((fact) => fact.page === selected && currentRules(saved ?? '').includes(fact.text)))}
+                  oneClick={pairs.some((issue) => (issue.kind === 'conflict' || issue.kind === 'duplicate') && (issue.facts ?? []).length === 2 && issue.facts!.every((fact) => fact.page === selected && currentRules(saved ?? '').includes(fact.text)))}
                   onSettle={() => void navigate('/knowledge/overview#todo')}
                 />
                 {!editing && !state.dirty && (

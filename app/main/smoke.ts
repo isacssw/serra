@@ -536,13 +536,14 @@ const graphScript = `(async () => {
   await wait(() => card()?.querySelector('h2')?.textContent === 'Release days');
   await new Promise((r) => setTimeout(r, 700));
   const disagrees = [...(card()?.querySelectorAll('p') ?? [])].find((p) => p.textContent.startsWith('Disagrees'))?.textContent ?? null;
-  const keeps = [...(card()?.querySelectorAll('button') ?? [])].map((b) => b.textContent.trim()).filter((t) => t.startsWith('Keep'));
+  // Each Keep button with the rule it keeps, in the order the card shows them (older first).
+  const keeps = [...(card()?.querySelectorAll('button') ?? [])].filter((b) => b.textContent.trim().startsWith('Keep')).map((b) => b.parentElement.textContent.trim());
   return { replayed, pages, rested, frameMs, arrowCard, disagrees, keeps };
 })()`;
 
 /**
  * SERRA-93: Knowledge › Graph on a realistic profile, through the real backend. The first visit replays and comes to
- * rest; the arrow keys select a page; the card names the disagreement and "Keep Thursday" settles it on disk; Enter
+ * rest; the arrow keys select a page; the card names the disagreement and Keep on the Thursday rule settles it on disk; Enter
  * opens the page; the next visit doesn't replay. `SERRA_SMOKE_SHOTS` also saves the graph in both themes (and the
  * frames of a replay with `SERRA_SMOKE_FRAMES=1`), plus an 800-page run's frame cost.
  */
@@ -602,7 +603,7 @@ const runGraphChecks = async (main: BrowserWindow): Promise<string[]> => {
       if (report.pages !== '58') failures.push(`${theme}: the graph counts ${String(report.pages)} pages, not the fixture's 58`);
       if (!report.arrowCard) failures.push(`${theme}: an arrow key on the graph selected no page`);
       if (report.disagrees !== 'Disagrees with Thursday releases') failures.push(`${theme}: Release days' card says ${String(report.disagrees)}, not that it disagrees with Thursday releases`);
-      if (!report.keeps.includes('Keep Thursday') || !report.keeps.includes('Keep Tuesday')) failures.push(`${theme}: the card offers ${report.keeps.join(', ') || 'no Keep buttons'}, not Keep Tuesday and Keep Thursday`);
+      if (!/Tuesday/.test(report.keeps[0] ?? '') || !/Thursday/.test(report.keeps[1] ?? '')) failures.push(`${theme}: the card offers ${report.keeps.join(' | ') || 'no Keep buttons'}, not a Keep for the Tuesday rule and then the Thursday one`);
       await shot(`${theme}-focus`);
       await run(`(async () => { document.querySelector('[data-serra-main] canvas').dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); await new Promise((r) => setTimeout(r, 900)); })()`);
       await shot(`${theme}-rest`);
@@ -643,7 +644,7 @@ const runGraphChecks = async (main: BrowserWindow): Promise<string[]> => {
       Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(find, 'Release days');
       find.dispatchEvent(new Event('input', { bubbles: true }));
       await wait(() => card()?.querySelector('h2')?.textContent === 'Release days');
-      [...card().querySelectorAll('button')].find((b) => b.textContent.trim() === 'Keep Thursday')?.click();
+      [...card().querySelectorAll('button')].find((b) => b.textContent.trim().startsWith('Keep') && b.parentElement.textContent.includes('Thursday'))?.click();
       const toast = await wait(() => document.querySelector('[data-toast]')?.textContent?.includes('Kept'));
       await wait(() => !card() || !card().textContent.includes('Disagrees'));
       await new Promise((r) => setTimeout(r, 600));
@@ -654,9 +655,9 @@ const runGraphChecks = async (main: BrowserWindow): Promise<string[]> => {
       return { toast, after: card()?.textContent ?? null };
     })()`);
     const page = readFileSync(join(directory, 'knowledge', 'owner', 'releases.md'), 'utf8');
-    if (!kept.toast) failures.push('Keep Thursday on the graph showed no "Kept." toast');
-    if (!/## Replaced\n\n- Until \d{4}-\d{2}-\d{2}: Risky releases ship on Tuesday\./.test(page)) failures.push('Keep Thursday did not move Tuesday under Replaced on owner/releases.md');
-    if (kept.after?.includes('Disagrees')) failures.push('after Keep Thursday the card still says Release days disagrees');
+    if (!kept.toast) failures.push('Keep on the Thursday rule on the graph showed no "Kept." toast');
+    if (!/## Replaced\n\n- Until \d{4}-\d{2}-\d{2}: Risky releases ship on Tuesday\./.test(page)) failures.push('Keep on the Thursday rule did not move Tuesday under Replaced on owner/releases.md');
+    if (kept.after?.includes('Disagrees')) failures.push('after Keep on the Thursday rule the card still says Release days disagrees');
     // Enter opens the selected page; coming back shows the map at rest, with no replay.
     const opened = await run<{ hash: string; replayedAgain: boolean }>(`(async () => {
       const wait = async (ok, ms = 8000) => { const end = Date.now() + ms; while (Date.now() < end) { if (ok()) return true; await new Promise((r) => setTimeout(r, 50)); } return false; };

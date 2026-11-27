@@ -135,21 +135,42 @@ export const replacedOn = (kept: string, today: string): string => {
 
 export const keepRule = (text: string, drop: string, date: string): string => {
   const lines = text.replace(/\r\n?/g, '\n').split('\n');
-  const at = lines.findIndex((line) => line.trim().replace(/^([-*]|\d+\.)\s+/, '').trim() === drop.trim());
+  // Only a current rule moves: never a line of the header, a code block or the "Replaced" section itself.
+  let [header, fence, replaced] = [lines[0] === '---', false, false];
+  const at = lines.findIndex((line, index) => {
+    if (header) { if (index > 0 && line === '---') header = false; return false; }
+    if (/^\s*```/.test(line)) { fence = !fence; return false; }
+    if (fence) return false;
+    if (/^##\s/.test(line)) replaced = /^##\s+Replaced\b/i.test(line);
+    return !replaced && line.trim().replace(/^([-*]|\d+\.)\s+/, '').trim() === drop.trim();
+  });
   if (at === -1) return text;
+  // A bullet with sub-bullets can't move alone: they would end up under the bullet above. The page opens instead.
+  const indent = (line: string): number => /^\s*/.exec(line)![0].length;
+  const next = lines[at + 1];
+  if (next !== undefined && /^\s*([-*]|\d+\.)\s/.test(next) && indent(next) > indent(lines[at]!)) return text;
   lines.splice(at, 1);
-  const body = lines.join('\n').trimEnd();
   const entry = `- Until ${date}: ${drop.trim()}`;
-  return /^##\s+Replaced\b/im.test(body)
-    // A function, not a replacement string: a rule like "Refunds over $100" must not be read as `$1`.
-    ? `${body.replace(/^(##\s+Replaced\b[^\n]*\n(?:\n)?)/im, (head) => `${head}${entry}\n`)}\n`
-    : `${body}\n\n## Replaced\n\n${entry}\n`;
+  // The page's own "Replaced" heading, never one shown in a code block or the header.
+  let [inHeader, inFence] = [lines[0] === '---', false];
+  const heading = lines.findIndex((line, index) => {
+    if (inHeader) { if (index > 0 && line === '---') inHeader = false; return false; }
+    if (/^\s*```/.test(line)) { inFence = !inFence; return false; }
+    return !inFence && /^##\s+Replaced\b/i.test(line);
+  });
+  if (heading === -1) return `${lines.join('\n').trimEnd()}\n\n## Replaced\n\n${entry}\n`;
+  // Under the heading, newest first; the heading may be the page's last line, with nothing under it yet.
+  const rest = lines.slice(heading + 1);
+  while (rest.length > 0 && rest[0]!.trim() === '') rest.shift();
+  return `${[...lines.slice(0, heading + 1), '', entry, ...rest].join('\n').trimEnd()}\n`;
 };
 
 /** The page's current rules, one per line, without its header or anything under `## Replaced`. */
 export const currentRules = (text: string): string[] => text.replace(/\r\n?/g, '\n')
   .replace(/^---\n[\s\S]*?\n---\n/, '')
   .replace(/^##\s+Replaced\b[\s\S]*?(?=^##\s|(?![\s\S]))/gim, '')
+  // A code block shows an example, not a rule.
+  .replace(/^\s*```[^\n]*\n[\s\S]*?(?:^\s*```[^\n]*$|(?![\s\S]))/gm, '')
   .split('\n').map((line) => line.trim().replace(/^([-*]|\d+\.)\s+/, '').trim()).filter(Boolean);
 
 /**
@@ -162,17 +183,6 @@ export const newerRule = (a: string, b: string): 0 | 1 | null => {
   const fresh = (text: string): boolean => /\bnow\b/i.test(text) || new RegExp(`\\b(?:since|as of|starting|from)\\s+(?:the\\s+)?(?:\\d{1,2}\\s+)?${MONTH}`, 'i').test(text);
   if (fresh(a) === fresh(b)) return null;
   return fresh(a) ? 0 : 1;
-};
-
-/**
- * The Keep button's label: "Keep Thursday", "Keep 300", the word that sets this rule apart from the other, so two
- * buttons never read the same. "Keep this one" when no single word does.
- */
-export const keepLabel = (rule: string, other: string): string => {
-  const words = (text: string): string[] => text.match(/[\p{L}\p{N}#@][\p{L}\p{N}#@:.%-]*/gu)?.map((word) => word.replace(/[.:]+$/, '')) ?? [];
-  const theirs = new Set(words(other).map((word) => word.toLowerCase()));
-  const own = words(rule).find((word) => !theirs.has(word.toLowerCase()) && (/\d/.test(word) || /^[A-Z#]/.test(word)));
-  return own ? `Keep ${own}` : 'Keep this one';
 };
 
 /** Which page to show after the list reloads: the current one if it's still there, else the first. */

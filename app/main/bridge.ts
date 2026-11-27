@@ -236,6 +236,10 @@ export interface SerraApi {
     runReview(): Promise<KnowledgeReview>;
     /** Turn the weekly review on or off. */
     setReviewWeekly(weekly: boolean): void;
+    /** "Both hold, not a conflict": the pair (by `PairInfo.id`) is no longer listed. Kept in the profile; no page changes. */
+    bothHold(id: string): void;
+    /** List a pair set aside with `bothHold` again. */
+    undoBothHold(id: string): void;
     /** Whether "Still true" may be offered for this page: false when a rule on it disagrees, or a newer page on its topic may have changed it. */
     canConfirm(path: string): boolean;
     /** Rules on this page that disagree with or repeat another, as the page is on disk now, for the editor. */
@@ -460,7 +464,7 @@ export const bridgeMethods = {
   bot: methods<'bot'>()(['status', 'start', 'stop', 'restart']),
   jobs: methods<'jobs'>()(['list', 'cleanupWorktrees', 'chat', 'image', 'reply', 'answer']),
   proposals: methods<'proposals'>()(['list', 'diff', 'targets', 'promote', 'mergeInto', 'discard', 'undo', 'retire', 'similar', 'archived', 'restore', 'staleRewrite']),
-  pages: methods<'pages'>()(['list', 'read', 'save', 'drift', 'acceptDrift', 'restoreDrift', 'aboutMe', 'untagged', 'share', 'overview', 'graph', 'issues', 'canConfirm', 'runReview', 'setReviewWeekly']),
+  pages: methods<'pages'>()(['list', 'read', 'save', 'drift', 'acceptDrift', 'restoreDrift', 'aboutMe', 'untagged', 'share', 'overview', 'graph', 'issues', 'canConfirm', 'bothHold', 'undoBothHold', 'runReview', 'setReviewWeekly']),
   brief: methods<'brief'>()(['read', 'save', 'check', 'preview', 'listProposed', 'readProposed', 'applyProposed']),
   settings: methods<'settings'>()(['read', 'sections', 'saveSection', 'addPerson', 'removePerson', 'peopleNames', 't3Providers']),
   secrets: methods<'secrets'>()(['list', 'setSource', 'check']),

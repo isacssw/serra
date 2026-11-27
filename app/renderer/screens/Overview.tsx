@@ -1,4 +1,4 @@
-// Knowledge › Overview, read in five seconds: four numbers (pages, replies they shaped, health, what needs you), the
+// Knowledge › Overview, read in five seconds: three numbers (pages, replies they shaped, health), what needs you, the
 // To do list beside what the bot knows by area and how its health moved. Each page's use, the weekly review's summary
 // and what it learned lately are under Details.
 import { useCallback, useEffect, useId, useState } from 'react';
@@ -11,7 +11,7 @@ import { ValueList } from './overview/ValueList.tsx';
 import { Proof, ReviewControls } from './overview/WeekDigest.tsx';
 import { Button, cx, EmptyState, Page } from '../ui/index.ts';
 import {
-  EVENT_LABELS, factsChart, fixItems, shortDate, groupByDay, headline, scoreChart, scoreWord, todoSummary,
+  EVENT_LABELS, factsChart, shortDate, groupByDay, headline, scoreChart, scoreWord,
 } from './overview.logic.ts';
 
 const message = (error: unknown): string => (error instanceof Error ? error.message : String(error));
@@ -33,7 +33,7 @@ const Section = ({ title, aside, children, className }: { title: string; aside?:
 
 /** One number on the stat strip: a label, the figure, and a short note under it. */
 const Stat = ({ label, value, unit, note }: { label: string; value: number; unit?: string; note: string }) => (
-  <div className="flex min-w-0 flex-col gap-1 border-line px-5 py-4 not-first:border-l max-sm:nth-3:border-l-0 max-sm:nth-[n+3]:border-t">
+  <div className="flex min-w-0 flex-col gap-1 border-line px-5 py-4 not-first:border-l max-sm:nth-3:border-l-0 max-sm:nth-[n+3]:border-t max-sm:last:col-span-2">
     <p className="text-xs font-medium text-muted">{label}</p>
     <p className="text-[28px] leading-8 font-semibold tracking-[-0.02em] tabular-nums text-ink">{value}{unit && <span className="text-base font-medium text-faint">{unit}</span>}</p>
     <p className="text-xs leading-4 text-faint" title={note}>
@@ -170,9 +170,7 @@ export const Overview = () => {
   const days = groupByDay(overview.events, now, 5);
   const head = headline(overview, now);
   const example = overview.review?.examples[0];
-  const todo = fixItems(overview);
   const grown = monthAgo ? health.pages - monthAgo.pages : null;
-  const conflicts = health.issues.filter((issue) => issue.kind === 'conflict' || issue.kind === 'duplicate').length;
   const most = Math.max(1, ...health.areas.map((area) => area.pages));
 
   return (
@@ -185,11 +183,10 @@ export const Overview = () => {
         </>
       )}
     >
-      <section aria-label="At a glance" className="grid grid-cols-2 overflow-hidden rounded-xl border border-line bg-panel shadow-card sm:grid-cols-[1fr_1fr_1fr_1.35fr]">
+      <section aria-label="At a glance" className="grid grid-cols-2 overflow-hidden rounded-xl border border-line bg-panel shadow-card sm:grid-cols-3">
         <Stat label="Pages" value={health.pages} note={grown === null ? `${health.facts} facts` : grown > 0 ? `+${grown} in 30 days` : `${health.facts} facts`} />
         <Stat label="Used in replies" value={head?.used ?? 0} note={head ? `of ${head.replies} replies ${head.period}` : 'No replies yet'} />
-        <Stat label="Health" value={health.score} unit="%" note={conflicts > 0 ? `${word.word} · ${conflicts} conflict${conflicts === 1 ? '' : 's'}` : word.word} />
-        <Stat label="To review" value={todo.length} note={todoSummary(todo)} />
+        <Stat label="Health" value={health.score} unit="%" note={word.word} />
       </section>
 
       {example && (

@@ -9,6 +9,7 @@ import { createHash } from 'node:crypto';
 import { mkdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { writeFileAtomic } from './config.ts';
+import { dismissedPairs } from './knowledge-dismissals.ts';
 import { createJournal } from './knowledge-journal.ts';
 import { assessKnowledge, confirmHeldBack, currentText, isPage, pageFacts, topicPairs, type KnowledgeFile } from './knowledge-health.ts';
 import { knowledgeOverview, listKnowledgeFiles } from './knowledge-overview.ts';
@@ -138,7 +139,8 @@ export const runKnowledgeReview = async ({ profileDir, knowledgeDir, ask, now = 
   const texts = new Map(files.map((file) => [file.path, file.text]));
   const title = (path: string): string => frontmatter(texts.get(path) ?? '')?.get('description')?.trim() || path;
   const overview = knowledgeOverview({ knowledgeDir: root, profileDir, now, days: WEEK_DAYS });
-  const health = assessKnowledge(files, now);
+  const dismissed = dismissedPairs(profileDir);
+  const health = assessKnowledge(files, now, undefined, { dismissed });
   const uses = weekUses(profileDir, now);
 
   const counts = new Map<string, number>();
@@ -225,12 +227,20 @@ export const runKnowledgeReview = async ({ profileDir, knowledgeDir, ask, now = 
         ...topical.filter((pair) => pair.page === rewrite.page).map((pair) => flat(pair.mine.text)),
       ]);
       if (pageFacts(rewrite.page, current).some((fact) => !flat(paired.has(flat(fact.text)) ? proposed : currentText(proposed)).includes(flat(fact.text)))) continue;
-      // And it settles what it was for: no rule on it still disagrees with another page, and where the newer rule sat
-      // on the other page, this page now says it.
+      // And it helps: no new disagreement on the page, and fewer of the pairs it was sent for (a page with ten repeats
+      // can be tidied a part at a time); where the newer rule sat on the other page, this page now says it.
       const target = rewrite.page;
       const after = files.map((file) => (file.path === target ? { path: file.path, text: proposed } : file));
-      const left = assessKnowledge(after, now).issues.filter((item) => item.kind === 'conflict' && item.pages.includes(target));
-      if (left.length > 0) continue;
+      const pairsOn = (issues: typeof health.issues, kind: 'conflict' | 'duplicate'): Set<string> => new Set(issues.filter((item) => item.kind === kind && item.pair && item.pages.includes(target)).map((item) => item.pair!.id));
+      const afterIssues = assessKnowledge(after, now, undefined, { dismissed }).issues;
+      const [conflictsWere, conflictsLeft] = [pairsOn(health.issues, 'conflict'), pairsOn(afterIssues, 'conflict')];
+      const [repeatsWere, repeatsLeft] = [pairsOn(health.issues, 'duplicate'), pairsOn(afterIssues, 'duplicate')];
+      if ([...conflictsLeft].some((id) => !conflictsWere.has(id))) continue;
+      // Nor a new repeat within the page: a rule said twice is what the review is there to tidy.
+      const ownRepeats = afterIssues.filter((item) => item.kind === 'duplicate' && item.pair && item.pair.older.page === target && item.pair.newer.page === target);
+      if (ownRepeats.some((item) => !repeatsWere.has(item.pair!.id))) continue;
+      const sentFor = conflictsWere.size + repeatsWere.size > 0 && !topical.some((pair) => pair.page === target);
+      if (sentFor && conflictsLeft.size >= conflictsWere.size && repeatsLeft.size >= repeatsWere.size) continue;
       const newer = conflicted.filter((item) => item.kind === 'conflict' && item.pages.length === 2 && item.pages.includes(target)).flatMap((item) => item.facts ?? [])
         .filter((fact) => fact.page !== target && verifiedOn(fact.page) > verifiedOn(target));
       if (newer.some((fact) => !flat(currentText(proposed)).includes(flat(fact.text)))) continue;

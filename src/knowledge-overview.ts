@@ -3,6 +3,7 @@
 import { createHash } from 'node:crypto';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
+import { dismissedPairs } from './knowledge-dismissals.ts';
 import { createJournal } from './knowledge-journal.ts';
 import { latestReview, reviewSettings, type KnowledgeReview } from './knowledge-review-store.ts';
 import { compileAboutMe } from './owner-model.ts';
@@ -169,12 +170,14 @@ export const knowledgeOverview = ({ knowledgeDir, profileDir, backupDir, now = n
   const journal = createJournal(root);
   const files = journal.seeded() ? listKnowledgeFiles(journal.approvedRoot) : listKnowledgeFiles(root);
   const { changed, removed } = journal.drift();
-  const health = assessKnowledge(files, now);
+  // Pairs the owner said both hold aren't listed, scored or counted: the same set Pages and the review use.
+  const dismissed = dismissedPairs(profileDir);
+  const health = assessKnowledge(files, now, undefined, { dismissed });
   const changes = readChanges(resolve(backupDir ?? join(dirname(root), 'backups', 'knowledge')));
   // History only changes with a new change, a new day, or new text: opening Overview again reuses it.
-  const key = `${root}|${now.toISOString().slice(0, 10)}|${changes.length}|${changes.map((change) => `${change.id}${change.undoneAt ?? ''}`).sort().at(-1) ?? ''}|${files.map((file) => `${file.path}:${file.text.length}`).join(',')}|${health.score}`;
+  const key = `${root}|${now.toISOString().slice(0, 10)}|${changes.length}|${changes.map((change) => `${change.id}${change.undoneAt ?? ''}`).sort().at(-1) ?? ''}|${files.map((file) => `${file.path}:${file.text.length}`).join(',')}|${health.score}|${[...dismissed].sort().join(',')}`;
   const cached = historyCache.get(key);
-  const { points, events } = cached ?? knowledgeHistory(files, changes, now);
+  const { points, events } = cached ?? knowledgeHistory(files, changes, now, { dismissed });
   if (!cached) {
     historyCache.clear();
     historyCache.set(key, { points, events });
@@ -232,6 +235,6 @@ export const knowledgeGraph = ({ knowledgeDir, profileDir, backupDir, now = new 
   const journal = createJournal(root);
   const files = journal.seeded() ? listKnowledgeFiles(journal.approvedRoot) : listKnowledgeFiles(root);
   return buildKnowledgeGraph({
-    files, now, uses: readKnowledgeUse(profileDir), changes: readChanges(resolve(backupDir ?? join(dirname(root), 'backups', 'knowledge'))),
+    files, now, health: assessKnowledge(files, now, undefined, { dismissed: dismissedPairs(profileDir) }), uses: readKnowledgeUse(profileDir), changes: readChanges(resolve(backupDir ?? join(dirname(root), 'backups', 'knowledge'))),
   });
 };

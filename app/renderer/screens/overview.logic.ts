@@ -1,9 +1,9 @@
 // Knowledge › Overview, the pure half: chart geometry, the words for a score and its change, and the timeline
 // grouped by day. Tested in tests/knowledge-health.test.ts; Overview.tsx draws it.
-import type { EventKind, HistoryPoint, KnowledgeEvent } from '../../../src/knowledge-health.ts';
+import type { EventKind, HistoryPoint, KnowledgeEvent, PairInfo } from '../../../src/knowledge-health.ts';
 import type { KnowledgeOverview } from '../../../src/knowledge-overview.ts';
 import type { ReviewSuggestion } from '../../../src/knowledge-review-store.ts';
-import { keepLabel } from './pages.logic.ts';
+import { groupPairs, versus, type PairGroup, type PairIssue } from './conflicts.logic.ts';
 
 export type Tone = 'up' | 'warn' | 'down' | 'neutral';
 
@@ -154,8 +154,8 @@ export interface FixItem {
   suggestion?: ReviewSuggestion;
   /** A proposal waiting for the owner: the action opens it in Proposals. */
   proposal?: string;
-  /** Two rules that disagree: one Keep button each (the other moves under "Replaced"), in place of Settle. */
-  keep?: { page: string; text: string }[];
+  /** Two lines that disagree or repeat, older first: Needs you groups these by page and settles them there. */
+  pair?: PairInfo;
   /** Something replies said was missing: the action opens a task to tell the bot. */
   tell?: string;
   /** Where the action goes, when it is a screen rather than a page. */
@@ -168,12 +168,6 @@ const FIX_RANK: Record<string, number> = { replace: 0, proposal: 0.5, conflict: 
  * Every organising job in one list, worst first: the weekly review's fixes (one click) and what the health check finds
  * now, without repeating a page a review fix already covers. Names pages by their description, not their file.
  */
-/** Two rules that disagree in three words: "Tuesday vs Thursday", from what tells them apart. */
-const versus = (a: string, b: string): string => {
-  const [x, y] = [keepLabel(a, b), keepLabel(b, a)];
-  return x === 'Keep this one' || y === 'Keep this one' ? 'Two rules disagree' : `${x.slice(5)} vs ${y.slice(5)}`;
-};
-
 /** Page names in one phrase: "Database migrations and how deploys go out". A name that starts with an acronym keeps it. */
 const andJoin = (names: string[]): string => names.map((name, at) => (at > 0 && !/^[A-Z]{2}/.test(name) ? name.charAt(0).toLowerCase() + name.slice(1) : name)).join(' and ');
 
@@ -181,25 +175,29 @@ export const fixItems = (overview: Pick<KnowledgeOverview, 'review' | 'health' |
   const title = (path: string): string => overview.value.find((page) => page.path === path)?.title ?? path;
   // A rewrite that settles two rules says which, in three words, like the rule pair itself.
   const pairOn = (page: string): string | null => {
-    const facts = overview.health.issues.find((issue) => issue.kind === 'conflict' && issue.pages.includes(page) && issue.facts?.length === 2)?.facts;
-    return facts ? versus(facts[0]!.text, facts[1]!.text) : null;
+    const pair = overview.health.issues.find((issue) => issue.kind === 'conflict' && issue.pages.includes(page) && issue.pair)?.pair;
+    return pair ? versus(pair.older.plain, pair.newer.plain) : null;
   };
   const fromReview: FixItem[] = (overview.review?.suggestions ?? []).map((suggestion) => ({
     id: suggestion.id, title: suggestion.title, why: (suggestion.kind === 'replace' ? pairOn(suggestion.page) : null) ?? suggestion.why, lines: [], pages: [suggestion.page],
     action: suggestionAction(suggestion.kind), suggestion,
   }));
   const covered = new Set(fromReview.map((item) => `${item.suggestion!.kind === 'replace' ? 'conflict' : item.suggestion!.kind === 'confirm' ? 'stale' : 'overlap'}:${item.pages[0]}`));
+  // A line pasted twice beside a third makes the same pair twice: it is one item.
+  const pairSeen = new Set<string>();
   const fromHealth: FixItem[] = overview.health.issues.flatMap((issue) => {
     const page = issue.pages[0]!;
+    if (issue.pair) { if (pairSeen.has(issue.pair.id)) return []; pairSeen.add(issue.pair.id); }
     if (covered.has(`${issue.kind === 'duplicate' ? 'conflict' : issue.kind}:${page}`) || issue.pages.some((path) => covered.has(`conflict:${path}`))) return [];
     const why = ({ conflict: 'Two rules disagree', duplicate: 'A rule is written twice', overlap: 'Two pages on one topic', stale: 'Not confirmed in over 60 days', draft: 'Not confirmed yet', unindexed: 'Not in the index, so never used', long: 'Near the page size limit', unstructured: 'Long prose, hard for the bot to scan', 'index-full': 'The index is nearly full' } as const)[issue.kind];
     // "Still true" only where nothing suggests it changed; otherwise the page opens for the owner to look.
     const held = overview.confirmHeldBack?.includes(page) ?? false;
     const stale: ReviewSuggestion | undefined = issue.kind === 'stale' && !held ? { id: `confirm:${page}`, kind: 'confirm', page, title: title(page), why } : undefined;
+    // A pair's id is made from both its lines, so settling one never hides another pair on the same page.
     return [{
-      id: `${issue.kind}:${issue.pages.join(',')}`, title: page === 'index.md' ? 'Knowledge index' : andJoin(issue.pages.map(title)), why, lines: issue.detail ?? [],
-      pages: issue.pages, action: stale ? 'Still true' : issue.kind === 'conflict' || issue.kind === 'duplicate' ? 'Settle' : 'Open', ...(stale ? { suggestion: stale } : {}),
-      ...(issue.kind === 'conflict' && issue.facts?.length === 2 ? { keep: issue.facts, why: versus(issue.facts[0]!.text, issue.facts[1]!.text) } : {}),
+      id: `${issue.kind}:${issue.pair?.id ?? issue.pages.join(',')}`, title: page === 'index.md' ? 'Knowledge index' : andJoin(issue.pages.map(title)), why, lines: issue.detail ?? [],
+      pages: issue.pages, action: stale ? 'Still true' : 'Open', ...(stale ? { suggestion: stale } : {}),
+      ...(issue.pair ? { pair: issue.pair, ...(issue.kind === 'conflict' ? { why: versus(issue.pair.older.plain, issue.pair.newer.plain) } : {}) } : {}),
       ...(issue.kind === 'stale' && held ? { why: `${why}, and a newer page on its topic may have changed it` } : {}),
     }];
   });
@@ -249,17 +247,33 @@ export const groupFixes = (items: readonly FixItem[]): FixItem[] => {
   return out;
 };
 
-/** To do's count in words for the stat tile, adding up to its number: "3 proposals · 1 conflict · 19 to confirm". */
-export const todoSummary = (items: readonly FixItem[]): string => {
-  const count = (test: (item: FixItem) => boolean): number => items.filter(test).length;
-  const proposals = count((item) => item.id.startsWith('proposal:'));
-  const drafts = count((item) => item.id.startsWith('draft:'));
-  const conflicts = count((item) => ['conflict', 'duplicate', 'replace'].includes(fixKind(item)));
-  const rest = items.length - proposals - drafts - conflicts;
-  return [
-    proposals && `${proposals} proposal${proposals === 1 ? '' : 's'}`,
-    conflicts && `${conflicts} conflict${conflicts === 1 ? '' : 's'}`,
-    drafts && `${drafts} to confirm`,
-    rest && `${rest} other`,
-  ].filter(Boolean).join(' · ') || 'Nothing to do';
+/** Jobs that can wait: a page to split, prose to bullet, two pages to merge, a page the index misses. */
+const TIDY = new Set(['long', 'unstructured', 'overlap', 'unindexed']);
+
+export interface NeedsYou {
+  /** Everything else, one row each, in To do's order: review fixes, proposals, pages to confirm… */
+  items: FixItem[];
+  /** Repeated rules, by page: one row in all. */
+  repeats: PairGroup[];
+  /** Rules that disagree, one row per page. */
+  disagree: PairGroup[];
+  /** What can wait ("N pages to tidy"), one row in all. */
+  tidy: FixItem[];
+  /** The rows the owner sees, which is what Needs you counts: all repeats are one, and so is Tidy up. */
+  rows: number;
+}
+
+/** To do as Needs you shows it: a row per disagreement, one for every repeat, one for what can wait. */
+export const needsYou = (items: readonly FixItem[]): NeedsYou => {
+  const pairs = items.flatMap((item): PairIssue[] => {
+    const kind = fixKind(item);
+    if (!item.pair) return [];
+    return kind === 'conflict' || kind === 'duplicate' ? [{ kind, pages: item.pages, pair: item.pair }] : [];
+  });
+  const { repeats, disagree } = groupPairs(pairs);
+  const rest = items.filter((item) => !(item.pair && (fixKind(item) === 'conflict' || fixKind(item) === 'duplicate')));
+  const tidy = rest.filter((item) => TIDY.has(fixKind(item)));
+  const others = groupFixes(rest.filter((item) => !TIDY.has(fixKind(item))));
+  // Repeats are one row however many pages have them, and so is what can wait.
+  return { items: others, repeats, disagree, tidy, rows: others.length + disagree.length + (repeats.length > 0 ? 1 : 0) + (tidy.length > 0 ? 1 : 0) };
 };
