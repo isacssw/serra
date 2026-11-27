@@ -34,7 +34,8 @@ const Tabs = ({ active, drafts, onSelect }: { active: BriefDocument; drafts: Dra
         )}
       >
         {document.label}
-        {isDirty(drafts[document.id]) && <span className="size-1.5 rounded-full bg-warn" aria-label="unsaved changes" />}
+        {/* The dot's space is kept when clean, so the segments don't shift as you type. */}
+        <span className={cx('size-1.5 rounded-full bg-warn', !isDirty(drafts[document.id]) && 'invisible')} {...(isDirty(drafts[document.id]) ? { 'aria-label': 'unsaved changes' } : { 'aria-hidden': true })} />
       </button>
     ))}
   </div>

@@ -4,7 +4,7 @@
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { useNavigate } from 'react-router';
 import {
-  BrushCleaning, CircleCheck, CirclePause, GitPullRequest, Hash, Layers, LoaderCircle, MessageSquareText, Radio, ListChecks, Play,
+  BrushCleaning, CheckCheck, CircleCheck, CirclePause, GitPullRequest, Hash, Layers, LoaderCircle, MessageSquareText, Radio, ListChecks, Play,
   Plus, RefreshCw,
 } from 'lucide-react';
 import { useSearchParams } from 'react-router';
@@ -123,10 +123,10 @@ const JobRowView = ({ job, icon, now, onError, onTranscript, focused = false }: 
           )}
         </p>
       </div>
-      {pill && <Badge tone={pill.tone} className="shrink-0">{pill.label}</Badge>}
-      {/* Only the links the job has, right-aligned in a fixed slot so the pills line up row to row. */}
-      <div className="flex w-[5.75rem] shrink-0 items-center justify-end gap-0.5">
-        {linkButtons(job).filter((link) => link.url || link.transcript).map((link) => (
+      <span className="flex w-32 shrink-0 justify-end">{pill && <Badge tone={pill.tone}>{pill.label}</Badge>}</span>
+      {/* One fixed slot per link kind, so an icon always lands in the same column; a link the job lacks leaves its slot empty. */}
+      <div className="flex shrink-0 items-center gap-0.5">
+        {linkButtons(job).map((link) => (link.url || link.transcript ? (
           <Button
             key={link.kind}
             variant="ghost"
@@ -137,7 +137,7 @@ const JobRowView = ({ job, icon, now, onError, onTranscript, focused = false }: 
             aria-label={`${link.label}: ${link.hint}`}
             onClick={() => { if (link.transcript) onTranscript(link.transcript, job.title); else if (link.url) open(link.url, onError); }}
           />
-        ))}
+        ) : <span key={link.kind} aria-hidden className="w-7" />))}
       </div>
     </li>
   );
@@ -220,7 +220,7 @@ const ChannelFilter = ({ options, value, onChange }: { options: { value: string;
 const EMPTY_STATES: Record<JobGroup, { icon: ReactNode; title: string; start: boolean }> = {
   'needs you': { icon: <CircleCheck size={18} strokeWidth={1.75} className="text-up" />, title: "You're all caught up", start: false },
   running: { icon: <Play size={18} strokeWidth={1.75} />, title: 'Nothing running', start: true },
-  done: { icon: <GitPullRequest size={18} strokeWidth={1.75} />, title: 'Nothing finished today', start: true },
+  done: { icon: <CheckCheck size={18} strokeWidth={1.75} />, title: 'Nothing finished today', start: true },
 };
 
 /** A quiet empty state: a hairline panel, not the dashed drop-zone look. */
@@ -240,7 +240,7 @@ const JobTabs = ({ sections, group, onPick }: { sections: JobSection[]; group: J
     if (next) onPick(next.group, true);
   };
   return (
-    <div role="tablist" aria-label="Jobs by state" onKeyDown={onKeyDown} className="flex items-center gap-1 overflow-x-auto overflow-y-hidden [scrollbar-width:none] shadow-[inset_0_-1px_0_var(--color-line)]">
+    <div role="tablist" aria-label="Jobs by state" onKeyDown={onKeyDown} className="flex items-center gap-0.5 rounded-lg border border-line-subtle bg-raised p-0.5">
       {sections.map((section) => {
         const selected = section.group === group;
         const urgent = section.group === 'needs you' && section.rows.length > 0;
@@ -255,15 +255,15 @@ const JobTabs = ({ sections, group, onPick }: { sections: JobSection[]; group: J
             tabIndex={selected ? 0 : -1}
             onClick={() => onPick(section.group, false)}
             className={cx(
-              'flex h-9 shrink-0 items-center gap-1.5 rounded-t-md border-b-2 px-2 text-[13px] whitespace-nowrap transition-colors duration-150',
-              'focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-focus',
-              selected ? 'border-ink font-medium text-ink' : 'border-transparent text-muted hover:text-ink',
+              'flex h-7 shrink-0 items-center gap-1.5 rounded-md border px-2.5 text-[13px] whitespace-nowrap transition-colors duration-150',
+              'focus-visible:outline-2 focus-visible:-outline-offset-1 focus-visible:outline-focus',
+              selected ? 'border-line-strong bg-overlay font-medium text-ink shadow-field' : 'border-transparent text-muted hover:text-ink',
             )}
           >
             {section.title}
             <span
               aria-label={`${section.rows.length} ${section.rows.length === 1 ? 'job' : 'jobs'}`}
-              className={cx('min-w-5 rounded-full px-1.5 text-center text-[11px] leading-[18px] tabular-nums', urgent ? 'bg-warn/15 font-semibold text-warn' : 'bg-raised text-muted')}
+              className={cx('min-w-4 text-center text-xs tabular-nums', urgent ? 'font-semibold text-warn' : 'text-faint')}
             >
               {section.rows.length}
             </span>
@@ -357,6 +357,7 @@ export const Jobs = ({ group }: { group: JobGroup }) => {
     <div data-screen-label="Jobs">
       <Page
         title="Jobs"
+        titleAside={ready ? <JobTabs sections={sections} group={group} onPick={pick} /> : undefined}
         actions={(
           <>
             <ChannelFilter
@@ -383,7 +384,6 @@ export const Jobs = ({ group }: { group: JobGroup }) => {
         )}
         {ready && (
           <div className="flex flex-col gap-4">
-            <JobTabs sections={sections} group={group} onPick={pick} />
             <div
               id="jobs-panel"
               role="tabpanel"

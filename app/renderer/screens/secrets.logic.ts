@@ -107,7 +107,7 @@ const SLACK_CODES: Record<string, string> = {
 export const statusPill = (status: SecretStatus, now: Date): { tone: StatusTone; label: string; detail: string } => {
   if (status.error) {
     const rejected = /^Slack rejected \w+: (.+)$/.exec(status.error);
-    if (rejected) return { tone: 'error', label: 'Rejected by Slack', detail: SLACK_CODES[rejected[1]!] ?? rejected[1]! };
+    if (rejected) return { tone: 'error', label: SLACK_CODES[rejected[1]!] ?? 'Rejected by Slack', detail: 'Rejected by Slack' };
     if (status.error.startsWith('Couldn’t reach Slack') || status.error.startsWith("Couldn't reach Slack")) return { tone: 'error', label: 'Slack unreachable', detail: status.error };
     return { tone: 'error', label: 'Check failed', detail: status.error };
   }

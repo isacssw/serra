@@ -224,7 +224,7 @@ test('draft and dirty: a draft never starts with a value, and only real changes 
 });
 
 test('status pill: 1-3 words, with the detail kept for the meta line and tooltip', () => {
-  assert.deepEqual(statusPill(status({ error: 'Slack rejected SLACK_BOT_TOKEN: invalid_auth' }), NOW), { tone: 'error', label: 'Rejected by Slack', detail: 'Token invalid' });
+  assert.deepEqual(statusPill(status({ error: 'Slack rejected SLACK_BOT_TOKEN: invalid_auth' }), NOW), { tone: 'error', label: 'Token invalid', detail: 'Rejected by Slack' });
   assert.equal(statusPill(status({ error: "Couldn't reach Slack: offline" }), NOW).label, 'Slack unreachable');
   assert.equal(statusPill(status({ error: 'op: not signed in' }), NOW).label, 'Check failed');
   assert.deepEqual(statusPill(status({ set: false }), NOW), { tone: 'unset', label: 'Not set', detail: 'Not in the profile .env' });

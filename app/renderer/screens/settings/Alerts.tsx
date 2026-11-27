@@ -52,7 +52,7 @@ const Triggers = ({ profile, state }: { profile: Profile; state: SettingsState }
           <EmptyState
             icon={<Bell size={18} strokeWidth={1.75} />}
             title="No alerts yet"
-            className="border-solid border-line bg-transparent"
+            className="border-none bg-transparent py-20"
             action={<Button variant="primary" size="sm" icon={<Plus size={14} />} onClick={() => open(null)}>Add alert</Button>}
           />
         )
@@ -70,7 +70,7 @@ const Triggers = ({ profile, state }: { profile: Profile; state: SettingsState }
                       <p className="flex min-w-0 items-center gap-2 text-[13px]">
                         <span className="truncate font-mono font-medium text-ink">{row.channel || 'No channel'}</span>
                         <span className="shrink-0 text-faint">·</span>
-                        <span className="truncate text-muted">{summary.source}</span>
+                        <span className="truncate font-mono text-xs text-muted">{summary.source}</span>
                         {edited && <Badge tone={invalid ? 'down' : 'warn'}>{invalid ? 'Fix' : 'Edited'}</Badge>}
                       </p>
                       <p className="truncate text-xs text-faint" title={row.instructions}>{summary.instructions}</p>

@@ -384,13 +384,13 @@ export const FieldsCard = ({ form, profile, state, title, description, columns =
   title?: string;
   /** Overrides the form's own description. */
   description?: ReactNode;
-  columns?: 1 | 2;
+  columns?: 1 | 2 | 3;
 }) => {
   const editor = useSectionForm(form, profile, state);
   return (
     <form onSubmit={(event) => { event.preventDefault(); }}>
       <SettingsSection title={title ?? sectionTitles[form.section]} description={description ?? (form.description || undefined)}>
-        <div className={cx('grid gap-4', columns === 2 && 'sm:grid-cols-2')}>
+        <div className={cx('grid gap-4', columns === 2 && 'sm:grid-cols-2', columns === 3 && 'sm:grid-cols-3')}>
           {form.fields.map((field) => {
             const props = editor.field(field.key);
             return field.multiline

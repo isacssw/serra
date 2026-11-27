@@ -217,8 +217,8 @@ const SecretRow = ({ status, now, onSaved, onChecked }: CardProps) => {
             <span data-secret-status={pill.tone}>{pill.label}</span>
           </Badge>
         </p>
-        <p className={cx('truncate text-xs', pill.tone === 'error' ? 'text-down' : 'text-faint')} title={status.error ?? pill.detail}>
-          {status.set && <span aria-hidden className="mr-1.5 tracking-[0.2em] text-faint">••••</span>}{pill.detail}
+        <p className="truncate text-xs text-faint" title={status.error ?? pill.detail}>
+          {status.set && <span aria-hidden className="mr-1.5 tracking-[0.2em]">••••</span>}{SOURCE_OPTIONS.find((option) => option.kind === status.source.kind)?.label} · {pill.detail}
         </p>
       </div>
       <div className="flex shrink-0 items-center gap-2">

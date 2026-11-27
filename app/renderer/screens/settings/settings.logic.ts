@@ -287,7 +287,7 @@ export const t3BinForm: SectionForm<'t3Bin'> = {
 
 export const updatesForm: SectionForm<'updates'> = {
   section: 'updates',
-  description: 'For developing Serra. Empty: GitHub Releases.',
+  description: 'Only for Serra development.',
   fields: [
     { key: 'source', label: 'Checkout path', placeholder: '/Users/you/git/serra', mono: true },
     { key: 'ref', label: 'Branch', placeholder: 'origin/main', mono: true },

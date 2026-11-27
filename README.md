@@ -29,7 +29,7 @@ Needs [T3 Code](https://github.com/pingdotgg/t3code) running, Node 24+ (or 22.18
 
 Serra is a bridge between your team chat and the coding agents on your Mac. It connects a chat bot to [T3 Code](https://github.com/pingdotgg/t3code), so the agent you already use there (Claude, Codex, …) can take requests from chat. When someone mentions the bot or sends it a DM, Serra starts a T3 thread in a fresh Git worktree of your repository. The agent does the work there (answers a question, fixes a bug, opens a draft PR) and its reply goes back to the chat thread.
 
-T3 is the default. You can run everything on an agent that speaks the [Agent Client Protocol](https://agentclientprotocol.com) instead (Claude Code, Codex, OpenCode, Gemini CLI, or one you add): Settings › Worker › **Agent backend**. See [docs/agent-backends.md](docs/agent-backends.md).
+T3 is the default. You can run everything on an agent that speaks the [Agent Client Protocol](https://agentclientprotocol.com) instead (Claude Code, Codex, OpenCode, Gemini CLI, or one you add): Settings › Worker › **Agent**. See [docs/agent-backends.md](docs/agent-backends.md).
 
 Slack is the only chat channel in this alpha; others are planned. Each engineer runs their own bot: their own Slack app, their own Mac, their own GitHub login.
 

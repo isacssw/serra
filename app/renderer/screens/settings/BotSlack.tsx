@@ -32,7 +32,7 @@ const BotSection = ({ profile, state }: { profile: Profile; state: SettingsState
         {/* Read-only on purpose: shown as a value, not a field, with Edit… opening the dialog that warns. */}
         <div className="flex min-w-0 flex-col gap-1.5">
           <span className={labelClass}>{idField.label}</span>
-          <div className="flex h-8 items-center gap-2">
+          <div className="flex h-8 items-center gap-2 rounded-lg bg-raised pr-0.5 pl-2.5">
             <span className={cx('min-w-0 flex-1 truncate font-mono text-[13px]', idField.error ? 'text-down' : 'text-ink')}>{id}</span>
             <Button variant="ghost" size="sm" icon={<Pencil size={13} />} onClick={open} aria-label="Edit bot ID">Edit…</Button>
           </div>
@@ -44,7 +44,7 @@ const BotSection = ({ profile, state }: { profile: Profile; state: SettingsState
         open={editing}
         onClose={() => setEditing(false)}
         title="Change bot ID"
-        description="Also renames the service and job branches. Needs a new release."
+        description="Renames the service and branches. Needs a new release."
         actions={(
           <>
             <Button variant="ghost" onClick={() => setEditing(false)}>Cancel</Button>
@@ -78,7 +78,7 @@ export const BotSlack = () => {
       {(profile) => (
         <>
           <BotSection profile={profile} state={state} />
-          <FieldsCard form={ownerForm} profile={profile} state={state} />
+          <FieldsCard form={ownerForm} profile={profile} state={state} columns={3} />
           <FieldsCard form={reviewForm} profile={profile} state={state} title="Review" />
           <Advanced summary="Service label">
             <FieldsCard form={serviceLabelForm} profile={profile} state={state} columns={1} />
