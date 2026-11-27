@@ -7,7 +7,8 @@ import { diagnosticsHandlers, MAX_LOG_LINES } from '../app/main/ipc/diagnostics.
 import type { HandlerContext } from '../app/main/ipc/context.ts';
 import { memoryPrefs } from '../app/main/prefs.ts';
 import { stoppedStatusSource } from '../app/main/status.ts';
-import { explainFailure, orderChecks, passValue, sharedCauses, reportText, runtimeLine, statusKey, summarize, tildePaths } from '../app/renderer/screens/diagnostics.logic.ts';
+import { explainFailure, orderChecks, passValue, sharedCauses, reportText, runtimeLine, statusKey, summarize } from '../app/renderer/screens/diagnostics.logic.ts';
+import { tildePaths } from '../src/lib/tilde.ts';
 import { loadConfig, type Config, type Profile } from '../src/config.ts';
 import type { Diagnostic } from '../src/contracts.ts';
 import { diagnose, type DiagnoseOptions } from '../src/doctor.ts';
@@ -220,15 +221,27 @@ test('paths under the home folder read as ~, and nothing else changes', () => {
   assert.equal(tildePaths('/x', '/'), '/x');
 });
 
-test('the runtime line is one short line, and the report hides the home folder too', () => {
+test('the runtime line is one short line, and the copied report keeps the checks and log as main sent them', () => {
   assert.equal(runtimeLine({ version: '0.1.0', electron: '45.4.1', node: '24.22.3' }), 'App 0.1.0 · Electron 45.4.1 · bundled Node 24.22.3');
   const text = reportText({
-    results: [{ name: 'Node', ok: true, detail: '24.1.0 (/Users/you/.nvm/bin/node)' }], checkedAt: null,
-    info: { version: '0.1.0', electron: '45.4.1', node: '24.22.3', platform: 'darwin', home: '/Users/you' }, log: ['read /Users/you/x'],
+    results: [{ name: 'Node', ok: true, detail: '24.1.0 (~/.nvm/bin/node)' }], checkedAt: null,
+    info: { version: '0.1.0', electron: '45.4.1', node: '24.22.3', platform: 'darwin' }, log: ['read ~/x'],
   });
-  assert.ok(!text.includes('/Users/you'), text);
-  assert.match(text, /~\/\.nvm\/bin\/node/);
+  assert.match(text, /PASS Node: 24\.1\.0 \(~\/\.nvm\/bin\/node\)/);
   assert.match(text, /read ~\/x/);
+});
+
+test('main shows the home folder as ~ in every check and log line, so the window never sees it', async (t) => {
+  const dir = tempProfile(t);
+  mkdirSync(join(dir, 'logs'), { recursive: true });
+  writeFileSync(join(dir, 'logs', 'bot.log'), 'started in /Users/you/project\n');
+  const handlers = diagnosticsHandlers(context(dir), {
+    home: '/Users/you',
+    findNode: async () => '/Users/you/.nvm/bin/node',
+    diagnose: async (_config: Config, options: DiagnoseOptions) => [{ name: 'Node', ok: true, detail: `24.1.0 (${await options.nodeBinary!()})` }],
+  });
+  assert.deepEqual(await handlers.run(), [{ name: 'Node', ok: true, detail: '24.1.0 (~/.nvm/bin/node)' }]);
+  assert.deepEqual(handlers.logTail(10), ['started in ~/project']);
 });
 
 test('a failing check reads as a reason first, with the raw output kept for Details', () => {

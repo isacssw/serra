@@ -11,7 +11,7 @@ import { useBotStatus } from '../shell/live.ts';
 import { Button, cx, Page, Select, useToast } from '../ui/index.ts';
 import { SETUP_PATH } from '../setup/setup.logic.ts';
 import {
-  DEFAULT_LOG_LINES, explainFailure, LOG_LINE_CHOICES, orderChecks, passValue, reportText, runtimeLine, sharedCauses, statusKey, summarize, tildePaths,
+  DEFAULT_LOG_LINES, explainFailure, LOG_LINE_CHOICES, orderChecks, passValue, reportText, runtimeLine, sharedCauses, statusKey, summarize,
 } from './diagnostics.logic.ts';
 
 const errorText = (error: unknown): string => (error instanceof Error ? error.message : String(error));
@@ -26,8 +26,8 @@ const Inline = ({ text, path = 'text-ink' }: { text: string; path?: string }) =>
 );
 
 /** One check: a passing one is a quiet line, a failing one leads with its name and keeps the reason readable. */
-const CheckRow = ({ result, home, sameAs, onOpen }: { result: Diagnostic; home: string | undefined; sameAs?: string; onOpen: (path: string) => void }) => {
-  const detail = tildePaths(result.detail, home);
+const CheckRow = ({ result, sameAs, onOpen }: { result: Diagnostic; sameAs?: string; onOpen: (path: string) => void }) => {
+  const detail = result.detail;
   const failure = result.ok ? null : sameAs ? { reason: `Same cause as ${sameAs}`, raw: null } : explainFailure(detail);
   const value = passValue(detail);
   const [open, setOpen] = useState(false);
@@ -213,7 +213,7 @@ export const Diagnostics = () => {
           </header>
           <ul className="flex flex-col divide-y divide-line-subtle">
             {orderChecks(checks.results).map((result) => (
-              <CheckRow key={result.name} result={result} home={info?.home} sameAs={shared.get(result.name)} onOpen={(path) => void navigate(path)} />
+              <CheckRow key={result.name} result={result} sameAs={shared.get(result.name)} onOpen={(path) => void navigate(path)} />
             ))}
           </ul>
           {info && <p className="border-t border-line-subtle px-4 py-2.5 text-xs text-faint tabular-nums" data-app-runtime>{runtimeLine(info)}</p>}
@@ -245,7 +245,7 @@ export const Diagnostics = () => {
         )}
         {tail.log && tail.log.length > 0 && (
           <pre ref={logBox} tabIndex={0} aria-label="Log lines" className="max-h-96 overflow-auto rounded-xl border border-line bg-field px-4 py-3 font-mono text-xs leading-relaxed whitespace-pre-wrap break-all text-muted focus-visible:outline-2 focus-visible:outline-focus" data-log-tail>
-            {tildePaths(tail.log.join('\n'), info?.home)}
+            {tail.log.join('\n')}
           </pre>
         )}
       </section>

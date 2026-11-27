@@ -3,6 +3,7 @@
 // Inside the app `process.versions.node` is Electron's bundled Node, so the Node check runs the Node binary the
 // bot's release uses (`findNode`) instead. Every detail and log line is scrubbed of the profile's token values and
 // anything shaped like a Slack token before it reaches the window.
+import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { loadConfig, type Config } from '../../../src/config.ts';
 import type { Diagnostic } from '../../../src/contracts.ts';
@@ -10,6 +11,7 @@ import { diagnose, type DiagnoseOptions } from '../../../src/doctor.ts';
 import { tailLog } from '../../../src/logging.ts';
 import { findNode } from '../../../src/releases.ts';
 import { scrub } from '../../../src/secrets.ts';
+import { tildePaths } from '../../../src/lib/tilde.ts';
 import type { Handlers } from '../bridge.ts';
 import type { HandlerContext } from './context.ts';
 
@@ -23,6 +25,8 @@ export interface DiagnosticsHandlerOptions {
   loadConfig?: (profileDir: string) => Config;
   diagnose?: (config: Config, options: DiagnoseOptions) => Promise<Diagnostic[]>;
   findNode?: (profileDir: string) => Promise<string>;
+  /** The home folder shown as `~` in every detail and log line. */
+  home?: string;
 }
 
 const errorText = (error: unknown): string => (error instanceof Error ? error.message : String(error));
@@ -42,6 +46,7 @@ export const diagnosticsHandlers = (context: HandlerContext, options: Diagnostic
   const load = options.loadConfig ?? ((profileDir: string) => loadConfig({ profileDir, env: {} }));
   const check = options.diagnose ?? diagnose;
   const locateNode = options.findNode ?? findNode;
+  const home = options.home ?? homedir();
   return {
     run: async () => {
       const profileDir = context.profileDir();
@@ -54,7 +59,7 @@ export const diagnosticsHandlers = (context: HandlerContext, options: Diagnostic
       catch (error) { throw new Error(scrub(errorText(error), tokenValues(config))); }
       const values = tokenValues(config);
       // Copy only the contract's fields, scrubbed.
-      return results.map((result) => ({ name: String(result.name), ok: result.ok === true, detail: scrub(String(result.detail), values) }));
+      return results.map((result) => ({ name: String(result.name), ok: result.ok === true, detail: tildePaths(scrub(String(result.detail), values), home) }));
     },
 
     logTail: (lines) => {
@@ -62,7 +67,7 @@ export const diagnosticsHandlers = (context: HandlerContext, options: Diagnostic
         throw new Error(`Ask for 1 to ${MAX_LOG_LINES} log lines.`);
       }
       return tailLog(daemonLogPath(context.profileDir()), lines)
-        .map((line) => scrub(line.length > MAX_LINE_LENGTH ? `${line.slice(0, MAX_LINE_LENGTH)}…` : line));
+        .map((line) => tildePaths(scrub(line.length > MAX_LINE_LENGTH ? `${line.slice(0, MAX_LINE_LENGTH)}…` : line), home));
     },
   };
 };

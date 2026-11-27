@@ -156,7 +156,7 @@ const start = async (): Promise<void> => {
     },
     prefs,
     status,
-    runtime: { version: app.getVersion(), electron: process.versions.electron ?? '', node: process.versions.node, platform: process.platform, home: homedir() },
+    runtime: { version: app.getVersion(), electron: process.versions.electron ?? '', node: process.versions.node, platform: process.platform },
     openExternal: (url) => shell.openExternal(url),
     openPath: async (path) => {
       const error = await shell.openPath(path);

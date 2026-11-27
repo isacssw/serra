@@ -37,14 +37,6 @@ export const runtimeLine = (info: Pick<AppInfo, 'version' | 'electron' | 'node'>
 /** Failing checks first, so the ones to fix are on the first screen; otherwise the order `diagnose()` gave. */
 export const orderChecks = (results: Diagnostic[]): Diagnostic[] => [...results.filter((result) => !result.ok), ...results.filter((result) => result.ok)];
 
-/** Paths under the home folder as `~/…`: shorter, and a pasted report doesn't carry the account name. */
-export const tildePaths = (text: string, home: string | undefined): string => {
-  const root = home?.replace(/\/+$/, '');
-  if (!root || root === '/' || !text.includes(root)) return text;
-  const escaped = root.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  return text.replace(new RegExp(`${escaped}(?![\\w.-])`, 'g'), '~');
-};
-
 /**
  * A passing check's detail as a short value: "24.1.0 · /opt/homebrew/bin/node", "Configured", "Writable". Only the
  * first clause of a "this; that" detail stays; the copied report keeps the whole of it.
@@ -100,13 +92,13 @@ export const sharedCauses = (failing: readonly Diagnostic[]): Map<string, string
 export const reportText = ({ results, checkedAt, info, log }: {
   results: Diagnostic[];
   checkedAt: Date | null;
-  info: Pick<AppInfo, 'version' | 'electron' | 'node' | 'platform' | 'home'> | null;
+  info: Pick<AppInfo, 'version' | 'electron' | 'node' | 'platform'> | null;
   log: string[];
-}): string => tildePaths([
+}): string => [
   `Serra diagnostics${checkedAt ? ` (${checkedAt.toISOString()})` : ''}`,
   ...(info ? [`App: Serra ${info.version}, Electron ${info.electron} (bundled Node ${info.node}), ${info.platform}`] : []),
   '',
   summarize(results).text,
   ...results.map((result) => `${result.ok ? 'PASS' : 'FAIL'} ${result.name}: ${result.detail}`),
   ...(log.length ? ['', `Last ${log.length} log line${log.length === 1 ? '' : 's'}:`, ...log] : []),
-].join('\n'), info?.home);
+].join('\n');

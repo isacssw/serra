@@ -214,7 +214,7 @@ const ProviderGroup = ({ group, onError }: { group: DriverGroup; onError: (messa
           {group.title} <span className="font-normal text-muted">· {group.summary}</span>
         </h3>
         {group.hint && (
-          <Button size="sm" variant="ghost" className="-mr-2.5" icon={<ExternalLink size={13} aria-hidden />} aria-label={`${group.title} MCP docs`} onClick={() => openDocs(group.hint!.docs, onError)}>Docs</Button>
+          <Button size="sm" variant="ghost" icon={<ExternalLink size={13} aria-hidden />} aria-label={`${group.title} MCP docs`} onClick={() => openDocs(group.hint!.docs, onError)}>Docs</Button>
         )}
       </div>
       {group.listingNote && <p className="flex items-center gap-2 text-xs text-warn"><TriangleAlert size={13} aria-hidden /> {group.listingNote}</p>}
