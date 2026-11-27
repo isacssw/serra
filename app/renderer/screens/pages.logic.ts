@@ -145,14 +145,24 @@ export const keepRule = (text: string, drop: string, date: string): string => {
     return !replaced && line.trim().replace(/^([-*]|\d+\.)\s+/, '').trim() === drop.trim();
   });
   if (at === -1) return text;
+  // A bullet with sub-bullets can't move alone: they would end up under the bullet above. The page opens instead.
+  const indent = (line: string): number => /^\s*/.exec(line)![0].length;
+  const next = lines[at + 1];
+  if (next !== undefined && /^\s*([-*]|\d+\.)\s/.test(next) && indent(next) > indent(lines[at]!)) return text;
   lines.splice(at, 1);
-  const body = lines.join('\n').trimEnd();
   const entry = `- Until ${date}: ${drop.trim()}`;
-  // The heading may be the page's last line, with nothing under it yet: the entry still goes under it.
-  return /^##\s+Replaced\b/im.test(body)
-    // A function, not a replacement string: a rule like "Refunds over $100" must not be read as `$1`.
-    ? `${body.replace(/^(##\s+Replaced\b[^\n]*)(?:\n\n?|$)/im, (_all, head: string) => `${head}\n\n${entry}\n`).trimEnd()}\n`
-    : `${body}\n\n## Replaced\n\n${entry}\n`;
+  // The page's own "Replaced" heading, never one shown in a code block or the header.
+  let [inHeader, inFence] = [lines[0] === '---', false];
+  const heading = lines.findIndex((line, index) => {
+    if (inHeader) { if (index > 0 && line === '---') inHeader = false; return false; }
+    if (/^\s*```/.test(line)) { inFence = !inFence; return false; }
+    return !inFence && /^##\s+Replaced\b/i.test(line);
+  });
+  if (heading === -1) return `${lines.join('\n').trimEnd()}\n\n## Replaced\n\n${entry}\n`;
+  // Under the heading, newest first; the heading may be the page's last line, with nothing under it yet.
+  const rest = lines.slice(heading + 1);
+  while (rest.length > 0 && rest[0]!.trim() === '') rest.shift();
+  return `${[...lines.slice(0, heading + 1), '', entry, ...rest].join('\n').trimEnd()}\n`;
 };
 
 /** The page's current rules, one per line, without its header or anything under `## Replaced`. */

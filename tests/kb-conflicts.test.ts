@@ -574,3 +574,42 @@ test('the worker brief never orders a deadline or a year-less note against a dat
   assert.match(brief, /can't tell which is newer/);
   assert.doesNotMatch(brief, /Current: /);
 });
+
+test('a bullet with sub-bullets never moves alone, and an everyday last word ("log in", "ends") is not a deadline', () => {
+  const text = '---\ntype: rule\n---\n- Post the changelog in #eng after each deploy (2026-11-10)\n- Deploy payments on Tuesday with a second reviewer (2026-11-16)\n  - Run the payments migrations first\n  - Page Ana if a check fails\n- Deploy payments on Tuesday with a second reviewer and a rollback plan (2026-11-17)\n';
+  const pairs = pairsOf([{ path: 'a.md', text }]);
+  assert.ok(pairs.every((issue) => !isSafe(issue.pair)), 'not in a bulk keep');
+  assert.equal(keepRule(text, 'Deploy payments on Tuesday with a second reviewer (2026-11-16)', '2026-11-27'), text, 'a click opens the page instead');
+  const kinds = (older: string, newer: string) => pairsOf([{ path: 'b.md', text: `---\ntype: rule\n---\n- ${older}\n- ${newer}\n` }]).map((issue) => issue.kind);
+  assert.deepEqual(kinds('Always use SSO when you log in (2026-11-16)', 'Always use SSO when you log in (2026-11-20)'), ['duplicate']);
+  assert.deepEqual(kinds('Hold a short retro whenever the sprint ends (2026-11-16)', 'Hold a short retro whenever the sprint ends (2026-11-20)'), ['duplicate']);
+});
+
+test('a note dated the owner\'s today, a day ahead of UTC, is still when it was learned, and newer', () => {
+  const pairs = pairsOf([{ path: 'a.md', text: '---\ntype: rule\n---\n- Release notes go to the #releases channel (2026-11-20)\n- Release notes go to the #releases channel and the blog (2026-11-28)\n' }]);
+  assert.equal(pairs.length, 1);
+  assert.equal(pairs[0]!.pair.newer.learned, '2026-11-28');
+  assert.equal(pairs[0]!.pair.order, 'date');
+});
+
+test('"Keep newer for all" only takes a newer line that adds plain words: no added "not", sign, number or "unless"', () => {
+  const safe = (older: string, newer: string): boolean => pairsOf([{ path: 'a.md', text: `---\ntype: rule\n---\n- ${older}\n- ${newer}\n` }]).some((issue) => isSafe(issue.pair));
+  for (const [older, newer] of [
+    ['Do not retry webhooks when the payload is valid (2026-11-16)', 'Do not retry webhooks when the payload is not valid (2026-11-17)'],
+    ['Issue no refunds when a receipt is provided (2026-11-16)', 'Issue no refunds when no receipt is provided (2026-11-17)'],
+    ['Keep retry backoff at 10 seconds for payouts (2026-11-16)', 'Keep retry backoff at > 10 seconds for payouts (2026-11-17)'],
+    ['Allow score 5 for beta merchants (2026-11-16)', 'Allow score -5 for beta merchants (2026-11-17)'],
+    ['Never deploy payouts service changes on Friday (2026-11-16)', 'Never deploy payouts service changes on Friday unless approved (2026-11-17)'],
+    ['Ship the payouts migration by (2026-11-20).', 'Ship the payouts migration by (2026-11-25).'],
+    ['Payouts migration deadline: (2026-11-20)', 'Payouts migration deadline: (2026-11-25)'],
+  ] as [string, string][]) assert.equal(safe(older, newer), false, `${older} / ${newer}`);
+  // Plain added words are still a safe restatement.
+  assert.equal(safe('Open every PR as a draft and link the Linear issue (2026-11-16)', 'Open every PR as a draft, link the Linear issue and attach proof (2026-11-18)'), true);
+  assert.equal(ruleText('The Q4 review (2026-11-16) covers billing (2026-11-16)'), 'The Q4 review (2026-11-16) covers billing', 'only the end note goes');
+});
+
+test('Keep writes under the page\'s own "## Replaced", never one shown in a code block', () => {
+  const text = '---\ntype: rule\n---\n- Ship on Tuesday.\n- Ship on Thursday now.\n\n```\n## Replaced\n```\n';
+  const kept = keepRule(text, 'Ship on Tuesday.', '2026-11-25');
+  assert.match(kept, /```\n## Replaced\n```\n\n## Replaced\n\n- Until 2026-11-25: Ship on Tuesday\.\n$/);
+});
