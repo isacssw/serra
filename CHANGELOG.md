@@ -4,6 +4,8 @@ Serra follows [Semantic Versioning](https://semver.org) once it reaches 1.0. Unt
 
 ## Unreleased
 
+- Fixed: an ACP run whose turn failed (no sign-in, a usage limit, the agent gone) showed as **Done**. Jobs › Chat now shows it as **Failed** with the reason, and the job waits under **Needs you**. Codex's usage limit says so instead of “stopped with an error”.
+
 ## 0.1.0-alpha.7 (2026-11-27)
 
 - **Jobs › Chat:** a run opens as a chat, on ACP agents and T3. You see the request, the reply as it streams, tool calls folded into compact rows, permissions and how they were settled, and images in and out. Answer or follow up from the box at the bottom; T3 runs keep **Open in T3**. It replaces the Transcript window.

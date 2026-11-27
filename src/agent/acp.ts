@@ -81,6 +81,8 @@ export interface RunRecord {
   entries: TranscriptEntry[];
   /** The running turn's reply and open tools so far; null or absent when no turn is going. */
   live?: LiveTurn | null;
+  /** Why the latest turn failed, as a fixed sentence (`turnFailure`); null or absent when it didn't. */
+  failed?: string | null;
 }
 
 export interface AcpBackendOptions {
@@ -145,13 +147,19 @@ const modeFor = (modes: acp.SessionModeState, access: RunAccess): string | null 
   return modes.availableModes.find((choice) => /^(default|manual|ask)$/i.test(choice.id))?.id ?? null;
 };
 
+/** Codex's adapter names its error in `codexErrorInfo`, not `errorKind`: the ones with a sentence of their own. */
+const CODEX_ERROR_KINDS: Record<string, string> = {
+  unauthorized: 'authentication_failed', usageLimitExceeded: 'rate_limit', rateLimitExceeded: 'rate_limit', serverOverloaded: 'server_error',
+};
+
 /**
  * Why a turn failed, as a fixed sentence: the adapter's error kind or ACP's auth error, never the agent's own text
  * (it can quote the brief, which may hold a transcript).
  */
 const turnFailure = (error: unknown, name: string): string => {
   const record = typeof error === 'object' && error !== null ? (error as { code?: unknown; data?: unknown }) : {};
-  const kind = typeof record.data === 'object' && record.data !== null && 'errorKind' in record.data ? String(record.data.errorKind) : null;
+  const data = isRecord(record.data) ? record.data : {};
+  const kind = 'errorKind' in data ? String(data.errorKind) : typeof data.codexErrorInfo === 'string' ? CODEX_ERROR_KINDS[data.codexErrorInfo] ?? null : null;
   if (record.code === -32000 || kind === 'authentication_failed') return `${name} needs you to sign in. Sign in with its own CLI, then try again.`;
   if (kind === 'rate_limit') return `${name} hit its usage or rate limit. Try again later.`;
   if (kind === 'billing_error') return `${name}'s account has a billing problem. Check it in ${name}.`;
@@ -279,6 +287,7 @@ export const readRunRecord = (runsDir: string, sessionId: string): RunRecord | n
       }];
     }),
     live: liveOf(value.live),
+    failed: typeof value.failed === 'string' && value.failed ? value.failed : null,
   };
 };
 
@@ -329,7 +338,7 @@ export const createAcpBackend = ({
     if (current.saveTimer) { clearTimeout(current.saveTimer); current.saveTimer = null; }
     mkdirSync(runsDir, { recursive: true, mode: 0o700 });
     const waiting = [...current.waiting.values()].map((entry) => entry.request);
-    writeFileAtomic(recordFile(runsDir, current.sessionId), `${JSON.stringify({ ...current.record, active: current.active, waiting, live: liveTurn(current) })}\n`, { mode: 0o600 });
+    writeFileAtomic(recordFile(runsDir, current.sessionId), `${JSON.stringify({ ...current.record, active: current.active, waiting, live: liveTurn(current), failed: current.failed })}\n`, { mode: 0o600 });
   };
   /** Writes a streaming turn soon, at most every `LIVE_SAVE_MS`: a chunk at a time would write the file per word. */
   const saveSoon = (current: Session): void => {
@@ -586,7 +595,7 @@ export const createAcpBackend = ({
   };
 
   const newSession = (record: RunRecord, allowAll: boolean): Session => ({
-    sessionId: record.sessionId, record, active: null, refused: 0, waiting: new Map(), failed: null, reply: '', tools: new Map(), queue: [], cost: null, allowAll, saveTimer: null,
+    sessionId: record.sessionId, record, active: null, refused: 0, waiting: new Map(), failed: record.failed ?? null, reply: '', tools: new Map(), queue: [], cost: null, allowAll, saveTimer: null,
   });
 
   /** A run this backend follows, reopened from its record after a restart. Throws a plain sentence when it can't be. */

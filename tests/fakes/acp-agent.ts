@@ -2,7 +2,8 @@
 // test playing the model. Each prompt turn (numbered across processes) waits for the test to write `turn-<n>` in FAKE_ACP_DIR, then streams that
 // file's text as the reply. A prompt with `ASK:<kind>` first asks permission for a tool of that kind, and writes the
 // answer to `permission-<n>`. A prompt with `TOOL:<id>` records a tool call that read meeting <id>. A cancel ends the
-// running turn with `cancelled`. `FAIL:<kind>` fails the turn with that error kind. `ELICIT` asks a form question like
+// running turn with `cancelled`. `FAIL:<kind>` fails the turn with that error kind, `CODEX_ERROR=<info>` as Codex's adapter
+// does (its `codexErrorInfo`). `ELICIT` asks a form question like
 // Claude Code's AskUserQuestion and writes the answer to `elicit-<n>`. `session/load` reopens a session (writes
 // `load-<id>`). Images a prompt carries are written to `images-<n>` (their MIME types); `IMAGE_OUT` sends a PNG back.
 // `STREAM` sends part of the reply and starts a tool before the turn's text is known; the tool fails when it ends.
@@ -65,6 +66,8 @@ const app = acp.agent({ name: 'fake-acp' })
     // FAIL:<kind> fails the turn the way Claude Code's adapter does, with its error kind and raw text that quotes the brief.
     const fail = /FAIL:(\w+)/.exec(text)?.[1];
     if (fail) throw acp.RequestError.internalError({ errorKind: fail }, `SECRET-TRANSCRIPT ${text.slice(0, 40)}`);
+    const codexFail = /CODEX_ERROR=(\w+)/.exec(text)?.[1];
+    if (codexFail) throw acp.RequestError.internalError({ message: `SECRET-TRANSCRIPT ${text.slice(0, 40)}`, codexErrorInfo: codexFail });
     const ask = /ASK:(\w+)/.exec(text)?.[1];
     if (ask) {
       const answer = await client.request(acp.methods.client.session.requestPermission, {
