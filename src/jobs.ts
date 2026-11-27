@@ -142,9 +142,11 @@ const idleInT3 = (live: TaskState | null, job: Record<string, unknown>, lastActi
 };
 
 /** A task's group, from what T3 says now. Nothing to read means nothing is known to run: it counts as done. */
-const taskGroup = (live: TaskState | null, acp = false): Pick<JobRow, 'group' | 'needsYouReason'> => {
+const taskGroup = (live: (TaskState & { failed?: string }) | null, acp = false): Pick<JobRow, 'group' | 'needsYouReason' | 'error'> => {
   // An ACP task's question is answered in the app's transcript view.
   if (live?.waiting) return { group: 'needs you', needsYouReason: acp ? 'question' : 'waiting in T3' };
+  // An ACP turn that failed (no sign-in, a usage limit, the agent gone) needs the owner, as a failed Slack job does.
+  if (live?.failed && !live.running) return { group: 'needs you', needsYouReason: 'failed', error: live.failed };
   return { group: live?.running ? 'running' : 'done' };
 };
 

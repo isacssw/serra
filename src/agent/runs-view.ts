@@ -15,7 +15,7 @@ import { agentRunsDir } from './pool.ts';
 const PR_IN_TEXT = /https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/pull\/\d+/g;
 
 /** A run's state for its Jobs row, like `t3TaskState` gives a T3 thread's. Null when there's no record. */
-export const acpRunState = (profileDir: string, threadId: string): (TaskState & { title: string }) | null => {
+export const acpRunState = (profileDir: string, threadId: string): (TaskState & { title: string; failed?: string }) | null => {
   const record = readRunRecord(agentRunsDir(profileDir), threadId);
   if (!record) return null;
   const pr = record.entries.filter((entry) => entry.role === 'assistant').flatMap((entry) => entry.text.match(PR_IN_TEXT) ?? []).filter((url) => GITHUB_PR_URL.test(url)).at(-1);
@@ -24,6 +24,7 @@ export const acpRunState = (profileDir: string, threadId: string): (TaskState & 
     title: record.title,
     running: record.active !== null,
     waiting: (record.waiting?.length ?? 0) > 0,
+    ...(record.failed && record.active === null ? { failed: record.failed } : {}),
     ...(pr ? { pr } : {}),
     ...(updatedAt ? { updatedAt } : {}),
     ...(record.runs ? { latestRunId: `run-${record.runs}` } : {}),
@@ -69,7 +70,8 @@ export const acpChat = (profileDir: string, threadId: string): RunChat | null =>
   const running = record.active !== null;
   return {
     threadId, backend: 'acp', agentId: record.agent || 'acp', agent: agentName(profileDir, record.agent), title: record.title,
-    status: waiting.length ? 'waiting' : running ? 'running' : 'idle',
+    status: waiting.length ? 'waiting' : running ? 'running' : record.failed ? 'failed' : 'idle',
+    ...(record.failed && !running ? { error: record.failed } : {}),
     lines: record.entries,
     live: running ? record.live ?? null : null,
     waiting,
