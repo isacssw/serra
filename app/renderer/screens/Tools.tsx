@@ -2,7 +2,7 @@
 // each provider gives it (managed in Claude or Codex, never here), and the command-line tools on this Mac. Nothing
 // on this screen runs an install, a sign-in or an `mcp add`: commands are shown for people to copy.
 import { useCallback, useEffect, useId, useState, type ReactNode } from 'react';
-import { ChevronDown, CircleAlert, Cloud, Copy, ExternalLink, Info, Plug, RefreshCw, Terminal, TriangleAlert } from 'lucide-react';
+import { ChevronRight, CircleAlert, Cloud, Copy, ExternalLink, Info, Plug, RefreshCw, Terminal, TriangleAlert } from 'lucide-react';
 import type { CliOverview } from '../../../src/clis.ts';
 import type { McpOverview, McpServer } from '../../../src/mcp.ts';
 import { useNavigate } from 'react-router';
@@ -42,8 +42,13 @@ const Command = ({ command, label }: { command: string; label?: string }) => {
   return (
     <div className="flex min-w-0 items-center gap-2">
       {label && <span className="w-28 shrink-0 text-xs text-muted">{label}</span>}
-      <code className="min-w-0 flex-1 truncate rounded-md border border-line-subtle bg-raised px-2 py-1 font-mono text-xs" title={command}>{command}</code>
-      <Button size="sm" variant="ghost" icon={<Copy size={13} aria-hidden />} aria-label={`Copy: ${command}`} title={`Copy: ${command}`} onClick={() => copy(command)} />
+      <span className="flex h-7 min-w-0 flex-1 items-center gap-1 rounded-[7px] border border-line bg-raised pr-0.5 pl-2.5">
+        <code className="min-w-0 flex-1 truncate font-mono text-xs" title={command}>{command}</code>
+        <button type="button" aria-label={`Copy: ${command}`} title="Copy" onClick={() => copy(command)}
+          className="grid size-6 shrink-0 place-items-center rounded-[5px] text-muted hover:bg-hover hover:text-ink focus-visible:outline-2 focus-visible:outline-focus">
+          <Copy size={12} aria-hidden />
+        </button>
+      </span>
     </div>
   );
 };
@@ -90,7 +95,7 @@ const Row = ({ icon, title, sub, meta, status, badge, more, moreLabel }: {
           {more && (
             <Button
               size="sm" variant="ghost" aria-expanded={open} aria-controls={panel} aria-label={`${moreLabel}: ${title}`}
-              icon={<ChevronDown size={13} aria-hidden className={cx('transition-transform', open && 'rotate-180')} />}
+              icon={<ChevronRight size={13} aria-hidden className={cx('transition-transform', open && 'rotate-90')} />}
               onClick={() => setOpen((value) => !value)}
             >
               {moreLabel}
@@ -152,11 +157,21 @@ const Failed = ({ text }: { text: string }) => (
 const RecommendationItem = ({ row, cli }: { row: RecommendationRow; cli: CliRow | undefined }) => (
   <Row
     icon={<ToolIcon brand={brandFor(row.rec.icon)} fallback={<Cloud size={14} />} label={row.rec.label} />}
-    title={row.rec.label}
-    sub={[row.reason, cli?.status?.path && cli.status.version && `${cli.spec.bins[0] ?? cli.spec.label} v${cli.status.version}`].filter(Boolean).join(' · ')}
-    meta={cli?.status?.path ? <span className="font-mono" title={cli.status.path}>{cli.status.path}</span> : undefined}
+    // A recommendation that works through its CLI is named for it, so it isn't read as the MCP server of the same name.
+    title={row.rec.needsCli ? `${row.rec.label} CLI` : row.rec.label}
+    sub={row.reason}
     status={row.state}
-    more={row.setup.length ? row.setup.map((step) => <Command key={step.command} label={step.label} command={step.command} />) : undefined}
+    more={row.setup.length ? (
+      <>
+        {cli?.status?.path && (
+          <p className="flex gap-2 text-xs text-muted">
+            <span className="w-28 shrink-0">Installed</span>
+            <span className="min-w-0 truncate"><span className="font-mono">{cli.status.path}</span>{cli.status.version && ` · v${cli.status.version}`}</span>
+          </p>
+        )}
+        {row.setup.map((step) => <Command key={step.command} label={step.label} command={step.command} />)}
+      </>
+    ) : undefined}
     moreLabel="Set up"
   />
 );
@@ -208,7 +223,7 @@ const ProviderGroup = ({ group, onError }: { group: DriverGroup; onError: (messa
         ? <p className="flex items-start gap-2 rounded-xl border border-dashed border-line px-4 py-4 text-sm text-muted"><Info size={14} aria-hidden className="mt-0.5 shrink-0" />{group.unsupported}</p>
         : group.servers.length > 0 && <ul aria-labelledby={id} className="@container divide-y divide-line-subtle rounded-xl border border-line bg-panel shadow-card">{group.servers.map((server) => <ServerItem key={`${server.scope}:${server.name}`} server={server} />)}</ul>}
       {/* How to add one: managed in the provider, never here. Copy it and run it yourself. */}
-      {group.hint && !group.unsupported && <Command label={group.servers.length ? 'Add in terminal' : `Add one to ${group.title}`} command={group.hint.command} />}
+      {group.hint && !group.unsupported && <Command label="Add a server" command={group.hint.command} />}
     </div>
   );
 };
@@ -242,8 +257,10 @@ export const Tools = () => {
   }, []);
   useEffect(() => { load(); }, [load]);
 
-  const recommendations = clis || mcp ? recommendationRows(mcp, clis, undefined, undefined, !mcp && !mcpError) : [];
-  const allClis = clis ? cliRows(clis, recommendedCliIds(recommendations)) : [];
+  const allRecommendations = clis || mcp ? recommendationRows(mcp, clis, undefined, undefined, !mcp && !mcpError) : [];
+  // One answered over MCP is already in the server list below: listed once, there.
+  const recommendations = allRecommendations.filter((row) => !(row.state.tone === 'up' && !row.rec.needsCli));
+  const allClis = clis ? cliRows(clis, recommendedCliIds(allRecommendations)) : [];
   // A recommended CLI is shown in its recommendation's row, not twice.
   const cliList = allClis.filter((row) => !row.recommended);
   const installed = cliList.filter((row) => row.status?.path);
@@ -271,17 +288,19 @@ export const Tools = () => {
         </p>
       ))}
 
-      <Section title="Recommended">
+      {(recommendations.length > 0 || allRecommendations.length === 0) && (
+        <Section title="Recommended">
         {recommendations.length
           ? <List label="Recommended tools">{recommendations.map((row) => <RecommendationItem key={row.rec.id} row={row} cli={allClis.find((entry) => entry.spec.id === row.rec.cli)} />)}</List>
           : <Pending label="Checking recommended tools" rows={1} />}
       </Section>
+      )}
 
       <Section
         title="MCP servers"
         aside={mcp ? (
-          <button type="button" onClick={() => void navigate('/settings/worker')} className="rounded underline-offset-2 hover:text-ink hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus">
-            {providerLine(mcp.worker)}
+          <button type="button" onClick={() => void navigate('/settings/worker')} className="inline-flex items-center gap-0.5 rounded text-muted underline-offset-2 hover:text-ink hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus">
+            {providerLine(mcp.worker)}<ChevronRight size={12} aria-hidden />
           </button>
         ) : undefined}
       >
@@ -295,14 +314,14 @@ export const Tools = () => {
         )}
       </Section>
 
-      <Section title="Command-line tools" aside={clis ? `${installed.length} of ${cliList.length} installed` : undefined}>
+      <Section title="Command-line tools" aside={clis && installed.length ? `${installed.length} of ${cliList.length} installed` : undefined}>
         {cliError && <Failed text={cliError} />}
         {!clis && !cliError && <Pending label="Looking for command-line tools" rows={2} />}
         {clis && installed.length > 0 && <List label="Installed command-line tools">{installed.map((row) => <CliItem key={row.spec.id} row={row} />)}</List>}
         {clis && notInstalled.length > 0 && (
           <details className="group rounded-xl border border-line bg-panel shadow-card">
             <summary className="flex cursor-default list-none items-center gap-2 rounded-xl px-4 py-3 text-sm text-muted hover:bg-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus [&::-webkit-details-marker]:hidden">
-              <ChevronDown size={14} aria-hidden className="-rotate-90 transition-transform group-open:rotate-0" />
+              <ChevronRight size={14} aria-hidden className="transition-transform group-open:rotate-90" />
               Not installed <span className="text-faint">· {notInstalled.length}</span>
             </summary>
             <ul aria-label="Command-line tools not installed" className="@container divide-y divide-line-subtle border-t border-line">{notInstalled.map((row) => <CliItem key={row.spec.id} row={row} />)}</ul>

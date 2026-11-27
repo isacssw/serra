@@ -2,7 +2,7 @@
 // or its Slack connection changes, plus the tail of the daemon's log. Token values never reach this window: main
 // scrubs every detail and log line first.
 import { useCallback, useEffect, useId, useRef, useState } from 'react';
-import { CircleAlert, CircleCheck, Copy, ListChecks, RefreshCw, Stethoscope } from 'lucide-react';
+import { ChevronRight, CircleAlert, CircleCheck, Copy, ListChecks, RefreshCw, Stethoscope } from 'lucide-react';
 import { useNavigate } from 'react-router';
 import type { Diagnostic } from '../../../src/contracts.ts';
 import type { AppInfo } from '../../main/bridge.ts';
@@ -15,6 +15,15 @@ import {
 } from './diagnostics.logic.ts';
 
 const errorText = (error: unknown): string => (error instanceof Error ? error.message : String(error));
+
+/** Text with its paths and `commands` in mono. */
+const Inline = ({ text }: { text: string }) => (
+  <>
+    {text.split(/(`[^`]+`|(?:^|(?<=\s))[~/][^\s,]*)/).filter(Boolean).map((part, index) => (/^`.+`$/.test(part)
+      ? <code key={index} className="font-mono text-[12px]">{part.slice(1, -1)}</code>
+      : /^[~/]/.test(part) ? <span key={index} className="font-mono text-[12px] text-ink">{part}</span> : <span key={index}>{part}</span>))}
+  </>
+);
 
 /** One check: a passing one is a quiet line, a failing one leads with its name and keeps the reason readable. */
 const CheckRow = ({ result, home, sameAs, onOpen }: { result: Diagnostic; home: string | undefined; sameAs?: string; onOpen: (path: string) => void }) => {
@@ -32,21 +41,21 @@ const CheckRow = ({ result, home, sameAs, onOpen }: { result: Diagnostic; home: 
         <span className="w-44 shrink-0 text-[13px] font-medium">{result.name}</span>
         {failure ? (
           <span className="flex min-w-0 flex-col items-start gap-1.5">
-            <span className="flex min-w-0 flex-wrap items-baseline gap-x-2 text-[13px] text-ink">
-              <span className="break-words">{failure.reason}</span>
+            <span className="flex min-w-0 flex-wrap items-baseline gap-x-2 text-[13px] text-muted">
+              <span className="break-words"><Inline text={failure.reason} /></span>
               {failure.raw && (
                 <button
                   type="button" aria-expanded={open} aria-controls={rawId} onClick={() => setOpen(!open)}
-                  className="rounded text-xs text-muted underline-offset-2 hover:text-ink hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
+                  className="inline-flex items-center gap-0.5 rounded text-xs text-muted hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
                 >
-                  {open ? 'Hide details' : 'Details'}
+                  {open ? 'Hide details' : 'Details'}<ChevronRight size={12} aria-hidden className={cx('transition-transform', open && 'rotate-90')} />
                 </button>
               )}
             </span>
             {failure.raw && open && <code id={rawId} className="block w-full rounded-lg border border-line-subtle bg-field px-2.5 py-1.5 font-mono text-[11px] leading-4 break-words whitespace-pre-wrap text-muted">{failure.raw}</code>}
           </span>
         ) : (
-          <span className={cx('min-w-0 flex-1 truncate text-muted', /^[~/]/.test(value) ? 'font-mono text-xs' : 'text-[13px]')} title={detail}>{value}</span>
+          <span className="min-w-0 flex-1 truncate text-[13px] text-muted" title={detail}><Inline text={value} /></span>
         )}
       </div>
       {failure && 'action' in failure && failure.action && (
@@ -169,7 +178,7 @@ export const Diagnostics = () => {
         <>
           <Button variant="ghost" icon={<ListChecks size={14} aria-hidden />} onClick={() => void navigate(SETUP_PATH)} title="Profile, Slack, owner and service, step by step">Setup</Button>
           <Button icon={<Copy size={14} aria-hidden />} onClick={() => void copy()} disabled={!checks.results}>Copy report</Button>
-          <Button variant="primary" icon={<RefreshCw size={14} aria-hidden className={cx(checks.running && 'animate-spin')} />} onClick={refresh} disabled={checks.running}>
+          <Button icon={<RefreshCw size={14} aria-hidden className={cx(checks.running && 'animate-spin')} />} onClick={refresh} disabled={checks.running}>
             {checks.running ? 'Checking…' : 'Run checks'}
           </Button>
         </>

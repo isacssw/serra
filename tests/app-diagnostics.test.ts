@@ -233,9 +233,9 @@ test('the runtime line is one short line, and the report hides the home folder t
 
 test('a failing check reads as a reason first, with the raw output kept for Details', () => {
   const gh = 'gh api user exited 4: To get started with GitHub CLI, please run: gh auth login';
-  assert.deepEqual(explainFailure(gh), { reason: 'GitHub CLI isn’t signed in. Run gh auth login.', raw: gh, action: { label: 'Tools', path: '/settings/tools' } });
+  assert.deepEqual(explainFailure(gh), { reason: 'GitHub CLI isn’t signed in.', raw: gh, action: { label: 'Sign in', path: '/settings/tools' } });
   const git = "git -C ~/code/web exited 128: fatal: cannot change to '~/code/web': No such file or directory";
-  assert.deepEqual(explainFailure(git), { reason: 'Folder not found: ~/code/web', raw: git, action: { label: 'Repositories', path: '/settings/repositories' } });
+  assert.deepEqual(explainFailure(git), { reason: 'Folder not found: ~/code/web', raw: git, action: { label: 'Fix path', path: '/settings/repositories' } });
   const keychain = "Can't read SLACK_BOT_TOKEN from Keychain: Keychain (security) failed: security: SecKeychainSearchCopyNext: The specified item could not be found in the keychain.";
   assert.equal(explainFailure(keychain).reason, 'The bot token isn’t in the Keychain.');
   assert.deepEqual(explainFailure(keychain).action, { label: 'Add token', path: '/setup/slack' });
@@ -246,7 +246,8 @@ test('a failing check reads as a reason first, with the raw output kept for Deta
 test('a passing check reads as a short value', () => {
   assert.equal(passValue('24.1.0 (/opt/homebrew/bin/node, the Node the bot runs on)'), '24.1.0 · /opt/homebrew/bin/node');
   assert.equal(passValue('An author identity is configured'), 'Configured');
-  assert.equal(passValue('Writable; job state parses'), 'Writable · job state parses');
+  assert.equal(passValue('Writable; job state parses'), 'Writable');
+  assert.equal(passValue('Server reachable; project registered'), 'Connected');
   assert.equal(passValue('24 pages, 19 drafts'), '24 pages, 19 drafts');
 });
 

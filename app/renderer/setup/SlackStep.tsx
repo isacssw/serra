@@ -2,7 +2,7 @@
 // Slack as the step opens (1Password ones wait for a click, so nothing prompts to unlock), and shown for the owner
 // to confirm. A missing token is pasted here and stored in the Keychain; other sources use the Secrets editor.
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Copy, ExternalLink, KeyRound } from 'lucide-react';
+import { ChevronRight, Copy, ExternalLink, KeyRound } from 'lucide-react';
 import { useNavigate } from 'react-router';
 import type { SecretName, SecretStatus } from '../../../src/contracts.ts';
 import type { SlackManifest } from '../../../src/setup.ts';
@@ -88,7 +88,7 @@ const TokenRow = ({ status, checking, workspace, onChange }: { status: SecretSta
       </div>
       {showField && (
         <form className="flex items-start gap-2 pl-8" onSubmit={(event) => { event.preventDefault(); void save(); }}>
-          <Input ref={field} id={fieldId} aria-label={`${label} value`} type="password" autoComplete="off" spellCheck={false} className="min-w-0 flex-1"
+          <Input ref={field} id={fieldId} aria-label={`${label} value`} type="password" autoComplete="off" spellCheck={false} className="min-w-0 flex-1" inputClassName="font-mono"
             placeholder={`Paste the ${SECRET_PREFIXES[status.name]} token`} value={value} disabled={busy}
             onChange={(event) => { setValue(event.target.value); setError(null); }} error={error} hint={status.source.kind !== 'keychain' && status.set ? `Saving moves it from ${token.where} to your Keychain` : WHERE[status.name]} />
           <Button type="submit" disabled={busy || !value.trim()}>Save</Button>
@@ -177,8 +177,8 @@ export const SlackStep = () => {
             <Button size="sm" icon={<Copy size={13} aria-hidden />} disabled={!manifest} onClick={() => void copy()}>Copy manifest</Button>
           </div>
           {manifest && (
-            <details className="pl-8 text-[13px]">
-              <summary className="w-fit cursor-pointer rounded text-muted hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus">Show manifest</summary>
+            <details className="group pl-8 text-[13px]">
+              <summary className="flex w-fit cursor-pointer list-none items-center gap-1 rounded text-muted hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus [&::-webkit-details-marker]:hidden"><ChevronRight size={13} aria-hidden className="transition-transform group-open:rotate-90" />Show manifest</summary>
               <pre className="mt-2 max-h-56 overflow-auto rounded-md border border-line bg-raised px-3 py-2 font-mono text-[11px]" data-manifest>{manifest.json}</pre>
             </details>
           )}
@@ -191,20 +191,21 @@ export const SlackStep = () => {
           {statuses
             ? <ul className="flex flex-col divide-y divide-line-subtle">{statuses.map((status) => <TokenRow key={status.name} status={status} checking={checking.includes(status.name)} workspace={workspace} onChange={replace} />)}</ul>
             : <p className="px-4 py-3.5 text-[13px] text-muted" role="status">Looking for tokens…</p>}
-          <p className="flex items-center gap-1.5 border-t border-line-subtle px-4 py-2.5 text-xs text-faint"><KeyRound size={12} aria-hidden /> Saved to your Keychain</p>
+          <div className="flex items-center justify-between gap-3 border-t border-line-subtle py-1.5 pr-2 pl-4">
+            <p className="flex items-center gap-1.5 text-xs text-faint"><KeyRound size={12} aria-hidden /> Saved to your Keychain</p>
+            <Button variant="ghost" size="sm" aria-expanded={advanced} onClick={() => setAdvanced(!advanced)}
+              icon={<ChevronRight size={13} aria-hidden className={cx('transition-transform', advanced && 'rotate-90')} />}>
+              {advanced ? 'Hide other sources' : 'Use 1Password or .env'}
+            </Button>
+          </div>
         </Card>
-        <div>
-          <Button variant="ghost" size="sm" className="-ml-2.5 text-muted" aria-expanded={advanced} onClick={() => setAdvanced(!advanced)}>
-            {advanced ? 'Hide other sources' : 'Use 1Password or .env instead'}
-          </Button>
-        </div>
         {advanced && statuses?.map((status) => (
           <SecretCard key={status.name} status={status} now={new Date()} onSaved={replace} onChecked={replace} />
         ))}
       </section>
 
       <StepFooter back={previousPath(step.path)}>
-        {!connected && <span id="slack-continue-note" className="sr-only">Both tokens need a passing check.</span>}
+        {!connected && <span id="slack-continue-note" className="sr-only">Add both tokens first.</span>}
         <Button variant="primary" aria-disabled={connected ? undefined : true} aria-describedby={connected ? undefined : 'slack-continue-note'} title={connected ? undefined : 'Both tokens need a passing check'} onClick={() => void proceed()}>
           Continue
         </Button>

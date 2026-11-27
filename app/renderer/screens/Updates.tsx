@@ -32,7 +32,7 @@ const ToneIcon = ({ tone, size = 18 }: { tone: CardTone; size?: number }) => {
 
 /** The permanent, quiet way to star Serra (SERRA-53). Opening it also stops the in-app request. */
 const StarLink = ({ onError, onSaveFailed }: { onError: (error: unknown) => void; onSaveFailed?: () => void }) => (
-  <p className="flex flex-wrap items-center gap-x-1.5 border-t border-line pt-4 text-[13px] text-muted">
+  <p className="flex flex-wrap items-center gap-x-1.5 pt-1 text-[13px] text-muted">
     Serra is open source.
     <button
       type="button"

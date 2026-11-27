@@ -44,7 +44,9 @@ const Found = ({ summary, home }: { summary: ProfileSummary; home: string }) => 
         </li>
       ))}
     </ul>
-    <p className="truncate border-t border-line-subtle px-4 py-2.5 font-mono text-[11px] text-muted" title={summary.profileDir}>{shortPath(summary.profileDir, home)}</p>
+    <p className="flex gap-2 truncate border-t border-line-subtle px-4 py-2.5 text-xs text-faint" title={summary.profileDir}>
+      Profile folder <span className="truncate font-mono text-[11px] text-muted">{shortPath(summary.profileDir, home)}</span>
+    </p>
   </Card>
   );
 };

@@ -166,7 +166,7 @@ export const Meetings = () => {
             <div className="-mx-5 flex flex-wrap items-center gap-x-5 gap-y-2 border-t border-line-subtle px-5 pt-4 text-xs text-muted">
               <span className="text-faint">Works with</span>
               <ul aria-label="Works with" className="contents">
-                {OFF_SOURCES.map((source) => <li key={source.label} className="flex items-center gap-2 [&>span]:size-5 [&>span]:rounded-md [&>span]:border-0">{source.icon}{source.label}</li>)}
+                {OFF_SOURCES.map((source) => <li key={source.label} className="flex items-center gap-2">{source.icon}{source.label}</li>)}
               </ul>
             </div>
           )}

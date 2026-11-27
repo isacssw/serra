@@ -2,7 +2,7 @@
 // repository's base branch and GitHub name); the form is saved as it's typed, so quitting halfway loses nothing.
 // Once the profile exists, the step shows it instead.
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
-import { FolderOpen, UserRound } from 'lucide-react';
+import { ChevronRight, FolderOpen, UserRound } from 'lucide-react';
 import { useNavigate } from 'react-router';
 import { serra } from '../bridge.ts';
 import { Button, Input } from '../ui/index.ts';
@@ -156,11 +156,11 @@ const ProfileForm = () => {
   };
 
   return (
-    <form className="flex flex-1 flex-col gap-8" noValidate onSubmit={(event) => { event.preventDefault(); void create(); }}>
+    <form className="flex flex-1 flex-col gap-8 pb-10" noValidate onSubmit={(event) => { event.preventDefault(); void create(); }}>
       <Section title="You">
         <div className="grid gap-4 sm:grid-cols-2">
-          <Input label="Your name" autoComplete="name" value={draft.ownerName} onChange={set('ownerName')} error={errors.ownerName} />
-          <Input label="GitHub login" autoComplete="username" value={draft.githubLogin} onChange={set('githubLogin')} error={errors.githubLogin} />
+          <Input label="Your name" autoComplete="name" placeholder="Alex Morgan" value={draft.ownerName} onChange={set('ownerName')} error={errors.ownerName} />
+          <Input label="GitHub login" autoComplete="username" placeholder="octocat" inputClassName="font-mono" value={draft.githubLogin} onChange={set('githubLogin')} error={errors.githubLogin} />
         </div>
         <Input label="Slack member ID" placeholder="U0123456789" inputClassName="font-mono" value={draft.ownerSlackUserId}
           onChange={set('ownerSlackUserId')} error={errors.ownerSlackUserId} hint="In Slack: your profile › ⋮ › Copy member ID" spellCheck={false} />
@@ -185,7 +185,7 @@ const ProfileForm = () => {
         <Input label="Name" placeholder="Friday" value={draft.botName} onChange={set('botName')} error={errors.botName ?? errors.botId}
           hint="How it appears in Slack" />
         <details className="group text-[13px]">
-          <summary className="w-fit cursor-pointer rounded text-[13px] font-medium text-muted hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus">More options</summary>
+          <summary className="flex w-fit cursor-pointer list-none items-center gap-1 rounded text-[13px] font-medium text-muted hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus [&::-webkit-details-marker]:hidden"><ChevronRight size={13} aria-hidden className="transition-transform group-open:rotate-90" />More options</summary>
           <div className="mt-4 grid gap-4 sm:grid-cols-2">
             <Input label="Bot ID" placeholder={suggestId(draft.botName)} inputClassName="font-mono" value={draft.botId} onChange={set('botId')}
               error={errors.botId} hint="Names the service and job branches" spellCheck={false} />
@@ -209,7 +209,7 @@ export const YouStep = () => {
   const { progress } = useSetup();
   return (
     <div className="flex flex-1 flex-col gap-8">
-      <StepHeader step={step} icon={<UserRound size={18} strokeWidth={1.75} />} />
+      <StepHeader step={step} icon={<UserRound size={18} strokeWidth={1.75} />} summary={hasProfile(progress) ? 'Already set up.' : undefined} />
       {hasProfile(progress) ? <Existing /> : <ProfileForm />}
     </div>
   );

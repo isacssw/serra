@@ -23,7 +23,7 @@ export const serverStatus = (server: Pick<McpServer, 'load' | 'health'>): Status
   // Before health: a server that connects from the checkout may still not reach a job's worktree.
   if (server.load === 'unsure') return { tone: 'warn', text: 'May not load' };
   if (server.health === 'connected') return { tone: 'up', text: 'Connected' };
-  if (server.health === 'needs-auth') return { tone: 'warn', text: 'Needs sign-in' };
+  if (server.health === 'needs-auth') return { tone: 'warn', text: 'Not signed in' };
   if (server.health === 'failed') return { tone: 'down', text: 'Failed' };
   if (server.health === 'pending') return { tone: 'warn', text: 'Needs approval' };
   // Turned on, but nobody checked it answers (Codex lists servers without connecting).
@@ -197,7 +197,7 @@ export const recommendationRows = (
     let state: Status;
     if (cliReady || connected) state = { tone: 'up', text: 'Ready' };
     else if (mcpPending && !rec.needsCli) state = { tone: 'neutral', text: 'Checking…' };
-    else if (!rec.needsCli && servers.some((server) => server.health === 'needs-auth')) state = { tone: 'warn', text: 'Needs sign-in' };
+    else if (!rec.needsCli && servers.some((server) => server.health === 'needs-auth')) state = { tone: 'warn', text: 'Not signed in' };
     else if (cliState?.text === 'Not signed in') state = { tone: 'warn', text: 'Not signed in' };
     else if (configured) state = { tone: 'neutral', text: 'Configured' };
     // A server that's on but failed, may not load or waits for approval: say so, as the MCP list below does.

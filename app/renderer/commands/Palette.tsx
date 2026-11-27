@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type ComponentType, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react';
 import { useNavigate } from 'react-router';
 import {
-  ArrowLeft, CircleCheck, CirclePlay, Command, CornerDownLeft, FolderOpen, Inbox, LoaderCircle, RotateCw, Search, SquarePen, Star, SunMoon, UserPlus,
+  ArrowLeft, CircleCheck, CirclePlay, Command, CornerDownLeft, FolderOpen, Inbox, ListChecks, LoaderCircle, RotateCw, Search, SquarePen, Star, SunMoon, UserPlus,
   type LucideProps,
 } from 'lucide-react';
 import { routes } from '../routes.ts';
@@ -40,7 +40,7 @@ const messageOf = (error: unknown): string => (error instanceof Error ? error.me
 
 /** The shell's own actions' icons; a screen's action without one gets the ⌘ glyph. */
 const actionIcons: Record<string, ComponentType<LucideProps>> = {
-  'bot:restart': RotateCw, 'app:open-profile-folder': FolderOpen, 'people:add': UserPlus, 'app:star-on-github': Star, 'app:theme': SunMoon,
+  'bot:restart': RotateCw, 'app:open-profile-folder': FolderOpen, 'people:add': UserPlus, 'app:star-on-github': Star, 'app:theme': SunMoon, 'setup:open': ListChecks,
 };
 
 /** A Go to row shows its screen's sidebar icon; other actions their own. */
@@ -244,7 +244,7 @@ export const CommandPalette = () => {
             <p className="px-4 py-8 text-center text-[13px] text-muted">{query ? `No results for “${query}”` : 'Nothing to pick'}</p>
           )}
           {rows.length > 0 && (
-            <ul id={listId} role="listbox" aria-label={step ? step.action.title : 'Commands'} className="max-h-[22rem] scroll-py-1.5 overflow-y-auto p-1.5 [mask-image:linear-gradient(to_bottom,black_calc(100%-24px),transparent)] [&:not(:has(li:nth-child(10)))]:[mask-image:none]">
+            <ul id={listId} role="listbox" aria-label={step ? step.action.title : 'Commands'} className="max-h-[22rem] scroll-py-1.5 overflow-y-auto p-1.5 pb-3 [mask-image:linear-gradient(to_bottom,black_calc(100%-36px),transparent_calc(100%-4px))] [&:not(:has(li:nth-child(10)))]:[mask-image:none]">
               {rows.map((row, index) => (
                 <li key={row.key} role="presentation">
                   {row.heading && <div className="px-2.5 pt-2.5 pb-1.5 text-[11px] font-medium tracking-[0.02em] text-faint first:pt-1.5">{row.heading}</div>}

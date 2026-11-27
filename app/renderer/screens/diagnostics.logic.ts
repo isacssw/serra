@@ -45,12 +45,16 @@ export const tildePaths = (text: string, home: string | undefined): string => {
   return text.replace(new RegExp(`${escaped}(?![\\w.-])`, 'g'), '~');
 };
 
-/** A passing check's detail as a short value: "24.1.0 · /opt/homebrew/bin/node", "Configured", "Writable · job state parses". */
+/**
+ * A passing check's detail as a short value: "24.1.0 · /opt/homebrew/bin/node", "Configured", "Writable". Only the
+ * first clause of a "this; that" detail stays; the copied report keeps the whole of it.
+ */
 export const passValue = (detail: string): string => {
   const node = /^(\S+) \((.+), the Node the bot runs on\)$/.exec(detail);
   if (node) return `${node[1]} · ${node[2]}`;
   if (detail === 'An author identity is configured') return 'Configured';
-  return detail.replace(/; /g, ' · ');
+  if (detail === 'Server reachable; project registered') return 'Connected';
+  return detail.split('; ')[0]!;
 };
 
 /** Where a failing check is fixed, as a screen to open. */
@@ -66,9 +70,9 @@ export interface Failure { reason: string; raw: string | null; action?: FailureA
  */
 export const explainFailure = (detail: string): Failure => {
   const exited = /^(\S+)(?: [^:]*?)? exited (\d+): ([\s\S]*)$/.exec(detail);
-  if (/gh auth login/.test(detail)) return { reason: 'GitHub CLI isn’t signed in. Run gh auth login.', raw: detail, action: { label: 'Tools', path: '/settings/tools' } };
+  if (/gh auth login/.test(detail)) return { reason: 'GitHub CLI isn’t signed in.', raw: detail, action: { label: 'Sign in', path: '/settings/tools' } };
   const missing = /cannot change to '([^']+)': No such file or directory/.exec(detail);
-  if (missing) return { reason: `Folder not found: ${missing[1]}`, raw: detail, action: { label: 'Repositories', path: '/settings/repositories' } };
+  if (missing) return { reason: `Folder not found: ${missing[1]}`, raw: detail, action: { label: 'Fix path', path: '/settings/repositories' } };
   if (/could not be found in the keychain/i.test(detail)) {
     const which = /SLACK_APP_TOKEN/.test(detail) ? 'The app token' : /SLACK_BOT_TOKEN/.test(detail) ? 'The bot token' : 'A token';
     return { reason: `${which} isn’t in the Keychain.`, raw: detail, action: { label: 'Add token', path: '/setup/slack' } };

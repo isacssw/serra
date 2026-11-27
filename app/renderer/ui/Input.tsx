@@ -19,9 +19,8 @@ export const Input = ({ label, error, hint, className, inputClassName, id, ...re
   const generated = useId();
   const inputId = id ?? generated;
   const noteId = `${inputId}-note`;
-  const hintId = `${inputId}-hint`;
-  // An error goes above the hint, and the hint stays: it's often what says how to fix it.
-  const described = [error && noteId, hint && hintId].filter(Boolean).join(' ') || undefined;
+  // An error takes the hint's line, and the hint stays on it after the error: it's often what says how to fix it.
+  const described = error || hint ? noteId : undefined;
   return (
     <div className={cx('flex min-w-0 flex-col gap-1.5', className)}>
       {label && <label htmlFor={inputId} className={labelClass}>{label}</label>}
@@ -32,8 +31,13 @@ export const Input = ({ label, error, hint, className, inputClassName, id, ...re
         className={cx('h-8 min-w-0 px-2.5', fieldClass(Boolean(error)), inputClassName)}
         {...rest}
       />
-      {error && <p id={noteId} className={noteClass(true)}>{error}</p>}
-      {hint && <p id={hintId} className={noteClass(false)}>{hint}</p>}
+      {(error || hint) && (
+        <p id={noteId} className={noteClass(Boolean(error))}>
+          {error}
+          {error && hint && <span className="text-faint"> · {hint}</span>}
+          {!error && hint}
+        </p>
+      )}
     </div>
   );
 };
