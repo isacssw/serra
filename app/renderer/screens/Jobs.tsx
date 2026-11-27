@@ -70,7 +70,7 @@ const ROW_ICONS: Record<RowIcon, ReactNode> = {
   'needs-you': <span className="size-2 rounded-full bg-warn" />,
   failed: <span className="size-2 rounded-full bg-down" />,
   // A frozen spinner reads as broken, so Reduce Motion shows a steady dot instead.
-  running: <><LoaderCircle size={14} strokeWidth={2} className="animate-spin text-ink motion-reduce:hidden" /><span className="hidden size-2 rounded-full bg-ink motion-reduce:block" /></>,
+  running: <><LoaderCircle size={14} strokeWidth={2} className="animate-spin text-ink motion-reduce:hidden" /><span className="hidden size-2 rounded-full bg-up ring-3 ring-up/25 motion-reduce:block" /></>,
   paused: <CirclePause size={14} strokeWidth={1.75} className="text-muted" />,
   done: <CircleCheck size={14} strokeWidth={1.75} className="text-up" />,
 };
@@ -89,7 +89,7 @@ const open = (url: string, onError: (text: string) => void): void => {
 };
 
 /** One job: the task first, then who asked, where and how long ago; a pill when it waits on you; its links as icons. */
-const JobRowView = ({ job, icon, now, slots, onError, onTranscript, focused = false }: { job: JobRow; icon: RowIcon; now: Date; slots: number; onError: (text: string) => void; onTranscript: (threadId: string, title: string) => void; focused?: boolean }) => {
+const JobRowView = ({ job, icon, now, kinds, onError, onTranscript, focused = false }: { job: JobRow; icon: RowIcon; now: Date; kinds: readonly LinkKind[]; onError: (text: string) => void; onTranscript: (threadId: string, title: string) => void; focused?: boolean }) => {
   const { requester, title, tooltip } = rowParts(job);
   const note = rowNote(job);
   const pill = rowPill(job, icon);
@@ -100,7 +100,7 @@ const JobRowView = ({ job, icon, now, slots, onError, onTranscript, focused = fa
       aria-current={focused ? 'true' : undefined}
       className={cx(
         'flex scroll-mt-6 items-center gap-3 py-2.5 pr-2 pl-4 transition-colors duration-150',
-        focused ? 'bg-selected shadow-[inset_2px_0_0_var(--color-ink)]' : 'hover:bg-hover',
+        focused && 'bg-selected shadow-[inset_2px_0_0_var(--color-ink)]',
       )}
     >
       <span className="grid size-4 shrink-0 place-items-center" role="img" aria-label={ICON_LABELS[icon]} title={ICON_LABELS[icon]}>{ROW_ICONS[icon]}</span>
@@ -125,9 +125,9 @@ const JobRowView = ({ job, icon, now, slots, onError, onTranscript, focused = fa
         </p>
       </div>
       <span className="flex w-28 shrink-0 justify-end">{pill && <Badge tone={pill.tone}>{pill.label}</Badge>}</span>
-      {/* The links the job has, right-aligned in a column as wide as the most links any row in the list has, so the pills line up. */}
-      <div className="flex shrink-0 items-center justify-end gap-0.5" style={{ width: `${slots * 1.875}rem` }}>
-        {linkButtons(job).map((link) => (link.url || link.transcript ? (
+      {/* One slot per link kind any row in the list has, so an icon stays in its column; a link this job lacks leaves its slot empty. */}
+      <div className="flex shrink-0 items-center gap-0.5">
+        {kinds.map((kind) => linkButtons(job).find((link) => link.kind === kind)).map((link, index) => (link && (link.url || link.transcript) ? (
           <Button
             key={link.kind}
             variant="ghost"
@@ -138,7 +138,7 @@ const JobRowView = ({ job, icon, now, slots, onError, onTranscript, focused = fa
             aria-label={`${link.label}: ${link.hint}`}
             onClick={() => { if (link.transcript) onTranscript(link.transcript, job.title); else if (link.url) open(link.url, onError); }}
           />
-        ) : null))}
+        ) : <span key={`empty-${kinds[index]}`} aria-hidden className="w-7" />))}
       </div>
     </li>
   );
@@ -210,8 +210,7 @@ const CleanupDialog = ({ cleanup, onClose, onApply }: { cleanup: Cleanup; onClos
 const ChannelFilter = ({ options, value, onChange }: { options: { value: string; label: string }[]; value: string | null; onChange: (channel: string | null) => void }) => (
   <Select
     aria-label="Channel"
-    // Channel options already read "#eng": the # icon only stands in for All channels.
-    {...(value ? {} : { icon: <Hash size={15} strokeWidth={1.75} /> })}
+    icon={<Hash size={15} strokeWidth={1.75} />}
     value={value ?? ''}
     options={[{ value: '', label: 'All channels' }, ...options]}
     onChange={(channel) => onChange(channel || null)}
@@ -225,9 +224,11 @@ const EMPTY_STATES: Record<JobGroup, { icon: ReactNode; title: string; start: bo
   done: { icon: <CheckCheck size={18} strokeWidth={1.75} />, title: 'Nothing finished today', start: true },
 };
 
-/** How many links the row with the most has, for the link column's width. */
-const linkSlots = (rows: readonly JobRow[]): number =>
-  Math.max(1, ...rows.map((job) => linkButtons(job).filter((link) => link.url || link.transcript).length));
+/** The link kinds any row in the list has, in their usual order: each gets a column. */
+const linkKinds = (rows: readonly JobRow[]): LinkKind[] => {
+  const present = new Set(rows.flatMap((job) => linkButtons(job).filter((link) => link.url || link.transcript).map((link) => link.kind)));
+  return (['slack', 't3', 'transcript', 'pr'] as const).filter((kind) => present.has(kind));
+};
 
 /** A quiet empty state: a hairline panel, not the dashed drop-zone look. */
 const EMPTY_CLASS = 'border-none bg-transparent py-20';
@@ -367,11 +368,14 @@ export const Jobs = ({ group }: { group: JobGroup }) => {
         actions={(
           <>
             <ChannelFilter
-              options={channelChoices(rows, channel).map((option) => (rows.some((job) => job.channel === option.value && job.channelName) && option.value !== 'app' ? { ...option, label: `#${option.label.replace(/^#/, '')}` } : option))}
+              // Named Slack channels carry the # as an icon, so the button reads "# eng" whichever is picked.
+              options={channelChoices(rows, channel).map((option) => (rows.some((job) => job.channel === option.value && job.channelName) && option.value !== 'app'
+                ? { ...option, label: option.label.replace(/^#/, ''), icon: <Hash size={14} strokeWidth={1.75} /> }
+                : option))}
               value={channel}
               onChange={setChannel}
             />
-            <Button icon={<BrushCleaning size={15} strokeWidth={1.75} />} className="w-8 px-0!" aria-label="Clean up worktrees" title="Clean up worktrees" onClick={startCleanup} />
+            <Button icon={<BrushCleaning size={14} strokeWidth={1.75} />} aria-label="Clean up worktrees" title="Clean up worktrees" onClick={startCleanup}>Clean up</Button>
           </>
         )}
       >
@@ -423,7 +427,7 @@ export const Jobs = ({ group }: { group: JobGroup }) => {
                   ))
                 : (
                   <ul className="flex flex-col divide-y divide-line overflow-hidden rounded-xl border border-line">
-                    {current.rows.map((job) => <JobRowView key={job.key} job={job} icon={rowIcon(job, status)} now={now} slots={linkSlots(current.rows)} onError={onLinkError} onTranscript={(threadId, title) => setTranscript({ threadId, title })} focused={job.key === focusedKey} />)}
+                    {current.rows.map((job) => <JobRowView key={job.key} job={job} icon={rowIcon(job, status)} now={now} kinds={linkKinds(current.rows)} onError={onLinkError} onTranscript={(threadId, title) => setTranscript({ threadId, title })} focused={job.key === focusedKey} />)}
                   </ul>
                 )}
             </div>

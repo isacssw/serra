@@ -103,7 +103,7 @@ export const SecretCard = ({ status, now, onSaved, onChecked }: CardProps) => {
       {draft.kind === '1password' && (
         <Input
           aria-label={`${label} 1Password reference`}
-          inputClassName="font-mono"
+          inputClassName="font-mono placeholder:font-sans"
           placeholder="op://vault/item/field"
           spellCheck={false}
           autoComplete="off"
@@ -261,7 +261,7 @@ const SecretRow = ({ status, now, onSaved, onChecked }: CardProps) => {
               placeholder={`${SECRET_PREFIXES[status.name]}…`}
               spellCheck={false}
               autoComplete="off"
-              inputClassName="font-mono"
+              inputClassName="font-mono placeholder:font-sans"
               value={draft.value}
               hint={needsValue && !replacing ? 'Empty uses an item already in the Keychain.' : undefined}
               onChange={(event) => { setDraft({ ...draft, value: event.target.value }); setFormError(null); }}
@@ -271,7 +271,7 @@ const SecretRow = ({ status, now, onSaved, onChecked }: CardProps) => {
             <Input
               label="Reference"
               data-autofocus
-              inputClassName="font-mono"
+              inputClassName="font-mono placeholder:font-sans"
               placeholder="op://vault/item/field"
               spellCheck={false}
               autoComplete="off"

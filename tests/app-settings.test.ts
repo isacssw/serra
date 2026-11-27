@@ -310,7 +310,7 @@ test('branch preview: names the branch a job would get, as src/branch.ts does, a
 });
 
 test('trigger summary: who a trigger answers and its first instruction line, for the Alerts list', () => {
-  assert.deepEqual(triggerSummary({ channel: 'C0123456789', source: 'bot', sourceId: 'B0123456789', instructions: '\nFind the cause.\nThen post.' }), { source: 'Bot B0123456789', instructions: 'Find the cause.' });
-  assert.equal(triggerSummary({ channel: 'C1', source: 'user', sourceId: '', instructions: '' }).source, 'From (no ID)');
-  assert.deepEqual(triggerSummary({ channel: 'C1', source: 'any', sourceId: '', instructions: ' ' }), { source: 'Any message', instructions: 'No instructions' });
+  assert.deepEqual(triggerSummary({ channel: 'C0123456789', source: 'bot', sourceId: 'B0123456789', instructions: '\nFind the cause.\nThen post.' }), { source: 'Bot', id: 'B0123456789', instructions: 'Find the cause.' });
+  assert.equal(triggerSummary({ channel: 'C1', source: 'user', sourceId: '', instructions: '' }).id, '(no ID)');
+  assert.deepEqual(triggerSummary({ channel: 'C1', source: 'any', sourceId: '', instructions: ' ' }), { source: 'Any message', id: '', instructions: 'No instructions' });
 });

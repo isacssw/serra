@@ -189,10 +189,10 @@ export const ownerForm: SectionForm<'owner'> = {
 
 export const reviewForm: SectionForm<'review'> = {
   section: 'review',
-  description: 'Where to post PRs for review. Empty: off.',
+  description: 'Where PRs go for review. Empty turns it off.',
   fields: [
     { key: 'channel', label: 'Channel ID', placeholder: 'e.g. C0123456789', mono: true },
-    { key: 'repositories', label: 'Repositories', hint: 'Comma separated', placeholder: 'e.g. acme/project' },
+    { key: 'repositories', label: 'Repositories', hint: 'Comma separated', placeholder: 'e.g. acme/project', mono: true },
   ],
   toForm: (profile) => ({ channel: optional(profile.review?.channel), repositories: (profile.review?.repositories ?? []).join(', ') }),
   parse: (form) => {
@@ -421,8 +421,9 @@ export const triggerRows = (profile: Profile): TriggerRow[] =>
   }));
 
 /** A trigger's row in the Alerts list: who it answers, and the first line of its instructions. */
-export const triggerSummary = (row: TriggerRow): { source: string; instructions: string } => ({
-  source: row.source === 'bot' ? `Bot ${row.sourceId.trim() || '(no ID)'}` : row.source === 'user' ? `From ${row.sourceId.trim() || '(no ID)'}` : 'Any message',
+export const triggerSummary = (row: TriggerRow): { source: string; id: string; instructions: string } => ({
+  source: row.source === 'bot' ? 'Bot' : row.source === 'user' ? 'From' : 'Any message',
+  id: row.source === 'any' ? '' : row.sourceId.trim() || '(no ID)',
   instructions: row.instructions.split('\n').map((line) => line.trim()).find(Boolean) ?? 'No instructions',
 });
 

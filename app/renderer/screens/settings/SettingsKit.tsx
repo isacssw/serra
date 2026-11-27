@@ -322,7 +322,7 @@ export const Advanced = ({ summary, children }: { summary: string; children: Rea
       <span className="text-faint">{summary}</span>
     </summary>
     {/* Inside: set in under the summary, titles a step smaller, so they read as part of Advanced, not new sections. */}
-    <div className="mt-5 ml-1.5 flex flex-col divide-y divide-line-subtle border-l border-line pl-6 [&>*]:py-6 [&>*:first-child]:pt-1 [&>*:last-child]:pb-1 [&_h2]:text-[13px]">{children}</div>
+    <div className="mt-5 ml-1.5 flex flex-col divide-y divide-line-subtle border-l border-line pl-6 [&>*]:py-6 [&>*:first-child]:pt-1 [&>*:last-child]:pb-1 [&_h2]:text-[13px] md:[&_section]:grid-cols-[calc(11.5rem-31px)_minmax(0,1fr)]">{children}</div>
   </details>
 );
 
@@ -396,7 +396,7 @@ export const FieldsCard = ({ form, profile, state, title, description, columns =
             const props = editor.field(field.key);
             return field.multiline
               ? <TextArea key={field.key} className="sm:col-span-2" {...props} label={field.label} />
-              : <Input key={field.key} spellCheck={false} inputClassName={field.mono ? 'font-mono' : undefined} {...props} />;
+              : <Input key={field.key} spellCheck={false} inputClassName={field.mono ? 'font-mono placeholder:font-sans' : undefined} {...props} />;
           })}
         </div>
         <SaveError message={editor.saveError} />

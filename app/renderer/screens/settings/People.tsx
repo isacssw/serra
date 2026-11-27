@@ -61,13 +61,13 @@ export const People = () => {
         };
         return (
           <div className="flex flex-col gap-4">
-            <Table>
+            <Table className="text-[13px]">
               <THead>
                 <Tr><Th>Name</Th><Th>Slack member ID</Th><Th className="w-28"><span className="sr-only">Access</span></Th></Tr>
               </THead>
               <TBody>
                 {rows.map((row) => (
-                  <Tr key={row.slackUserId} className="hover:bg-hover">
+                  <Tr key={row.slackUserId} className="h-11">
                     <Td>
                       <span className="flex min-w-0 items-center gap-2.5">
                         <Avatar name={row.name} />
@@ -77,7 +77,7 @@ export const People = () => {
                       </span>
                     </Td>
                     <Td className="font-mono text-xs text-muted">{row.slackUserId}</Td>
-                    <Td className="py-2 text-right">
+                    <Td className="py-0 text-right">
                       {row.access === 'owner'
                         ? <Badge tone="neutral" title="The owner always has access"><Lock size={11} aria-hidden className="mr-1" />Owner</Badge>
                         : (
@@ -96,7 +96,7 @@ export const People = () => {
                 spellCheck={false}
                 autoCapitalize="characters"
                 className="w-64"
-                inputClassName="font-mono"
+                inputClassName="font-mono placeholder:font-sans"
                 value={input}
                 error={problem}
                 onChange={(event) => { setInput(event.target.value); setTried(false); }}

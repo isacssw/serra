@@ -60,7 +60,6 @@ const ModelSection = ({ backend, profile, state }: { backend: AgentBackend; prof
             placeholder="Default"
             spellCheck={false}
             value={backend.draft.model}
-            hint="No steering mid-turn."
             onChange={(event) => backend.setModel(event.target.value)}
           />
         </div>
@@ -77,7 +76,7 @@ const ModelSection = ({ backend, profile, state }: { backend: AgentBackend; prof
                 onChange={(provider) => editor.set('provider', provider)}
               />
             )
-            : <Input spellCheck={false} inputClassName="font-mono" {...editor.field('provider')} placeholder={providers === undefined ? '' : 'claudeAgent'} />}
+            : <Input spellCheck={false} inputClassName="font-mono placeholder:font-sans" {...editor.field('provider')} placeholder={providers === undefined ? '' : 'claudeAgent'} />}
           <Input spellCheck={false} {...editor.field('model')} />
         </div>
       )}
@@ -104,14 +103,14 @@ const BranchSection = ({ profile, state }: { profile: Profile; state: SettingsSt
   return (
     <SettingsSection title="Branches" description={branchPatternForm.description}>
       <div className="flex flex-col gap-2.5">
-        <Input ref={input} spellCheck={false} inputClassName="font-mono" {...editor.field('branchPattern')} />
+        <Input ref={input} spellCheck={false} inputClassName="font-mono placeholder:font-sans" {...editor.field('branchPattern')} />
         <div className="flex flex-wrap gap-1.5" role="group" aria-label="Insert a placeholder">
           {BRANCH_TOKENS.map((token) => (
             <button
               key={token}
               type="button"
               onClick={() => insert(token)}
-              className="h-6 rounded-md border border-line-strong bg-raised px-1.5 font-mono text-[11px] text-muted transition-colors duration-150 hover:border-line-strong hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-focus"
+              className="h-6 rounded-md border border-line-control bg-raised px-1.5 font-mono text-[11px] text-muted transition-colors duration-150 hover:border-faint hover:bg-hover hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-focus"
             >
               {token}
             </button>
@@ -133,6 +132,7 @@ const WorkerSections = ({ profile, state }: { profile: Profile; state: SettingsS
     <>
       <SettingsSection title="Agent" description="Runs every new job.">
         <AgentPicker backend={backend}><AddAgentCard backend={backend} /></AgentPicker>
+        {backend.draft.choice !== 't3' && <p className="text-xs text-faint">ACP agents can't be steered mid-turn: a message waits for the turn to end.</p>}
       </SettingsSection>
       <ModelSection backend={backend} profile={profile} state={state} />
       <BranchSection profile={profile} state={state} />

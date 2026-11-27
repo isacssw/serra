@@ -44,14 +44,14 @@ const Tabs = ({ active, drafts, onSelect }: { active: BriefDocument; drafts: Dra
         tabIndex={active === document.id ? 0 : -1}
         onClick={() => onSelect(document.id)}
         className={cx(
-          'relative flex h-7 items-center rounded-md border px-3 text-[13px] font-medium transition-colors duration-150',
+          'relative flex h-7 items-center rounded-md border px-3.5 text-[13px] font-medium transition-colors duration-150',
           'focus-visible:outline-2 focus-visible:-outline-offset-1 focus-visible:outline-focus',
           active === document.id ? 'border-line-strong bg-overlay text-ink shadow-field' : 'border-transparent text-muted hover:text-ink',
         )}
       >
         {document.label}
         {/* The dot sits in the corner, taking no width, so the segments don't shift as you type. */}
-        {isDirty(drafts[document.id]) && <span className="absolute top-1 right-1 size-1.5 rounded-full bg-warn" aria-label="unsaved changes" />}
+        {isDirty(drafts[document.id]) && <span className="absolute top-1.5 right-1.5 size-1.5 rounded-full bg-warn" aria-label="unsaved changes" />}
       </button>
     ))}
   </div>
@@ -253,18 +253,23 @@ export const BriefPolicy = () => {
   }, [active, draft.text, draft.saved]);
 
   const edit = (text: string) => setDrafts((current) => ({ ...current, [active]: { ...current[active], text } }));
-  const revert = () => setDrafts((current) => ({ ...current, [active]: loadedDraft(current[active].saved ?? '') }));
+  // The save bar covers both documents: an edit to the brief stays unsaved, and saveable, while Policy is open.
+  const unsaved = DOCUMENTS.filter((document) => isDirty(drafts[document.id]));
+  const revert = () => setDrafts((current) => ({
+    brief: loadedDraft(current.brief.saved ?? ''), policy: loadedDraft(current.policy.saved ?? ''),
+  }));
 
   const save = async () => {
     const bridge = serra();
     if (!bridge) return;
     setSaving(true);
-    const document = active;
-    const text = draft.text;
     try {
-      await bridge.brief.save(document, text);
-      setDrafts((current) => ({ ...current, [document]: { saved: text, text: current[document].text } }));
-      toast({ message: `${DOCUMENTS.find((entry) => entry.id === document)!.file} saved. Workers get it from their next job.`, tone: 'success' });
+      for (const { id: document, file } of unsaved) {
+        const text = drafts[document].text;
+        await bridge.brief.save(document, text);
+        setDrafts((current) => ({ ...current, [document]: { saved: text, text: current[document].text } }));
+        toast({ message: `${file} saved. Workers get it from their next job.`, tone: 'success' });
+      }
     } catch (error) {
       toast({ message: message(error), tone: 'error' });
     } finally { setSaving(false); }
@@ -287,7 +292,6 @@ export const BriefPolicy = () => {
             </div>
             <textarea
               aria-label={about.file}
-              title={about.about}
               aria-invalid={current.length ? true : undefined}
               aria-describedby={current.length ? 'brief-problems' : undefined}
               spellCheck={false}
@@ -295,21 +299,22 @@ export const BriefPolicy = () => {
               disabled={draft.saved === null}
               onChange={(event) => edit(event.target.value)}
               placeholder={active === 'policy' ? '# Owner policy\n\nAdd your workflow choices here.' : undefined}
-              className={cx('min-h-[26rem] max-h-[40rem] resize-none px-3.5 py-3 font-mono text-xs leading-5 [field-sizing:content]', fieldClass(current.length > 0))}
+              className={cx('min-h-[20rem] max-h-[calc(100vh-20rem)] resize-none px-3.5 py-3 font-mono text-xs leading-5 [field-sizing:content]', fieldClass(current.length > 0))}
             />
             <Problems problems={current} dirty={dirty} />
           </section>
           {active === 'brief' && <Preview draft={draft} />}
           {/* Room for the floating save bar at the end of the page, so the last lines aren't under it. */}
-          {dirty && <div aria-hidden className="h-14" />}
+          {unsaved.length > 0 && <div aria-hidden className="h-14" />}
           <SaveBar
-            changed={dirty}
-            valid={current.length === 0}
+            changed={unsaved.length > 0}
+            count={unsaved.length}
+            valid={unsaved.every((document) => problems[document.id].length === 0)}
             saving={saving}
-            note="Applies on the next job"
+            note={`${unsaved.map((document) => document.file).join(' and ')} · Applies on the next job`}
             onSave={() => void save()}
             onReset={revert}
-            onReveal={() => {}}
+            onReveal={() => { const bad = unsaved.find((document) => problems[document.id].length > 0); if (bad) setActive(bad.id); }}
           />
         </>
       )}

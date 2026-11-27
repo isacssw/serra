@@ -61,21 +61,21 @@ const Triggers = ({ profile, state }: { profile: Profile; state: SettingsState }
             <ul className="flex flex-col divide-y divide-line overflow-hidden rounded-xl border border-line">
               {list.rows.map((row, index) => {
                 const summary = triggerSummary(row);
-                const edited = JSON.stringify(row) !== JSON.stringify(saved[index]);
+                const edited = index >= saved.length ? 'New' : JSON.stringify(row) !== JSON.stringify(saved[index]) ? 'Edited' : null;
                 const invalid = Object.keys(list.errors).some((key) => key.startsWith(`${index}.`));
                 return (
-                  <li key={index} data-trigger={index} className="flex items-center gap-3 py-3 pr-2 pl-4 hover:bg-hover">
+                  <li key={index} data-trigger={index} onClick={() => open(index)} className="flex cursor-default items-center gap-3 py-3 pr-2 pl-4 hover:bg-hover">
                     <span aria-hidden className="grid size-8 shrink-0 place-items-center rounded-lg border border-line bg-canvas text-muted"><Hash size={15} strokeWidth={1.75} /></span>
                     <div className="flex min-w-0 flex-1 flex-col gap-0.5">
                       <p className="flex min-w-0 items-center gap-2 text-[13px]">
                         <span className="truncate font-mono font-medium text-ink">{row.channel || 'No channel'}</span>
                         <span className="shrink-0 text-faint">·</span>
-                        <span className="truncate font-mono text-xs text-muted">{summary.source}</span>
-                        {edited && <Badge tone={invalid ? 'down' : 'warn'}>{invalid ? 'Fix' : 'Edited'}</Badge>}
+                        <span className="truncate text-muted">{summary.source}{summary.id && <span className="font-mono text-xs"> {summary.id}</span>}</span>
+                        {edited && <Badge tone={invalid ? 'down' : 'warn'}>{invalid ? 'Fix' : edited}</Badge>}
                       </p>
                       <p className="truncate text-xs text-faint" title={row.instructions}>{summary.instructions}</p>
                     </div>
-                    <Button variant="ghost" size="sm" aria-label={`Edit alert in ${row.channel || 'no channel'}`} title="Edit" icon={<Pencil size={13} />} className="w-7 px-0!" onClick={() => open(index)} />
+                    <Button variant="ghost" size="sm" aria-label={`Edit alert in ${row.channel || 'no channel'}`} title="Edit" icon={<Pencil size={13} />} className="w-7 px-0!" onClick={(event) => { event.stopPropagation(); open(index); }} />
                   </li>
                 );
               })}
@@ -98,14 +98,14 @@ const Triggers = ({ profile, state }: { profile: Profile; state: SettingsState }
         )}
       >
         <form id={formId} className="grid gap-4 sm:grid-cols-2" onSubmit={done} noValidate>
-          <Input label="Channel ID" data-autofocus spellCheck={false} inputClassName="font-mono" placeholder="e.g. C0123456789" value={draft.channel} error={shown.channel} onChange={(event) => setDraft({ ...draft, channel: event.target.value })} />
+          <Input label="Channel ID" data-autofocus spellCheck={false} inputClassName="font-mono placeholder:font-sans" placeholder="e.g. C0123456789" value={draft.channel} error={shown.channel} onChange={(event) => setDraft({ ...draft, channel: event.target.value })} />
           <Select id="trigger-source" label="Messages from" value={draft.source} options={sources} onChange={(source) => setDraft({ ...draft, source })} />
           {draft.source !== 'any' && (
             <Input
               className="sm:col-span-2"
               label={draft.source === 'bot' ? 'Bot ID' : 'Slack member ID'}
               spellCheck={false}
-              inputClassName="font-mono"
+              inputClassName="font-mono placeholder:font-sans"
               placeholder={draft.source === 'bot' ? 'e.g. B0123456789' : 'e.g. U0123456789'}
               value={draft.sourceId}
               error={shown.sourceId}

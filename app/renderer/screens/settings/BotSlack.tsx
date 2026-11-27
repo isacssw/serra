@@ -32,7 +32,7 @@ const BotSection = ({ profile, state }: { profile: Profile; state: SettingsState
         {/* Read-only on purpose: shown as a value, not a field, with Edit… opening the dialog that warns. */}
         <div className="flex min-w-0 flex-col gap-1.5">
           <span className={labelClass}>{idField.label}</span>
-          <div className="flex h-8 items-center gap-2 rounded-lg bg-raised pr-0.5 pl-2.5">
+          <div className="flex h-8 items-center gap-2 rounded-lg border border-line bg-raised pr-0.5 pl-2.5">
             <span className={cx('min-w-0 flex-1 truncate font-mono text-[13px]', idField.error ? 'text-down' : 'text-ink')}>{id}</span>
             <Button variant="ghost" size="sm" icon={<Pencil size={13} />} onClick={open} aria-label="Edit bot ID">Edit…</Button>
           </div>
@@ -58,7 +58,7 @@ const BotSection = ({ profile, state }: { profile: Profile; state: SettingsState
             data-autofocus
             spellCheck={false}
             autoCapitalize="off"
-            inputClassName="font-mono"
+            inputClassName="font-mono placeholder:font-sans"
             placeholder="friday"
             value={draft}
             error={tried || draft !== id ? problem : undefined}

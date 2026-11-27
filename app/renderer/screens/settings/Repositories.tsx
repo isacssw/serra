@@ -8,7 +8,7 @@ import { emptyRepositoryRow, parseRepositories, projectForm, repositoryRows, typ
 import { SaveError, SettingsPage, useListEditor, useSectionForm, useSettings, type SettingsState } from './SettingsKit.tsx';
 
 /** What the table shows for one repository, main or other. */
-interface Line { key: string; name: string; path: string; base: string; github: string; main: boolean; edited: boolean; invalid: boolean }
+interface Line { key: string; name: string; path: string; base: string; github: string; main: boolean; edited: 'new' | 'edited' | null; invalid: boolean }
 
 const Cell = ({ children, className = '' }: { children: ReactNode; className?: string }) => (
   <td className={`px-3 py-2.5 align-middle first:pl-4 last:pr-2 ${className}`}>{children}</td>
@@ -17,7 +17,7 @@ const Cell = ({ children, className = '' }: { children: ReactNode; className?: s
 const RepositoryTable = ({ lines, onEdit }: { lines: Line[]; onEdit: (key: string) => void }) => (
   <div className="overflow-hidden rounded-xl border border-line">
     <table className="w-full table-fixed border-collapse text-[13px]">
-      <colgroup><col className="w-[22%]" /><col /><col className="w-[18%]" /><col className="w-[20%]" /><col className="w-12" /></colgroup>
+      <colgroup><col className="w-[18%]" /><col /><col className="w-[16%]" /><col className="w-[24%]" /><col className="w-12" /></colgroup>
       <thead className="border-b border-line text-left text-xs text-faint">
         <tr>
           <th scope="col" className="h-9 pl-4 font-medium">Name</th>
@@ -29,12 +29,12 @@ const RepositoryTable = ({ lines, onEdit }: { lines: Line[]; onEdit: (key: strin
       </thead>
       <tbody>
         {lines.map((line) => (
-          <tr key={line.key} data-repository={line.key} className="group border-t border-line first:border-t-0 hover:bg-hover">
+          <tr key={line.key} data-repository={line.key} onClick={() => onEdit(line.key)} className="group cursor-default border-t border-line first:border-t-0 hover:bg-hover">
             <Cell>
               <span className="flex min-w-0 items-center gap-2">
                 <span className="truncate font-medium text-ink">{line.name}</span>
                 {line.main && <Badge tone="accent">Main</Badge>}
-                {line.edited && <Badge tone={line.invalid ? 'down' : 'warn'}>{line.invalid ? 'Fix' : 'Edited'}</Badge>}
+                {line.edited && <Badge tone={line.invalid ? 'down' : 'warn'}>{line.invalid ? 'Fix' : line.edited === 'new' ? 'New' : 'Edited'}</Badge>}
               </span>
             </Cell>
             <Cell><span className="block truncate font-mono text-xs text-muted" title={line.path}>{line.path || '—'}</span></Cell>
@@ -45,7 +45,7 @@ const RepositoryTable = ({ lines, onEdit }: { lines: Line[]; onEdit: (key: strin
                 : <span className="text-faint">—</span>}
             </Cell>
             <Cell className="text-right">
-              <Button variant="ghost" size="sm" aria-label={`Edit ${line.name}`} title="Edit" icon={<Pencil size={13} />} className="w-7 px-0!" onClick={() => onEdit(line.key)} />
+              <Button variant="ghost" size="sm" aria-label={`Edit ${line.name}`} title="Edit" icon={<Pencil size={13} />} className="w-7 px-0!" onClick={(event) => { event.stopPropagation(); onEdit(line.key); }} />
             </Cell>
           </tr>
         ))}
@@ -65,7 +65,7 @@ const MainFields = ({ values, errors, onChange }: { values: FormValues; errors: 
         label={field.label}
         placeholder={field.placeholder}
         spellCheck={false}
-        inputClassName="font-mono"
+        inputClassName="font-mono placeholder:font-sans"
         className={field.key === 'path' || field.key === 'githubRepo' ? 'sm:col-span-2' : undefined}
         {...(index === 0 ? { 'data-autofocus': true } : {})}
         value={values[field.key] ?? ''}
@@ -80,8 +80,8 @@ const MainFields = ({ values, errors, onChange }: { values: FormValues; errors: 
 const OTHER_FIELDS: { key: keyof RepositoryRow; label: string; placeholder?: string; wide?: boolean; mono?: boolean }[] = [
   { key: 'name', label: 'Name', placeholder: 'docs', wide: true },
   { key: 'path', label: 'Local path', placeholder: '/Users/you/docs', wide: true, mono: true },
-  { key: 'githubRepo', label: 'GitHub repository (optional)', placeholder: 'acme/docs', mono: true },
   { key: 'baseRef', label: 'Base ref', placeholder: 'origin/main', mono: true },
+  { key: 'githubRepo', label: 'GitHub repository (optional)', placeholder: 'acme/docs', mono: true },
 ];
 
 const RepositoriesTable = ({ profile, state }: { profile: Profile; state: SettingsState }) => {
@@ -97,11 +97,11 @@ const RepositoriesTable = ({ profile, state }: { profile: Profile; state: Settin
   const lines: Line[] = [
     {
       key: 'main', name: profile.project.githubRepo.split('/').at(-1) || profile.project.path.split('/').filter(Boolean).at(-1) || 'Main project', path: main.values.path ?? '', base: main.values.baseRef ?? '',
-      github: main.values.githubRepo ?? '', main: true, edited: main.changed, invalid: Object.keys(main.errors).length > 0,
+      github: main.values.githubRepo ?? '', main: true, edited: main.changed ? 'edited' : null, invalid: Object.keys(main.errors).length > 0,
     },
     ...others.rows.map((row, index): Line => ({
       key: `other-${index}`, name: row.name || 'Untitled', path: row.path, base: row.baseRef, github: row.githubRepo, main: false,
-      edited: JSON.stringify(row) !== JSON.stringify(saved[index]),
+      edited: index >= saved.length ? 'new' : JSON.stringify(row) !== JSON.stringify(saved[index]) ? 'edited' : null,
       invalid: Object.keys(others.errors).some((key) => key.startsWith(`${index}.`)),
     })),
   ];
@@ -169,7 +169,7 @@ const RepositoriesTable = ({ profile, state }: { profile: Profile; state: Settin
                     placeholder={field.placeholder}
                     spellCheck={false}
                     className={field.wide ? 'sm:col-span-2' : undefined}
-                    inputClassName={field.mono ? 'font-mono' : undefined}
+                    inputClassName={field.mono ? 'font-mono placeholder:font-sans' : undefined}
                     {...(index === 0 ? { 'data-autofocus': true } : {})}
                     value={rowDraft[field.key]}
                     error={shown[field.key]}

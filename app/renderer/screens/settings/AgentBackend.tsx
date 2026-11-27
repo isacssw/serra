@@ -121,7 +121,7 @@ const AgentCard = ({ option, checked, focusable, onPick, onKeyDown, onRemove, bu
     >
       <span aria-hidden className={cx(
         'grid size-8 shrink-0 place-items-center rounded-lg border',
-        option.disabled ? 'border-line-subtle text-faint' : 'border-line bg-canvas text-ink',
+        option.disabled ? 'border-line text-faint' : 'border-line bg-canvas text-ink',
       )}>
         <AgentGlyph mark={option.mark} />
       </span>
