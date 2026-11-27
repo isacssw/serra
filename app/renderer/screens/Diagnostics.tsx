@@ -1,8 +1,8 @@
 // Diagnostics (APP-22): `diagnose()` for the profile, rerun on demand and when the daemon starts, stops, restarts
 // or its Slack connection changes, plus the tail of the daemon's log. Token values never reach this window: main
 // scrubs every detail and log line first.
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { CircleAlert, CircleCheck, Copy, ListChecks, RefreshCw, Stethoscope } from 'lucide-react';
+import { useCallback, useEffect, useId, useRef, useState } from 'react';
+import { ChevronRight, CircleAlert, CircleCheck, Copy, ListChecks, RefreshCw, Stethoscope } from 'lucide-react';
 import { useNavigate } from 'react-router';
 import type { Diagnostic } from '../../../src/contracts.ts';
 import type { AppInfo } from '../../main/bridge.ts';
@@ -11,21 +11,71 @@ import { useBotStatus } from '../shell/live.ts';
 import { Button, cx, Page, Select, useToast } from '../ui/index.ts';
 import { SETUP_PATH } from '../setup/setup.logic.ts';
 import {
-  DEFAULT_LOG_LINES, LOG_LINE_CHOICES, reportText, runtimeLine, statusKey, summarize,
+  DEFAULT_LOG_LINES, explainFailure, LOG_LINE_CHOICES, orderChecks, passValue, reportText, runtimeLine, sharedCauses, statusKey, summarize,
 } from './diagnostics.logic.ts';
 
 const errorText = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
-const CheckRow = ({ result }: { result: Diagnostic }) => (
-  <li className="flex items-start gap-3 px-5 py-3" data-check={result.name} data-check-ok={result.ok}>
-    {result.ok
-      ? <CircleCheck size={18} className="mt-0.5 shrink-0 text-up" aria-label="Passes" />
-      : <CircleAlert size={18} className="mt-0.5 shrink-0 text-down" aria-label="Fails" />}
-    <div className="flex min-w-0 flex-col gap-0.5">
-      <span className="font-medium">{result.name}</span>
-      <span className={cx('text-sm break-words', result.ok ? 'text-muted' : 'text-down')}>{result.detail}</span>
-    </div>
-  </li>
+/** Text with its paths and `commands` in mono; `path` sets the paths' colour (quiet on a passing row, ink on a failing one). */
+const Inline = ({ text, path = 'text-ink' }: { text: string; path?: string }) => (
+  <>
+    {text.split(/(`[^`]+`|(?:^|(?<=\s))[~/][^\s,]*)/).filter(Boolean).map((part, index) => (/^`.+`$/.test(part)
+      ? <code key={index} className="font-mono text-[12px]">{part.slice(1, -1)}</code>
+      : /^[~/]/.test(part) ? <span key={index} className={cx('font-mono text-[12px]', path)}>{part}</span> : <span key={index}>{part}</span>))}
+  </>
+);
+
+/** One check: a passing one is a quiet line, a failing one leads with its name and keeps the reason readable. */
+const CheckRow = ({ result, sameAs, onOpen }: { result: Diagnostic; sameAs?: string; onOpen: (path: string) => void }) => {
+  const detail = result.detail;
+  const failure = result.ok ? null : sameAs ? { reason: `Same cause as ${sameAs}`, raw: null } : explainFailure(detail);
+  const value = passValue(detail);
+  const [open, setOpen] = useState(false);
+  const rawId = useId();
+  return (
+    <li className={cx('flex items-start gap-3 px-4', result.ok ? 'py-2.5' : 'py-3')} data-check={result.name} data-check-ok={result.ok}>
+      {result.ok
+        ? <CircleCheck size={16} strokeWidth={2} className="mt-0.5 shrink-0 text-up" aria-label="Passes" />
+        : <CircleAlert size={16} strokeWidth={2} className="mt-0.5 shrink-0 text-down" aria-label="Fails" />}
+      <div className={cx('flex min-w-0 flex-1 gap-x-4 gap-y-0.5', result.ok ? 'flex-wrap items-baseline' : 'flex-col')}>
+        <span className="w-44 shrink-0 text-[13px] font-medium">{result.name}</span>
+        {failure ? (
+          <span className="flex min-w-0 flex-col items-start gap-1.5">
+            <span className="flex min-w-0 flex-wrap items-baseline gap-x-3 text-[13px] text-muted">
+              <span className="break-words"><Inline text={failure.reason} /></span>
+              {failure.raw && (
+                <button
+                  type="button" aria-expanded={open} aria-controls={rawId} onClick={() => setOpen(!open)}
+                  className="inline-flex items-center gap-0.5 rounded text-xs text-muted hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
+                >
+                  <ChevronRight size={12} aria-hidden className={cx('transition-transform', open && 'rotate-90')} />{open ? 'Hide details' : 'Details'}
+                </button>
+              )}
+            </span>
+            {failure.raw && open && <code id={rawId} className="block w-full rounded-lg border border-line-subtle bg-field px-2.5 py-1.5 font-mono text-[11px] leading-4 break-words whitespace-pre-wrap text-muted">{failure.raw}</code>}
+          </span>
+        ) : (
+          <span className="min-w-0 flex-1 truncate text-[13px] text-ink" title={detail}><Inline text={value} path="text-muted" /></span>
+        )}
+      </div>
+      {failure && 'action' in failure && failure.action && (
+        <Button size="sm" className="shrink-0" onClick={() => onOpen(failure.action!.path)}>{failure.action.label}</Button>
+      )}
+    </li>
+  );
+};
+
+/** Rows that hold the list's shape while the first run goes. */
+const Skeleton = () => (
+  <ul aria-hidden className="flex flex-col divide-y divide-line-subtle">
+    {[44, 60, 36, 52, 40, 56].map((width, index) => (
+      <li key={index} className="flex items-center gap-3 px-4 py-3">
+        <span className="size-4 shrink-0 rounded-full bg-raised" />
+        <span className="h-3 w-40 rounded bg-raised motion-safe:animate-pulse" />
+        <span className="h-3 rounded bg-raised motion-safe:animate-pulse" style={{ width: `${width}%` }} />
+      </li>
+    ))}
+  </ul>
 );
 
 /** Runs `diagnose()` once at a time. A request while a run is going queues one more run after it. */
@@ -113,62 +163,68 @@ export const Diagnostics = () => {
     if (!checks.results) return;
     try {
       await navigator.clipboard.writeText(reportText({ results: checks.results, checkedAt: checks.checkedAt, info, log: tail.log ?? [] }));
-      toast({ message: 'Diagnostics copied. Token values are never included.', tone: 'success' });
+      toast({ message: 'Report copied', tone: 'success' });
     } catch (failure) { toast({ message: `Could not copy: ${errorText(failure)}`, tone: 'error' }); }
   };
 
   const summary = checks.results ? summarize(checks.results) : null;
+  const shared = sharedCauses(summary?.failing ?? []);
   const navigate = useNavigate();
 
   return (
     <Page
       title="Diagnostics"
-      subtitle="Read-only health checks for the bot and the end of its log. Nothing here posts to chat or starts work."
       actions={(
         <>
-          {checks.checkedAt && (
-            <span className="text-xs text-muted" title={checks.checkedAt.toLocaleString()}>
-              Checked {checks.checkedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
-            </span>
-          )}
           <Button icon={<ListChecks size={14} aria-hidden />} onClick={() => void navigate(SETUP_PATH)} title="Profile, Slack, owner and service, step by step">Setup</Button>
           <Button icon={<Copy size={14} aria-hidden />} onClick={() => void copy()} disabled={!checks.results}>Copy report</Button>
-          <Button variant="primary" icon={<RefreshCw size={14} aria-hidden className={cx(checks.running && 'animate-spin')} />} onClick={refresh} disabled={checks.running}>
+          <Button icon={<RefreshCw size={14} aria-hidden className={cx(checks.running && 'animate-spin')} />} onClick={refresh} disabled={checks.running}>
             {checks.running ? 'Checking…' : 'Run checks'}
           </Button>
         </>
       )}
     >
       {checks.error && (
-        <div role="alert" className="flex items-center gap-3 rounded-lg border border-down/40 px-4 py-3 text-sm text-down">
+        <div role="alert" className="flex items-center gap-3 rounded-xl border border-down/40 bg-down/8 px-4 py-3 text-[13px] text-down">
           <CircleAlert size={16} aria-hidden />
           <span className="flex-1">{checks.error}</span>
         </div>
       )}
 
       {!checks.results && !checks.error && (
-        <p className="flex items-center gap-2 text-sm text-muted"><Stethoscope size={16} aria-hidden /> Running checks… Network checks can take a few seconds.</p>
-      )}
-
-      {checks.results && summary && (
-        <section className="flex flex-col rounded-xl border border-line bg-panel" aria-label="Checks">
-          <header className={cx('flex items-center gap-2 border-b border-line px-5 py-3 text-sm font-medium', summary.tone === 'up' ? 'text-up' : 'text-down')} data-diagnostics-summary={summary.tone}>
-            {summary.tone === 'up' ? <CircleCheck size={16} aria-hidden /> : <CircleAlert size={16} aria-hidden />}
-            {summary.text}
+        <section className="flex flex-col overflow-hidden rounded-xl border border-line bg-panel shadow-card" aria-label="Checks" aria-busy>
+          <header className="flex items-center gap-2 border-b border-line px-4 py-3 text-[13px] font-medium text-muted" role="status">
+            <Stethoscope size={15} aria-hidden /> Running checks…
           </header>
-          <ul className="flex flex-col divide-y divide-line">
-            {checks.results.map((result) => <CheckRow key={result.name} result={result} />)}
-          </ul>
+          <Skeleton />
         </section>
       )}
 
-      {info && <p className="text-xs text-muted" data-app-runtime>{runtimeLine(info)}</p>}
+      {checks.results && summary && (
+        <section className="flex flex-col overflow-hidden rounded-xl border border-line bg-panel shadow-card" aria-label="Checks">
+          <header className={cx('flex items-center gap-2 border-b border-line px-4 py-3 text-[13px] font-medium', summary.tone === 'up' ? 'text-up' : 'text-down')} data-diagnostics-summary={summary.tone}>
+            {summary.tone === 'up' ? <CircleCheck size={16} aria-hidden /> : <CircleAlert size={16} aria-hidden />}
+            <span className="flex-1">{summary.tone === 'up' ? summary.text : `${summary.failing.length} of ${checks.results.length} checks fail`}</span>
+            {checks.checkedAt && (
+              <span className="text-xs font-normal text-faint tabular-nums" title={checks.checkedAt.toLocaleString()}>
+                Checked {checks.checkedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+              </span>
+            )}
+          </header>
+          <ul className="flex flex-col divide-y divide-line-subtle">
+            {orderChecks(checks.results).map((result) => (
+              <CheckRow key={result.name} result={result} sameAs={shared.get(result.name)} onOpen={(path) => void navigate(path)} />
+            ))}
+          </ul>
+          {info && <p className="border-t border-line-subtle px-4 py-2.5 text-xs text-faint tabular-nums" data-app-runtime>{runtimeLine(info)}</p>}
+        </section>
+      )}
 
       <section className="flex flex-col gap-3" aria-label="Daemon log">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex flex-col">
             <h2 className="text-[15px] leading-5 font-semibold">Daemon log</h2>
-            <p className="text-xs text-muted">logs/bot.log in the profile folder. Anything shaped like a token is hidden.</p>
+            <p className="font-mono text-xs text-faint">logs/bot.log · tokens hidden</p>
           </div>
           <div className="flex items-center gap-2">
             <Select
@@ -185,10 +241,10 @@ export const Diagnostics = () => {
         </div>
         {tail.error && <p role="alert" className="text-sm text-down">{tail.error}</p>}
         {tail.log && tail.log.length === 0 && !tail.error && (
-          <p className="text-sm text-muted">The log is empty or hasn&apos;t been written yet. It starts when the bot runs as a service.</p>
+          <p className="rounded-xl border border-dashed border-line px-4 py-6 text-center text-[13px] text-muted">No log yet. It starts with the service.</p>
         )}
         {tail.log && tail.log.length > 0 && (
-          <pre ref={logBox} className="max-h-96 overflow-auto rounded-lg border border-line bg-raised px-4 py-3 font-mono text-xs leading-relaxed whitespace-pre-wrap break-all" data-log-tail>
+          <pre ref={logBox} tabIndex={0} aria-label="Log lines" className="max-h-96 overflow-auto rounded-xl border border-line bg-field px-4 py-3 font-mono text-xs leading-relaxed whitespace-pre-wrap break-all text-muted focus-visible:outline-2 focus-visible:outline-focus" data-log-tail>
             {tail.log.join('\n')}
           </pre>
         )}

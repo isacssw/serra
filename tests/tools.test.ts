@@ -396,7 +396,7 @@ const emptyMcp = (overrides: Partial<McpOverview> = {}): McpOverview => ({
 test('server and CLI statuses', () => {
   assert.deepEqual(serverStatus({ load: 'disabled', health: 'connected' }), { tone: 'off', text: 'Off' });
   assert.deepEqual(serverStatus({ load: 'loads', health: 'connected' }), { tone: 'up', text: 'Connected' });
-  assert.deepEqual(serverStatus({ load: 'loads', health: 'needs-auth' }), { tone: 'warn', text: 'Needs sign-in' });
+  assert.deepEqual(serverStatus({ load: 'loads', health: 'needs-auth' }), { tone: 'warn', text: 'Not signed in' });
   assert.deepEqual(serverStatus({ load: 'loads', health: 'failed' }), { tone: 'down', text: 'Failed' });
   assert.deepEqual(serverStatus({ load: 'unsure', health: null }), { tone: 'warn', text: 'May not load' });
   assert.deepEqual(serverStatus({ load: 'unsure', health: 'connected' }), { tone: 'warn', text: 'May not load' }, 'connected from the checkout, not surely in a job');
@@ -462,7 +462,7 @@ test('recommendations: GitHub always, others only with a signal or a server; rea
   const linear = { name: 'linear', driver: 'claude' as const, scope: 'user' as const, source: '~/.claude.json', transport: 'http' as const, host: 'mcp.linear.app', load: 'loads' as const, note: null, health: 'needs-auth' as const };
   rows = recommendationRows(emptyMcp({ servers: [{ ...linear, name: 'claude.ai Linear' }] }), clis);
   const signIn = rows.find((row) => row.rec.id === 'linear')!;
-  assert.equal(signIn.state.text, 'Needs sign-in');
+  assert.equal(signIn.state.text, 'Not signed in');
   assert.deepEqual(signIn.setup.map((step) => step.command), ["claude mcp login 'claude.ai Linear'"], 'sign in, never re-add an existing server');
   assert.deepEqual([...recommendedCliIds(rows)], ['gh']);
 

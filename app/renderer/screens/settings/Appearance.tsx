@@ -12,7 +12,10 @@ import.meta.hot?.dispose(unregister);
 
 const icons: Record<Theme, ComponentType<LucideProps>> = { system: Monitor, light: Sun, dark: Moon };
 
-/** System / Light / Dark as one segmented control. Native radios, so arrow keys move between them. */
+/**
+ * System / Light / Dark as one segmented control: a groove set into the card, the chosen segment raised out of it.
+ * Native radios, so arrow keys move between them.
+ */
 const ThemeControl = () => {
   const theme = useTheme();
   const toast = useToast();
@@ -24,7 +27,7 @@ const ThemeControl = () => {
     finally { setSaving(false); }
   };
   return (
-    <div role="radiogroup" aria-label="Theme" aria-busy={saving || undefined} className="inline-flex self-start rounded-md border border-line bg-raised p-0.5">
+    <div role="radiogroup" aria-labelledby="theme-label" aria-busy={saving || undefined} className="inline-flex shrink-0 gap-0.5 rounded-[9px] border border-line bg-track p-0.5">
       {themes.map((value) => {
         const Icon = icons[value];
         const checked = theme === value;
@@ -32,9 +35,9 @@ const ThemeControl = () => {
           <label
             key={value}
             className={cx(
-              'relative flex h-8 cursor-pointer items-center gap-1.5 rounded px-3 text-sm font-medium',
+              'relative flex h-7 cursor-pointer items-center gap-1.5 rounded-[7px] border px-2.5 text-[13px] font-medium transition-colors duration-150',
               'has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-1 has-[:focus-visible]:outline-focus',
-              checked ? 'bg-panel text-ink shadow-sm' : 'text-muted hover:text-ink',
+              checked ? 'border-line-strong bg-overlay text-ink shadow-field' : 'border-transparent text-muted hover:text-ink',
             )}
           >
             <input
@@ -46,7 +49,7 @@ const ThemeControl = () => {
               onChange={() => { void pick(value); }}
               className="sr-only"
             />
-            <Icon size={15} aria-hidden />
+            <Icon size={14} strokeWidth={1.75} aria-hidden />
             {themeLabels[value]}
           </label>
         );
@@ -56,17 +59,9 @@ const ThemeControl = () => {
 };
 
 export const Appearance = () => (
-  <Page title="Appearance" subtitle="Saved for this app on this Mac, not in the bot's profile.">
-    <section className="flex flex-col gap-4 rounded-xl border border-line bg-panel p-5">
-      <header className="flex flex-col gap-1">
-        <div className="flex flex-wrap items-center gap-2">
-          <h2 className="text-[15px] leading-5 font-semibold">Theme</h2>
-        </div>
-        <p className="text-sm text-muted">
-          System follows macOS. Light and Dark keep Serra that way, including its menus, dialogs and scrollbars.
-          Also in ⌘K: Switch theme.
-        </p>
-      </header>
+  <Page title="Appearance">
+    <section className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-line bg-panel px-5 py-4 shadow-card">
+      <h2 id="theme-label" className="text-[13px] font-medium">Theme</h2>
       <ThemeControl />
     </section>
   </Page>

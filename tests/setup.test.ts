@@ -457,7 +457,7 @@ test('setup logic: the first screen welcomes, summarises what was found, or asks
     service: 'installed',
   });
   // An installed service whose first answer is on record (or, for another profile, that is installed) is done.
-  assert.equal(foundLine(legacy), '2 of 4 steps already done.');
+  assert.equal(foundLine(legacy), '2 of 4 done');
   assert.equal(summaryRows(summaryWith(['profile'], { service: 'installed' }))[3]!.value, 'Installed, hasn’t answered yet');
   assert.equal(summaryRows(summaryWith(['profile'], { service: 'disconnected' }))[3]!.value, 'Running, not connected to Slack');
   assert.equal(foundLine(summaryWith(['profile', 'slack', 'owner', 'service'], { service: 'disconnected' })), 'Set up, but not connected to Slack.');
@@ -472,7 +472,7 @@ test('setup logic: the first screen welcomes, summarises what was found, or asks
   ]);
   assert.equal(slackLine([{ name: 'SLACK_BOT_TOKEN', state: 'verified', where: 'Keychain', error: null }, { name: 'SLACK_APP_TOKEN', state: 'verified', where: 'Keychain', error: null }], 'acme.slack.com'), 'Connected to acme.slack.com');
   assert.equal(slackLine([{ name: 'SLACK_BOT_TOKEN', state: 'found', where: 'Keychain', error: null }, { name: 'SLACK_APP_TOKEN', state: 'missing', where: '.env', error: null }], null), 'No app token yet');
-  assert.equal(foundLine(summaryWith(['profile', 'slack', 'owner', 'service'], { service: 'running' })), 'Everything is set up.');
+  assert.equal(foundLine(summaryWith(['profile', 'slack', 'owner', 'service'], { service: 'running' })), 'All set up');
 });
 
 test('setup logic: found tokens are checked on their own, except 1Password ones, which would prompt', () => {

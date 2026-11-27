@@ -6,7 +6,7 @@ import { cx } from './cx.ts';
 export const fieldClass = (invalid?: boolean, size: 'sm' | 'md' = 'md'): string => cx(
   size === 'sm' ? 'rounded-[7px] text-xs' : 'rounded-lg text-[13px]',
   'border bg-field text-ink shadow-field outline-none transition-[border-color,box-shadow] duration-150',
-  'placeholder:text-faint',
+  'placeholder:text-faint/65',
   invalid
     ? 'border-down focus-visible:ring-3 focus-visible:ring-down/25 aria-expanded:ring-3 aria-expanded:ring-down/25'
     : 'border-line-control enabled:hover:border-faint focus-visible:border-focus-field focus-visible:ring-3 focus-visible:ring-ring aria-expanded:border-focus-field aria-expanded:ring-3 aria-expanded:ring-ring',

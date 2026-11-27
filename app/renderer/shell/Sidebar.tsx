@@ -21,7 +21,8 @@ import downIcon from '../../../assets/brand/serra-status-down.png';
 import needsYouIcon from '../../../assets/brand/serra-status-needs-you.png';
 import upIcon from '../../../assets/brand/serra-status-up.png';
 
-const icons: Partial<Record<RouteId, ComponentType<LucideProps>>> = {
+/** Each screen's icon, shared with the command palette's Go to rows. */
+export const routeIcons: Partial<Record<RouteId, ComponentType<LucideProps>>> = {
   'jobs-needs-you': Inbox,
   'knowledge-overview': Gauge,
   'knowledge-graph': Waypoints,
@@ -135,7 +136,7 @@ const onNavKey = (event: KeyboardEvent<HTMLElement>): void => {
 };
 
 const ScreenLink = ({ route, counts, current }: { route: Route; counts: BadgeCounts; current?: boolean }) => {
-  const Icon = icons[route.id as RouteId] ?? Inbox;
+  const Icon = routeIcons[route.id as RouteId] ?? Inbox;
   const label = route.navLabel ?? route.label;
   // Jobs shows what needs you; with nothing waiting, what's running.
   const key: BadgeKey | undefined = route.id === 'jobs-needs-you' ? (counts.needsYou ? 'needsYou' : 'running') : route.badge;
