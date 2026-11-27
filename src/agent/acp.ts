@@ -7,7 +7,8 @@
 // - A run record (`runsDir`, one JSON file per session): the messages, the folder, and whether a turn was going. It
 //   is the run's transcript (Jobs shows it), and after a restart Serra reopens the session with `session/load` and
 //   carries on a turn the restart cut off. Without `runsDir` (meeting runs) a run lives only in this process.
-// - Worktrees: Serra makes one itself (src/agent/worktree.ts) and starts the session in it.
+// - Worktrees: Serra makes one itself (src/agent/worktree.ts) and starts the session in it, except for an agent bound
+//   to its own folder (`cwd`, eve's app root), whose sessions all open there.
 // - Steer: there is none in ACP v1, so a message sent while a turn runs is queued and sent when the turn ends.
 //
 // Access, never wider than T3 gives the same kind of run:
@@ -81,6 +82,8 @@ export interface RunRecord {
   entries: TranscriptEntry[];
   /** The running turn's reply and open tools so far; null or absent when no turn is going. */
   live?: LiveTurn | null;
+  /** Why the latest turn failed, as a fixed sentence (`turnFailure`); null or absent when it didn't. */
+  failed?: string | null;
 }
 
 export interface AcpBackendOptions {
@@ -145,13 +148,19 @@ const modeFor = (modes: acp.SessionModeState, access: RunAccess): string | null 
   return modes.availableModes.find((choice) => /^(default|manual|ask)$/i.test(choice.id))?.id ?? null;
 };
 
+/** Codex's adapter names its error in `codexErrorInfo`, not `errorKind`: the ones with a sentence of their own. */
+const CODEX_ERROR_KINDS: Record<string, string> = {
+  unauthorized: 'authentication_failed', usageLimitExceeded: 'rate_limit', rateLimitExceeded: 'rate_limit', serverOverloaded: 'server_error',
+};
+
 /**
  * Why a turn failed, as a fixed sentence: the adapter's error kind or ACP's auth error, never the agent's own text
  * (it can quote the brief, which may hold a transcript).
  */
 const turnFailure = (error: unknown, name: string): string => {
   const record = typeof error === 'object' && error !== null ? (error as { code?: unknown; data?: unknown }) : {};
-  const kind = typeof record.data === 'object' && record.data !== null && 'errorKind' in record.data ? String(record.data.errorKind) : null;
+  const data = isRecord(record.data) ? record.data : {};
+  const kind = 'errorKind' in data ? String(data.errorKind) : typeof data.codexErrorInfo === 'string' ? CODEX_ERROR_KINDS[data.codexErrorInfo] ?? null : null;
   if (record.code === -32000 || kind === 'authentication_failed') return `${name} needs you to sign in. Sign in with its own CLI, then try again.`;
   if (kind === 'rate_limit') return `${name} hit its usage or rate limit. Try again later.`;
   if (kind === 'billing_error') return `${name}'s account has a billing problem. Check it in ${name}.`;
@@ -205,7 +214,8 @@ const formQuestions = (message: string, schema: unknown): { questions: T3Questio
       : fieldOptions(multi ? items : field);
     const header = typeof field.title === 'string' ? field.title : '';
     const question = typeof field.description === 'string' && field.description.trim() ? field.description : keys.length <= 2 ? message : header || message;
-    questions.push({ id: key, header, question, options, ...(multi ? { multiSelect: true } : {}) });
+    // A title that only repeats the question (eve's) isn't shown twice.
+    questions.push({ id: key, header: header === question ? '' : header, question, options, ...(multi ? { multiSelect: true } : {}) });
   }
   for (const question of questions) if (question.options.length) question.allowCustomAnswer = custom.has(question.id);
   return { questions, custom };
@@ -240,7 +250,7 @@ const RESUME = 'Serra restarted while you were working on the last message, so y
 const defaultSpawn = (agent: AcpAgent, env: NodeJS.ProcessEnv): ChildProcess => {
   const launch = launchFor(agent, env.PATH ?? '');
   if ('missing' in launch) throw new Error(launch.missing);
-  return spawn(launch.command, launch.args, { stdio: ['pipe', 'pipe', 'pipe'], env: { ...env, ...agent.env, ...launch.env }, detached: true });
+  return spawn(launch.command, launch.args, { stdio: ['pipe', 'pipe', 'pipe'], env: { ...env, ...agent.env, ...launch.env }, detached: true, ...(agent.cwd ? { cwd: agent.cwd } : {}) });
 };
 
 /** Signals the agent's process group, else the agent alone. */
@@ -279,6 +289,7 @@ export const readRunRecord = (runsDir: string, sessionId: string): RunRecord | n
       }];
     }),
     live: liveOf(value.live),
+    failed: typeof value.failed === 'string' && value.failed ? value.failed : null,
   };
 };
 
@@ -329,7 +340,7 @@ export const createAcpBackend = ({
     if (current.saveTimer) { clearTimeout(current.saveTimer); current.saveTimer = null; }
     mkdirSync(runsDir, { recursive: true, mode: 0o700 });
     const waiting = [...current.waiting.values()].map((entry) => entry.request);
-    writeFileAtomic(recordFile(runsDir, current.sessionId), `${JSON.stringify({ ...current.record, active: current.active, waiting, live: liveTurn(current) })}\n`, { mode: 0o600 });
+    writeFileAtomic(recordFile(runsDir, current.sessionId), `${JSON.stringify({ ...current.record, active: current.active, waiting, live: liveTurn(current), failed: current.failed })}\n`, { mode: 0o600 });
   };
   /** Writes a streaming turn soon, at most every `LIVE_SAVE_MS`: a chunk at a time would write the file per word. */
   const saveSoon = (current: Session): void => {
@@ -575,6 +586,8 @@ export const createAcpBackend = ({
     } else if (!mode && modes && access !== 'full' && PERMISSIVE.test(modes.currentModeId)) {
       throw new Error(`${agent.name} runs in "${modes.currentModeId}" mode and has none that asks before using tools, so Serra can't make this run read-only.`);
     } else if (!mode && access === 'full') allowAll = true;
+    // An agent bound to its own folder works outside a throwaway worktree: what it asks, a person answers.
+    if (agent.cwd) allowAll = false;
     if (model) {
       const option = configOptions?.find((choice) => choice.category === 'model' || choice.id === 'model');
       if (option) {
@@ -586,7 +599,7 @@ export const createAcpBackend = ({
   };
 
   const newSession = (record: RunRecord, allowAll: boolean): Session => ({
-    sessionId: record.sessionId, record, active: null, refused: 0, waiting: new Map(), failed: null, reply: '', tools: new Map(), queue: [], cost: null, allowAll, saveTimer: null,
+    sessionId: record.sessionId, record, active: null, refused: 0, waiting: new Map(), failed: record.failed ?? null, reply: '', tools: new Map(), queue: [], cost: null, allowAll, saveTimer: null,
   });
 
   /** A run this backend follows, reopened from its record after a restart. Throws a plain sentence when it can't be. */
@@ -614,9 +627,9 @@ export const createAcpBackend = ({
 
   const start = async (input: StartRun): Promise<string> => {
     const access: RunAccess = input.readOnly ? 'read-only' : input.workspace.kind === 'worktree' ? 'full' : 'ask';
-    const cwd = input.workspace.kind === 'folder'
+    const cwd = agent.cwd ?? (input.workspace.kind === 'folder'
       ? input.workspace.path
-      : await makeWorktree({ ...input.workspace, ...(worktreeRoot ? { root: worktreeRoot } : {}) });
+      : await makeWorktree({ ...input.workspace, ...(worktreeRoot ? { root: worktreeRoot } : {}) }));
     let created: acp.NewSessionResponse;
     let open: acp.ClientConnection;
     try {

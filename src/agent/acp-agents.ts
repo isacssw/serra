@@ -5,9 +5,9 @@
 // resolved from Serra's own node_modules and run with Serra's own Node or Electron), like T3 ships the Claude Agent
 // SDK: the owner only needs the `claude` or `codex` CLI, signed in, and the adapter runs that CLI (not a copy of its
 // own: the SDK's and Codex's bundled binaries are left out, see `pnpm.ignoredOptionalDependencies`). OpenCode and
-// Gemini CLI are the agents themselves, offered when their command is on the owner's PATH. Serra never installs one. The owner can add their own in the file (name, command, args, env); env values come from the owner's
+// Gemini CLI are the agents themselves, offered when their command is on the owner's PATH. Serra never installs one. The owner can add their own in the file (name, command, args, env, cwd); env values come from the owner's
 // own file, never from Serra's code, and are never shown or logged.
-import { accessSync, constants, existsSync, readdirSync, readFileSync } from 'node:fs';
+import { accessSync, constants, existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { delimiter, dirname, isAbsolute, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { writeFileAtomic } from '../config.ts';
@@ -31,6 +31,11 @@ export interface AcpAgent {
   args: string[];
   /** Extra environment for the agent. Never a secret in Serra's code: the owner's own file or shell holds those. */
   env?: Record<string, string>;
+  /**
+   * The folder an agent bound to one app works in (eve's app root): Serra starts the agent there and opens every
+   * session there, never a worktree, and lets no request through on its own, since there's no throwaway worktree.
+   */
+  cwd?: string;
   bundled?: BundledAdapter;
 }
 
@@ -83,7 +88,9 @@ const agentFrom = (value: unknown): AcpAgent | null => {
   if (!AGENT_ID.test(value.id) || commandProblem(command) !== null) return null;
   const args = Array.isArray(value.args) ? value.args.filter((arg): arg is string => typeof arg === 'string' && !/[\r\n\0]/.test(arg)) : [];
   const env = isRecord(value.env) ? Object.fromEntries(Object.entries(value.env).filter((entry): entry is [string, string] => typeof entry[1] === 'string')) : undefined;
-  return { id: value.id, name: typeof value.name === 'string' && value.name.trim() ? value.name.trim().slice(0, 40) : value.id, command, args, ...(env ? { env } : {}) };
+  const cwd = typeof value.cwd === 'string' ? value.cwd.trim() : undefined;
+  if (value.cwd !== undefined && (!cwd || !isAbsolute(cwd) || /[\r\n\0]/.test(cwd))) return null;
+  return { id: value.id, name: typeof value.name === 'string' && value.name.trim() ? value.name.trim().slice(0, 40) : value.id, command, args, ...(env ? { env } : {}), ...(cwd ? { cwd } : {}) };
 };
 
 export const readAgentBackend = (profileDir: string): AgentBackendSettings => {
@@ -110,7 +117,7 @@ export const agentBackendConfigError = (profileDir: string): string | null => {
   if (!isRecord(value)) return `${AGENT_BACKEND_FILE} is not valid JSON. Fix the file to load custom agents.`;
   if (value.agents !== undefined) {
     if (!Array.isArray(value.agents)) return `The "agents" field in ${AGENT_BACKEND_FILE} must be a list.`;
-    if (value.agents.some((entry) => agentFrom(entry) === null)) return `One or more entries in ${AGENT_BACKEND_FILE} are missing a valid id or command.`;
+    if (value.agents.some((entry) => agentFrom(entry) === null)) return `One or more entries in ${AGENT_BACKEND_FILE} are missing a valid id or command, or have a \`cwd\` that isn't an absolute path.`;
   }
   return null;
 };
@@ -244,6 +251,8 @@ const findCommand = (command: string, path: string): string | null => {
   return null;
 };
 
+const isFolder = (path: string): boolean => { try { return statSync(path).isDirectory(); } catch { return false; } };
+
 /** A bundled adapter's entry script in Serra's own node_modules, or null when it isn't there. */
 const adapterEntry = (adapter: BundledAdapter): string | null => {
   try {
@@ -259,6 +268,7 @@ export interface AcpLaunch { command: string; args: string[]; env: Record<string
 
 /** The agent's launch on `path`, or a plain sentence saying what's missing. */
 export const launchFor = (agent: AcpAgent, path: string): AcpLaunch | { missing: string } => {
+  if (agent.cwd && !isFolder(agent.cwd)) return { missing: `Serra can't find ${agent.name}'s folder ${agent.cwd}.` };
   const cli = findCommand(agent.command, path);
   if (!agent.bundled) return cli ? { command: cli, args: agent.args, env: {} } : { missing: `Serra can't find \`${agent.command}\`. Install ${agent.name}, or pick another agent.` };
   if (!cli) return { missing: `Serra can't find the \`${agent.bundled.cli}\` command. Install ${agent.name} and sign in, then try again.` };

@@ -3,12 +3,13 @@
 // a scripted ACP agent on stdio (tests/fakes/acp-agent.ts) that speaks the real protocol through the official SDK.
 import assert from 'node:assert/strict';
 import { execFileSync, spawn, type ChildProcess } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test, { type TestContext } from 'node:test';
 import { createAcpBackend, readRunRecord } from '../src/agent/acp.ts';
 import { acpChat } from '../src/agent/runs-view.ts';
+import { listJobs } from '../src/jobs.ts';
 import {
   addCustomAcpAgent, agentBackendConfigError, agentChoices, ensureAgentBackendFile, KNOWN_ACP_AGENTS, launchFor,
   readAgentBackend, removeCustomAcpAgent, writeAgentBackend, type AcpAgent,
@@ -294,6 +295,41 @@ test('ACP: a missing agent command is a plain sentence, and a worktree run gets 
   } finally { await backend.close(); }
 });
 
+test('ACP: an agent bound to its own folder (eve) starts there and opens every session there, never a worktree, and a person answers what it asks', async (t) => {
+  const fake = fakeAcp(t);
+  const app = join(fake.dir, 'eve-app');
+  mkdirSync(app);
+  const repo = join(fake.dir, 'repo');
+  mkdirSync(repo);
+  execFileSync('git', ['-C', repo, 'init', '-q', '-b', 'main']);
+  execFileSync('git', ['-C', repo, '-c', 'user.name=You', '-c', 'user.email=you@example.com', 'commit', '-q', '--allow-empty', '-m', 'start']);
+  // The real spawn, so the folder the agent runs in is the backend's own doing.
+  const backend = fake.backend({ agent: { ...fake.agent, cwd: app }, spawnAgent: undefined });
+  try {
+    const threadId = await backend.start({ workspace: { kind: 'worktree', project: repo, baseRef: 'main', branch: 'serra/eve' }, title: 'job', brief: 'ASK:other ELICIT_EVE' });
+    const session = threadId.split('-')[1];
+    assert.equal(fake.read(`session-${session}`), app, 'the session opens in the agent\'s folder');
+    assert.equal(fake.read(`process-cwd-${session}`), realpathSync(app), 'and the agent runs there');
+    assert.doesNotMatch(execFileSync('git', ['-C', repo, 'worktree', 'list']).toString(), /serra-eve/, 'no worktree is made');
+    // No full-access mode, and no worktree to keep it in: the request waits for a person instead of being allowed.
+    const request = await waitingOn(backend, threadId);
+    assert.deepEqual(request!.questions[0]!.options.map((option) => option.label), ['Allow', 'Deny']);
+    await backend.questions!.answer(threadId, request!.requestId, { permission: 'no' });
+    await until(() => fake.read('permission-1') !== null);
+    assert.equal(fake.read('permission-1'), 'no');
+    // eve titles its one field with the question: the card shows it once.
+    const form = await waitingOn(backend, threadId);
+    assert.deepEqual(form!.questions, [{ id: 'answer', header: '', question: 'Which colour?', options: [{ label: 'Red', description: '', value: 'red' }, { label: 'Blue', description: '', value: 'blue' }], allowCustomAnswer: false }]);
+    await backend.questions!.answer(threadId, form!.requestId, { answer: 'blue' });
+    await until(() => fake.read('elicit-eve-1') !== null);
+    assert.deepEqual(JSON.parse(fake.read('elicit-eve-1')!), { action: 'accept', content: { answer: 'blue' } });
+    fake.reply('done');
+    const done = await backend.wait(threadId, { ...fast, after: null });
+    assert.ok(done.kind === 'settled' && done.answer === 'done');
+  } finally { await backend.close(); }
+  assert.match(JSON.stringify(launchFor({ ...fake.agent, cwd: join(fake.dir, 'gone') }, '')), /can't find Fake Agent's folder/);
+});
+
 test('ACP: meeting runs work on an ACP agent: read-only extraction, and a link read from the tool\'s own result', async (t) => {
   const fake = fakeAcp(t);
   const workspace = join(fake.dir, 'meetings');
@@ -327,6 +363,34 @@ test('ACP: a failed turn says why in a fixed sentence (usage limit, sign-in), ne
   fake.reply('quick', 3);
   assert.equal(await runs.ask('t', 'hello'), 'quick');
   assert.ok(Date.now() - started < 10_000, `took ${Date.now() - started} ms`);
+});
+
+test('ACP: a failed turn stays failed in its record, so Jobs and its chat show it failed, until the next turn', async (t) => {
+  const fake = fakeAcp(t);
+  const runsDir = agentRunsDir(fake.dir);
+  const backend = fake.backend({ runsDir });
+  try {
+    const threadId = await backend.start({ workspace: { kind: 'folder', path: fake.dir, name: 'Failing' }, title: 'Serra: quota', brief: 'CODEX_ERROR=usageLimitExceeded' });
+    const failed = await backend.wait(threadId, { ...fast, after: null });
+    assert.ok(failed.kind === 'settled');
+    assert.equal(failed.detail.thread.error, 'Fake Agent hit its usage or rate limit. Try again later.', 'Codex\'s own error name, not "stopped with an error"');
+    await until(() => readRunRecord(runsDir, threadId)?.active === null);
+    const chat = acpChat(fake.dir, threadId)!;
+    assert.equal(chat.status, 'failed', 'not "Done"');
+    assert.equal(chat.error, 'Fake Agent hit its usage or rate limit. Try again later.');
+    writeFileSync(join(fake.dir, 'tasks.json'), JSON.stringify([{ threadId, backend: 'acp:fake', title: 'quota', branch: 'serra/quota', requester: 'Alex', createdAt: new Date().toISOString() }]));
+    const [row] = (await listJobs(fake.dir)).jobs;
+    assert.deepEqual([row?.group, row?.needsYouReason, row?.error], ['needs you', 'failed', 'Fake Agent hit its usage or rate limit. Try again later.']);
+    assert.ok(!readFileSync(join(runsDir, `${threadId}.json`), 'utf8').includes('SECRET'), 'the agent\'s own text stays out of the record');
+
+    // The next turn starts clean.
+    fake.reply('Back.', 2);
+    await backend.send(threadId, 'hello');
+    await backend.wait(threadId, { ...fast, after: 'run-1' });
+    await until(() => readRunRecord(runsDir, threadId)?.active === null);
+    assert.deepEqual([acpChat(fake.dir, threadId)?.status, acpChat(fake.dir, threadId)?.error], ['idle', undefined]);
+    assert.equal((await listJobs(fake.dir)).jobs[0]?.group, 'done');
+  } finally { await backend.close(); }
 });
 
 test('ACP: a job run gets the agent\'s full access, as on T3; what it still asks, and its questions, wait as question cards', async (t) => {
@@ -550,6 +614,13 @@ test('custom ACP agents: add, remove, starter file, validation, and configError 
   // Malformed entry inside agents array surfaces a plain configError too.
   writeFileSync(file, JSON.stringify({ agents: [{ id: 'ok', command: 'agy' }, { name: 'Missing id' }] }));
   assert.match(agentBackendConfigError(dir) ?? '', /missing a valid id or command/);
+
+  // An agent's folder (`cwd`) is kept when absolute; a relative one is a plain configError, and the agent isn't offered.
+  writeFileSync(file, JSON.stringify({ agents: [{ id: 'eve', command: 'eve', args: ['acp'], cwd: '/Users/you/eve-app' }] }));
+  assert.equal(readAgentBackend(dir).custom[0]?.cwd, '/Users/you/eve-app');
+  writeFileSync(file, JSON.stringify({ agents: [{ id: 'eve', command: 'eve', args: ['acp'], cwd: 'eve-app' }] }));
+  assert.match(agentBackendConfigError(dir) ?? '', /`cwd` that isn't an absolute path/);
+  assert.equal(readAgentBackend(dir).custom.length, 0);
 });
 
 test('running backend pool picks up a newly added custom ACP agent from agent-backend.json without restart', async (t) => {
