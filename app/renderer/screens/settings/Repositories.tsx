@@ -22,7 +22,7 @@ const OtherRepositories = ({ profile, settings, state }: { profile: Profile; set
           <Input label="Base ref" spellCheck={false} value={row.baseRef} error={list.errors[`${index}.baseRef`]} onChange={(event) => list.update(index, { baseRef: event.target.value })} />
           <Input label="GitHub repository" hint="Optional." spellCheck={false} placeholder="acme/docs" value={row.githubRepo} error={list.errors[`${index}.githubRepo`]} onChange={(event) => list.update(index, { githubRepo: event.target.value })} />
           <div className="sm:col-span-2">
-            <Button variant="ghost" size="sm" icon={<Trash2 size={14} />} onClick={() => list.remove(index)}>Remove repository</Button>
+            <Button variant="ghost" size="sm" flush icon={<Trash2 size={14} />} onClick={() => list.remove(index)}>Remove repository</Button>
           </div>
         </fieldset>
       ))}

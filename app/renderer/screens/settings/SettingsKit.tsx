@@ -196,14 +196,17 @@ const SaveBar = ({ changed, count = 1, valid, saving, note, onSave, onReset, onR
         <p role="status" className="min-w-0 flex-1 truncate text-[13px]">
           {valid
             ? <span className="font-medium text-ink">{count > 1 ? `Unsaved changes in ${count} sections` : 'Unsaved changes'}</span>
-            : <button type="button" onClick={reveal} className="rounded font-medium text-ink underline decoration-line-control underline-offset-4 hover:decoration-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus">Show what’s missing to save</button>}
+            : <span className="font-medium text-ink">Some fields need attention</span>}
           {valid && note && <span className="text-muted"> · {note}</span>}
         </p>
+        <div className="flex shrink-0 items-center gap-1.5">
         <Button variant="ghost" disabled={saving} onClick={onReset}>Reset</Button>
+        {!valid && <Button onClick={reveal}>Show</Button>}
         <Button variant="primary" disabled={!canSave} onClick={onSave} aria-keyshortcuts={isMac ? 'Meta+S' : 'Control+S'}>
           {saving ? 'Saving…' : 'Save'}
-          {canSave && <kbd aria-hidden className="font-sans text-[11px] font-normal opacity-60">{isMac ? '⌘S' : 'Ctrl+S'}</kbd>}
+          {canSave && <kbd aria-hidden className="font-sans text-[11px] font-normal text-current opacity-60">{isMac ? '⌘S' : 'Ctrl+S'}</kbd>}
         </Button>
+        </div>
       </div>
     </div>
   );
@@ -267,7 +270,7 @@ export const SectionCard = ({ section, description, children }: {
   description?: ReactNode;
   children: ReactNode;
 }) => (
-  <section className="flex flex-col gap-4 rounded-xl border border-line bg-panel p-5">
+  <section className="flex flex-col gap-4 rounded-xl border border-line bg-panel p-5 shadow-card">
     <header className="flex flex-col gap-1">
       <h2 className="text-[15px] leading-5 font-semibold">{sectionTitles[section]}</h2>
       {description && <p className="text-[13px] text-muted">{description}</p>}

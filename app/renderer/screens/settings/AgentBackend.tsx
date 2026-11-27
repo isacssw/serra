@@ -125,7 +125,7 @@ export const AgentBackendCard = () => {
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <Button size="sm" icon={<Plus size={14} />} disabled={saving} onClick={openAdd}>Add ACP agent</Button>
-          <Button variant="ghost" size="sm" icon={<FileCode2 size={14} />} title={view.configPath} onClick={() => void openConfig()}>Config file</Button>
+          <Button variant="ghost" size="sm" className="-mr-2.5" icon={<FileCode2 size={14} />} title={view.configPath} onClick={() => void openConfig()}>Config file</Button>
         </div>
       </header>
       {view.configError && (

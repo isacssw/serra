@@ -52,7 +52,7 @@ const Triggers = ({ profile, settings, state }: { profile: Profile; settings: Se
             onChange={(event) => list.update(index, { instructions: event.target.value })}
           />
           <div className="sm:col-span-2">
-            <Button variant="ghost" size="sm" icon={<Trash2 size={14} />} onClick={() => list.remove(index)}>Remove trigger</Button>
+            <Button variant="ghost" size="sm" flush icon={<Trash2 size={14} />} onClick={() => list.remove(index)}>Remove trigger</Button>
           </div>
         </fieldset>
       ))}

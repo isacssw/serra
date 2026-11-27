@@ -106,8 +106,8 @@ export const Select = <V extends string>({
 
   // Keeps the highlighted option in view as the arrows move it.
   useEffect(() => {
-    if (open && active >= 0) document.getElementById(optionId(active))?.scrollIntoView({ block: 'nearest' });
-  });
+    if (open && active >= 0) document.getElementById(`${buttonId}-option-${active}`)?.scrollIntoView({ block: 'nearest' });
+  }, [open, active, buttonId]);
 
   const onKeyDown = (event: KeyboardEvent<HTMLButtonElement>): void => {
     if (isPrintable(event.key, event)) {
@@ -157,8 +157,8 @@ export const Select = <V extends string>({
         onBlur={close}
         className={cx(
           'group flex w-full min-w-0 cursor-default items-center gap-2 text-left',
-          size === 'sm' ? 'h-7 px-2 text-xs' : 'h-8 px-2.5',
-          fieldClass(Boolean(error)),
+          size === 'sm' ? 'h-7 px-2' : 'h-8 px-2.5',
+          fieldClass(Boolean(error), size),
         )}
       >
         {(chosen?.icon ?? icon) && <span className="flex shrink-0 text-muted group-disabled:text-faint" aria-hidden>{chosen?.icon ?? icon}</span>}
@@ -187,6 +187,7 @@ export const Select = <V extends string>({
               key={option.value}
               id={optionId(index)}
               role="option"
+              data-value={option.value}
               aria-selected={index === selected}
               aria-disabled={option.disabled || undefined}
               data-active={index === active || undefined}
@@ -195,12 +196,13 @@ export const Select = <V extends string>({
               onMouseMove={() => { if (!option.disabled && index !== active) setActive(index); }}
               onClick={() => { if (!option.disabled) choose(index); }}
               className={cx(
-                'flex min-h-8 cursor-default items-center gap-2 rounded-md px-2 text-[13px] whitespace-nowrap',
+                'flex cursor-default items-center gap-2 rounded-md px-2 whitespace-nowrap',
+                size === 'sm' ? 'min-h-7 text-xs' : 'min-h-8 text-[13px]',
                 option.disabled ? 'text-faint' : 'text-ink data-active:bg-selected',
               )}
             >
-              {option.icon && <span className="flex shrink-0 text-muted" aria-hidden>{option.icon}</span>}
-              <span className="min-w-0 flex-1 truncate">{option.label}</span>
+              {option.icon && <span className={cx('flex shrink-0', option.disabled ? 'text-faint' : 'text-muted')} aria-hidden>{option.icon}</span>}
+              <span className={cx('min-w-0 flex-1 truncate', index === selected && 'font-medium')}>{option.label}</span>
               {option.detail && <span className="shrink-0 text-xs text-faint">{option.detail}</span>}
               <Check size={14} strokeWidth={2} aria-hidden className={cx('shrink-0', index === selected ? 'text-ink' : 'invisible')} />
             </div>

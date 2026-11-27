@@ -25,7 +25,7 @@ export const TextArea = ({ label, error, hint, className, textareaClassName, id,
         id={fieldId}
         aria-invalid={error ? true : undefined}
         aria-describedby={note ? `${fieldId}-note` : undefined}
-        className={cx('min-h-20 resize-y px-2.5 py-1.5 leading-5', fieldClass(Boolean(error)), textareaClassName)}
+        className={cx('min-h-20 max-h-80 resize-none px-2.5 py-1.5 leading-5 [field-sizing:content]', fieldClass(Boolean(error)), textareaClassName)}
         {...rest}
       />
       {note && <p id={`${fieldId}-note`} className={noteClass(Boolean(error))}>{note}</p>}

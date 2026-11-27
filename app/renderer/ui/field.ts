@@ -3,8 +3,9 @@
 import { cx } from './cx.ts';
 
 /** Classes for a field's box. `invalid` swaps the edge and halo for the down colour. */
-export const fieldClass = (invalid?: boolean): string => cx(
-  'rounded-lg border bg-field text-[13px] text-ink shadow-field outline-none transition-[border-color,box-shadow] duration-150',
+export const fieldClass = (invalid?: boolean, size: 'sm' | 'md' = 'md'): string => cx(
+  size === 'sm' ? 'rounded-[7px] text-xs' : 'rounded-lg text-[13px]',
+  'border bg-field text-ink shadow-field outline-none transition-[border-color,box-shadow] duration-150',
   'placeholder:text-faint',
   invalid
     ? 'border-down focus-visible:ring-3 focus-visible:ring-down/25 aria-expanded:ring-3 aria-expanded:ring-down/25'

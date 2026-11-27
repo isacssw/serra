@@ -247,7 +247,7 @@ export const Sidebar = ({ status, counts }: { status: BotStatus | null; counts: 
           <Link to={last.main} data-nav data-settings-back aria-keyshortcuts="Escape" className={itemClass(false)}>
             <ChevronLeft size={15} strokeWidth={1.75} aria-hidden className={iconClass} />
             <span className="flex-1">Back</span>
-            <kbd className="font-sans text-[11px] text-faint" aria-hidden>esc</kbd>
+            <kbd className="font-sans text-[11px] text-faint" aria-hidden>Esc</kbd>
           </Link>
           <h2 className="px-2 pt-3 text-[15px] leading-5 font-semibold text-ink">Settings</h2>
         </div>
