@@ -4,6 +4,7 @@ Serra follows [Semantic Versioning](https://semver.org) once it reaches 1.0. Unt
 
 ## Unreleased
 
+- **Jobs › Chat:** a run opens as a chat, on ACP agents and T3. You see the request, the agent's reply as it streams, tool calls folded into compact rows, permissions and how they were settled, and images going in and out. Answer a question, or follow up, from the box at the bottom. T3 runs keep their **Open in T3** link. It replaces the Transcript window.
 - **A calmer, high-end look:** new dark and light colours, 32px fields with a soft focus ring, one dropdown style everywhere, and buttons that read as off when disabled. **Settings** is now one sidebar entry (⌘,) with its own grouped menu; Esc goes back. Each settings page has one **Save** bar (⌘S) that says once when changes apply.
 - **Knowledge › Graph:** what your bot knows, as a map. One island per area, pages linked by what they mention, where they came from, which replies used them together, and rules that disagree. The first visit replays how it grew; later visits replay only new pages. Click a page (or use the arrow keys) to see its links, open it, or keep one of two rules that disagree.
 

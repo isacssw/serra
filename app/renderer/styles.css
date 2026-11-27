@@ -96,6 +96,9 @@ body {
 dialog[open] { animation: serra-pop 140ms ease-out; }
 dialog[open]::backdrop { animation: serra-fade 140ms ease-out; }
 [data-toast] { animation: serra-rise 160ms ease-out; }
+/* A side sheet (Jobs › Chat) slides in from its edge. */
+@keyframes serra-slide { from { opacity: 0; transform: translateX(24px); } }
+dialog[data-sheet][open] { animation: serra-slide 180ms ease-out; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after, *::backdrop {
     animation-duration: 0.01ms !important;

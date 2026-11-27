@@ -42,10 +42,13 @@ export const imageContent = (image: AttachedImage): { type: 'image'; data: strin
   } catch { return null; }
 };
 
+/** Where an image an agent sends is saved. */
+export const AGENT_IMAGES_DIR = join(tmpdir(), 'serra-agent-images');
+
 const EXTENSIONS: Record<string, string> = { 'image/png': '.png', 'image/jpeg': '.jpg', 'image/gif': '.gif', 'image/webp': '.webp' };
 
 /** Saves an image an agent sent as content, and gives the Markdown that embeds it in its reply. Null for a type Serra doesn't share. */
-export const saveAgentImage = (data: string, mimeType: string, name: string, dir = join(tmpdir(), 'serra-agent-images')): string | null => {
+export const saveAgentImage = (data: string, mimeType: string, name: string, dir = AGENT_IMAGES_DIR): string | null => {
   const extension = EXTENSIONS[mimeType];
   if (!extension) return null;
   mkdirSync(dir, { recursive: true, mode: 0o700 });

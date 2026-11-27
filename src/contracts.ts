@@ -137,8 +137,9 @@ export interface JobSummary {
   /** What the owner is asked, for a `needs you` row. */
   ownerQuestion?: string;
   /** Links are absent when unknown, never guessed. */
-  /** `transcript`: an ACP run's thread id, opened in the app's transcript view (it has no web link). */
-  links: { slack?: string; t3?: string; pr?: string; transcript?: string };
+  links: { slack?: string; t3?: string; pr?: string };
+  /** The agent run behind the job, which the app's chat view opens, on either backend. Absent when there's none yet. */
+  chat?: { threadId: string; backend: 'acp' | 't3' };
 }
 
 // ---------------------------------------------------------------------------------------------------------------
