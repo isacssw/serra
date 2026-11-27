@@ -36,7 +36,9 @@ const Stat = ({ label, value, unit, note }: { label: string; value: number; unit
   <div className="flex min-w-0 flex-col gap-1 border-line px-5 py-4 not-first:border-l max-sm:nth-3:border-l-0 max-sm:nth-[n+3]:border-t">
     <p className="text-xs font-medium text-muted">{label}</p>
     <p className="text-[28px] leading-8 font-semibold tracking-[-0.02em] tabular-nums text-ink">{value}{unit && <span className="text-base font-medium text-faint">{unit}</span>}</p>
-    <p className="line-clamp-2 text-xs leading-4 text-faint" title={note}>{note}</p>
+    <p className="text-xs leading-4 text-faint" title={note}>
+      {note.split(' · ').map((part, at) => <span key={part} className="whitespace-nowrap">{at > 0 && <span aria-hidden> · </span>}{part}</span>)}
+    </p>
   </div>
 );
 

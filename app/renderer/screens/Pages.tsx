@@ -499,7 +499,7 @@ export const Pages = () => {
                   )}
                 </div>
                 <div className="sticky bottom-0 mt-auto flex flex-wrap items-center gap-2 border-t border-line bg-canvas py-3">
-                  <label className="flex cursor-pointer items-center gap-2 text-[13px] text-ink" title="Sets the verified date. Save to keep it.">
+                  <label className="relative flex cursor-pointer items-center gap-2 text-[13px] text-ink" title="Sets the verified date. Save to keep it.">
                     <input
                       type="checkbox"
                       disabled={saving}
@@ -507,8 +507,9 @@ export const Pages = () => {
                       onChange={(event) => setDraft((text) => (event.target.checked
                         ? markVerified(text, today)
                         : setHeaderField(text, 'verified', frontmatter(saved ?? '')?.get('verified')?.trim() || 'no')))}
-                      className="size-4 accent-[var(--color-accent)]"
+                      className="peer size-4 shrink-0 cursor-pointer appearance-none rounded-[5px] border border-line-control bg-field transition-colors checked:border-transparent checked:bg-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
                     />
+                    <Check size={12} strokeWidth={3} aria-hidden className="pointer-events-none absolute left-0.5 hidden text-accent-ink peer-checked:block" />
                     Verified today
                   </label>
                   <span className={cx('text-xs tabular-nums', state.overCap ? 'text-down' : 'text-faint')}>{state.linesLabel}</span>
