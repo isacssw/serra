@@ -6,6 +6,7 @@ import { useNavigate, useSearchParams } from 'react-router';
 import { ArrowUp, Copy, Eye, GitBranch, Layers, ListChecks, LoaderCircle, RotateCw, User } from 'lucide-react';
 import type { StartedTask } from '../../../src/tasks.ts';
 import { serra } from '../bridge.ts';
+import { composerClass, composerInputClass, composerKbdClass, sendButtonClass } from '../ui/composer.ts';
 import { Button, cx, useToast } from '../ui/index.ts';
 import { ariaMod, mod } from '../shell/keys.ts';
 import { announceTaskStart } from '../shell/events.ts';
@@ -82,11 +83,7 @@ export const NewTask = () => {
         <h1 className="text-[28px] leading-9 font-semibold tracking-[-0.022em]">What should {bot} do?</h1>
       </header>
       <section className="flex flex-col gap-3.5">
-        <div className={cx(
-          'flex flex-col rounded-2xl border bg-panel transition-[border-color,box-shadow] duration-150',
-          'shadow-composer',
-          problem ? 'border-down focus-within:ring-3 focus-within:ring-down/20' : request.trim() ? 'border-line-strong focus-within:border-line-control' : 'border-line focus-within:border-line-control',
-        )}>
+        <div className={cx('flex flex-col', composerClass({ invalid: problem !== null, filled: request.trim() !== '' }))}>
           <label htmlFor="new-task-request" className="sr-only">What should {bot} do?</label>
           <textarea
             id="new-task-request"
@@ -100,14 +97,14 @@ export const NewTask = () => {
             placeholder="Describe the task, like “Update the pricing page and open a PR”"
             aria-invalid={problem ? true : undefined}
             aria-describedby="new-task-note"
-            className="max-h-[40vh] min-h-[6rem] resize-none bg-transparent px-4 pt-3.5 text-[15px] leading-6 text-ink outline-none [field-sizing:content] placeholder:text-faint disabled:opacity-60"
+            className={cx('max-h-[40vh] min-h-[6rem] px-4 pt-3.5 text-[15px] leading-6', composerInputClass)}
           />
           <div className="flex items-center gap-2 px-2.5 pb-2.5">
             {request.trim() && <Button variant="ghost" size="sm" icon={preview.state === 'ready' ? <RotateCw size={13} strokeWidth={1.75} /> : <Eye size={14} strokeWidth={1.75} />} disabled={busy || !request.trim() || problem !== null} onClick={showPreview}>
               {preview.state === 'ready' ? 'Refresh brief' : 'Preview brief'}
             </Button>}
             <span className="ml-auto" />
-            {request.trim() && <kbd className="rounded border border-line px-1 font-sans text-[11px] leading-4 text-faint" aria-hidden>{mod}↩</kbd>}
+            {request.trim() && <kbd className={composerKbdClass} aria-hidden>{mod}↩</kbd>}
             <button
               type="button"
               aria-label="Start task"
@@ -115,11 +112,7 @@ export const NewTask = () => {
               title={`Start task (${mod}↩)`}
               disabled={!canStart(request, busy)}
               onClick={start}
-              className={cx(
-                'grid size-8 place-items-center rounded-full bg-accent text-accent-ink transition-colors duration-150 hover:bg-accent/85',
-                'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus',
-                'disabled:cursor-not-allowed disabled:border disabled:border-line-strong disabled:bg-transparent disabled:text-faint',
-              )}
+              className={sendButtonClass}
             >
               {busy ? <LoaderCircle size={15} className="animate-spin" /> : <ArrowUp size={16} strokeWidth={2.25} />}
             </button>

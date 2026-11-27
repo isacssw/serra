@@ -11,6 +11,7 @@ import { useBotStatus } from '../../shell/live.ts';
 import { ToolIcon } from '../../ui/ToolIcon.tsx';
 import { Button, cx, useToast } from '../../ui/index.ts';
 import { AskRow, ChatImageView, ChatText, ToolGroup } from './ChatParts.tsx';
+import { composerClass, composerInputClass, composerKbdClass, sendButtonClass } from '../../ui/composer.ts';
 import { chatItems, composer, contentSize, follow, statusLabel, type ChatItem, type Follow } from './chat.logic.ts';
 
 const message = (error: unknown): string => (error instanceof Error ? error.message : String(error));
@@ -303,9 +304,9 @@ export const RunChat = ({ run, onClose }: { run: ChatRun | null; onClose: () => 
             <div className="mx-auto flex w-full max-w-[42rem] flex-col gap-2.5 px-6">
               {chat && question && <QuestionCard chat={chat} busy={busy} onAnswer={answer} />}
               {!box ? null : box.mode === 'blocked'
-                ? <p className="flex h-11 items-center justify-center gap-2 rounded-2xl border border-dashed border-line-strong text-[13px] text-muted"><Lock size={13} aria-hidden />{box.reason}</p>
+                ? <p className="flex h-11 items-center justify-center gap-2 rounded-2xl border border-dashed border-line-control text-[13px] text-muted"><Lock size={13} aria-hidden />{box.reason}</p>
                 : (
-                  <div className="flex items-end gap-2 rounded-2xl border border-line-control bg-field py-2 pr-2 pl-4 shadow-field transition-[border-color,box-shadow] duration-150 focus-within:border-focus-field focus-within:ring-2 focus-within:ring-ring">
+                  <div className={cx('flex items-end gap-2 py-1.5 pr-1.5 pl-4', composerClass({ filled: draft.trim() !== '' }))}>
                     <label htmlFor="run-chat-input" className="sr-only">{box?.mode === 'answer' ? 'Your answer' : 'Follow up'}</label>
                     <textarea
                       id="run-chat-input"
@@ -317,10 +318,10 @@ export const RunChat = ({ run, onClose }: { run: ChatRun | null; onClose: () => 
                       onKeyDown={(event) => { if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') { event.preventDefault(); send(); } }}
                       placeholder={box?.placeholder ?? 'Follow up'}
                       aria-describedby={box?.mode === 'reply' && box.note ? 'run-chat-note' : undefined}
-                      className="max-h-[30vh] min-h-8 flex-1 resize-none self-center bg-transparent py-1 text-[14.5px] leading-6 text-ink outline-none [field-sizing:content] placeholder:text-muted disabled:opacity-50"
+                      className={cx('max-h-[30vh] min-h-8 flex-1 self-center py-1 text-[14px] leading-6', composerInputClass)}
                     />
                     <div className="flex shrink-0 items-center gap-2">
-                      <kbd className={cx('mr-1 ml-auto font-sans text-xs text-muted transition-opacity duration-150', !draft.trim() && 'opacity-0')} aria-hidden>{mod}↩</kbd>
+                      <kbd className={cx(composerKbdClass, 'transition-opacity duration-150', !draft.trim() && 'opacity-0')} aria-hidden>{mod}↩</kbd>
                       <button
                         type="button"
                         aria-label={box?.mode === 'answer' ? 'Send answer' : 'Send'}
@@ -328,11 +329,7 @@ export const RunChat = ({ run, onClose }: { run: ChatRun | null; onClose: () => 
                         title={`Send (${mod}↩)`}
                         disabled={!canSend}
                         onClick={send}
-                        className={cx(
-                          'grid size-8 place-items-center rounded-full border border-transparent bg-accent text-accent-ink transition-colors duration-150 enabled:hover:bg-accent/85',
-                          'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus',
-                          'disabled:cursor-not-allowed disabled:border-line disabled:bg-raised disabled:text-faint',
-                        )}
+                        className={sendButtonClass}
                       >
                         {busy
                           ? <><LoaderCircle size={15} className="animate-spin motion-reduce:hidden" /><span className="hidden text-sm leading-none motion-reduce:inline">…</span></>
