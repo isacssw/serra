@@ -85,7 +85,7 @@ export const NewTask = () => {
         <div className={cx(
           'flex flex-col rounded-2xl border bg-panel transition-[border-color,box-shadow] duration-150',
           'shadow-composer',
-          problem ? 'border-down focus-within:ring-3 focus-within:ring-down/20' : request.trim() ? 'border-line-control' : 'border-line-strong focus-within:border-line-control',
+          problem ? 'border-down focus-within:ring-3 focus-within:ring-down/20' : request.trim() ? 'border-line-strong focus-within:border-line-control' : 'border-line focus-within:border-line-control',
         )}>
           <label htmlFor="new-task-request" className="sr-only">What should {bot} do?</label>
           <textarea

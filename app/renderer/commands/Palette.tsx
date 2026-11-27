@@ -163,8 +163,14 @@ export const CommandPalette = () => {
   let rows: Row[] = [];
   if (open && !step) {
     let lastGroup: string | null = null;
-    rows = searchActions(actionRegistry.list(), query).map(({ action, indices }) => {
-      const heading = query.trim() === '' && action.group !== lastGroup ? action.group : undefined;
+    const results = searchActions(actionRegistry.list(), query);
+    // With a query, title matches first; ones found only by a keyword or their section follow under "Related", so
+    // it's clear why they're listed.
+    const searching = query.trim() !== '';
+    const ordered = searching ? [...results.filter((r) => r.indices.length > 0), ...results.filter((r) => r.indices.length === 0)] : results;
+    const firstRelated = searching && ordered.some((r) => r.indices.length > 0) ? ordered.findIndex((r) => r.indices.length === 0) : -1;
+    rows = ordered.map(({ action, indices }, index) => {
+      const heading = !searching ? (action.group !== lastGroup ? action.group : undefined) : index === firstRelated ? 'Related' : undefined;
       lastGroup = action.group;
       return { key: action.id, icon: iconFor(action), label: action.title, indices, ...(action.hint ? { hint: action.hint } : {}), ...(heading ? { heading } : {}), pick: () => choose(action) };
     });

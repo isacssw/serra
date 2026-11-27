@@ -75,8 +75,8 @@ const Row = ({ icon, title, sub, meta, status, badge, more, moreLabel }: {
   const panel = useId();
   return (
     <li className="px-4 py-3">
-      {/* Name, its line and a quiet detail on the left; the disclosure, then the status in a fixed column on the right. */}
-      <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 @xl:grid-cols-[auto_minmax(0,1fr)_auto_7.5rem]">
+      {/* Name, its line and a quiet detail on the left; the status, then the row's action (if any) at the right edge. */}
+      <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 @xl:grid-flow-col @xl:grid-cols-[auto_minmax(0,1fr)] @xl:auto-cols-auto">
         {icon}
         <div className="flex min-w-0 flex-col">
           <span className="flex min-w-0 items-center gap-2">
@@ -91,18 +91,18 @@ const Row = ({ icon, title, sub, meta, status, badge, more, moreLabel }: {
             </span>
           )}
         </div>
+        <span className="col-start-3 flex justify-end @xl:col-start-auto"><StatusPill status={status} /></span>
+        {more && (
         <span className="hidden justify-end @xl:flex">
-          {more && (
             <Button
-              size="sm" variant="ghost" aria-expanded={open} aria-controls={panel} aria-label={`${moreLabel}: ${title}`}
+              size="sm" aria-expanded={open} aria-controls={panel} aria-label={`${moreLabel}: ${title}`}
               icon={<ChevronRight size={13} aria-hidden className={cx('transition-transform', open && 'rotate-90')} />}
               onClick={() => setOpen((value) => !value)}
             >
               {moreLabel}
             </Button>
-          )}
         </span>
-        <span className="col-start-3 flex justify-end @xl:col-start-auto"><StatusPill status={status} /></span>
+        )}
       </div>
       {more && (
         <div className="mt-2 flex pl-10 @xl:hidden">
@@ -322,7 +322,7 @@ export const Tools = () => {
           <details className="group rounded-xl border border-line bg-panel shadow-card">
             <summary className="flex cursor-default list-none items-center gap-2 rounded-xl px-4 py-3 text-sm text-muted hover:bg-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus [&::-webkit-details-marker]:hidden">
               <ChevronRight size={14} aria-hidden className="transition-transform group-open:rotate-90" />
-              Not installed <span className="text-faint">· {notInstalled.length}</span>
+              Not installed<span className="-ml-1 text-faint">· {notInstalled.length}</span>
             </summary>
             <ul aria-label="Command-line tools not installed" className="@container divide-y divide-line-subtle border-t border-line">{notInstalled.map((row) => <CliItem key={row.spec.id} row={row} />)}</ul>
           </details>

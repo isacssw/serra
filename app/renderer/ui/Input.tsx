@@ -33,7 +33,7 @@ export const Input = ({ label, error, hint, className, inputClassName, id, ...re
       />
       {(error || hint) && (
         <p id={noteId} className={noteClass(Boolean(error))}>
-          {error}
+          {hint ? error?.replace(/\.$/, '') : error}
           {error && hint && <span className="text-faint"> · {hint}</span>}
           {!error && hint}
         </p>

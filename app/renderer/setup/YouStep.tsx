@@ -159,8 +159,8 @@ const ProfileForm = () => {
     <form className="flex flex-1 flex-col gap-8 pb-10" noValidate onSubmit={(event) => { event.preventDefault(); void create(); }}>
       <Section title="You">
         <div className="grid gap-4 sm:grid-cols-2">
-          <Input label="Your name" autoComplete="name" placeholder="Alex Morgan" value={draft.ownerName} onChange={set('ownerName')} error={errors.ownerName} />
-          <Input label="GitHub login" autoComplete="username" placeholder="octocat" inputClassName="font-mono" value={draft.githubLogin} onChange={set('githubLogin')} error={errors.githubLogin} />
+          <Input label="Your name" autoComplete="name" placeholder="Alex Morgan" value={draft.ownerName} onChange={set('ownerName')} error={errors.ownerName} hint="As the bot will call you" />
+          <Input label="GitHub login" autoComplete="username" placeholder="octocat" inputClassName="font-mono" value={draft.githubLogin} onChange={set('githubLogin')} error={errors.githubLogin} hint="Your account on GitHub" />
         </div>
         <Input label="Slack member ID" placeholder="U0123456789" inputClassName="font-mono" value={draft.ownerSlackUserId}
           onChange={set('ownerSlackUserId')} error={errors.ownerSlackUserId} hint="In Slack: your profile › ⋮ › Copy member ID" spellCheck={false} />
@@ -175,9 +175,9 @@ const ProfileForm = () => {
           <Button className="mt-[22px]" icon={<FolderOpen size={14} aria-hidden />} onClick={() => void choose()}>Choose…</Button>
         </div>
         <div className="grid gap-4 sm:grid-cols-2">
-          <Input label="Base branch (optional)" placeholder="origin/main" inputClassName="font-mono" value={draft.baseRef} onChange={set('baseRef')} spellCheck={false} />
+          <Input label="Base branch (optional)" placeholder="origin/main" inputClassName="font-mono" value={draft.baseRef} onChange={set('baseRef')} spellCheck={false} hint="Where task branches start" />
           <Input label="GitHub repository (optional)" placeholder="owner/repo" inputClassName="font-mono" value={draft.githubRepo}
-            onChange={set('githubRepo')} error={errors.githubRepo} spellCheck={false} />
+            onChange={set('githubRepo')} error={errors.githubRepo} spellCheck={false} hint="Found from the Git remote" />
         </div>
       </Section>
 

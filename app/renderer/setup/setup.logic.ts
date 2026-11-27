@@ -24,7 +24,7 @@ export interface FlowStep {
 
 /** The steps, in order. */
 export const FLOW: readonly FlowStep[] = [
-  { id: 'profile', path: '/setup/you', title: 'You and your repository', short: 'You & repo', summary: 'Saved as you type.' },
+  { id: 'profile', path: '/setup/you', title: 'You and your repository', short: 'You & repo' },
   { id: 'slack', path: '/setup/slack', title: 'Connect Slack', short: 'Slack', summary: 'Create the app, then add its two tokens.' },
   { id: 'owner', path: '/setup/owner', title: 'Confirm it’s you', short: 'Confirm you', summary: 'Slack checks your member ID.' },
   { id: 'service', path: '/setup/service', title: 'Install and start', short: 'Install', summary: 'Runs every check, then starts the bot.' },

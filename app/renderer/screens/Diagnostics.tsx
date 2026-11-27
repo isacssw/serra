@@ -16,12 +16,12 @@ import {
 
 const errorText = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
-/** Text with its paths and `commands` in mono. */
-const Inline = ({ text }: { text: string }) => (
+/** Text with its paths and `commands` in mono; `path` sets the paths' colour (quiet on a passing row, ink on a failing one). */
+const Inline = ({ text, path = 'text-ink' }: { text: string; path?: string }) => (
   <>
     {text.split(/(`[^`]+`|(?:^|(?<=\s))[~/][^\s,]*)/).filter(Boolean).map((part, index) => (/^`.+`$/.test(part)
       ? <code key={index} className="font-mono text-[12px]">{part.slice(1, -1)}</code>
-      : /^[~/]/.test(part) ? <span key={index} className="font-mono text-[12px] text-ink">{part}</span> : <span key={index}>{part}</span>))}
+      : /^[~/]/.test(part) ? <span key={index} className={cx('font-mono text-[12px]', path)}>{part}</span> : <span key={index}>{part}</span>))}
   </>
 );
 
@@ -41,21 +41,21 @@ const CheckRow = ({ result, home, sameAs, onOpen }: { result: Diagnostic; home: 
         <span className="w-44 shrink-0 text-[13px] font-medium">{result.name}</span>
         {failure ? (
           <span className="flex min-w-0 flex-col items-start gap-1.5">
-            <span className="flex min-w-0 flex-wrap items-baseline gap-x-2 text-[13px] text-muted">
+            <span className="flex min-w-0 flex-wrap items-baseline gap-x-3 text-[13px] text-muted">
               <span className="break-words"><Inline text={failure.reason} /></span>
               {failure.raw && (
                 <button
                   type="button" aria-expanded={open} aria-controls={rawId} onClick={() => setOpen(!open)}
                   className="inline-flex items-center gap-0.5 rounded text-xs text-muted hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
                 >
-                  {open ? 'Hide details' : 'Details'}<ChevronRight size={12} aria-hidden className={cx('transition-transform', open && 'rotate-90')} />
+                  <ChevronRight size={12} aria-hidden className={cx('transition-transform', open && 'rotate-90')} />{open ? 'Hide details' : 'Details'}
                 </button>
               )}
             </span>
             {failure.raw && open && <code id={rawId} className="block w-full rounded-lg border border-line-subtle bg-field px-2.5 py-1.5 font-mono text-[11px] leading-4 break-words whitespace-pre-wrap text-muted">{failure.raw}</code>}
           </span>
         ) : (
-          <span className="min-w-0 flex-1 truncate text-[13px] text-muted" title={detail}><Inline text={value} /></span>
+          <span className="min-w-0 flex-1 truncate text-[13px] text-ink" title={detail}><Inline text={value} path="text-muted" /></span>
         )}
       </div>
       {failure && 'action' in failure && failure.action && (
@@ -176,7 +176,7 @@ export const Diagnostics = () => {
       title="Diagnostics"
       actions={(
         <>
-          <Button variant="ghost" icon={<ListChecks size={14} aria-hidden />} onClick={() => void navigate(SETUP_PATH)} title="Profile, Slack, owner and service, step by step">Setup</Button>
+          <Button icon={<ListChecks size={14} aria-hidden />} onClick={() => void navigate(SETUP_PATH)} title="Profile, Slack, owner and service, step by step">Setup</Button>
           <Button icon={<Copy size={14} aria-hidden />} onClick={() => void copy()} disabled={!checks.results}>Copy report</Button>
           <Button icon={<RefreshCw size={14} aria-hidden className={cx(checks.running && 'animate-spin')} />} onClick={refresh} disabled={checks.running}>
             {checks.running ? 'Checking…' : 'Run checks'}
