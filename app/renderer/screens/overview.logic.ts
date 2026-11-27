@@ -174,6 +174,9 @@ const versus = (a: string, b: string): string => {
   return x === 'Keep this one' || y === 'Keep this one' ? 'Two rules disagree' : `${x.slice(5)} vs ${y.slice(5)}`;
 };
 
+/** Page names in one phrase: "Database migrations and how deploys go out". A name that starts with an acronym keeps it. */
+const andJoin = (names: string[]): string => names.map((name, at) => (at > 0 && !/^[A-Z]{2}/.test(name) ? name.charAt(0).toLowerCase() + name.slice(1) : name)).join(' and ');
+
 export const fixItems = (overview: Pick<KnowledgeOverview, 'review' | 'health' | 'value'> & Partial<Pick<KnowledgeOverview, 'confirmHeldBack' | 'proposals' | 'unreviewed'>>): FixItem[] => {
   const title = (path: string): string => overview.value.find((page) => page.path === path)?.title ?? path;
   // A rewrite that settles two rules says which, in three words, like the rule pair itself.
@@ -194,7 +197,7 @@ export const fixItems = (overview: Pick<KnowledgeOverview, 'review' | 'health' |
     const held = overview.confirmHeldBack?.includes(page) ?? false;
     const stale: ReviewSuggestion | undefined = issue.kind === 'stale' && !held ? { id: `confirm:${page}`, kind: 'confirm', page, title: title(page), why } : undefined;
     return [{
-      id: `${issue.kind}:${issue.pages.join(',')}`, title: page === 'index.md' ? 'Knowledge index' : issue.pages.map(title).join(' and '), why, lines: issue.detail ?? [],
+      id: `${issue.kind}:${issue.pages.join(',')}`, title: page === 'index.md' ? 'Knowledge index' : andJoin(issue.pages.map(title)), why, lines: issue.detail ?? [],
       pages: issue.pages, action: stale ? 'Still true' : issue.kind === 'conflict' || issue.kind === 'duplicate' ? 'Settle' : 'Open', ...(stale ? { suggestion: stale } : {}),
       ...(issue.kind === 'conflict' && issue.facts?.length === 2 ? { keep: issue.facts, why: versus(issue.facts[0]!.text, issue.facts[1]!.text) } : {}),
       ...(issue.kind === 'stale' && held ? { why: `${why}, and a newer page on its topic may have changed it` } : {}),
@@ -215,4 +218,48 @@ export const fixItems = (overview: Pick<KnowledgeOverview, 'review' | 'health' |
   }] : [];
   const kind = (item: FixItem): string => item.suggestion?.kind === 'confirm' && !overview.review?.suggestions.some((suggestion) => suggestion.id === item.id) ? 'stale' : item.suggestion?.kind ?? item.id.split(':')[0]!;
   return [...unreviewed, ...fromReview, ...fromProposals, ...missing, ...fromHealth].sort((a, b) => (FIX_RANK[kind(a)] ?? 20) - (FIX_RANK[kind(b)] ?? 20));
+};
+
+/** What kind of job a To do item is, from its id: `proposal`, `conflict`, `draft`, `missing`, a review fix's id… */
+export const fixKind = (item: Pick<FixItem, 'id' | 'suggestion'>): string => item.suggestion?.kind ?? item.id.split(':')[0]!;
+
+const names = (titles: string[], shown = 2): string =>
+  titles.length > shown ? `${titles.slice(0, shown).join(', ')} and ${titles.length - shown} more` : titles.join(', ');
+
+/**
+ * To do with the jobs that come in numbers folded into one row each: "3 proposals" (Review opens Proposals) and
+ * "19 pages to confirm" (Review opens Pages). A single one stays its own row; everything keeps its place in the order.
+ */
+export const groupFixes = (items: readonly FixItem[]): FixItem[] => {
+  const proposals = items.filter((item) => item.id.startsWith('proposal:'));
+  const drafts = items.filter((item) => item.id.startsWith('draft:'));
+  const out: FixItem[] = [];
+  for (const item of items) {
+    if (item.id.startsWith('proposal:')) {
+      if (proposals.length === 1) out.push({ ...item, why: 'Proposal' });
+      else if (item === proposals[0]) out.push({ id: 'proposals:', title: `${proposals.length} proposals`, why: names(proposals.map((one) => one.title)), lines: [], pages: [], action: 'Review', href: '/knowledge/proposals' });
+      continue;
+    }
+    if (item.id.startsWith('draft:') && drafts.length > 1) {
+      if (item === drafts[0]) out.push({ id: 'drafts:', title: `${drafts.length} pages to confirm`, why: names(drafts.map((one) => one.title)), lines: [], pages: drafts.flatMap((one) => one.pages), action: 'Review', href: '/knowledge/pages' });
+      continue;
+    }
+    out.push(item);
+  }
+  return out;
+};
+
+/** To do's count in words for the stat tile, adding up to its number: "3 proposals · 1 conflict · 19 to confirm". */
+export const todoSummary = (items: readonly FixItem[]): string => {
+  const count = (test: (item: FixItem) => boolean): number => items.filter(test).length;
+  const proposals = count((item) => item.id.startsWith('proposal:'));
+  const drafts = count((item) => item.id.startsWith('draft:'));
+  const conflicts = count((item) => ['conflict', 'duplicate', 'replace'].includes(fixKind(item)));
+  const rest = items.length - proposals - drafts - conflicts;
+  return [
+    proposals && `${proposals} proposal${proposals === 1 ? '' : 's'}`,
+    conflicts && `${conflicts} conflict${conflicts === 1 ? '' : 's'}`,
+    drafts && `${drafts} to confirm`,
+    rest && `${rest} other`,
+  ].filter(Boolean).join(' · ') || 'Nothing to do';
 };

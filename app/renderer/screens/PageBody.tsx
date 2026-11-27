@@ -26,8 +26,11 @@ const Inline = ({ spans, onOpen }: { spans: Span[]; onOpen: (href: string) => vo
   </>
 );
 
-/** A page's Markdown as it reads: headings, bullets, tables, quotes, fences and paragraphs, with bold, code and links live. */
-export const PageBody = ({ text, onOpen }: { text: string; onOpen: (href: string) => void }) => (
+/**
+ * A page's Markdown as it reads: headings, bullets, tables, quotes, fences and paragraphs, with bold, code and links
+ * live. `strong` sets the text in ink, where the page is the main content (Pages, Proposals), not a preview.
+ */
+export const PageBody = ({ text, onOpen, strong = false }: { text: string; onOpen: (href: string) => void; strong?: boolean }) => (
   <div className="flex flex-col gap-1.5 px-4 py-3 text-[13px] leading-6 text-ink">
     {pageBlocks(text).map((block, at) => {
       switch (block.kind) {
@@ -35,7 +38,7 @@ export const PageBody = ({ text, onOpen }: { text: string; onOpen: (href: string
           return <p key={at} className={cx('text-ink', block.level <= 1 ? 'pt-1 text-sm font-semibold' : block.level === 2 ? 'pt-1 font-semibold' : 'pt-0.5 font-medium')}>{<Inline spans={block.spans} onOpen={onOpen} />}</p>;
         case 'item':
           return (
-            <p key={at} className="flex gap-2 text-muted" style={block.depth ? { marginLeft: block.depth * 16 } : undefined}>
+            <p key={at} className={cx('flex gap-2', strong ? 'text-ink' : 'text-muted')} style={block.depth ? { marginLeft: block.depth * 16 } : undefined}>
               <span aria-hidden className="shrink-0 text-faint">{block.number === null ? '•' : `${block.number}.`}</span>
               <span className="min-w-0"><Inline spans={block.spans} onOpen={onOpen} /></span>
             </p>
@@ -62,7 +65,7 @@ export const PageBody = ({ text, onOpen }: { text: string; onOpen: (href: string
             </div>
           );
         case 'text':
-          return <p key={at} className="text-muted"><Inline spans={block.spans} onOpen={onOpen} /></p>;
+          return <p key={at} className={strong ? 'text-ink' : 'text-muted'}><Inline spans={block.spans} onOpen={onOpen} /></p>;
       }
     })}
   </div>

@@ -99,7 +99,7 @@ const pagesFixture = (t: TestContext) => {
   write('product/old.md', page('2026-09-01'));
   write('product/orphan.md', page('2026-11-16'));
   write('proposals/2026-11-18-new.md', page('no'));
-  return { profile, knowledge, page, service: createKnowledge(knowledge) };
+  return { profile, knowledge, page, write, service: createKnowledge(knowledge) };
 };
 
 test('listPages gives each page its verified, unverified or stale badge and its own problems', (t) => {
@@ -121,6 +121,14 @@ test('listPages gives each page its verified, unverified or stale badge and its 
   const badgeOn = (date: string) => service.listPages({ now: new Date(`${date}T12:00:00Z`) }).find((page) => page.path === 'product/old.md')!.badge;
   assert.equal(badgeOn('2026-10-31'), 'verified', '60 days after verifying, a page is still verified');
   assert.equal(badgeOn('2026-11-01'), 'stale', 'after 60 days it is stale');
+});
+
+test('listPages names a page by its first # heading, and leaves the name out when there is none', (t) => {
+  const { service, write, page } = pagesFixture(t);
+  write('owner/role.md', page('2026-11-16', '# Tom Reyes\n\n## Billing\nOwns billing.\n'));
+  const pages = service.listPages({ now: NOW });
+  assert.equal(pages.find((entry) => entry.path === 'owner/role.md')!.title, 'Tom Reyes');
+  assert.equal(pages.find((entry) => entry.path === 'product/billing.md')!.title, undefined);
 });
 
 test('savePage writes the page, keeps a backup of the old text and returns the new badge', (t) => {

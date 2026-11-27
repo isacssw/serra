@@ -1,31 +1,35 @@
 // Knowledge → About me (SERRA-41): what every job's brief carries about the owner, exactly as a worker gets it, for
 // each audience a reply can have. It's built from the owner's confirmed pages under owner/, so it's edited there.
 import { useCallback, useEffect, useState } from 'react';
-import { ArrowUpRight, Building2, User, Users } from 'lucide-react';
+import { Building2, ChevronRight, FileText, Pencil, User, Users } from 'lucide-react';
 import { useNavigate } from 'react-router';
-import { ABOUT_MAX_CHARS, type AboutMe as AboutMeData, type Audience, type Visibility } from '../../../src/owner-model.ts';
+import {
+  ABOUT_MAX_CHARS, OFFLIMITS_PREFACE, PEOPLE_PREFACE, type AboutMe as AboutMeData, type Audience, type Visibility,
+} from '../../../src/owner-model.ts';
 import { PageBody } from './PageBody.tsx';
 import { AudienceChoice } from './AudienceChoice.tsx';
+import { aboutCard, leftOutLine, sectionTitle } from './about.logic.ts';
 import { serra } from '../bridge.ts';
-import { Button, cx, Dialog, Page, useToast } from '../ui/index.ts';
+import { Badge, Button, cx, Dialog, EmptyState, Page, Segmented, useToast } from '../ui/index.ts';
 
-/** A card's title in words: "Working style", not owner/working-style.md. */
-const sectionTitle = (path: string): string => {
-  const named: Record<string, string> = { 'people/': 'People', outsiders: 'Rules for outsiders', 'private topics': 'Private topics' };
-  if (named[path]) return named[path];
-  const words = (path.split('/').pop() ?? path).replace(/\.md$/, '').replace(/[-_]+/g, ' ');
-  return words.charAt(0).toUpperCase() + words.slice(1);
-};
+const AUDIENCES = [
+  { value: 'owner', label: 'You', icon: <User size={14} />, title: 'Your DMs and tasks you start in the app' },
+  { value: 'team', label: 'Team', icon: <Users size={14} />, title: 'Channels and teammates\u2019 DMs' },
+  { value: 'external', label: 'External', icon: <Building2 size={14} />, title: 'Channels shared with another company' },
+] as const;
 
-const AUDIENCES: { value: Visibility; label: string; icon: typeof User; hint: string }[] = [
-  { value: 'owner', label: 'You', icon: User, hint: 'Your DMs with the bot and tasks you start in the app.' },
-  { value: 'team', label: 'Your team', icon: Users, hint: 'Channels and teammates’ DMs. Pages only you may hear are left out.' },
-  { value: 'external', label: 'Outside your company', icon: Building2, hint: 'Channels shared with another company. Only pages for people outside your company.' },
-];
+const EMPTY: Record<Visibility, string> = { owner: 'Nothing about you yet', team: 'Nothing shared with your team', external: 'Nothing shared outside' };
 
 const message = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
-
+/** How much of the brief's room About me takes, as a small meter. */
+const Meter = ({ used }: { used: number }) => (
+  <span className="flex items-center gap-2" title="How much of the brief\u2019s room About me takes">
+    Brief space
+    <span aria-hidden className="h-1.5 w-24 overflow-hidden rounded-full bg-line-strong"><span className="block h-full rounded-full bg-muted" style={{ width: `max(6px, ${used}%)` }} /></span>
+    <span className="tabular-nums">{used}%</span>
+  </span>
+);
 
 export const AboutMe = () => {
   const navigate = useNavigate();
@@ -37,6 +41,7 @@ export const AboutMe = () => {
   const [sharing, setSharing] = useState<Set<string> | null>(null);
   const [shareTo, setShareTo] = useState<Audience>('team');
   const [busy, setBusy] = useState(false);
+  const [review, setReview] = useState(false);
   const toast = useToast();
 
   const load = useCallback(async (audience: Visibility) => {
@@ -81,94 +86,82 @@ export const AboutMe = () => {
     }
   };
   const used = about ? Math.min(100, Math.round((100 * about.chars) / ABOUT_MAX_CHARS)) : 0;
+  const leftOut = about ? leftOutLine(about.left) : null;
 
   return (
-    <Page title="About me" subtitle={about ? `In every brief · ${used}% of the space` : undefined}>
+    <Page
+      title="About me"
+      subtitle={about ? <Meter used={used} /> : undefined}
+      actions={<Segmented kind="tab" aria-label="Seen by" controls="about-panel" value={visibility} onChange={(next) => { setVisibility(next); setReview(false); }} options={AUDIENCES} />}
+    >
       {error && <p role="alert" className="text-sm text-down">{error}</p>}
-      {untagged.length > 0 && (
-        <section aria-labelledby="untagged-title" className="flex items-center gap-3 rounded-lg border border-line bg-panel px-4 py-2.5">
-          <Users size={16} aria-hidden className="shrink-0 text-muted" />
-          <h2 id="untagged-title" className="min-w-0 flex-1 text-[13px]" title="Teammates' briefs leave these out until you choose.">
-            {untagged.length === 1 ? '1 private page' : `${untagged.length} private pages`}
-          </h2>
-          <Button size="sm" onClick={() => { setShareTo('team'); setSharing(new Set()); }}>Share</Button>
-        </section>
-      )}
-      <div className="flex flex-col gap-2">
-        <div role="group" aria-label="Seen by" className="flex flex-wrap gap-1">
-          {AUDIENCES.map(({ value, label, icon: Icon, hint }) => (
-            <button
-              key={value}
-              title={hint}
-              type="button"
-              aria-pressed={visibility === value}
-              onClick={() => setVisibility(value)}
-              className={cx(
-                'inline-flex h-8 items-center gap-1.5 rounded-md border px-2.5 text-[13px] focus-visible:outline-2 focus-visible:outline-focus',
-                visibility === value ? 'border-line-strong bg-selected text-ink' : 'border-line text-muted hover:bg-raised hover:text-ink',
-              )}
-            >
-              <Icon size={14} aria-hidden />
-              {label}
-            </button>
-          ))}
+      {(leftOut || untagged.length > 0) && (
+        <div className="-mt-2 flex flex-col gap-2">
+          <p className="flex flex-wrap items-center gap-x-6 gap-y-1 text-[13px] text-muted">
+            {leftOut && (
+              <span className="inline-flex items-center gap-2">
+                {leftOut}
+                <button type="button" aria-expanded={review} onClick={() => setReview(!review)} className="inline-flex items-center gap-0.5 rounded-sm font-medium text-ink hover:underline focus-visible:outline-2 focus-visible:outline-focus">
+                  Review<ChevronRight size={13} aria-hidden className={cx('transition-transform', review && 'rotate-90')} />
+                </button>
+              </span>
+            )}
+            {leftOut && untagged.length > 0 && <span aria-hidden className="-mx-3 text-muted">·</span>}
+            {untagged.length > 0 && (
+              <span className="inline-flex items-center gap-2" title="Teammates\u2019 briefs leave these out until you choose">
+                {untagged.length === 1 ? '1 page' : `${untagged.length} pages`} not shared
+                <button type="button" onClick={() => { setShareTo(visibility === 'external' ? 'external' : 'team'); setSharing(new Set()); }} className="inline-flex items-center gap-0.5 rounded-sm font-medium text-ink hover:underline focus-visible:outline-2 focus-visible:outline-focus">{visibility === 'external' ? 'Share outside' : 'Share with team'}<ChevronRight size={13} aria-hidden /></button>
+              </span>
+            )}
+          </p>
+          {review && about && (
+            <ul aria-label="Pages left out" className="flex flex-wrap gap-1.5">
+              {about.left.map((page) => (
+                <li key={page.path}>
+                  <button type="button" onClick={() => edit(page.path)} title={page.reason} className="inline-flex h-7 items-center gap-1.5 rounded-md border border-line-strong bg-control px-2.5 text-xs text-ink shadow-field hover:border-line-control focus-visible:outline-2 focus-visible:outline-focus">
+                    <FileText size={12} aria-hidden className="text-faint" />{sectionTitle(page.path)}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
-      </div>
+      )}
 
       {about && (
-        <div className="flex flex-col gap-6 border-t border-line pt-5 lg:flex-row lg:items-start">
-          <div className="flex min-w-0 flex-1 flex-col gap-3">
-            {about.sections.length === 0 && (
-              <p className="text-sm text-muted">
-                Nothing yet.{' '}
-                <button type="button" onClick={() => void navigate('/knowledge/proposals?interview=1')} className="text-ink underline underline-offset-2 hover:no-underline focus-visible:outline-2 focus-visible:outline-focus">
-                  Start interview
-                </button>
-              </p>
-            )}
-            {about.sections.map((section) => (
-              <section key={section.path} aria-label={section.path} className="rounded-lg border border-line bg-panel">
-                <header className="flex items-center justify-between gap-3 border-b border-line-subtle px-4 py-2.5">
-                  <div className="flex min-w-0 items-baseline gap-2">
-                    <h2 className="min-w-0 text-[13px] font-semibold" title={section.path}>{sectionTitle(section.path)}</h2>
-                  </div>
-                  {section.path !== 'people/' && section.path !== 'outsiders' && section.path !== 'private topics' && <button
-                    type="button"
-                    onClick={() => edit(section.path)}
-                    className="inline-flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-xs text-muted hover:bg-hover hover:text-ink focus-visible:outline-2 focus-visible:outline-focus"
-                  >
-                    Edit <ArrowUpRight size={13} aria-hidden />
-                  </button>}
-                </header>
-                <PageBody text={section.body} onOpen={(href) => { serra()?.app.openExternal(href).catch((failure: unknown) => toast({ message: message(failure), tone: 'error' })); }} />
-              </section>
-            ))}
-          </div>
-
-          {about.left.length > 0 && (
-          <aside aria-label="Pages left out" className="flex w-full shrink-0 flex-col gap-4 lg:w-64">
-              <div className="flex flex-col gap-2 rounded-lg border border-line bg-panel p-4">
-                <h2 className="text-sm font-semibold">Not included</h2>
-                <ul className="flex flex-col gap-2">
-                  {about.left.map((page) => (
-                    <li key={page.path} className="flex flex-col">
-                      <button type="button" onClick={() => edit(page.path)} className="self-start truncate font-mono text-xs text-ink hover:underline focus-visible:outline-2 focus-visible:outline-focus">
-                        {page.path}
-                      </button>
-                      <span className="text-xs text-muted">{page.reason}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-          </aside>
+        <div id="about-panel" role="tabpanel" aria-label={AUDIENCES.find((audience) => audience.value === visibility)!.title} className="flex flex-col gap-3">
+          {about.sections.length === 0 && (
+            <EmptyState
+              icon={<User size={18} />}
+              title={EMPTY[visibility]}
+              action={visibility === 'owner'
+                ? <Button variant="primary" onClick={() => void navigate('/knowledge/proposals?interview=1')}>Start interview</Button>
+                : untagged.length > 0 ? <Button onClick={() => { setShareTo(visibility === 'external' ? 'external' : 'team'); setSharing(new Set()); }}>Share pages…</Button> : undefined}
+            />
           )}
+          {about.sections.map((section) => {
+            const card = aboutCard(section.path, section.body, [OFFLIMITS_PREFACE, PEOPLE_PREFACE]);
+            const editable = section.path !== 'people/' && section.path !== 'outsiders' && section.path !== 'private topics';
+            return (
+              <section key={section.path} aria-label={card.title} className="group rounded-xl border border-line bg-panel shadow-card">
+                <header className="flex items-center justify-between gap-3 pt-2.5 pr-2.5 pl-5">
+                  <h2 className="min-w-0 truncate text-sm font-semibold" title={section.path}>{card.title}</h2>
+                  {(section.path === 'outsiders' || section.path === 'private topics') && <Badge title="Serra adds this rule for these replies" className="my-1 mr-2">Built-in</Badge>}
+                  {editable && (
+                    <Button size="sm" variant="ghost" icon={<Pencil size={13} aria-hidden />} aria-label={`Edit ${card.title}`} onClick={() => edit(section.path)}>Edit</Button>
+                  )}
+                </header>
+                <div className="-mt-2.5 max-w-[76ch] px-1 pb-1"><PageBody strong text={card.body} onOpen={(href) => { serra()?.app.openExternal(href).catch((failure: unknown) => toast({ message: message(failure), tone: 'error' })); }} /></div>
+              </section>
+            );
+          })}
         </div>
       )}
       <Dialog
         open={sharing !== null}
         onClose={() => setSharing(null)}
-        title="Choose who may hear these pages"
-        description="Nothing is checked until you choose. Keeping a page for you only clears it from this list. You can change a page later in Pages."
+        title="Who may hear these pages?"
+        description="Nothing changes until you choose."
         actions={(
           <>
             <Button onClick={() => setSharing(null)}>Cancel</Button>
@@ -178,8 +171,8 @@ export const AboutMe = () => {
           </>
         )}
       >
-        <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-          <AudienceChoice id="share-to" value={shareTo} disabled={busy} onChange={setShareTo} />
+        <div className="mb-3 flex flex-wrap items-end justify-between gap-2">
+          <AudienceChoice id="share-to" label value={shareTo} disabled={busy} onChange={setShareTo} />
           <button
             type="button"
             onClick={() => setSharing(sharing?.size === untagged.length ? new Set() : new Set(untagged.map((page) => page.path)))}
@@ -201,12 +194,11 @@ export const AboutMe = () => {
                     if (event.target.checked) next.add(path); else next.delete(path);
                     return next;
                   })}
-                  className="mt-0.5 size-4 accent-[var(--color-accent)]"
+                  className="mt-0.5 size-4 shrink-0 accent-[var(--color-accent)]"
                 />
                 <span className="flex min-w-0 flex-col">
-                  <span className="font-mono text-xs">{path}</span>
-                  {description && <span className="text-xs text-muted">{description}</span>}
-                  {offlimits && shareTo !== 'owner' && <span className="text-xs text-warn">Off-limits rules: sharing puts their topics in {shareTo === 'team' ? 'teammates\u2019' : 'outsiders\u2019'} briefs.</span>}
+                  <span className="text-[13px] text-ink" title={path}>{description || sectionTitle(path)}</span>
+                  {offlimits && shareTo !== 'owner' && <span className="text-xs text-warn">Off-limits: shares its topics too</span>}
                 </span>
                 </label>
                 <button

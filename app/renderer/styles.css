@@ -49,7 +49,7 @@
   --color-down: light-dark(#b91c1c, #f87171);
   /* Text on a solid up, warn or down fill (the danger button, a warn badge). */
   /* What dims the window behind a dialog or the palette: light enough to keep a white window from turning grey. */
-  --color-scrim: light-dark(#09090b1f, #0000008c);
+  --color-scrim: light-dark(#09090b1f, #000000b8);
   --color-status-ink: light-dark(#ffffff, #09090b);
   /* Depth: a field's lift in light mode, and the floating layer (menus, dialogs, the save bar). */
   --shadow-field: 0 1px 2px light-dark(#0000000d, #00000000);

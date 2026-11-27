@@ -4,7 +4,7 @@ import { cx } from './cx.ts';
 type BadgeTone = 'neutral' | 'accent' | 'up' | 'warn' | 'down';
 
 const tones: Record<BadgeTone, string> = {
-  neutral: 'bg-raised text-muted',
+  neutral: 'bg-line-strong text-muted',
   accent: 'bg-selected text-ink',
   up: 'bg-up/12 text-up',
   warn: 'bg-warn/12 text-warn',

@@ -106,7 +106,7 @@ If something fails, open **Settings › Diagnostics**: failing checks come first
 
 Open **Knowledge › Proposals › Start interview**. A T3 thread interviews you, one question at a time, about your role, workflows and limits. Each summary you confirm becomes a proposal; approve it in **Proposals** and it becomes a knowledge page every job can read. **Knowledge › About me** shows what jobs know about you. More: [docs/knowledge-interview.md](docs/knowledge-interview.md).
 
-**Knowledge › Overview** shows, at a glance, how many replies your notes shaped this week, one request answered with and without them, and a short To do when something needs you; the health trend, areas and each page's use are under Details. More: [docs/knowledge-health.md](docs/knowledge-health.md).
+**Knowledge › Overview** shows, at a glance, how many pages you have, how many replies they shaped, their health and what needs you, with a **Needs you** list and what the bot knows by area beside it; each page's use and what it learned lately are under Details. More: [docs/knowledge-health.md](docs/knowledge-health.md).
 
 **Knowledge › Graph** shows the same knowledge as a map: an island per area, your pages on it, and the links between them. It replays how it grew the first time you open it. More: [docs/knowledge-health.md](docs/knowledge-health.md#graph).
 

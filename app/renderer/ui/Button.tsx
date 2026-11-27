@@ -7,7 +7,7 @@ type ButtonSize = 'sm' | 'md';
 // Disabled buttons drop their fill and keep an outline with faint text: off, never a grey block.
 const variants: Record<ButtonVariant, string> = {
   primary: 'bg-accent text-accent-ink border-transparent enabled:hover:bg-accent/88 enabled:active:bg-accent/80 disabled:border-line aria-disabled:border-line',
-  secondary: 'bg-control text-ink border-line-strong shadow-field enabled:hover:bg-control-hover enabled:hover:border-line-control enabled:active:bg-selected disabled:border-line disabled:shadow-none aria-disabled:border-line',
+  secondary: 'bg-control text-ink border-line-control shadow-field enabled:hover:bg-control-hover enabled:hover:border-faint enabled:active:bg-selected disabled:border-line disabled:shadow-none aria-disabled:border-line',
   ghost: 'bg-transparent text-muted border-transparent enabled:hover:bg-hover enabled:hover:text-ink enabled:active:bg-selected disabled:border-transparent aria-disabled:border-transparent',
   danger: 'bg-down text-status-ink border-transparent enabled:hover:bg-down/88 enabled:active:bg-down/80 disabled:border-line aria-disabled:border-line',
 };

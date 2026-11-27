@@ -2,7 +2,7 @@
 // and a Markdown editor. The editor checks the header and the line cap as the owner types, with the same rules and
 // message the service refuses a save with, so Save stays disabled until the page would pass `pnpm knowledge`.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AlertTriangle, CheckCircle2, ChevronRight, FileText, Search } from 'lucide-react';
+import { AlertTriangle, Archive, Check, CheckCircle2, ChevronRight, Pencil, Search } from 'lucide-react';
 import { useNavigate, useSearchParams } from 'react-router';
 import type { KnowledgePage } from '../../../src/contracts.ts';
 import type { KnowledgeOverview } from '../../../src/knowledge-overview.ts';
@@ -12,10 +12,18 @@ import { pageAudience } from '../../../src/owner-model.ts';
 import { AudienceChoice } from './AudienceChoice.tsx';
 import { RuleDiff } from './proposals/RuleDiff.tsx';
 import { PageBody } from './PageBody.tsx';
-import { Badge, Button, cx, Dialog, Page, useToast } from '../ui/index.ts';
+import { aboutCard } from './about.logic.ts';
+
+/** The body as it reads under the page's title: without its own first heading when that heading is the title. */
+const readBody = (page: KnowledgePage, body: string): string => {
+  const card = aboutCard(page.path, body);
+  return card.title.toLowerCase() === pageLabel(page).toLowerCase() ? card.body : body;
+};
+import { Badge, Button, cx, Dialog, EmptyState, Page, useToast } from '../ui/index.ts';
+import { fieldClass } from '../ui/field.ts';
 import {
   badgeLabel, currentRules, badgeTitle, badgeTone, editorState, filterPages, groupByArea, keepSelection, localDate, markVerified,
-  pageName,
+  joinHeader, pageDetail, pageLabel, pageMeta, splitHeader,
 } from './pages.logic.ts';
 
 const message = (error: unknown): string => (error instanceof Error ? error.message : String(error));
@@ -29,6 +37,49 @@ const AudiencePicker = ({ text, disabled, onChange }: { text: string; disabled: 
     onChange={(audience) => onChange(setHeaderField(text, 'audience', audience))}
   />
 );
+
+/**
+ * The Markdown editor: the page's body in the main field, its header (type, dates, sources) folded under "Page
+ * header" until asked for, since the title row above already shows what's in it. Both edit the one draft.
+ */
+const PageEditor = ({ draft, invalid, path, onChange }: { draft: string; invalid: boolean; path: string; onChange: (text: string) => void }) => {
+  const [open, setOpen] = useState(false);
+  const { header, body: whole } = splitHeader(draft);
+  // The blank line after the header is kept in the page but not shown, so the field opens on the first line of text.
+  const lead = /^\n*/.exec(whole)![0];
+  const body = whole.slice(lead.length);
+  const fields = header === null ? [] : header.split('\n').flatMap((line) => { const key = /^([A-Za-z_-]+):/.exec(line)?.[1]; return key ? [key] : []; });
+  return (
+    <div className="flex flex-1 flex-col gap-2">
+      {header !== null && (
+        <div className="flex flex-col gap-2">
+          <Button size="sm" variant="ghost" flush className="self-start" aria-expanded={open} onClick={() => setOpen(!open)}>
+            <ChevronRight size={13} aria-hidden className={cx('transition-transform', open && 'rotate-90')} />Page header
+            <span className="font-normal text-faint">{fields.join(', ')}</span>
+          </Button>
+          {open && (
+            <textarea
+              value={header}
+              onChange={(event) => onChange(joinHeader(event.target.value, whole))}
+              spellCheck={false}
+              aria-label={`Header of ${path}`}
+              className={cx('w-full resize-none px-3.5 py-2.5 font-mono leading-5 text-[12px]! text-muted! [field-sizing:content]', fieldClass(false))}
+            />
+          )}
+        </div>
+      )}
+      <textarea
+        value={body}
+        onChange={(event) => onChange(joinHeader(header, lead + event.target.value))}
+        spellCheck={false}
+        aria-label={`Markdown of ${path}`}
+        aria-invalid={invalid ? true : undefined}
+        aria-describedby="page-editor-status"
+        className={cx('min-h-64 w-full flex-1 resize-none px-3.5 py-3 font-mono leading-5 text-[12.5px]! [field-sizing:content]', fieldClass(invalid))}
+      />
+    </div>
+  );
+};
 
 type Drifted = { path: string; approved: string | null; current: string | null };
 
@@ -78,35 +129,42 @@ const DriftNotice = ({ files, busy, onAccept, onRestore, name }: {
 };
 
 
+/** A page's state in the list, as quietly as it can be said: a check for verified, a dot for stale, a mark for a broken page. */
+const RowMark = ({ page }: { page: KnowledgePage }) => {
+  if (page.problems.length > 0) return <AlertTriangle size={14} aria-label="Fails the knowledge check" className="mt-0.5 shrink-0 text-down" />;
+  if (page.disputed) return <span aria-label="Rules disagree" title="Rules disagree" className="mt-1.5 size-1.5 shrink-0 rounded-full bg-warn" />;
+  if (page.badge === 'verified') return <Check size={14} strokeWidth={2.25} aria-label="Verified" className="mt-0.5 shrink-0 text-muted" />;
+  if (page.badge === 'stale') return <span aria-label="Stale" title={badgeTitle(page)} className="mt-1.5 size-1.5 shrink-0 rounded-full bg-warn" />;
+  return null;
+};
+
 const PageList = ({ pages, selected, onSelect }: { pages: KnowledgePage[]; selected: string | null; onSelect: (path: string) => void }) => (
   <div className="flex flex-col gap-4">
     {groupByArea(pages).map((group) => (
-      <section key={group.area} className="flex flex-col gap-1">
-        <h2 className="px-1 text-xs font-semibold text-muted">{group.area}</h2>
+      <section key={group.area} aria-label={group.area} className="flex flex-col gap-px">
+        <h2 className="sticky top-0 z-10 bg-canvas px-2.5 pt-1 pb-1 text-xs font-medium text-faint">{group.area}</h2>
         {group.pages.map((page) => {
           const active = page.path === selected;
+          const detail = pageDetail(page);
           return (
             <button
               key={page.path}
               type="button"
               aria-current={active ? 'true' : undefined}
+              ref={active ? (row) => { row?.scrollIntoView({ block: 'nearest' }); } : undefined}
               onClick={() => onSelect(page.path)}
               title={page.path}
               className={cx(
-                'flex items-center gap-2 rounded-md border px-2.5 py-2 text-left text-sm',
-                'focus-visible:outline-2 focus-visible:outline-focus',
-                active ? 'border-line-strong bg-selected' : 'border-transparent hover:bg-raised',
+                'flex items-start gap-2 rounded-lg px-2.5 py-1.5 text-left transition-colors duration-150',
+                'focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-focus',
+                active ? 'bg-selected' : 'hover:bg-hover',
               )}
             >
-              <FileText size={15} aria-hidden className="shrink-0 text-muted" />
               <span className="flex min-w-0 flex-1 flex-col">
-                <span className="truncate">{page.description ?? pageName(page.path)}</span>
+                <span className={cx('truncate text-[13px] leading-5 text-ink', active && 'font-medium')}>{pageLabel(page)}</span>
+                {detail && <span className="truncate text-xs leading-4 text-muted">{detail}</span>}
               </span>
-              {page.problems.length > 0 && (
-                <AlertTriangle size={14} aria-label="Fails the knowledge check" className="shrink-0 text-down" />
-              )}
-              {/* Only what needs a look gets a pill: a list of "Verified" says nothing. */}
-              {page.badge !== 'verified' && <Badge tone={badgeTone(page.badge)} title={badgeTitle(page)}>{badgeLabel(page.badge)}</Badge>}
+              <RowMark page={page} />
             </button>
           );
         })}
@@ -123,15 +181,15 @@ const RulesNote = ({ issues, oneClick, onSettle }: { issues: KnowledgeOverview['
   const pairs = issues.filter((issue) => (issue.kind === 'conflict' || issue.kind === 'duplicate') && (issue.facts?.length ?? 0) === 2);
   if (pairs.length === 0) return null;
   return (
-    <section aria-label="Rules to settle" className="flex flex-col gap-2 rounded-lg border border-warn/40 bg-panel px-3 py-2.5">
+    <section aria-label="Rules to settle" className="flex flex-col gap-2.5 rounded-xl border border-warn/40 bg-warn/5 px-4 py-3">
       {pairs.map((issue, at) => (
         <div key={at} className="flex flex-col gap-1">
-          <p className="flex items-center gap-1.5 text-[13px]"><AlertTriangle size={14} aria-hidden className="text-warn" />{issue.kind === 'conflict' ? 'Two rules disagree' : 'Written twice'}</p>
-          {issue.facts!.map((fact) => <p key={fact.text} className="border-l-2 border-line pl-2 text-xs text-muted" title={fact.page}>{fact.text}</p>)}
+          <p className="flex items-center gap-1.5 text-[13px] font-medium text-warn"><AlertTriangle size={14} aria-hidden />{issue.kind === 'conflict' ? 'Two rules disagree' : 'A rule is written twice'}</p>
+          {issue.facts!.map((fact) => <p key={fact.text} className="border-l-2 border-warn/40 pl-2.5 text-[13px] text-ink" title={fact.page}>{fact.text}</p>)}
         </div>
       ))}
       {/* Only where To do can settle it in a click: a rule inside prose stays here, with the page's Edit. */}
-      {oneClick && <button type="button" onClick={onSettle} className="self-start text-xs text-ink underline underline-offset-2 hover:no-underline focus-visible:outline-2 focus-visible:outline-focus">Settle in To do</button>}
+      {oneClick && <Button size="sm" className="self-start" onClick={onSettle}>Settle in To do</Button>}
     </section>
   );
 };
@@ -181,7 +239,8 @@ export const Pages = () => {
       setDrifted(drift);
       setArchived(gone);
       setLoadError(null);
-      setSelected((current) => keepSelection(list, current));
+      // The first visit opens the page the list shows first.
+      setSelected((current) => (current === null ? (groupByArea(list)[0]?.pages[0]?.path ?? null) : keepSelection(list, current)));
     } catch (error) {
       setLoadError(message(error));
     }
@@ -313,6 +372,7 @@ export const Pages = () => {
     const el = detailRef.current;
     if (!selected || !el) return;
     const top = el.getBoundingClientRect().top;
+    if (el.scrollHeight > el.clientHeight) { el.scrollTo({ top: 0 }); return; }
     if (top > window.innerHeight * 0.6 || top < 0) el.scrollIntoView({ block: 'start', behavior: 'smooth' });
   }, [selected]);
 
@@ -329,40 +389,46 @@ export const Pages = () => {
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
+  const filter = pages && pages.length > 8 && (
+    <div className="relative flex w-56 items-center">
+      <Search size={14} aria-hidden className="pointer-events-none absolute left-2.5 text-faint" />
+      <input
+        type="search"
+        value={query}
+        onChange={(event) => setQuery(event.target.value)}
+        onKeyDown={(event) => { if (event.key === 'Escape' && query) { event.preventDefault(); setQuery(''); } }}
+        placeholder="Filter pages"
+        aria-label="Filter pages"
+        className={cx('h-8 w-full pr-2.5 pl-8', fieldClass())}
+      />
+    </div>
+  );
+  // A page whose rules disagree or repeat isn't settled, however recently it was confirmed: its badge says so.
+  const disagree = pairs.some((issue) => (issue.kind === 'conflict' || issue.kind === 'duplicate') && (issue.facts?.length ?? 0) === 2);
+  // Today's date, for the editor's "Verified today" box.
+  const [today] = useState(() => localDate(new Date()));
+  const detail = page ? pageDetail(page) : null;
+
   return (
-    <Page title="Pages">
+    <Page title="Pages" meta={pages && pages.length > 0 ? pages.length : undefined} actions={filter || undefined}>
       {loadError && <p role="alert" className="text-sm text-down">{loadError}</p>}
       {drifted.length > 0 && (
-        <DriftNotice name={(path) => pages?.find((entry) => entry.path === path)?.description ?? path} files={drifted} busy={resolving} onAccept={(file) => void resolveDrift(file, true)} onRestore={(file) => void resolveDrift(file, false)} />
+        <DriftNotice name={(path) => { const entry = pages?.find((item) => item.path === path); return entry ? pageLabel(entry) : path; }} files={drifted} busy={resolving} onAccept={(file) => void resolveDrift(file, true)} onRestore={(file) => void resolveDrift(file, false)} />
       )}
       {pages && pages.length === 0 && (
-        <p className="text-sm text-muted">No pages yet.</p>
+        <EmptyState icon={<Pencil size={18} />} title="No pages yet" action={<Button variant="primary" onClick={() => void navigate('/knowledge/proposals?interview=1')}>Start interview</Button>} />
       )}
       {pages && pages.length > 0 && (
-        <div className="flex flex-col gap-6 border-t border-line pt-5 lg:flex-row lg:items-start">
-          <nav aria-label="Pages" className="flex w-full shrink-0 lg:w-72 flex-col gap-3">
-            {/* A short list needs no search. */}
-            {pages.length > 8 && (
-              <div className="relative flex items-center">
-              <Search size={15} aria-hidden className="pointer-events-none absolute left-2.5 text-muted" />
-              <input
-                type="search"
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-                placeholder="Filter pages"
-                aria-label="Filter pages"
-                className="h-8 w-full rounded-md border border-line bg-panel pl-8 pr-2 text-sm text-ink placeholder:text-muted focus:outline-2 focus:outline-offset-1 focus:outline-focus"
-              />
-            </div>
-            )}
+        <div className="flex flex-col gap-6 border-t border-line lg:h-[calc(100vh-148px)] lg:min-h-96 lg:flex-row lg:gap-0">
+          <nav aria-label="Pages" className="flex w-full shrink-0 flex-col gap-3 pt-3 lg:mr-6 lg:h-full lg:w-72 lg:overflow-y-auto lg:overscroll-contain lg:pb-6 lg:[mask-image:linear-gradient(to_bottom,#000_calc(100%-32px),transparent)]">
             {visible.length > 0
               ? <>
                 <PageList pages={visible} selected={selected} onSelect={select} />
                 {archived.length > 0 && (
-                  <section aria-label="Archived" className="flex flex-col gap-1 border-t border-line-subtle pt-3">
-                    <h2 className="px-1 text-xs font-semibold text-muted">Archived</h2>
+                  <section aria-label="Archived" className="flex flex-col gap-px border-t border-line-subtle pt-3">
+                    <h2 className="px-2.5 pb-1 text-xs font-medium text-faint">Archived</h2>
                     {archived.map((item) => (
-                      <div key={item.path} className="flex items-center gap-2 px-2.5 py-1.5 text-sm">
+                      <div key={item.path} className="flex items-center gap-2 py-0.5 pl-2.5 text-[13px]">
                         <span className="min-w-0 flex-1 truncate text-muted" title={item.path}>{item.description || item.path}</span>
                         <Button size="sm" variant="ghost" onClick={() => void restore(item.path)}>Restore</Button>
                       </div>
@@ -370,97 +436,95 @@ export const Pages = () => {
                   </section>
                 )}
               </>
-              : <p className="px-1 text-sm text-muted">No pages match.</p>}
+              : <p className="px-2.5 text-[13px] text-muted">No pages match.</p>}
           </nav>
 
-          <div ref={detailRef} className="flex min-w-0 flex-1 scroll-mt-4 flex-col gap-4 border-line lg:border-l lg:pl-6">
+          <div ref={detailRef} className="flex min-w-0 flex-1 scroll-mt-4 flex-col gap-5 pt-5 lg:h-full lg:overflow-y-auto lg:overscroll-contain lg:border-l lg:border-line lg:pr-1 lg:pl-8">
             {readError && <p role="alert" className="text-sm text-down">{readError}</p>}
-            {!page && !readError && <p className="text-sm text-muted">Pick a page to edit.</p>}
+            {!page && !readError && <p className="pt-1 text-[13px] text-muted">Pick a page.</p>}
             {page && (
-              <>
-                <div className="flex flex-col gap-1">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <h2 className="text-base font-semibold">{page.description ?? page.path}</h2>
-                    {/* A page whose rules disagree isn't settled, however recently it was confirmed. */}
-                    {!pairs.some((issue) => issue.kind === 'conflict') && page.badge !== 'verified' && <Badge tone={badgeTone(page.badge)} title={badgeTitle(page)}>{badgeLabel(page.badge)}</Badge>}
+              <header className="flex flex-col gap-1">
+                <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+                  <div className="flex min-w-0 items-center gap-2">
+                    <h2 className="min-w-0 text-lg leading-7 font-semibold tracking-[-0.01em]">{pageLabel(page)}</h2>
+                    {disagree
+                      ? <Badge tone="warn" title="Two rules on this page disagree or repeat">Conflict</Badge>
+                      : (
+                      <Badge tone={badgeTone(page.badge)} title={badgeTitle(page)} className="gap-1">
+                        {page.badge === 'verified' && <Check size={11} strokeWidth={2.5} aria-hidden />}{badgeLabel(page.badge)}
+                      </Badge>
+                    )}
                   </div>
+                  {state && (
+                    <div className="ml-auto flex flex-wrap items-center justify-end gap-1.5">
+                      {!editing && !state.dirty && confirmable && page.badge !== 'verified' && <Button size="sm" variant="ghost" icon={<CheckCircle2 size={13} aria-hidden />} disabled={saving} title="It still holds: mark it confirmed today" onClick={() => void confirmToday()}>Still true</Button>}
+                      <AudiencePicker text={draft} disabled={saving} onChange={setDraft} />
+                      <Button size="sm" icon={<Pencil size={13} aria-hidden />} className="w-[84px]" disabled={editing || state.dirty} aria-pressed={editing || state.dirty} onClick={() => setEditing(true)}>{editing || state.dirty ? 'Editing' : 'Edit'}</Button>
+                      <Button size="sm" variant="ghost" aria-label="Retire…" title={state.dirty ? 'Save or cancel your edits first' : 'Retire: the bot stops using it'} disabled={saving || state.dirty} icon={<Archive size={14} aria-hidden />} className="px-1.5 enabled:hover:bg-down/10 enabled:hover:text-down" onClick={() => setRetiring(true)} />
+                    </div>
+                  )}
                 </div>
-                {(page.warnings.length > 0 || page.problems.length > 0) && (
-                  <ul className="flex flex-col gap-1 text-sm">
-                    {page.problems.map((problem) => (
-                      <li key={problem} className="flex gap-2 text-down"><AlertTriangle size={15} aria-hidden className="mt-0.5 shrink-0" />{problem}</li>
-                    ))}
-                    {page.warnings.map((warning) => (
-                      <li key={warning} className="flex gap-2 text-warn"><AlertTriangle size={15} aria-hidden className="mt-0.5 shrink-0" />{warning}</li>
-                    ))}
-                  </ul>
-                )}
-              </>
+                <p className="text-xs text-faint">{detail ? `${detail} · ` : ''}{pageMeta(page)}</p>
+              </header>
             )}
-            {page && saved === null && !readError && <p className="text-sm text-muted">Loading…</p>}
+            {page && (page.warnings.length > 0 || page.problems.length > 0) && (
+              <ul className="flex flex-col gap-1 text-[13px]">
+                {page.problems.map((problem) => (
+                  <li key={problem} className="flex gap-2 text-down"><AlertTriangle size={14} aria-hidden className="mt-0.5 shrink-0" />{problem}</li>
+                ))}
+                {page.warnings.map((warning) => (
+                  <li key={warning} className="flex gap-2 text-warn"><AlertTriangle size={14} aria-hidden className="mt-0.5 shrink-0" />{warning}</li>
+                ))}
+              </ul>
+            )}
+            {page && saved === null && !readError && <p className="text-[13px] text-muted">Loading…</p>}
             {page && state && (
               <>
-                <AudiencePicker text={draft} disabled={saving} onChange={setDraft} />
                 <RulesNote
                   issues={pairs}
                   oneClick={pairs.some((issue) => issue.kind === 'conflict' && (issue.facts ?? []).length === 2 && issue.facts!.every((fact) => fact.page === selected && currentRules(saved ?? '').includes(fact.text)))}
                   onSettle={() => void navigate('/knowledge/overview#todo')}
                 />
                 {!editing && !state.dirty && (
-                  <div className="flex flex-col gap-3">
-                    <div className="rounded-lg border border-line bg-panel"><PageBody text={pageBody(draft)} onOpen={(href) => void serra()?.app.openExternal(href)} /></div>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <Button variant="primary" onClick={() => setEditing(true)}>Edit</Button>
-                      {confirmable && <Button disabled={saving} title="It still holds: mark it confirmed today." onClick={() => void confirmToday()}>Still true</Button>}
-                      <Button variant="ghost" disabled={saving} title="Stop using this page. It moves to the archive; you can undo." onClick={() => setRetiring(true)}>Retire…</Button>
-                    </div>
-                  </div>
+                  <div className="-mx-4 max-w-[76ch] text-sm"><PageBody strong text={readBody(page, pageBody(draft))} onOpen={(href) => void serra()?.app.openExternal(href)} /></div>
                 )}
                 {(editing || state.dirty) && <>
-                <textarea
-                  value={draft}
-                  onChange={(event) => setDraft(event.target.value)}
-                  spellCheck={false}
-                  aria-label={`Markdown of ${page.path}`}
-                  aria-invalid={state.problems.length > 0 ? true : undefined}
-                  aria-describedby="page-editor-status"
-                  className={cx(
-                    'min-h-[28rem] w-full resize-y rounded-md border bg-panel p-3 font-mono text-[13px] leading-5 text-ink',
-                    'focus:outline-2 focus:outline-offset-1 focus:outline-focus',
-                    state.problems.length > 0 ? 'border-down' : 'border-line',
-                  )}
-                />
-                <div id="page-editor-status" className="flex flex-col gap-2">
+                <PageEditor draft={draft} invalid={state.problems.length > 0} path={page.path} onChange={setDraft} />
+                <div id="page-editor-status" className="-mt-2 flex flex-col gap-2">
                   {state.refusal ? (
-                    <div role="alert" className="flex flex-col gap-1 text-sm text-down">
+                    <div role="alert" className="flex flex-col gap-1 text-[13px] text-down">
                       {state.refusal.split('\n').map((line, index) => <p key={index}>{line}</p>)}
                     </div>
                   ) : (
-                    <p className="flex items-center gap-1.5 text-sm text-muted">
+                    <p className="flex items-center gap-1.5 text-[13px] text-muted">
                       {pairs.some((issue) => (issue.kind === 'conflict' || issue.kind === 'duplicate') && (issue.facts ?? []).filter((fact) => fact.page !== selected || currentRules(draft).some((line) => line.includes(fact.text))).length >= 2)
-                        ? <><AlertTriangle size={15} aria-hidden className="text-warn" />Keep only one of the rules above</>
-                        : <><CheckCircle2 size={15} aria-hidden className="text-up" />Looks good</>}
+                        ? <><AlertTriangle size={14} aria-hidden className="text-warn" />Keep only one of the rules above</>
+                        : <><CheckCircle2 size={14} aria-hidden className="text-up" />Looks good</>}
                     </p>
                   )}
                 </div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <Button variant="primary" disabled={!state.canSave || saving} title={state.refusal ?? undefined} onClick={() => void save()}>
-                    {saving ? 'Saving…' : 'Save'}
-                  </Button>
-                  <Button disabled={!state.dirty || saving} onClick={() => setDraft(saved ?? '')}>Revert</Button>
-                  <Button
-                    variant="ghost"
-                    disabled={saving}
-                    title="Set the header's verified date to today. Save to keep it."
-                    onClick={() => setDraft((text) => markVerified(text, localDate(new Date())))}
-                  >
-                    Mark verified today
-                  </Button>
-                  <Button variant="ghost" disabled={saving || state.dirty} title={state.dirty ? 'Save or revert your edits first.' : 'Stop using this page. It moves to archive/; you can undo.'} onClick={() => setRetiring(true)}>
-                    Retire…
-                  </Button>
-                  {!state.dirty && <Button variant="ghost" onClick={() => setEditing(false)}>Done</Button>}
-                  <span className={cx('ml-auto text-xs tabular-nums', state.overCap ? 'text-down' : 'text-muted')}>{state.linesLabel}</span>
+                <div className="sticky bottom-0 mt-auto flex flex-wrap items-center gap-2 border-t border-line bg-canvas py-3">
+                  <label className="relative flex cursor-pointer items-center gap-2 text-[13px] text-ink" title="Sets the verified date. Save to keep it.">
+                    <input
+                      type="checkbox"
+                      disabled={saving}
+                      checked={frontmatter(draft)?.get('verified')?.trim() === today}
+                      onChange={(event) => setDraft((text) => (event.target.checked
+                        ? markVerified(text, today)
+                        : setHeaderField(text, 'verified', frontmatter(saved ?? '')?.get('verified')?.trim() || 'no')))}
+                      className="peer size-4 shrink-0 cursor-pointer appearance-none rounded-[5px] border border-line-control bg-field transition-colors checked:border-transparent checked:bg-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
+                    />
+                    <Check size={12} strokeWidth={3} aria-hidden className="pointer-events-none absolute left-0.5 hidden text-accent-ink peer-checked:block" />
+                    Verified today
+                  </label>
+                  <span aria-hidden className="text-faint">·</span>
+                  <span className={cx('text-xs tabular-nums', state.overCap ? 'text-down' : 'text-faint')}>{state.linesLabel}</span>
+                  <span className="ml-auto flex items-center gap-2">
+                    <Button disabled={saving} onClick={() => { if (state.dirty && selected) setPendingSelect(selected); else setEditing(false); }}>Cancel</Button>
+                    <Button variant="primary" className="disabled:border-transparent! disabled:bg-accent! disabled:text-accent-ink! disabled:opacity-35!" disabled={!state.canSave || saving} title={state.refusal ?? undefined} onClick={() => void save()}>
+                      {saving ? 'Saving…' : 'Save'}
+                    </Button>
+                  </span>
                 </div>
                 </>}
               </>
@@ -471,8 +535,8 @@ export const Pages = () => {
       <Dialog
         open={retiring}
         onClose={() => setRetiring(false)}
-        title={`Retire ${page?.description ?? selected ?? 'this page'}?`}
-        description="The bot stops using it. It moves to the archive, and you can undo."
+        title={`Retire ${page ? pageLabel(page) : 'this page'}?`}
+        description="The bot stops using it. You can undo."
         actions={(
           <>
             <Button data-autofocus onClick={() => setRetiring(false)}>Cancel</Button>
@@ -493,7 +557,8 @@ export const Pages = () => {
               onClick={() => {
                 const next = pendingSelect;
                 setPendingSelect(null);
-                if (next) setSelected(next);
+                // Cancel on the open page asks this too: discarding there closes the editor.
+                if (next && next === selected) { setDraft(saved ?? ''); setEditing(false); } else if (next) setSelected(next);
               }}
             >
               Discard
