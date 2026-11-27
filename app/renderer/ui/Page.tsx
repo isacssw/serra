@@ -7,8 +7,10 @@ import { cx } from './cx.ts';
 const widths = { narrow: 'max-w-3xl', wide: 'max-w-5xl' } as const;
 
 /** A screen's frame: the title row (with actions on the right, like Jobs' filter and cleanup) and its content. */
-export const Page = ({ title, titleAside, subtitle, actions, width, children }: {
+export const Page = ({ title, meta, titleAside, subtitle, actions, width, children }: {
   title: string;
+  /** A quiet note beside the title, like a count: "Pages 24". */
+  meta?: ReactNode;
   /** Sits on the title's line, like Jobs' state tabs. */
   titleAside?: ReactNode;
   subtitle?: ReactNode;
@@ -23,7 +25,10 @@ export const Page = ({ title, titleAside, subtitle, actions, width, children }: 
     <header className="flex min-h-8 flex-wrap items-center justify-between gap-4">
       <div className="flex flex-col gap-1">
         <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
-          <h1 className="text-xl leading-7 font-semibold tracking-[-0.012em]">{title}</h1>
+          <div className="flex items-baseline gap-2.5">
+            <h1 className="text-xl leading-7 font-semibold tracking-[-0.012em]">{title}</h1>
+            {meta && <span className="text-[13px] text-faint tabular-nums">{meta}</span>}
+          </div>
           {titleAside}
         </div>
         {subtitle && <p className="text-[13px] text-muted">{subtitle}</p>}

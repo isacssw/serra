@@ -3,11 +3,12 @@
 // new since the last visit do. At rest it is the map, with Replay. Click a page (or use the arrow keys) to light it
 // and its links; its card opens it, or settles two rules that disagree.
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type MutableRefObject } from 'react';
-import { Pause, Play, RotateCcw, Sparkles } from 'lucide-react';
+import { Pause, Play, RotateCcw, Search, Sparkles } from 'lucide-react';
 import { useNavigate } from 'react-router';
 import type { GraphLinkKind } from '../../../../src/knowledge-graph.ts';
 import { serra } from '../../bridge.ts';
 import { Button, cx, EmptyState, Page, useToast } from '../../ui/index.ts';
+import { fieldClass } from '../../ui/field.ts';
 import { keepOne } from '../keep.ts';
 import { keepLabel } from '../pages.logic.ts';
 import { createController, GraphCanvas, type Controller } from './GraphCanvas.tsx';
@@ -285,32 +286,41 @@ const GraphMap = ({ graph, controller, onOpen, onChanged }: { graph: CanvasGraph
   const atRest = !playing && progress >= 1;
 
   return (
-    <div className="flex h-full flex-col gap-3 px-8 pt-3 pb-6">
-      <header className="flex flex-wrap items-center gap-3">
-        <h1 tabIndex={-1} className="text-[22px] font-semibold tracking-tight">Graph</h1>
+    <div className="mx-auto flex h-full w-full max-w-5xl flex-col gap-6 px-8 pt-3 pb-6">
+      <header className="flex min-h-8 flex-wrap items-center gap-x-4 gap-y-2">
+        <div className="flex items-baseline gap-2.5">
+          <h1 tabIndex={-1} className="text-xl leading-7 font-semibold tracking-[-0.012em]">Graph</h1>
+          <span className="text-[13px] text-faint">
+            <span className="tabular-nums">{graph.nodes.length}</span> {graph.nodes.length === 1 ? 'page' : 'pages'} · {graph.areas.filter((area) => graph.nodes.some((node) => node.area === area.area)).length} areas
+            {graph.conflicts.length > 0 && <span className="text-warn"> · {graph.conflicts.length} {graph.conflicts.length === 1 ? 'conflict' : 'conflicts'}</span>}
+          </span>
+        </div>
         <div className="flex-1" />
-        <label htmlFor={findId} className="sr-only">Find a page</label>
-        <input
-          id={findId} list={`${findId}-pages`} placeholder="Find a page"
-          onChange={(event) => {
-            const index = graph.nodes.findIndex((node) => node.label.toLowerCase() === event.target.value.trim().toLowerCase());
-            if (index !== -1) { setSelected(index); event.target.value = ''; }
-          }}
-          className="h-8 w-48 rounded-md border border-line bg-panel px-2.5 text-[13px] text-ink placeholder:text-faint focus-visible:outline-2 focus-visible:outline-focus"
-        />
+        <div className="relative flex w-56 items-center">
+          <Search size={14} aria-hidden className="pointer-events-none absolute left-2.5 text-faint" />
+          <label htmlFor={findId} className="sr-only">Find a page</label>
+          <input
+            id={findId} list={`${findId}-pages`} placeholder="Find a page" type="search"
+            onChange={(event) => {
+              const index = graph.nodes.findIndex((node) => node.label.toLowerCase() === event.target.value.trim().toLowerCase());
+              if (index !== -1) { setSelected(index); event.target.value = ''; }
+            }}
+            className={cx('h-8 w-full pr-2.5 pl-8', fieldClass())}
+          />
+        </div>
         <datalist id={`${findId}-pages`}>{graph.nodes.map((node) => <option key={node.id} value={node.label} />)}</datalist>
       </header>
-      <div className="relative min-h-0 flex-1 overflow-hidden rounded-lg border border-line-subtle">
+      <div className="relative min-h-0 flex-1 overflow-hidden rounded-xl border border-line-subtle">
         <GraphCanvas
           graph={graph} controller={controller} selected={selected} onSelect={setSelected} onBackground={onBackground}
           onArrow={onArrow} onOpen={(i) => onOpen(graph.nodes[i]!.id)} onFit={onFit}
           label={`Your knowledge as a map: ${graph.nodes.length} pages on ${new Set(graph.nodes.map((node) => node.area)).size} islands. Arrow keys move between pages, Enter opens one, Escape clears.`}
         />
-        <div className="pointer-events-none absolute top-4 left-5 flex flex-col gap-0.5">
+        {!atRest && <div className="pointer-events-none absolute top-4 left-5 flex flex-col gap-0.5">
           <span className="text-[28px] leading-none font-semibold tracking-tight tabular-nums text-ink">{arrived.length}</span>
           <span className="text-xs text-muted">{arrived.length === 1 ? 'page' : 'pages'}{today !== null && !atRest ? ` · ${dateName(today)}` : ''}</span>
           {newest && <span key={newest.id} className="mt-1 text-xs text-ink [animation:serra-rise_200ms_ease-out]"><span className="text-up">+</span> {newest.label}</span>}
-        </div>
+        </div>}
         {selected !== null && <PageCard graph={graph} index={selected} onSelect={setSelected} onOpen={onOpen} onChanged={onChanged} />}
         {atRest
           ? !still() && (
