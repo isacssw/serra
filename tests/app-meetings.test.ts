@@ -14,7 +14,10 @@ import { readAgentBackend } from '../src/agent/acp-agents.ts';
 import type { MeetingRunOptions } from '../src/meeting-runs.ts';
 import { saveSourceTest, sourceStatuses, SOURCE_TEST_TTL_MS } from '../src/meeting-source-tests.ts';
 import { testedLine, testLabel } from '../app/renderer/screens/settings/meetings.logic.ts';
-import { customAgents, parseCommandLine, slugifyAgentId, validateCustomAgentForm } from '../app/renderer/screens/settings/agent-backend.logic.ts';
+import {
+  agentChoice, agentDraftChanged, agentMark, agentOptions, customAgents, parseCommandLine, savedAgentDraft, slugifyAgentId,
+  validateCustomAgentForm,
+} from '../app/renderer/screens/settings/agent-backend.logic.ts';
 import { t3Providers } from '../src/t3-providers.ts';
 
 const setup = (t: TestContext, options: { binDir?: string } = {}) => {
@@ -214,4 +217,27 @@ test('adding an ACP agent shows its exact command in a native confirm first; can
   const bare = meetingsHandlers({ ...f.context, confirm: undefined });
   await assert.rejects(async () => bare.addAcpAgent({ name: 'Other', command: 'other', args: [] }), /Not added/);
   assert.equal(readAgentBackend(f.profileDir).custom.some((entry) => entry.id === 'other'), false);
+});
+
+test('agent picker: T3 first, built-in agents, then custom ones; marks by id; a draft saves only what changed', () => {
+  const agents = [
+    { id: 'mine', name: 'Mine', command: 'mine acp', installed: true, custom: true },
+    { id: 'claude', name: 'Claude Code', command: 'claude', installed: true, custom: false },
+    { id: 'gemini', name: 'Gemini CLI', command: 'gemini --acp', installed: false, custom: false },
+  ];
+  assert.deepEqual(agentOptions(agents).map((option) => [option.value, option.detail, option.mark, option.disabled]), [
+    ['t3', 'Default · any provider', 't3', false],
+    ['acp:claude', 'ACP', 'claude', false],
+    ['acp:gemini', 'Not installed', 'gemini', true],
+    ['acp:mine', 'Custom · ACP', 'custom', false],
+  ]);
+  assert.equal(agentMark('claudeAgent'), 'claude');
+  assert.equal(agentMark('somethingElse'), 'custom');
+  const saved = savedAgentDraft({ backend: 'acp', agent: 'claude', models: { claude: 'opus' } });
+  assert.deepEqual(saved, { choice: 'acp:claude', model: 'opus' });
+  assert.equal(agentDraftChanged(saved, { choice: 'acp:claude', model: ' opus ' }), false);
+  assert.equal(agentDraftChanged(saved, { choice: 'acp:claude', model: '' }), true);
+  assert.equal(agentDraftChanged(saved, { choice: 't3', model: '' }), true);
+  assert.deepEqual(agentChoice({ choice: 'acp:claude', model: ' sonnet ' }), { backend: 'acp', agent: 'claude', model: 'sonnet' });
+  assert.deepEqual(agentChoice({ choice: 't3', model: 'x' }), { backend: 't3' });
 });

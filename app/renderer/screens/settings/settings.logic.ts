@@ -118,6 +118,9 @@ const branchPatternFieldProblem = (value: string): Problem => {
 // Forms for sections made of text fields
 // ---------------------------------------------------------------------------------------------------------------
 
+/** What an empty branch pattern means, as src/config.ts fills it in. */
+const DEFAULT_BRANCH_PATTERN = '{id}/{slug}-{stamp}';
+
 export type FormValues = Record<string, string>;
 export type FieldErrors = Record<string, string>;
 
@@ -128,6 +131,8 @@ interface FieldSpec {
   placeholder?: string;
   /** Long text gets a multi-line box. */
   multiline?: boolean;
+  /** IDs, paths and patterns read better in the monospace face. */
+  mono?: boolean;
 }
 
 /**
@@ -152,10 +157,10 @@ const optional = (value: string | undefined): string => value ?? '';
 
 export const botForm: SectionForm<'bot'> = {
   section: 'bot',
-  description: 'How the bot names itself in Slack and on disk.',
+  description: '',
   fields: [
     { key: 'name', label: 'Display name', placeholder: 'Friday' },
-    { key: 'id', label: 'Bot id', hint: 'Names the background service and job branches.', placeholder: 'friday' },
+    { key: 'id', label: 'Bot ID', placeholder: 'friday', mono: true },
   ],
   toForm: (profile) => ({ name: profile.bot.name, id: profile.bot.id }),
   parse: (form) => {
@@ -166,10 +171,10 @@ export const botForm: SectionForm<'bot'> = {
 
 export const ownerForm: SectionForm<'owner'> = {
   section: 'owner',
-  description: 'The person the bot works for. The owner always has access.',
+  description: 'Always has access.',
   fields: [
     { key: 'name', label: 'Name' },
-    { key: 'slackUserId', label: 'Slack member ID', placeholder: 'U0123456789' },
+    { key: 'slackUserId', label: 'Slack member ID', placeholder: 'U0123456789', mono: true },
     { key: 'githubLogin', label: 'GitHub login' },
   ],
   toForm: (profile) => ({ ...profile.owner }),
@@ -184,12 +189,12 @@ export const ownerForm: SectionForm<'owner'> = {
 
 export const reviewForm: SectionForm<'review'> = {
   section: 'review',
-  description: 'Where the bot posts pull requests for review. Leave both empty to turn review posting off.',
+  description: 'Where to post PRs for review. Empty: off.',
   fields: [
-    { key: 'channel', label: 'Review channel ID', placeholder: 'C0123456789' },
-    { key: 'repositories', label: 'Repositories it may post', hint: 'One per line or comma separated.', placeholder: 'acme/project', multiline: true },
+    { key: 'channel', label: 'Channel ID', placeholder: 'C0123456789', mono: true },
+    { key: 'repositories', label: 'Repositories', hint: 'Comma separated', placeholder: 'acme/project' },
   ],
-  toForm: (profile) => ({ channel: optional(profile.review?.channel), repositories: (profile.review?.repositories ?? []).join('\n') }),
+  toForm: (profile) => ({ channel: optional(profile.review?.channel), repositories: (profile.review?.repositories ?? []).join(', ') }),
   parse: (form) => {
     const channel = (form.channel ?? '').trim();
     const repositories = splitList(form.repositories ?? '');
@@ -203,8 +208,8 @@ export const reviewForm: SectionForm<'review'> = {
 
 export const serviceLabelForm: SectionForm<'serviceLabel'> = {
   section: 'serviceLabel',
-  description: 'The launchd label of the background service. Empty uses dev.serra.<bot id>.',
-  fields: [{ key: 'serviceLabel', label: 'Service label', placeholder: 'dev.serra.friday' }],
+  description: 'Empty: dev.serra.<bot ID>.',
+  fields: [{ key: 'serviceLabel', label: 'Service label', placeholder: 'dev.serra.friday', mono: true }],
   toForm: (profile) => ({ serviceLabel: optional(profile.serviceLabel) }),
   parse: (form) => {
     const value = (form.serviceLabel ?? '').trim();
@@ -215,12 +220,12 @@ export const serviceLabelForm: SectionForm<'serviceLabel'> = {
 
 export const projectForm: SectionForm<'project'> = {
   section: 'project',
-  description: 'The repository jobs start in.',
+  description: '',
   fields: [
-    { key: 'path', label: 'Local path', placeholder: '/Users/you/project' },
-    { key: 'githubRepo', label: 'GitHub repository', placeholder: 'acme/project' },
-    { key: 'remote', label: 'Remote', placeholder: 'origin' },
-    { key: 'baseRef', label: 'Base ref', hint: 'Where new task branches start.', placeholder: 'origin/main' },
+    { key: 'path', label: 'Local path', placeholder: '/Users/you/project', mono: true },
+    { key: 'githubRepo', label: 'GitHub repository', placeholder: 'acme/project', mono: true },
+    { key: 'remote', label: 'Remote', placeholder: 'origin', mono: true },
+    { key: 'baseRef', label: 'Base ref', placeholder: 'origin/main', mono: true },
   ],
   toForm: (profile) => ({ ...profile.project }),
   parse: (form) => {
@@ -239,10 +244,10 @@ export const projectForm: SectionForm<'project'> = {
 
 export const workerForm: SectionForm<'worker'> = {
   section: 'worker',
-  description: 'The T3 provider instance and model that run jobs. Leave both empty to use the project default in T3.',
+  description: 'Empty uses T3’s default.',
   fields: [
-    { key: 'provider', label: 'Provider instance', hint: 'Optional. T3’s id, like claudeAgent or codex.' },
-    { key: 'model', label: 'Model' },
+    { key: 'provider', label: 'Provider' },
+    { key: 'model', label: 'Model', placeholder: 'Default' },
   ],
   toForm: (profile) => ({ provider: optional(profile.worker?.provider), model: optional(profile.worker?.model) }),
   parse: (form) => {
@@ -258,8 +263,8 @@ export const workerForm: SectionForm<'worker'> = {
 
 export const branchPatternForm: SectionForm<'branchPattern'> = {
   section: 'branchPattern',
-  description: 'How task branches are named. Placeholders: {id}, {slug}, {stamp}, {DDMM}, {MMDD}. Empty uses {id}/{slug}-{stamp}.',
-  fields: [{ key: 'branchPattern', label: 'Branch pattern', placeholder: '{id}/{slug}-{stamp}' }],
+  description: 'How task branches are named.',
+  fields: [{ key: 'branchPattern', label: 'Pattern', placeholder: DEFAULT_BRANCH_PATTERN, mono: true }],
   toForm: (profile) => ({ branchPattern: optional(profile.branchPattern) }),
   parse: (form) => {
     const value = (form.branchPattern ?? '').trim();
@@ -270,8 +275,8 @@ export const branchPatternForm: SectionForm<'branchPattern'> = {
 
 export const t3BinForm: SectionForm<'t3Bin'> = {
   section: 't3Bin',
-  description: 'The t3 command the bot runs. Empty uses T3_BIN or ~/.t3/bin/t3.',
-  fields: [{ key: 't3Bin', label: 'T3 command path', placeholder: '/Users/you/.t3/bin/t3' }],
+  description: 'Empty: T3_BIN or ~/.t3/bin/t3.',
+  fields: [{ key: 't3Bin', label: 'Path', placeholder: '/Users/you/.t3/bin/t3', mono: true }],
   toForm: (profile) => ({ t3Bin: optional(profile.t3Bin) }),
   parse: (form) => {
     const value = (form.t3Bin ?? '').trim();
@@ -282,10 +287,10 @@ export const t3BinForm: SectionForm<'t3Bin'> = {
 
 export const updatesForm: SectionForm<'updates'> = {
   section: 'updates',
-  description: 'For working on Serra itself. Set a clone of the Serra repository and Updates switches to developer mode: it lists new commits on the branch, and you build the bot from the clone and restart it by hand. Leave empty to update from GitHub Releases, with the bot following the app.',
+  description: 'For developing Serra. Empty: GitHub Releases.',
   fields: [
-    { key: 'source', label: 'Checkout path', placeholder: '/Users/you/git/serra' },
-    { key: 'ref', label: 'Branch', hint: 'Empty uses origin/main.', placeholder: 'origin/main' },
+    { key: 'source', label: 'Checkout path', placeholder: '/Users/you/git/serra', mono: true },
+    { key: 'ref', label: 'Branch', placeholder: 'origin/main', mono: true },
   ],
   toForm: (profile) => ({ source: optional(profile.updates?.source), ref: optional(profile.updates?.ref) }),
   parse: (form) => {
@@ -297,6 +302,24 @@ export const updatesForm: SectionForm<'updates'> = {
       errors: collect({ source: absolutePathProblem(source, 'Checkout path', '/Users/you/git/serra'), ref: ref ? notFlagProblem(ref, 'Branch') : null }),
     };
   },
+};
+
+/** The placeholders a branch pattern can use, in the order the Worker page offers them. */
+export const BRANCH_TOKENS = ['{id}', '{slug}', '{stamp}', '{DDMM}', '{MMDD}'] as const;
+
+const two = (n: number): string => String(n).padStart(2, '0');
+
+/**
+ * The branch a sample request would get, as `branchName` in src/branch.ts names it, for the live example under the
+ * pattern. `slug` is the sample request already slugged; an empty pattern previews the default.
+ */
+export const branchPreview = (pattern: string, { id, slug, now }: { id: string; slug: string; now: Date }): string => {
+  const values: Record<string, string> = {
+    id, slug, stamp: now.getTime().toString(36),
+    DDMM: `${two(now.getDate())}${two(now.getMonth() + 1)}`,
+    MMDD: `${two(now.getMonth() + 1)}${two(now.getDate())}`,
+  };
+  return (pattern.trim() || DEFAULT_BRANCH_PATTERN).replace(/\{(id|slug|stamp|DDMM|MMDD)\}/g, (_token, name: string) => values[name]!);
 };
 
 /** True when the form would save something different from what the profile has. */
@@ -396,6 +419,12 @@ export const triggerRows = (profile: Profile): TriggerRow[] =>
     sourceId: trigger.botId ?? trigger.userId ?? '',
     instructions: trigger.instructions,
   }));
+
+/** A trigger's row in the Alerts list: who it answers, and the first line of its instructions. */
+export const triggerSummary = (row: TriggerRow): { source: string; instructions: string } => ({
+  source: row.source === 'bot' ? `Bot ${row.sourceId.trim() || '(no ID)'}` : row.source === 'user' ? `From ${row.sourceId.trim() || '(no ID)'}` : 'Any message',
+  instructions: row.instructions.split('\n').map((line) => line.trim()).find(Boolean) ?? 'No instructions',
+});
 
 export const emptyTriggerRow = (): TriggerRow => ({ channel: '', source: 'bot', sourceId: '', instructions: '' });
 

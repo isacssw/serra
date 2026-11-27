@@ -31,6 +31,7 @@ import type { MeetingRunner } from '../../src/meeting-runs.ts';
 import type { AgentBackendView, CustomAcpAgentInput } from '../../src/agent/acp-agents.ts';
 import type { RunTranscript } from '../../src/agent/runs-view.ts';
 import type { MeetingProvider, ProviderStatus } from '../../src/meeting-sources.ts';
+import type { T3Providers } from '../../src/t3-providers.ts';
 import type { DetectedProject, OwnerConfirmed, ProfileDraft, ProfileSummary, SetupProgress, SlackManifest } from '../../src/setup.ts';
 // The one value import: a pure module, so the preload bundle stays free of Node.
 import { SETUP_INCOMPLETE, SetupIncomplete } from '../../src/setup-incomplete.ts';
@@ -266,6 +267,8 @@ export interface SerraApi {
      * asked for the rest, and a `names` push says when they arrive. The app never reads the bot token for this.
      */
     peopleNames(slackUserIds: string[]): Record<string, string>;
+    /** T3's provider instances on this Mac, for Worker's provider picker; null when T3's settings can't be read. */
+    t3Providers(): T3Providers | null;
   };
   /** Secrets (APP-15, sources from APP-8). Never returns a token's value. */
   secrets: {
@@ -454,7 +457,7 @@ export const bridgeMethods = {
   proposals: methods<'proposals'>()(['list', 'diff', 'targets', 'promote', 'mergeInto', 'discard', 'undo', 'retire', 'similar', 'archived', 'restore', 'staleRewrite']),
   pages: methods<'pages'>()(['list', 'read', 'save', 'drift', 'acceptDrift', 'restoreDrift', 'aboutMe', 'untagged', 'share', 'overview', 'graph', 'issues', 'canConfirm', 'runReview', 'setReviewWeekly']),
   brief: methods<'brief'>()(['read', 'save', 'check', 'preview', 'listProposed', 'readProposed', 'applyProposed']),
-  settings: methods<'settings'>()(['read', 'sections', 'saveSection', 'addPerson', 'removePerson', 'peopleNames']),
+  settings: methods<'settings'>()(['read', 'sections', 'saveSection', 'addPerson', 'removePerson', 'peopleNames', 't3Providers']),
   secrets: methods<'secrets'>()(['list', 'setSource', 'check']),
   tools: methods<'tools'>()(['overview', 'clis']),
   updates: methods<'updates'>()([

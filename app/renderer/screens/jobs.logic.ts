@@ -24,9 +24,13 @@ const TITLES: Record<JobGroup, string> = { 'needs you': 'Needs you', running: 'R
 /** What a task started in the app shows where a Slack job shows its channel. */
 export const APP_TASK_CHANNEL_LABEL = 'Serra app';
 
-/** A channel as the screen shows it: `#name` once Slack named it, else the raw ID (APP-29). */
+/** A channel as the screen shows it: its name once Slack named it, else the raw ID (APP-29). */
 const channelLabel = (channel: string, name?: string): string =>
   channel === APP_TASK_CHANNEL ? APP_TASK_CHANNEL_LABEL : name || channel;
+
+/** The channel in a row's meta line: `#name` for a named Slack channel, else as `channelLabel` shows it. */
+export const channelTag = (job: JobRow): string =>
+  job.channel !== APP_TASK_CHANNEL && job.channelName ? `#${job.channelName.replace(/^#/, '')}` : channelLabel(job.channel, job.channelName);
 
 /** The channel filter's options: every channel with a job, plus the one picked if its jobs are gone, sorted. */
 export const channelOptions = (jobs: readonly JobRow[], selected: string | null = null): string[] =>
@@ -101,6 +105,26 @@ export const rowDetail = (job: JobRow): string | undefined => {
   if (job.group !== 'needs you') return undefined;
   const detail = job.ownerQuestion ?? job.error ?? (job.needsYouReason ? REASON_TEXT[job.needsYouReason] : undefined);
   return detail?.split('\n').find((line) => line.trim())?.trim();
+};
+
+const REASON_PILLS: Record<NeedsYouReason, string> = {
+  'waiting in T3': 'Waiting in T3',
+  question: 'Asked in Slack',
+  'owner pinged': 'Blocked in Slack',
+  failed: 'Failed',
+};
+
+/** A Needs-you row's status pill, in 1-3 words; none for other rows. */
+export const rowPill = (job: JobRow): { label: string; tone: 'warn' | 'down' } | undefined => {
+  if (job.group !== 'needs you') return undefined;
+  if (job.needsYouReason === 'failed') return { label: 'Failed', tone: 'down' };
+  return { label: job.needsYouReason ? REASON_PILLS[job.needsYouReason] : 'Needs you', tone: 'warn' };
+};
+
+/** What the row's meta line adds for a Needs-you row: the owner's question or the failure, one line. The pill says why it waits. */
+export const rowNote = (job: JobRow): string | undefined => {
+  if (job.group !== 'needs you') return undefined;
+  return (job.ownerQuestion ?? job.error)?.split('\n').find((line) => line.trim())?.trim();
 };
 
 /**

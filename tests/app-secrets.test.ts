@@ -10,7 +10,7 @@ import { secretsHandlers } from '../app/main/ipc/secrets.ts';
 import { memoryPrefs } from '../app/main/prefs.ts';
 import { stoppedStatusSource } from '../app/main/status.ts';
 import {
-  ago, draftFor, isDirty, saveRequest, statusLine,
+  ago, draftFor, isDirty, saveRequest, sourceDetail, statusLine, statusPill,
 } from '../app/renderer/screens/secrets.logic.ts';
 import type { Profile } from '../src/config.ts';
 import type { SecretStatus } from '../src/contracts.ts';
@@ -221,4 +221,19 @@ test('draft and dirty: a draft never starts with a value, and only real changes 
   const keychain = status({ source: { kind: 'keychain', service: 's', account: 'a' } });
   assert.equal(isDirty(keychain, draftFor(keychain)), false);
   assert.equal(isDirty(keychain, { ...draftFor(keychain), value: NEW_BOT }), true);
+});
+
+test('status pill: 1-3 words, with the detail kept for the meta line and tooltip', () => {
+  assert.deepEqual(statusPill(status({ error: 'Slack rejected SLACK_BOT_TOKEN: invalid_auth' }), NOW), { tone: 'error', label: 'Rejected by Slack', detail: 'invalid_auth' });
+  assert.equal(statusPill(status({ error: "Couldn't reach Slack: offline" }), NOW).label, 'Slack unreachable');
+  assert.equal(statusPill(status({ error: 'op: not signed in' }), NOW).label, 'Check failed');
+  assert.deepEqual(statusPill(status({ set: false }), NOW), { tone: 'unset', label: 'Not set', detail: 'Not in the profile .env' });
+  assert.deepEqual(statusPill(status({ verifiedAt: '2026-11-19T09:58:00.000Z' }), NOW), { tone: 'ok', label: 'Verified', detail: 'Checked 2 min ago' });
+  assert.equal(statusPill(status(), NOW).label, 'Not checked');
+});
+
+test('source detail: the Keychain item goes in the tooltip, not on the page', () => {
+  assert.equal(sourceDetail(status({ source: { kind: 'keychain', service: 'dev.serra.bot', account: 'SLACK_BOT_TOKEN' } })), 'Keychain item dev.serra.bot / SLACK_BOT_TOKEN');
+  assert.equal(sourceDetail(status({ source: { kind: 'keychain', service: '', account: '' } })), 'The bot’s default Keychain item');
+  assert.equal(sourceDetail(status({ source: { kind: '1password', reference: 'op://v/i/f' } })), 'op://v/i/f');
 });

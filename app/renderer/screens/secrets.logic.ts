@@ -16,8 +16,8 @@ export const SECRET_PREFIXES: Record<SecretName, string> = { SLACK_BOT_TOKEN: 'x
 /** The source picker, in the order it shows. `.env` is the CLI fallback and is listed last. */
 export const SOURCE_OPTIONS: { kind: SourceKind; label: string }[] = [
   { kind: 'keychain', label: 'Keychain' },
-  { kind: '1password', label: '1Password reference' },
-  { kind: 'env', label: 'Profile .env (fallback)' },
+  { kind: '1password', label: '1Password' },
+  { kind: 'env', label: '.env file' },
 ];
 
 /** "just now", "2 min ago", "3 h ago", "4 d ago". */
@@ -96,3 +96,27 @@ export const keychainHint = (status: SecretStatus): string =>
   status.source.kind === 'keychain'
     ? `Stored in the Keychain item ${status.source.service} / ${status.source.account}. Paste a new value to replace it.`
     : 'Paste the token to store it in the Keychain, or leave it empty to use an item that already exists.';
+
+/** The status pill on a token's row: 1-3 words, with the detail for the line under the name and the tooltip. */
+export const statusPill = (status: SecretStatus, now: Date): { tone: StatusTone; label: string; detail: string } => {
+  if (status.error) {
+    const rejected = /^Slack rejected \w+: (.+)$/.exec(status.error);
+    if (rejected) return { tone: 'error', label: 'Rejected by Slack', detail: rejected[1]! };
+    if (status.error.startsWith('Couldn’t reach Slack') || status.error.startsWith("Couldn't reach Slack")) return { tone: 'error', label: 'Slack unreachable', detail: status.error };
+    return { tone: 'error', label: 'Check failed', detail: status.error };
+  }
+  if (!status.set) {
+    return {
+      tone: 'unset', label: 'Not set',
+      detail: status.source.kind === 'env' ? 'Not in the profile .env' : status.source.kind === 'keychain' ? 'No Keychain item yet' : 'Nothing at the reference',
+    };
+  }
+  if (status.verifiedAt) return { tone: 'ok', label: 'Verified', detail: `Checked ${ago(status.verifiedAt, now)}` };
+  return { tone: 'unverified', label: 'Not checked', detail: 'Check tests it with Slack' };
+};
+
+/** Where a token is kept, for the source picker's tooltip: the Keychain item, the reference, or the file. */
+export const sourceDetail = (status: SecretStatus): string =>
+  status.source.kind === 'keychain' ? (status.source.service ? `Keychain item ${status.source.service} / ${status.source.account}` : 'The bot’s default Keychain item')
+    : status.source.kind === '1password' ? status.source.reference
+      : 'The profile’s .env file';

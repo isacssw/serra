@@ -1,14 +1,15 @@
-// What every settings page shares: loading the profile, saving a section, the "applies" badge, the restart banner,
-// a card for a section edited as text fields, and the page's one save bar: every section's form registers with it, so
-// a page has one Save and one Reset however many sections it holds, and says once when its changes apply.
+// What every settings page shares: loading the profile, saving a section, the restart banner, the section layout (a
+// title on the left, its fields on the right, sections split by hairlines instead of boxed in cards), the closed
+// Advanced disclosure, and the page's one save bar: every section's form registers with it, so a page has one Save and
+// one Reset however many sections it holds, and says once when its changes apply.
 import { createContext, useCallback, useContext, useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
-import { RotateCw } from 'lucide-react';
+import { ChevronRight, RotateCw } from 'lucide-react';
 import type { SectionSetting } from '../../../../src/profile-settings.ts';
 import type { AppliesWhen, Profile, ProfileSection } from '../../../../src/contracts.ts';
 import type { SavedSection } from '../../../main/bridge.ts';
 import { serra } from '../../bridge.ts';
 import { useBotStatus } from '../../shell/live.ts';
-import { Button, Input, Page, TextArea, useToast } from '../../ui/index.ts';
+import { Button, Input, Page, TextArea, cx, useToast } from '../../ui/index.ts';
 import { isMac } from '../../shell/keys.ts';
 import {
   appliesLabel, formChanged, pendingRestart, sectionList, sectionTitles, type FormValues, type RestartSave,
@@ -96,10 +97,10 @@ export const useSettings = (): SettingsState => {
 };
 
 // ---------------------------------------------------------------------------------------------------------------
-// Page frame, badge and restart banner
+// The restart banner
 // ---------------------------------------------------------------------------------------------------------------
 
-
+/** After a save the running bot hasn't picked up: one quiet line and Restart, until the bot restarts. */
 const RestartBanner = () => {
   const status = useBotStatus();
   const saves = useSyncExternalStore(subscribeRestartSaves, () => restartSaves);
@@ -117,9 +118,10 @@ const RestartBanner = () => {
     } finally { setBusy(false); }
   };
   return (
-    <div role="status" className="flex items-center justify-between gap-4 rounded-xl border border-warn/30 bg-warn/8 px-4 py-2.5 text-[13px]">
-      <span>Saved changes to {sectionList(pending)} apply after the bot restarts.</span>
-      <Button variant="primary" size="sm" icon={<RotateCw size={14} />} disabled={busy} onClick={() => { void restart(); }}>Restart bot</Button>
+    <div role="status" className="flex items-center gap-3 rounded-xl bg-raised py-2 pr-2 pl-4 text-[13px]">
+      <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-warn" />
+      <span className="min-w-0 flex-1"><span className="font-medium text-ink">Restart to apply</span><span className="text-muted"> · {sectionList(pending)}</span></span>
+      <Button size="sm" icon={<RotateCw size={13} />} disabled={busy} onClick={() => { void restart(); }}>Restart bot</Button>
     </div>
   );
 };
@@ -128,37 +130,45 @@ const RestartBanner = () => {
 // The save bar
 // ---------------------------------------------------------------------------------------------------------------
 
-/** One section's unsaved form, as the page's save bar sees it. */
+/** One form's unsaved changes, as the page's save bar sees it. */
 interface PendingSection {
   changed: boolean;
   valid: boolean;
   saving: boolean;
+  /** When the change applies, for a form that isn't a profile section (the agent backend). */
+  applies?: AppliesWhen;
   save(): Promise<void>;
   reset(): void;
   /** Shows every problem, including those on rows not typed in yet. */
   reveal(): void;
 }
 
-type RegisterSection = (section: ProfileSection, entry: PendingSection | null) => void;
+/** A profile section, or another form on a settings page (the agent backend), by a key of its own. */
+export type SaveBarKey = ProfileSection | 'agentBackend';
+
+type RegisterSection = (key: SaveBarKey, entry: PendingSection | null) => void;
 const SaveBarContext = createContext<RegisterSection | null>(null);
 
-/** Puts a section's form in the page's save bar for as long as it is on screen. */
-const useSaveBarSection = (section: ProfileSection, entry: PendingSection): void => {
+/** Puts a form in the page's save bar for as long as it is on screen. */
+export const useSaveBarSection = (key: SaveBarKey, entry: PendingSection): void => {
   const register = useContext(SaveBarContext);
   const latest = useRef(entry);
   latest.current = entry;
-  const { changed, valid, saving } = entry;
+  const { changed, valid, saving, applies } = entry;
   useEffect(() => {
-    register?.(section, { changed, valid, saving, save: () => latest.current.save(), reset: () => latest.current.reset(), reveal: () => latest.current.reveal() });
-  }, [register, section, changed, valid, saving]);
-  useEffect(() => () => register?.(section, null), [register, section]);
+    register?.(key, {
+      changed, valid, saving, ...(applies ? { applies } : {}),
+      save: () => latest.current.save(), reset: () => latest.current.reset(), reveal: () => latest.current.reveal(),
+    });
+  }, [register, key, changed, valid, saving, applies]);
+  useEffect(() => () => register?.(key, null), [register, key]);
 };
 
 /**
  * A page's one Save and Reset, floating at the bottom of the screen while something is unsaved. `note` says once
  * when the changes apply (after a restart, on the next job). ⌘S saves.
  */
-const SaveBar = ({ changed, count = 1, valid, saving, note, onSave, onReset, onReveal }: {
+export const SaveBar = ({ changed, count = 1, valid, saving, note, onSave, onReset, onReveal }: {
   changed: boolean;
   /** How many sections have unsaved changes. */
   count?: number;
@@ -173,7 +183,13 @@ const SaveBar = ({ changed, count = 1, valid, saving, note, onSave, onReset, onR
   const canSave = changed && valid && !saving;
   const reveal = (): void => {
     onReveal();
-    requestAnimationFrame(() => document.querySelector<HTMLElement>('[data-serra-main] [aria-invalid="true"]')?.focus());
+    requestAnimationFrame(() => {
+      const field = document.querySelector<HTMLElement>('[data-serra-main] [aria-invalid="true"]');
+      // A problem inside a closed Advanced section opens it first, so focus lands on something visible.
+      const closed = field?.closest('details');
+      if (closed && !closed.open) closed.open = true;
+      field?.focus();
+    });
   };
   const save = useRef(canSave ? onSave : reveal);
   save.current = canSave ? onSave : reveal;
@@ -212,13 +228,14 @@ const SaveBar = ({ changed, count = 1, valid, saving, note, onSave, onReset, onR
   );
 };
 
-/** The save bar for every section form on a settings page. */
-const PageSaveBar = ({ entries, settings }: { entries: Partial<Record<ProfileSection, PendingSection>>; settings: SectionSettings | null }) => {
-  const pending = Object.entries(entries).flatMap(([section, entry]) => (entry?.changed ? [{ section, entry }] : []));
-  const latest = (when: AppliesWhen): number => ['now', 'next job', 'after restart'].indexOf(when);
-  const applies = pending.reduce<AppliesWhen>((when, { section }) => {
-    const next = settings?.[section as ProfileSection]?.appliesWhen ?? 'now';
-    return latest(next) > latest(when) ? next : when;
+const APPLIES_ORDER: readonly AppliesWhen[] = ['now', 'next job', 'after restart'];
+
+/** The save bar for every form on a settings page. */
+const PageSaveBar = ({ entries, settings }: { entries: Partial<Record<SaveBarKey, PendingSection>>; settings: SectionSettings | null }) => {
+  const pending = Object.entries(entries).flatMap(([key, entry]) => (entry?.changed ? [{ key, entry }] : []));
+  const applies = pending.reduce<AppliesWhen>((when, { key, entry }) => {
+    const next = entry.applies ?? settings?.[key as ProfileSection]?.appliesWhen ?? 'now';
+    return APPLIES_ORDER.indexOf(next) > APPLIES_ORDER.indexOf(when) ? next : when;
   }, 'now');
   return (
     <SaveBar
@@ -235,25 +252,28 @@ const PageSaveBar = ({ entries, settings }: { entries: Partial<Record<ProfileSec
 };
 
 /** A settings page: title, the restart banner, its sections once the profile has loaded, and the save bar. */
-export const SettingsPage = ({ title, state, children }: {
+export const SettingsPage = ({ title, subtitle, state, children }: {
   title: string;
+  subtitle?: ReactNode;
   state: SettingsState;
   children: (profile: Profile, settings: SectionSettings) => ReactNode;
 }) => {
-  const [entries, setEntries] = useState<Partial<Record<ProfileSection, PendingSection>>>({});
-  const register = useCallback<RegisterSection>((section, entry) => setEntries((current) => {
+  const [entries, setEntries] = useState<Partial<Record<SaveBarKey, PendingSection>>>({});
+  const register = useCallback<RegisterSection>((key, entry) => setEntries((current) => {
     const next = { ...current };
-    if (entry) next[section] = entry;
-    else delete next[section];
+    if (entry) next[key] = entry;
+    else delete next[key];
     return next;
   }), []);
   return (
     <SaveBarContext.Provider value={register}>
-      <Page title={title} width="narrow">
+      <Page title={title} subtitle={subtitle} width="narrow">
         <RestartBanner />
         {state.error
           ? <p role="alert" className="rounded-xl border border-down/30 bg-down/8 px-4 py-2.5 text-[13px]">{state.error}</p>
-          : state.profile && state.settings ? children(state.profile, state.settings) : <p className="text-[13px] text-muted">Loading…</p>}
+          : state.profile && state.settings
+            ? <Sections>{children(state.profile, state.settings)}</Sections>
+            : <p className="text-[13px] text-muted">Loading…</p>}
         <PageSaveBar entries={entries} settings={state.settings} />
       </Page>
     </SaveBarContext.Provider>
@@ -261,26 +281,59 @@ export const SettingsPage = ({ title, state, children }: {
 };
 
 // ---------------------------------------------------------------------------------------------------------------
-// Section cards
+// Section layout
 // ---------------------------------------------------------------------------------------------------------------
 
-export const SectionCard = ({ section, description, children }: {
-  section: ProfileSection;
-  settings: SectionSettings;
+/** A page's sections, one under another, split by hairlines. The first sits right under the page title. */
+const Sections = ({ children }: { children: ReactNode }) => (
+  <div className="flex flex-col divide-y divide-line [&>*]:py-7 [&>*:first-child]:pt-1 [&>*:last-child]:pb-2">{children}</div>
+);
+
+/**
+ * One section: its title and a short line on the left, its fields on the right. On a narrow window the two stack.
+ * `action` sits under the description (Add ACP agent, Add repository).
+ */
+export const SettingsSection = ({ title, description, action, children, id }: {
+  title: string;
   description?: ReactNode;
+  action?: ReactNode;
   children: ReactNode;
+  id?: string;
 }) => (
-  <section className="flex flex-col gap-4 rounded-xl border border-line bg-panel p-5 shadow-card">
+  <section aria-labelledby={id} className="grid gap-x-10 gap-y-4 md:grid-cols-[11.5rem_minmax(0,1fr)]">
     <header className="flex flex-col gap-1">
-      <h2 className="text-[15px] leading-5 font-semibold">{sectionTitles[section]}</h2>
-      {description && <p className="text-[13px] text-muted">{description}</p>}
+      <h2 id={id} className="text-sm leading-5 font-semibold text-ink">{title}</h2>
+      {description && <p className="text-[13px] leading-5 text-muted">{description}</p>}
+      {action && <div className="pt-2">{action}</div>}
     </header>
-    {children}
+    <div className="flex min-w-0 flex-col gap-4">{children}</div>
   </section>
 );
 
-/** A section edited as text fields, from one of the `SectionForm`s in settings.logic.ts. */
-export const FieldsCard = ({ form, profile, settings, state }: { form: SectionForm; profile: Profile; settings: SectionSettings; state: SettingsState }) => {
+/** Rarely changed sections, behind a closed disclosure. `summary` names what is inside. */
+export const Advanced = ({ summary, children }: { summary: string; children: ReactNode }) => (
+  <details className="group">
+    <summary className={cx(
+      'flex w-fit cursor-pointer list-none items-center gap-2 rounded-md py-1 pr-2 text-[13px] select-none [&::-webkit-details-marker]:hidden',
+      'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus',
+    )}>
+      <ChevronRight size={15} aria-hidden className="text-muted transition-transform duration-150 group-open:rotate-90" />
+      <span className="font-medium text-ink">Advanced</span>
+      <span className="text-faint">{summary}</span>
+    </summary>
+    <div className="mt-5 flex flex-col divide-y divide-line-subtle [&>*]:py-6 [&>*:first-child]:pt-1 [&>*:last-child]:pb-0">{children}</div>
+  </details>
+);
+
+// ---------------------------------------------------------------------------------------------------------------
+// Forms made of text fields
+// ---------------------------------------------------------------------------------------------------------------
+
+/**
+ * One section's text fields from a `SectionForm`: the values, their problems (once something changed), and a
+ * save-bar entry. `field(key)` gives an Input's props for one field, for pages that lay their fields out by hand.
+ */
+export const useSectionForm = (form: SectionForm, profile: Profile, state: SettingsState) => {
   const [values, setValues] = useState<FormValues>(() => form.toForm(profile));
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -301,29 +354,59 @@ export const FieldsCard = ({ form, profile, settings, state }: { form: SectionFo
     finally { setSaving(false); }
   };
   useSaveBarSection(form.section, { changed, valid, saving, save, reset: () => setValues(form.toForm(profile)), reveal: () => {} });
+  const set = (key: string, text: string): void => setValues((now) => ({ ...now, [key]: text }));
+  const shown = changed ? errors : {};
+  return {
+    values, set, changed, saveError, errors: shown,
+    field: (key: string) => {
+      const spec = form.fields.find((entry) => entry.key === key);
+      return {
+        ...(spec?.label ? { label: spec.label } : {}),
+        ...(spec?.placeholder ? { placeholder: spec.placeholder } : {}),
+        ...(spec?.hint ? { hint: spec.hint } : {}),
+        value: values[key] ?? '', error: shown[key] ?? null,
+        onChange: (event: { target: { value: string } }) => set(key, event.target.value),
+      };
+    },
+  };
+};
+
+/** A save that failed in main, under the section it belongs to. */
+export const SaveError = ({ message }: { message: string | null }) =>
+  message ? <p role="alert" className="text-[13px] text-down">Not saved: {message}</p> : null;
+
+/** A section edited as text fields, from one of the `SectionForm`s in settings.logic.ts. */
+export const FieldsCard = ({ form, profile, state, title, description, columns = 2 }: {
+  form: SectionForm;
+  profile: Profile;
+  state: SettingsState;
+  /** Overrides the section's title from `sectionTitles`. */
+  title?: string;
+  /** Overrides the form's own description. */
+  description?: ReactNode;
+  columns?: 1 | 2;
+}) => {
+  const editor = useSectionForm(form, profile, state);
   return (
-    <form onSubmit={(event) => { event.preventDefault(); void save(); }}>
-      <SectionCard section={form.section} settings={settings} description={form.description}>
-        <div className="grid gap-4 sm:grid-cols-2">
+    <form onSubmit={(event) => { event.preventDefault(); }}>
+      <SettingsSection title={title ?? sectionTitles[form.section]} description={description ?? (form.description || undefined)}>
+        <div className={cx('grid gap-4', columns === 2 && 'sm:grid-cols-2')}>
           {form.fields.map((field) => {
-            const props = {
-              label: field.label,
-              placeholder: field.placeholder,
-              hint: field.hint,
-              value: values[field.key] ?? '',
-              error: changed ? errors[field.key] : undefined,
-              onChange: (event: { target: { value: string } }) => setValues((current) => ({ ...current, [field.key]: event.target.value })),
-            };
+            const props = editor.field(field.key);
             return field.multiline
-              ? <TextArea key={field.key} className="sm:col-span-2" {...props} />
-              : <Input key={field.key} spellCheck={false} {...props} />;
+              ? <TextArea key={field.key} className="sm:col-span-2" {...props} label={field.label} />
+              : <Input key={field.key} spellCheck={false} inputClassName={field.mono ? 'font-mono' : undefined} {...props} />;
           })}
         </div>
-        {saveError && <p role="alert" className="text-sm text-down">Not saved: {saveError}</p>}
-      </SectionCard>
+        <SaveError message={editor.saveError} />
+      </SettingsSection>
     </form>
   );
 };
+
+// ---------------------------------------------------------------------------------------------------------------
+// Forms made of rows
+// ---------------------------------------------------------------------------------------------------------------
 
 /**
  * A section edited as a list of rows (other repositories, alert triggers). `parse` turns rows into the section's
@@ -362,6 +445,8 @@ export const useListEditor = <Row extends object,>(
     rows, changed, valid, saving, saveError,
     errors: changed ? Object.fromEntries(Object.entries(errors).filter(([key]) => { const row = rows[Number(key.split('.')[0])]; return revealed || !row || !fresh.has(row); })) : {},
     update: (index: number, patch: Partial<Row>) => setRows((list) => list.map((row, i) => (i === index ? { ...row, ...patch } : row))),
+    /** Replaces one row, or adds it at the end when `index` is null. */
+    put: (index: number | null, row: Row) => setRows((list) => (index === null ? [...list, row] : list.map((old, i) => (i === index ? row : old)))),
     add: (row: Row) => { fresh.add(row); setRows((list) => [...list, row]); },
     remove: (index: number) => setRows((list) => list.filter((_, i) => i !== index)),
     reset,
