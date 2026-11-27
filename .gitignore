@@ -25,3 +25,8 @@ docs/app/qa/screenshots/
 
 # Raw eval results live on the pr-assets/evals branch (pnpm evals:fetch); evals/RESULTS.md is the summary on main.
 evals/results/
+
+# The launch video's renders and generated audio (video/launch/README.md): rebuilt from source, never committed.
+video/launch/public/audio/
+video/**/*.mp4
+video/**/*.mov

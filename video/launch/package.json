@@ -1,0 +1,26 @@
+{
+  "name": "serra-launch-video",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Serra's launch video, as code (Remotion). Not part of the app or the bot.",
+  "license": "MIT",
+  "scripts": {
+    "audio": "node scripts/make-audio.ts",
+    "studio": "remotion studio src/index.ts",
+    "render": "node scripts/render.ts"
+  },
+  "packageManager": "pnpm@10.28.2",
+  "dependencies": {
+    "@remotion/cli": "4.0.541",
+    "lucide-react": "1.66.0",
+    "react": "19.2.0",
+    "react-dom": "19.2.0",
+    "remotion": "4.0.541"
+  },
+  "devDependencies": {
+    "@types/node": "22.20.5",
+    "@types/react": "19.2.2",
+    "typescript": "5.9.3"
+  }
+}
