@@ -17,7 +17,7 @@ import { keepNewerOnPages, keepOne, keepOver } from '../app/renderer/screens/kee
 import { fixItems, needsYou, todoTally } from '../app/renderer/screens/overview.logic.ts';
 import { currentRules, keepRule } from '../app/renderer/screens/pages.logic.ts';
 import { dismissedPairs } from '../src/knowledge-dismissals.ts';
-import { assessKnowledge, findOverlaps, learnedOn, markIndexRows, pageFacts, pairId, ruleText, type KnowledgeFile } from '../src/knowledge-health.ts';
+import { assessKnowledge, findOverlaps, knowledgeHistory, learnedOn, markIndexRows, pageFacts, pairId, ruleText, type KnowledgeFile } from '../src/knowledge-health.ts';
 import { knowledgeGraph, knowledgeOverview } from '../src/knowledge-overview.ts';
 import { createKnowledge } from '../src/knowledge.ts';
 import { oldFormatKnowledge, OLD_FORMAT_PAGES } from './fakes/kb-conflicts.ts';
@@ -537,4 +537,40 @@ test('a source link in the learned note is where it was said: a restatement from
   assert.equal(pairs.length, 1);
   assert.equal(pairs[0]!.pair.covers, true);
   assert.equal(pairs[0]!.pair.newer.learned, '2026-11-17');
+});
+
+test('a past deadline that moved is a conflict; a restatement that adds "no exceptions" or bold is still a repeat', () => {
+  const kinds = (older: string, newer: string) => pairsOf([{ path: 'a.md', text: `---\ntype: rule\n---\n- ${older}\n- ${newer}\n` }]).map((issue) => issue.kind);
+  assert.deepEqual(kinds('Ship the payouts migration by (2026-11-20)', 'Ship the payouts migration by (2026-11-25)'), ['conflict']);
+  assert.ok(!kinds('No deploys to the payouts service on Friday (2026-11-16)', 'No deploys to the payouts service on Friday, no exceptions (2026-11-17)').includes('conflict'));
+  assert.ok(!kinds('Do not skip review on payouts changes (2026-11-16)', 'Do not skip review on payouts changes, not even for hotfixes (2026-11-17)').includes('conflict'));
+  assert.deepEqual(kinds('Refunds over 500 go to #payments for review (2026-11-16)', '**Refunds** over 500 go to #payments for review (2026-11-17)'), ['duplicate']);
+});
+
+test('history reads a named-month note the way the day it replays does, so its last point matches now', () => {
+  const page = { path: 'owner/r.md', text: '---\ntype: rule\ndescription: R\nwritten: 2026-11-01\nverified: 2026-11-20\nsources:\n  - Sam\n---\n- Run the payouts dry run before each release (Nov 12, 2026, Payments sync)\n- Run the payouts dry run before each release (Nov 19, 2026, Payments sync)\n' };
+  const live = assessKnowledge([page], NOW);
+  const change = { id: 'c1', action: 'edit', at: '2026-11-01T10:00:00.000Z', files: [{ path: page.path, before: null, after: page.text }] };
+  const history = knowledgeHistory([page], [change], NOW);
+  const last = history.points.at(-1)!;
+  assert.equal(last.conflicts, live.issues.filter((issue) => issue.kind === 'conflict').length);
+  assert.equal(last.score, live.score);
+});
+
+test('an undated newest line, a "cannot" and an added threshold: never kept in bulk, never a false conflict', () => {
+  const pairs = (older: string, newer: string) => pairsOf([{ path: 'a.md', text: `---\ntype: rule\n---\n- ${older}\n- ${newer}\n` }]);
+  // The brief keeps dates out of new lines, so an undated line may be the newest: bulk keep never guesses.
+  const undated = pairs('Branch names use type/short-name, lowercase only (2026-11-16)', 'Branch names use type/short-name');
+  assert.ok(undated.every((issue) => !isSafe(issue.pair)));
+  for (const word of ['Cannot', "Can't", "Won't", "Shouldn't", "Mustn't"]) {
+    assert.deepEqual(pairs('Merge pull requests right after the automated review passes (2026-11-16)', `${word} merge pull requests right after the automated review passes (2026-11-17)`).map((issue) => issue.kind), ['conflict'], word);
+  }
+  assert.ok(!pairs('Alert when the payouts error rate > 1% in production (2026-11-16)', 'Alert when the payouts error rate > 1% in production and retry rate > 5% (2026-11-17)').some((issue) => issue.kind === 'conflict'));
+});
+
+test('the worker brief never orders a deadline or a year-less note against a dated line', () => {
+  const files: KnowledgeFile[] = [{ path: 'a.md', text: '---\ntype: rule\ndescription: A\nwritten: 2026-11-01\nverified: 2026-11-20\nsources:\n  - Sam\n---\n- Ship the billing migration by (2026-12-15)\n- Ship the billing migration by (2026-12-20)\n' }];
+  const brief = markIndexRows('- `a.md`: A', files, NOW);
+  assert.match(brief, /can't tell which is newer/);
+  assert.doesNotMatch(brief, /Current: /);
 });

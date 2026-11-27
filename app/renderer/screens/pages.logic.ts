@@ -159,6 +159,8 @@ export const keepRule = (text: string, drop: string, date: string): string => {
 export const currentRules = (text: string): string[] => text.replace(/\r\n?/g, '\n')
   .replace(/^---\n[\s\S]*?\n---\n/, '')
   .replace(/^##\s+Replaced\b[\s\S]*?(?=^##\s|(?![\s\S]))/gim, '')
+  // A code block shows an example, not a rule.
+  .replace(/^\s*```[^\n]*\n[\s\S]*?(?:^\s*```[^\n]*$|(?![\s\S]))/gm, '')
   .split('\n').map((line) => line.trim().replace(/^([-*]|\d+\.)\s+/, '').trim()).filter(Boolean);
 
 /**
