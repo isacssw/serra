@@ -128,7 +128,7 @@ export const NewTask = () => {
         <div id="new-task-note" className={cx('flex flex-wrap items-center justify-center gap-x-5 gap-y-1 px-3 text-xs [&>span]:whitespace-nowrap', problem ? 'text-down' : 'text-faint')}>
           {problem ?? (
             <>
-              <span className="flex items-center gap-1.5"><User size={13} strokeWidth={1.75} aria-hidden /> You're the requester</span>
+              <span className="flex items-center gap-1.5"><User size={13} strokeWidth={1.75} aria-hidden /> You’re the requester</span>
               <span className="flex items-center gap-1.5"><Layers size={13} strokeWidth={1.75} aria-hidden /> Replies in T3</span>
               <span className="flex items-center gap-1.5"><GitBranch size={13} strokeWidth={1.75} aria-hidden /> Own worktree</span>
             </>

@@ -160,7 +160,7 @@ const ProfileForm = () => {
       <Section title="You">
         <div className="grid gap-4 sm:grid-cols-2">
           <Input label="Your name" autoComplete="name" placeholder="Alex Morgan" value={draft.ownerName} onChange={set('ownerName')} error={errors.ownerName} hint="As the bot will call you" />
-          <Input label="GitHub login" autoComplete="username" placeholder="octocat" inputClassName="font-mono" value={draft.githubLogin} onChange={set('githubLogin')} error={errors.githubLogin} hint="Your account on GitHub" />
+          <Input label="GitHub login" autoComplete="username" placeholder="octocat" inputClassName="font-mono" value={draft.githubLogin} onChange={set('githubLogin')} error={errors.githubLogin} hint="Your GitHub username" />
         </div>
         <Input label="Slack member ID" placeholder="U0123456789" inputClassName="font-mono" value={draft.ownerSlackUserId}
           onChange={set('ownerSlackUserId')} error={errors.ownerSlackUserId} hint="In Slack: your profile › ⋮ › Copy member ID" spellCheck={false} />
