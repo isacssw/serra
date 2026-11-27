@@ -92,7 +92,7 @@ It writes `summary.md`, `results.json` and every reply under `none/`, `before/` 
 
 ## Graph
 
-**Knowledge › Graph** draws the pages the bot reads (your approved copy, as Overview does) as a map. Each area from Overview is an island; an area with no page yet is an empty, dashed one. A dot's size is how many replies used the page in the last 30 days. The lines come from files Serra already keeps, worked out on your Mac:
+**Knowledge › Graph** draws the pages the bot reads (your approved copy, as Overview does) as a map. The map fills the window and spreads its islands to the window's shape; it refits when you resize the window, until you pan or zoom. Each area from Overview is an island; an area with no page yet is an empty, dashed one. A dot's size is how many replies used the page in the last 30 days. The lines come from files Serra already keeps, worked out on your Mac:
 
 - **Mentions:** a page names another page's path (`people/ana-silva.md`, or a Markdown link to it), or a person by their page's heading or first name.
 - **Same source:** two pages list the same meeting, interview or thread under `sources:`.

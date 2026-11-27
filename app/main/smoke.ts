@@ -606,6 +606,15 @@ const runGraphChecks = async (main: BrowserWindow): Promise<string[]> => {
       await shot(`${theme}-focus`);
       await run(`(async () => { document.querySelector('[data-serra-main] canvas').dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); await new Promise((r) => setTimeout(r, 900)); })()`);
       await shot(`${theme}-rest`);
+      if (shots) {
+        // The map fills the window at a small laptop's size and a large display's, refitting as the window changes.
+        for (const [size, width, height] of [['small', 1280, 800], ['large', 2048, 1240]] as const) {
+          window.setContentSize(width, height);
+          await run(`new Promise((r) => setTimeout(r, 900))`);
+          await shot(`${theme}-rest-${size}`);
+        }
+        window.setContentSize(1440, 900);
+      }
     }
     // Reduced motion: even a first visit shows the finished map at once, with no replay and no Replay button.
     await motion(true);

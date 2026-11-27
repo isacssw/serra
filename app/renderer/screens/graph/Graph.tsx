@@ -47,6 +47,18 @@ const fitTo = (c: Controller, points: Point[], pad = 40, { bottom = 0, right: wa
   c.target.x = fit.x + right / 2 / fit.k; c.target.y = fit.y + bottom / 2 / fit.k; c.target.k = fit.k;
 };
 
+/** Where the camera rests unless the owner moved it: the selected page and its links beside the card, or every island. */
+const aim = (c: Controller, graph: CanvasGraph, sim: Pick<Sim, 'x' | 'y'>, selected: number | null, bottom = 0): void => {
+  if (selected === null) fitTo(c, islandBounds(c.scene.islands ?? []), 40, { bottom, maxZoom: 1.6 });
+  else fitTo(c, pointsOf(sim, [selected, ...graph.neighbours[selected]!]), 72, { right: CARD_WIDTH, maxZoom: 1.8 });
+};
+
+/** The shape of the space the map gets, width over height, so its islands spread to fill it. */
+const viewShape = (): number => {
+  const main = document.querySelector<HTMLElement>('[data-serra-main]');
+  return main ? main.clientWidth / Math.max(1, main.clientHeight - REPLAY_ROOM) : 1;
+};
+
 /** The top `count` most used pages of each area: always named, so no island is blank. */
 const topOfEachArea = (graph: CanvasGraph, count: number): Set<number> => {
   const byArea = new Map<string, number[]>();
@@ -55,6 +67,8 @@ const topOfEachArea = (graph: CanvasGraph, count: number): Set<number> => {
 };
 
 const CARD_WIDTH = 272;
+/** Kept clear at the bottom while the replay bar shows. */
+const REPLAY_ROOM = 72;
 
 // ---------------------------------------------------------------------------------------------------------------
 // The card: the selected page, its links, and its disagreements.
@@ -141,7 +155,7 @@ const GraphMap = ({ graph, controller, onOpen, onChanged }: { graph: CanvasGraph
   useEffect(() => { saveSeen(graph.nodes.map((node) => node.id)); }, [graph]);
 
   const state = useMemo(() => {
-    const made = islandSim(graph);
+    const made = islandSim(graph, viewShape());
     made.sim.active = new Uint8Array(graph.nodes.length);
     return { ...made, alpha: new Float32Array(graph.nodes.length), pulse: new Float32Array(graph.nodes.length), born: new Float64Array(graph.nodes.length).fill(-1) };
   }, [graph]);
@@ -197,8 +211,9 @@ const GraphMap = ({ graph, controller, onOpen, onChanged }: { graph: CanvasGraph
     };
     const frame = (): void => {
       c.scene.islands = shoresOf(graph, sim, centres);
-      if (c.userMoved || selectedRef.current !== null) return;
-      fitTo(c, islandBounds(c.scene.islands), 40, { bottom: live.current.playing || live.current.progress < 1 ? 56 : 0, maxZoom: 1.6 });
+      // Each frame, so the view refits when the window or the map changes size.
+      if (c.userMoved) return;
+      aim(c, graph, sim, selectedRef.current, live.current.playing || live.current.progress < 1 ? REPLAY_ROOM : 0);
     };
     // At rest from the start (nothing new, or reduced motion): the finished map, laid out before the first frame.
     const first = performance.now();
@@ -225,8 +240,7 @@ const GraphMap = ({ graph, controller, onOpen, onChanged }: { graph: CanvasGraph
   // Focus: frame the page and every page it links to, beside the card.
   useEffect(() => {
     const c = controller.current;
-    if (selected !== null) fitTo(c, pointsOf(state.sim, [selected, ...graph.neighbours[selected]!]), 72, { right: CARD_WIDTH, maxZoom: 1.8 });
-    else if (!c.userMoved) fitTo(c, islandBounds(c.scene.islands ?? []), 40);
+    if (selected !== null) { c.userMoved = false; aim(c, graph, state.sim, selected); } else if (!c.userMoved) aim(c, graph, state.sim, null);
     c.invalidate();
     setAnnounce(selected === null ? '' : `${graph.nodes[selected]!.label}, ${graph.areas.find((area) => area.area === graph.nodes[selected]!.area)?.label ?? ''}, ${graph.neighbours[selected]!.length} linked pages`);
   }, [selected, state, graph, controller]);
@@ -241,9 +255,9 @@ const GraphMap = ({ graph, controller, onOpen, onChanged }: { graph: CanvasGraph
     const c = controller.current;
     c.userMoved = false;
     setSelected(null);
-    fitTo(c, islandBounds(c.scene.islands ?? []), 40);
+    aim(c, graph, state.sim, null);
     c.invalidate();
-  }, [controller]);
+  }, [controller, graph, state]);
   const onBackground = useCallback((at: Point) => {
     const c = controller.current;
     const island = (c.scene.islands ?? []).find((shore) => shore.count > 0 && Math.hypot(at.x - shore.x, at.y - shore.y) < shore.r);
@@ -286,8 +300,8 @@ const GraphMap = ({ graph, controller, onOpen, onChanged }: { graph: CanvasGraph
   const atRest = !playing && progress >= 1;
 
   return (
-    <div className="mx-auto flex h-full w-full max-w-5xl flex-col gap-6 px-8 pt-3 pb-6">
-      <header className="flex min-h-8 flex-wrap items-center gap-x-4 gap-y-2">
+    <div className="flex h-full w-full flex-col">
+      <header className="flex min-h-8 flex-wrap items-center gap-x-4 gap-y-2 px-8 pt-3 pb-2">
         <div className="flex items-baseline gap-2.5">
           <h1 tabIndex={-1} className="text-xl leading-7 font-semibold tracking-[-0.012em]">Graph</h1>
           <span className="text-[13px] text-faint">
@@ -310,13 +324,13 @@ const GraphMap = ({ graph, controller, onOpen, onChanged }: { graph: CanvasGraph
         </div>
         <datalist id={`${findId}-pages`}>{graph.nodes.map((node) => <option key={node.id} value={node.label} />)}</datalist>
       </header>
-      <div className="relative min-h-0 flex-1 overflow-hidden rounded-xl border border-line-subtle">
+      <div className="relative min-h-0 flex-1 overflow-hidden">
         <GraphCanvas
           graph={graph} controller={controller} selected={selected} onSelect={setSelected} onBackground={onBackground}
           onArrow={onArrow} onOpen={(i) => onOpen(graph.nodes[i]!.id)} onFit={onFit}
           label={`Your knowledge as a map: ${graph.nodes.length} pages on ${new Set(graph.nodes.map((node) => node.area)).size} islands. Arrow keys move between pages, Enter opens one, Escape clears.`}
         />
-        {!atRest && <div className="pointer-events-none absolute top-4 left-5 flex flex-col gap-0.5">
+        {!atRest && <div className="pointer-events-none absolute top-4 left-8 flex flex-col gap-0.5">
           <span className="text-[28px] leading-none font-semibold tracking-tight tabular-nums text-ink">{arrived.length}</span>
           <span className="text-xs text-muted">{arrived.length === 1 ? 'page' : 'pages'}{today !== null && !atRest ? ` · ${dateName(today)}` : ''}</span>
           {newest && <span key={newest.id} className="mt-1 text-xs text-ink [animation:serra-rise_200ms_ease-out]"><span className="text-up">+</span> {newest.label}</span>}
@@ -324,10 +338,10 @@ const GraphMap = ({ graph, controller, onOpen, onChanged }: { graph: CanvasGraph
         {selected !== null && <PageCard graph={graph} index={selected} onSelect={setSelected} onOpen={onOpen} onChanged={onChanged} />}
         {atRest
           ? !still() && (
-            <Button size="sm" variant="secondary" className="absolute bottom-4 left-4 bg-panel/90 backdrop-blur" icon={<RotateCcw size={14} aria-hidden />} onClick={replay}>Replay</Button>
+            <Button size="sm" variant="secondary" className="absolute bottom-6 left-8 bg-panel/90 backdrop-blur" icon={<RotateCcw size={14} aria-hidden />} onClick={replay}>Replay</Button>
           )
           : (
-            <div className={cx('absolute bottom-4 left-4 flex items-center gap-3 rounded-lg border border-line bg-panel/90 px-2 py-1.5 backdrop-blur', selected === null ? 'right-4' : 'right-[284px]')}>
+            <div className={cx('absolute bottom-6 left-8 flex items-center gap-3 rounded-lg border border-line bg-panel/90 px-2 py-1.5 backdrop-blur', selected === null ? 'right-8' : 'right-[284px]')}>
               <button type="button" onClick={replay} aria-label={playing ? 'Pause' : 'Play'} className="grid size-7 place-items-center rounded-md text-ink hover:bg-hover focus-visible:outline-2 focus-visible:outline-focus">
                 {playing ? <Pause size={15} aria-hidden /> : <Play size={15} aria-hidden />}
               </button>

@@ -141,8 +141,13 @@ export const createSim = (graph: CanvasGraph, options: SimOptions = {}): Sim => 
   return sim;
 };
 
-/** Where each area's island sits: round a circle, each given room for its size. An area with no page yet keeps a small one. */
-export const islandAnchors = (graph: CanvasGraph, spacing = 30): { anchors: Point[]; centres: Map<GraphArea, Point & { r: number }> } => {
+/**
+ * Where each area's island sits: round a ring, each given room for its size. An area with no page yet keeps a small one.
+ * `shape` is the view's width over its height: a wide view stretches the ring sideways (up to twice as wide), so the
+ * map fills it. Stretching only moves islands further apart, never into each other.
+ */
+export const islandAnchors = (graph: CanvasGraph, spacing = 30, shape = 1): { anchors: Point[]; centres: Map<GraphArea, Point & { r: number }> } => {
+  const stretch = Math.min(2, Math.max(1, Number.isFinite(shape) ? shape : 1));
   const counts = new Map<GraphArea, number>(graph.areas.map(({ area }) => [area, 0]));
   for (const node of graph.nodes) counts.set(node.area, (counts.get(node.area) ?? 0) + 1);
   const areas = [...counts.keys()];
@@ -155,16 +160,16 @@ export const islandAnchors = (graph: CanvasGraph, spacing = 30): { anchors: Poin
   for (const area of areas) {
     const r = radius(area);
     const angle = ((walked + r) / circumference) * Math.PI * 2 - Math.PI / 2;
-    centres.set(area, { x: Math.cos(angle) * ring, y: Math.sin(angle) * ring, r });
+    centres.set(area, { x: Math.cos(angle) * ring * stretch, y: Math.sin(angle) * ring, r });
     walked += 2 * r + gap;
   }
   return { anchors: graph.nodes.map((node) => centres.get(node.area) ?? { x: 0, y: 0 }), centres };
 };
 
 /** A simulation that keeps each page on its area's island: after every step, a page past the shore is set back on it. */
-export const islandSim = (graph: CanvasGraph): { sim: Sim; centres: Map<GraphArea, Point & { r: number }> } => {
+export const islandSim = (graph: CanvasGraph, shape = 1): { sim: Sim; centres: Map<GraphArea, Point & { r: number }> } => {
   const big = graph.nodes.length > 200;
-  const { anchors, centres } = islandAnchors(graph, big ? 22 : 30);
+  const { anchors, centres } = islandAnchors(graph, big ? 22 : 30, shape);
   const sim = createSim(graph, {
     anchors, gravity: big ? 0.025 : 0.06, link: big ? 22 : 30, charge: big ? 200 : 160,
     strength: (_kind, same) => (same ? 1 : 0.005),
