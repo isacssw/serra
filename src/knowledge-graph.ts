@@ -35,7 +35,10 @@ interface GraphLink {
 /** Two rules that disagree, with their pages (the same page when both are on one), for "Keep this / Keep that". */
 export interface GraphConflict {
   pages: [number, number];
+  /** The two rules, older first (or the shorter, when their notes don't say), as Overview shows them. */
   rules: [{ page: string; text: string }, { page: string; text: string }];
+  /** Whether `rules` are ordered by the day each was learned. */
+  dated: boolean;
 }
 
 export interface KnowledgeGraph {
@@ -130,12 +133,12 @@ export const buildKnowledgeGraph = ({ files, uses = [], changes = [], health, no
   // Rules that disagree.
   const conflicts: GraphConflict[] = [];
   for (const issue of (health ?? assessKnowledge(files, now)).issues) {
-    const [first, second] = issue.facts ?? [];
+    const [first, second] = issue.pair ? [issue.pair.older, issue.pair.newer].map(({ page, text }) => ({ page, text })) : issue.facts ?? [];
     if (issue.kind !== 'conflict' || !first || !second) continue;
     const a = index.get(first.page);
     const b = index.get(second.page);
     if (a === undefined || b === undefined) continue;
-    conflicts.push({ pages: [a, b], rules: [first, second] });
+    conflicts.push({ pages: [a, b], rules: [first, second], dated: issue.pair?.order === 'date' });
     link(a, b, 'disagrees');
   }
 

@@ -9,6 +9,7 @@ import { reviewDue, runKnowledgeReview } from '../src/knowledge-review.ts';
 import { latestReview, setReviewWeekly } from '../src/knowledge-review-store.ts';
 import { recordKnowledgeUse } from '../src/knowledge-usage.ts';
 import { createProposals } from '../src/proposals.ts';
+import { OLD_FORMAT_PAGES } from './fakes/kb-conflicts.ts';
 import { knowledgeOverview } from '../src/knowledge-overview.ts';
 
 const NOW = new Date('2026-11-25T12:00:00Z');
@@ -218,4 +219,20 @@ test('the review offers Retire for a page on the same topic only when the other 
   };
   assert.deepEqual(await run('product/sandbox-b.md'), ['product/sandbox-a.md'], 'the smaller page says nothing the other does not');
   assert.deepEqual(await run('product/sandbox-a.md'), [], 'retiring the bigger page would lose the demo rule');
+});
+
+test('the review may tidy part of a page: a rewrite that settles one of three repeats is kept, one that settles none is not', async (t) => {
+  const page = OLD_FORMAT_PAGES.find((file) => file.path === 'owner/quick-vs-right.md')!;
+  const { dir, knowledge } = profile(t, (root) => {
+    writeFileSync(join(root, page.path), page.text);
+    writeFileSync(join(root, 'index.md'), `${readFileSync(join(root, 'index.md'), 'utf8').trimEnd()}\n| trade-offs | \`${page.path}\` | Trade-offs |\n`);
+  });
+  const old = 'Prefer the small fix that ships today over the big rewrite (2026-11-16)';
+  const tidied = `${page.text.replace(`- ${old}\n`, '').trimEnd()}\n\n## Replaced\n\n- Until 2026-11-17: ${old}\n`;
+  const run = (text: string) => runKnowledgeReview({ profileDir: dir, knowledgeDir: knowledge, now: NOW,
+    ask: async (title) => (title.includes('weekly review') ? JSON.stringify({ summary: 'One.', rewrites: [{ page: page.path, text, why: 'Merges a repeated rule.' }] }) : 'An answer.') });
+  const unchanged = await run(page.text);
+  assert.deepEqual(unchanged.suggestions.filter((item) => item.kind === 'replace' && item.page === page.path), [], 'a rewrite that settles nothing is not offered');
+  const partial = await run(tidied);
+  assert.deepEqual(partial.suggestions.filter((item) => item.kind === 'replace').map((item) => item.page), [page.path], 'two repeats left is still progress');
 });

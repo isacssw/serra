@@ -5,6 +5,7 @@ import { createKnowledge, profileRoots, type KnowledgeRoot } from '../../../src/
 import { createMeetingStore } from '../../../src/meeting-store.ts';
 import { knowledgeGraph, knowledgeOverview, listKnowledgeFiles } from '../../../src/knowledge-overview.ts';
 import { assessKnowledge, confirmHeldBack } from '../../../src/knowledge-health.ts';
+import { dismissedPairs, dismissPair, restorePair } from '../../../src/knowledge-dismissals.ts';
 import { runKnowledgeReview } from '../../../src/knowledge-review.ts';
 import { setReviewWeekly, type KnowledgeReview } from '../../../src/knowledge-review-store.ts';
 import { createMeetingRuns } from '../../../src/meeting-runs.ts';
@@ -64,12 +65,23 @@ export const pagesHandlers = (context: HandlerContext): Handlers<'pages'> => {
     },
     canConfirm: (path) => {
       const files = listKnowledgeFiles(join(context.profileDir(), 'knowledge'));
-      return !confirmHeldBack(pagePath(path), files, assessKnowledge(files, new Date()));
+      return !confirmHeldBack(pagePath(path), files, assessKnowledge(files, new Date(), undefined, { dismissed: dismissedPairs(context.profileDir()) }));
     },
     issues: (path) => {
       const page = pagePath(path);
-      return assessKnowledge(listKnowledgeFiles(join(context.profileDir(), 'knowledge')), new Date()).issues
+      return assessKnowledge(listKnowledgeFiles(join(context.profileDir(), 'knowledge')), new Date(), undefined, { dismissed: dismissedPairs(context.profileDir()) }).issues
         .filter((issue) => (issue.kind === 'conflict' || issue.kind === 'duplicate') && issue.pages.includes(page));
+    },
+    bothHold: (id) => {
+      if (typeof id !== 'string' || !/^[0-9a-z]{14}$/.test(id)) throw new Error('Pick the two rules that both hold.');
+      // Only a pair listed now can be set aside, with its two lines kept beside the id. No page is written.
+      const pair = assessKnowledge(listKnowledgeFiles(join(context.profileDir(), 'knowledge')), new Date()).issues.find((issue) => issue.pair?.id === id)?.pair;
+      if (!pair) throw new Error('Those two rules changed since you looked. Reload Overview.');
+      dismissPair(context.profileDir(), id, [pair.older.text, pair.newer.text]);
+    },
+    undoBothHold: (id) => {
+      if (typeof id !== 'string' || !/^[0-9a-z]{14}$/.test(id)) throw new Error('Pick the two rules to list again.');
+      restorePair(context.profileDir(), id);
     },
     runReview: () => {
       // One review at a time: a second click waits for the first.

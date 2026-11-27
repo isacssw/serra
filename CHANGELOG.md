@@ -4,6 +4,9 @@ Serra follows [Semantic Versioning](https://semver.org) once it reaches 1.0. Unt
 
 ## Unreleased
 
+- **Knowledge conflicts, calmer:** a rule the bot learned again on a later day, with the day written in the line, is no longer a conflict. Dates, `(date, source)` notes, links and meeting tags are left out when lines are compared; real changes (a number, a day, a name, a "never") are still caught. Your pages aren't rewritten: old dated lines simply stop being flagged.
+- **Needs you, one row per page:** repeats and disagreements are grouped by page in **Same rule, learned again**, **Really disagree** and **Tidy up**. Each pair shows both versions with the changed words marked, older on the left, with **Keep older** / **Keep newer**. **Keep newer for all** handles the pairs where the newer line says everything the older one does (one backup per page); **Newer drops detail** pairs are asked one by one. **Both hold, not a conflict** stops listing a pair without touching the page.
+- Fixed: **Keep** on one pair hid every other row for that page until Overview reloaded. The weekly review can now tidy part of a page, and the brief asks the bot to keep the learned date in `sources:` and reword a rule in place instead of adding it again.
 - **Knowledge › Graph** now uses the whole window: the map fills the space beside the sidebar, spreads its islands to the window's shape and refits when you resize it, instead of sitting in a box in the middle.
 
 ## 0.1.0-alpha.8 (2026-11-27)

@@ -10,7 +10,6 @@ import { serra } from '../../bridge.ts';
 import { Button, cx, EmptyState, Page, useToast } from '../../ui/index.ts';
 import { fieldClass } from '../../ui/field.ts';
 import { keepOne } from '../keep.ts';
-import { keepLabel } from '../pages.logic.ts';
 import { createController, GraphCanvas, type Controller } from './GraphCanvas.tsx';
 import { growthPlan, nextInDirection, replayMs, startPage, toCanvasGraph, type CanvasGraph, type Direction, type Growth } from './graph.logic.ts';
 import { fitCamera, islandSim, shoresOf, type Point, type Shore, type Sim } from './layout.logic.ts';
@@ -108,10 +107,13 @@ const PageCard = ({ graph, index, onSelect, onOpen, onChanged }: { graph: Canvas
         return (
           <div key={`${a.text}|${b.text}`} className="flex flex-col gap-1.5 border-t border-line pt-3">
             <p className="text-xs font-medium text-down">{other === index ? 'Two rules here disagree' : `Disagrees with ${graph.nodes[other]!.label}`}</p>
-            <div className="flex flex-wrap gap-1.5">
-              <Button size="sm" disabled={busy} title={a.text} onClick={() => void keep(a, b)}>{keepLabel(a.text, b.text)}</Button>
-              <Button size="sm" disabled={busy} title={b.text} onClick={() => void keep(b, a)}>{keepLabel(b.text, a.text)}</Button>
-            </div>
+            {/* Both rules as they read, older first: the owner picks a rule, not a word. */}
+            {([[a, b, 'older'], [b, a, 'newer']] as const).map(([rule, drop, side]) => (
+              <div key={side} className="flex items-start gap-2">
+                <p className="line-clamp-3 min-w-0 flex-1 text-xs text-ink" title={rule.text}>{rule.text}</p>
+                <Button size="sm" disabled={busy} onClick={() => void keep(rule, drop)}>{conflict.dated ? (side === 'older' ? 'Keep older' : 'Keep newer') : 'Keep'}</Button>
+              </div>
+            ))}
           </div>
         );
       })}

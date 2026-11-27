@@ -7,6 +7,7 @@ import { withKnowledgeLock } from './knowledge-lock.ts';
 import { createMeetingStore } from './meeting-store.ts';
 import { AUDIENCES, compileAboutMe, filterIndex, mayUse, pageAudience, type AboutMe, type Audience, type Visibility } from './owner-model.ts';
 import type { KnowledgePage, Profile } from './contracts.ts';
+import { dismissedPairs } from './knowledge-dismissals.ts';
 import { AREA_LABELS, assessKnowledge, markIndexRows, pageArea, pageCards, type PageCard } from './knowledge-health.ts';
 import {
   ARCHIVE_DIR, DATE, daysSince, frontmatter, INDEX_MAX_LINES, lineCount, normalizePageText, NOT_PAGES, pageBadge, pageProblems, PROPOSALS_DIR,
@@ -408,7 +409,7 @@ export const createKnowledge = (knowledgeDir: string, { backupDir }: KnowledgeOp
     const indexed = readIndexed();
     const files = pageFiles().sort();
     // Pages holding a rule that disagrees with another are counted apart, so "verified" never covers them.
-    const disputed = new Set(assessKnowledge([{ path: 'index.md', text: existsSync(join(root, 'index.md')) ? read('index.md') : '' }, ...files.map((path) => ({ path, text: read(path) }))], now)
+    const disputed = new Set(assessKnowledge([{ path: 'index.md', text: existsSync(join(root, 'index.md')) ? read('index.md') : '' }, ...files.map((path) => ({ path, text: read(path) }))], now, undefined, { dismissed: dismissedPairs(dirname(root)) })
       .issues.filter((issue) => issue.kind === 'conflict').flatMap((issue) => issue.pages));
     return files.map((page) => ({ ...describePage(page, read(page), indexed, { now, roots }), ...(disputed.has(page) ? { disputed: true } : {}) }));
   };

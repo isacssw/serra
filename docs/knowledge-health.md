@@ -1,6 +1,6 @@
 # How your knowledge grows
 
-**Knowledge › Overview** is meant to be read in five seconds. Four numbers open it: **Pages**, **Used in replies** (how many of the bot's replies used your notes this week, or in the last 30 days before the first review), **Health** and **To review**. Under them, when the weekly review found one, a real request answered with your notes and without them. **Needs you** lists what to do, five items at a time, each one line and one button; several proposals, or several pages not confirmed yet, fold into one row that opens Proposals or Pages. Beside it, **Coverage** shows how many pages each area has, and **Growth** the health trend. **Run review** and **Weekly** sit in the header. Everything else is under **Details**: the weekly review's summary, what each page did, and what it learned lately.
+**Knowledge › Overview** is meant to be read in five seconds. Four numbers open it: **Pages**, **Used in replies** (how many of the bot's replies used your notes this week, or in the last 30 days before the first review), **Health** and **To review**. Under them, when the weekly review found one, a real request answered with your notes and without them. **Needs you** lists what to do, five items at a time, each one line and one button; several proposals, or several pages not confirmed yet, fold into one row that opens Proposals or Pages. Rules that repeat or disagree come after, one row per page, in **Same rule, learned again** (safe), **Really disagree** (your call) and **Tidy up** (later, folded). To review counts what you'll see: each pair that disagrees, and each page with repeats. Beside it, **Coverage** shows how many pages each area has, and **Growth** the health trend. **Run review** and **Weekly** sit in the header. Everything else is under **Details**: the weekly review's summary, what each page did, and what it learned lately.
 
 ## The weekly review
 
@@ -11,10 +11,17 @@ Once a week (when the bot replied at least three times that week) Serra looks ba
 
 **To do** is the one place to act on your knowledge:
 
-- **Approve** a rewrite that settles rules that disagree or repeat. **See change** shows the page before and after. Serra refuses a rewrite that drops any rule the page had. Approved, the page keeps its own confirmed date, so a rule the review left alone never looks newer than a later page that changed it.
-- **Keep Thursday** / **Keep Tuesday** on two rules that disagree (the button names the rule): it saves at once with Undo, and the other rule moves under a dated "Replaced". Pages only points here ("Two rules disagree · Settle"), so a conflict is settled in one place.
+- **Approve** a rewrite that settles rules that disagree or repeat. **See change** shows the page before and after. Serra refuses a rewrite that drops any rule the page had or starts a new disagreement, and one that settles nothing; a rewrite that settles some of a page's repeats is offered, so a long page can be tidied a part at a time. Approved, the page keeps its own confirmed date, so a rule the review left alone never looks newer than a later page that changed it.
+- **Same rule, learned again:** a rule said again on a later day. **Review** opens the page's pairs, each as one line with what changed struck out or highlighted, read older → newer (`Nov 16 → Nov 17`). **Keep older** is always on the left, **Keep newer** on the right; **Keep both** stops listing the pair. **Keep newer for all** keeps the newer line of every pair where it says everything the older one does; a pair marked **Newer drops detail** (the newer line leaves out words, a number or a "never") is never in it and waits for you. **Keep newer on all N pages** does the same across pages, after asking. Lines with no date to tell them apart offer **Keep shorter** / **Keep longer**.
+- **Really disagree:** **Compare** shows the two rules side by side, older on the left, with the words that differ in bold. **Keep this** saves at once with Undo, and the other rule moves under a dated "Replaced". **Both hold, not a conflict** stops listing the pair without changing the page; it's remembered in `knowledge-dismissed.json` in the profile, and the pair comes back if either line changes. Pages only points here ("Review in Overview"), so a pair is settled in one place.
 - **Retire** a page another one covers, only when that page holds every rule it has (it asks first; Undo brings it back).
-- **Still true** for a page not confirmed in 60 days, **Review** for proposals and hand edits, **Tell it** for what replies missed, **Open** for the rest.
+- **Still true** for a page not confirmed in 60 days, **Review** for proposals and hand edits, **Tell it** for what replies missed, **Open** for the rest. A page near the size limit, long prose, two pages on one topic and a page missing from the index wait under **Tidy up**.
+
+Every Keep saves the page the way an edit does: the old text goes to `backups/knowledge/` first, a page changed outside Serra is refused rather than overwritten, and **Keep newer for all** writes each page once, with one backup per page. Opening Overview, Pages or Graph never writes a page.
+
+### What counts as a repeat or a conflict
+
+Two lines are compared without the notes that say when and where a rule was learned: a date in brackets (`(2026-11-16)`, `(2026-11-20, Payments sync: Ana)`, `(from #team-dx, Nov 16)`), a `— 2026-11-16` at the end or `2026-11-16:` at the start, links (`[the doc](https://…)` reads "the doc") and the `<!-- m:… -->` tags meeting decisions carry. So the same rule learned again on a later day is a repeat, not a conflict. A real change still is one: a different number, day or name, "never" against no "never", one rule naming a day the other rules out ("Tuesday, never Thursday" / "Thursday now"), or a date the rule is about ("the freeze starts 2026-12-01"). Your pages are never rewritten to strip those notes; it's only how lines are compared. The brief now asks the bot to put the day it learned something in the page's `sources:` and to reword a rule in place rather than add it again.
 
 **Do all** runs every one-click fix together. A fix done once stays done.
 
@@ -42,7 +49,7 @@ A score out of 100, made of five parts:
 
 Each item names its pages and opens them in Pages. The usual fixes:
 
-- **Conflict:** open the page. Pages shows the two rules with **Keep this one**, which moves the other under a dated `## Replaced` heading in your draft; save to keep it. The bot never reads what's under that heading. A rule that says "now" or "since <date>" is marked **Looks newer**.
+- **Conflict:** open the page. Pages shows the two rules, older first, with **Keep this one**, which moves the other under a dated `## Replaced` heading in your draft; save to keep it. The bot never reads what's under that heading. A rule that says "now" or "since <date>" is marked **Looks newer**.
 - **Repeated or same topic:** move what's missing into one page, then **Retire…** the other in Pages. It moves to `knowledge/archive/`, its index row goes, and the toast's **Undo** brings it back.
 - **Stale:** read it, then **Mark verified today** and save.
 
@@ -55,7 +62,7 @@ The brief asks the worker to end a reply with one line naming the pages it used,
 ## What the worker sees
 
 - Each index row whose page is a draft or wasn't confirmed in 60 days says so, like `(confirmed 2026-08-01; may be out of date)`.
-- A row whose page holds a rule that disagrees with another says `(two rules disagree: see below)`, and below the index the worker gets both rules with their pages' dates: follow the clearly newer one and say the other looks out of date, ask you only when it can't tell. A newer rule that says what it ended ("moved from Grafana to Datadog", "OAuth login was removed") is listed the same way, against each older rule that still names it. These pairs are for the worker only: the health score and Settle don't count them. Only pages that reply's audience may hear are compared.
+- A row whose page holds a rule that disagrees with another says `(two rules disagree: see below)`, and below the index the worker gets both rules with their pages' dates: follow the clearly newer one and say the other looks out of date, ask you only when it can't tell. A newer rule that says what it ended ("moved from Grafana to Datadog", "OAuth login was removed") is listed the same way, against each older rule that still names it. These pairs are for the worker only: the health score and Needs you don't count them. Only pages that reply's audience may hear are compared.
 - Under the index, the three pages that look closest to the request, as a hint to open first. It's a word match on each page's path, index row, description, headings and text, not a model.
 
 ## How well it works
@@ -101,5 +108,5 @@ It writes `summary.md`, `results.json` and every reply under `none/`, `before/` 
 
 The first time you open it, your pages arrive in the order they were written. After that, only pages that are new since your last visit arrive; **Replay** plays the whole story again. With reduced motion on, the finished map shows at once.
 
-Click a page, find it by name, or use the arrow keys (Enter opens it, Escape clears) to light it and its links. Its card opens the page and, when two rules disagree, offers **Keep** for each, saved at once with Undo, as in To do. Click an island to zoom to it; `0` fits the map again, and `+` and `-` zoom.
+Click a page, find it by name, or use the arrow keys (Enter opens it, Escape clears) to light it and its links. Its card opens the page and, when two rules disagree, shows both, older first, with **Keep older** and **Keep newer**, saved at once with Undo, as in Needs you. Click an island to zoom to it; `0` fits the map again, and `+` and `-` zoom.
 

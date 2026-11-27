@@ -16,7 +16,7 @@ import { knowledgeOverview } from '../src/knowledge-overview.ts';
 import { createJournal } from '../src/knowledge-journal.ts';
 import { createKnowledge } from '../src/knowledge.ts';
 import { changeText, fixItems, groupByDay, headline, scoreChart, scoreWord, valueLabel, valueSummary } from '../app/renderer/screens/overview.logic.ts';
-import { currentRules, groupByArea, keepLabel, keepRule, newerRule, replacedOn } from '../app/renderer/screens/pages.logic.ts';
+import { currentRules, groupByArea, keepRule, newerRule, replacedOn } from '../app/renderer/screens/pages.logic.ts';
 import { swapRule } from '../app/renderer/screens/proposals.logic.ts';
 
 const NOW = new Date('2026-11-25T12:00:00Z');
@@ -390,13 +390,6 @@ test('Pages groups by topic, and each page reads in plain words', () => {
   assert.deepEqual((['earns', 'some', 'carried', 'idle', 'unknown'] as const).map((state) => valueLabel(state, 5)), ['Used in 5 replies', 'Used once', 'Always in the brief', 'Not used', 'Not used yet']);
 });
 
-test('two rules to settle get buttons that say which', () => {
-  assert.equal(keepLabel('Risky releases ship on Thursday now.', 'Risky releases ship on Tuesday.'), 'Keep Thursday');
-  assert.equal(keepLabel('Keep PRs under 300 changed lines now.', 'Keep PRs under 400 changed lines.'), 'Keep 300');
-  assert.equal(keepLabel('Payments bugs go to #payments-bugs.', 'Payments bugs go to #ledgerline-triage.'), 'Keep #payments-bugs');
-  assert.equal(keepLabel('ship it later', 'ship it sooner'), 'Keep this one');
-});
-
 test('the value line never counts pages that ride in every brief as having helped', () => {
   assert.equal(valueSummary(['earns', 'earns', 'some', 'carried', 'carried'], 30), '3 of 3 pages helped in the last 30 days · 2 always in the brief');
   assert.equal(valueSummary(['earns', 'idle', 'unknown'], 30), '1 of 3 pages helped in the last 30 days · 1 not used');
@@ -417,15 +410,16 @@ test('Overview leads with one number: replies the notes shaped this week, else o
   assert.equal(headline({ review: null, usage: { replies: 0, withKnowledge: 0, days: 30 } } as unknown as Parameters<typeof headline>[0]), null);
 });
 
-test('To do is the one place to act: rules that disagree (with Keep buttons), hand edits, what replies missed', () => {
-  const facts = [{ page: 'owner/style.md', text: 'Risky releases ship on Tuesday.' }, { page: 'owner/style.md', text: 'Risky releases ship on Thursday now.' }];
+test('To do is the one place to act: rules that disagree (older first), hand edits, what replies missed', () => {
+  const health = assessKnowledge([{ path: 'owner/style.md', text: '---\ntype: rule\n---\n- Risky releases ship on Thursday now (2026-11-20).\n- Risky releases ship on Tuesday (2026-11-02).\n' }], NOW);
   const items = fixItems({
     value: [], unreviewed: 2,
     review: { suggestions: [], missing: [{ topic: 'who approves refunds over 500 EUR', count: 2 }] },
-    health: { issues: [{ kind: 'conflict', pages: ['owner/style.md'], text: '', detail: [], facts }] },
+    health: { ...health, issues: health.issues.filter((issue) => issue.kind === 'conflict') },
   } as unknown as Parameters<typeof fixItems>[0]);
-  assert.deepEqual(items.map((item) => [item.title, item.action]), [['owner/style.md', 'Settle'], ['2 pages edited outside Serra', 'Review'], ['who approves refunds over 500 EUR', 'Tell it']], 'what shapes replies now comes first');
-  assert.deepEqual(items[0]!.keep, facts, 'the conflict is settled right there, one Keep per rule');
+  assert.deepEqual(items.map((item) => [item.title, item.action]), [['owner/style.md', 'Open'], ['2 pages edited outside Serra', 'Review'], ['who approves refunds over 500 EUR', 'Tell it']], 'what shapes replies now comes first');
+  assert.equal(items[0]!.pair?.older.text, 'Risky releases ship on Tuesday (2026-11-02).', 'the older rule is always the left one');
+  assert.equal(items[0]!.why, '“Tuesday” vs “Thursday now”', 'what tells them apart, not a first word');
   assert.equal(items[1]!.href, '/knowledge/pages');
   assert.equal(items[2]!.tell, 'who approves refunds over 500 EUR');
 });

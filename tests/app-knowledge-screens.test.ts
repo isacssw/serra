@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { aboutCard, leftOutLine, sectionTitle } from '../app/renderer/screens/about.logic.ts';
-import { groupFixes, todoSummary, type FixItem } from '../app/renderer/screens/overview.logic.ts';
+import { groupFixes, todoTally, type FixItem } from '../app/renderer/screens/overview.logic.ts';
 import { groupByArea, joinHeader, pageDetail, pageLabel, pageMeta, splitHeader } from '../app/renderer/screens/pages.logic.ts';
 import { proposalMeta, sourceLine } from '../app/renderer/screens/proposals.logic.ts';
 import type { KnowledgePage } from '../src/contracts.ts';
@@ -71,8 +71,9 @@ test('Overview: proposals and pages to confirm fold into one row each, in the pl
   assert.equal(grouped[2]!.href, '/knowledge/pages');
   // One of a kind stays its own row.
   assert.deepEqual(groupFixes([item('proposal:1', 'Sentry')]).map((one) => [one.title, one.why]), [['Sentry', 'Proposal']]);
-  assert.equal(todoSummary(items), '2 proposals · 1 conflict · 2 to confirm');
-  assert.equal(todoSummary([]), 'Nothing to do');
+  // To review counts the rows Needs you shows: two proposals fold into one, and so do two pages to confirm.
+  assert.deepEqual(todoTally(items), { count: 3, text: '3 other' });
+  assert.deepEqual(todoTally([]), { count: 0, text: 'Nothing to do' });
 });
 
 test('Pages: the editor folds the header away and puts the page back exactly', () => {
