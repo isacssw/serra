@@ -44,7 +44,7 @@
 
 Each engineer runs their own bot: their own Slack app, their own Mac, their own GitHub login.
 
-The bot can also run on a Linux machine, without the app: [docs/linux.md](docs/linux.md).
+The bot can also run on a Linux machine, without the app, and the app can pair with it: [docs/linux.md](docs/linux.md).
 
 ## Quick start
 

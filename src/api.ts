@@ -1,8 +1,8 @@
 /**
  * The engine's API: every call a window can make, by namespace, and what each answers (`SerraApi`). The handlers that
- * implement it live in `src/handlers/<namespace>.ts` (the engine), except `app`, which the Mac app answers itself
- * (`app/main/host.ts`). The app's bridge (`app/main/bridge.ts`) builds `window.serra` from it; a server's gateway can
- * serve the same calls.
+ * implement it live in `src/handlers/<namespace>.ts` (the engine), except `app` and `servers`, which the Mac app
+ * answers itself (`app/main/host.ts`, `app/main/servers.ts`). The app's bridge (`app/main/bridge.ts`) builds
+ * `window.serra` from it; a server's gateway (`src/gateway/server.ts`) serves the engine's calls.
  *
  * Pure and types only, but for `bridgeMethods`: the app's sandboxed preload bundles this module, so it may not import
  * a Node value.
@@ -29,6 +29,7 @@ import type { AgentBackendView, CustomAcpAgentInput } from './agent/acp-agents.t
 import type { RunChat } from './agent/runs-view.ts';
 import type { MeetingProvider, ProviderStatus } from './meeting-sources.ts';
 import type { T3Providers } from './t3-providers.ts';
+import type { PairOutcome, PairProbe, ServerView } from './gateway/pairing.ts';
 import type { DetectedProject, OwnerConfirmed, ProfileDraft, ProfileSummary, SetupProgress, SlackManifest } from './setup.ts';
 // Pure: the app's preload bundles this module, so it imports types only, plus this one pure module.
 import type { SETUP_INCOMPLETE } from './setup-incomplete.ts';
@@ -169,6 +170,22 @@ export interface SerraApi {
     openProfileFolder(): void;
     /** The window drew its first screen. A launch that finishes an update confirms it with this (SERRA-46). */
     rendered(): void;
+  };
+  /**
+   * Servers this Mac is paired with (SB-32), answered by the Mac app itself, like `app`: the pairing and the Keychain
+   * are this Mac's. Pair with a code (probe, compare the words, then the code) or over SSH with the owner's keys.
+   */
+  servers: {
+    /** Reaches the address and reads its certificate: the server's name, and the three words for it and the code. Sends no secret. */
+    probe(address: string, code: string): PairProbe;
+    /** Sends the code to the probed server, once the owner said the words match. */
+    pair(probeId: string, code: string): PairOutcome;
+    /** Drops a probe: the words didn't match, or the dialog closed. */
+    cancel(probeId: string): void;
+    /** Pairs over SSH with the owner's own keys. `detail` says in a few words why it failed. */
+    pairOverSsh(target: string): { ok: true; server: ServerView } | { ok: false; detail: string; message: string };
+    /** The servers this Mac is paired with. */
+    list(): { id: string; name: string }[];
   };
   /** Setup (APP-27, SERRA-51): find what exists, create the profile, the Slack app, the owner and the service. Tokens use `secrets`. */
   setup: {
@@ -522,6 +539,7 @@ const methods = <N extends Namespace>() => <const L extends readonly string[]>(l
 /** Every method by namespace. The type check keeps it equal to `SerraApi`; the app's preload and router loop over it. */
 export const bridgeMethods = {
   app: methods<'app'>()(['info', 'getPrefs', 'setPrefs', 'openExternal', 'openProfileFolder', 'rendered']),
+  servers: methods<'servers'>()(['probe', 'pair', 'cancel', 'pairOverSsh', 'list']),
   setup: methods<'setup'>()([
     'progress', 'detect', 'useProfile', 'chooseFolder', 'defaults', 'detectProject', 'create', 'manifest', 'confirmOwner', 'installService',
   ]),

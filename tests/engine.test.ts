@@ -30,13 +30,14 @@ const headless = (profileDir: string | null, host: Partial<HostPort> = {}) => {
   return { context, selected, opened };
 };
 
-test('the engine answers every namespace of the API but app, with no app around', async (t) => {
+test('the engine answers every namespace of the API but the Mac’s own (app, servers), with no app around', async (t) => {
   const { root } = testProfile(t);
   const engine = createEngine(headless(root).context);
-  const namespaces = Object.keys(bridgeMethods).filter((name) => name !== 'app');
+  const own = (name: string): boolean => name === 'app' || name === 'servers';
+  const namespaces = Object.keys(bridgeMethods).filter((name) => !own(name));
   assert.deepEqual(Object.keys(engine).sort(), namespaces.sort());
   for (const [namespace, methods] of Object.entries(bridgeMethods)) {
-    if (namespace === 'app') continue;
+    if (own(namespace)) continue;
     for (const method of methods) assert.equal(typeof Reflect.get(Reflect.get(engine, namespace), method), 'function', `${namespace}.${method}`);
   }
   // A few reads across the screens, straight from the profile's files.

@@ -35,6 +35,7 @@ import { Updates } from './screens/Updates.tsx';
 import { Profiles } from './screens/settings/Profiles.tsx';
 import { ProfilesProvider, useProfiles } from './shell/profiles.tsx';
 import { ProfileShortcuts } from './shell/ProfileShortcuts.tsx';
+import { AddSheet } from './shell/AddSheet.tsx';
 import { useBadgeCounts, useBotStatus } from './shell/live.ts';
 import { FollowNavigation } from './shell/navigate.ts';
 import { focusScreen, Shortcuts } from './shell/Shortcuts.tsx';
@@ -123,6 +124,7 @@ const Shell = () => {
       <CommandPalette />
       <Shortcuts />
       <ProfileShortcuts status={status} />
+      <AddSheet />
       <ScrollToTop />
       <StarPrompt status={status} jobs={currentJobs} />
     </div>

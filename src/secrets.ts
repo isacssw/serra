@@ -259,6 +259,48 @@ const keychainWrite = async (name: SecretName, source: SecretSource & { kind: 'k
   if (stored !== value) throw new Error("The Keychain item wasn't saved: it reads back a different value");
 };
 
+/**
+ * A Keychain item that isn't a Slack token: a paired server's device token (`dev.serra.server.<id>`). The same rules
+ * hold: the value goes on `security -i`'s stdin, never in argv, and never into an error message.
+ */
+export interface SecretStore {
+  get(service: string, account: string): Promise<string | null>;
+  set(service: string, account: string, value: string): Promise<void>;
+  remove(service: string, account: string): Promise<void>;
+}
+
+export const keychainStore = (options: { tools?: Partial<SecretTools> } = {}): SecretStore => {
+  const tools: SecretTools = { ...DEFAULT_SECRET_TOOLS, ...options.tools };
+  const checkNames = (service: string, account: string): void => {
+    if (!KEYCHAIN_NAME.test(service) || service.startsWith('-') || !KEYCHAIN_NAME.test(account) || account.startsWith('-')) throw new Error('Keychain names must be 1-128 letters, digits or ._@:+-');
+  };
+  const read = async (service: string, account: string): Promise<string | null> => {
+    checkNames(service, account);
+    try { return (await runTool({ label: 'Keychain (security)', bin: keychain(tools), args: ['find-generic-password', '-s', service, '-a', account, '-w'], timeoutMs: tools.timeoutMs })).replace(/\r?\n$/, ''); }
+    catch (error) {
+      if (/could not be found|exit code 44/.test((error as Error).message)) return null;
+      throw error;
+    }
+  };
+  return {
+    get: read,
+    async set(service, account, value) {
+      checkNames(service, account);
+      if (!value || /["'\\\s]/.test(value)) throw new Error('A Keychain value may not be empty or hold quotes, backslashes or whitespace');
+      const line = `add-generic-password -U -s "${service}" -a "${account}" -l "Serra ${service}" -w "${value}"\n`;
+      await runTool({ label: 'Keychain (security)', bin: keychain(tools), args: ['-i'], input: line, timeoutMs: tools.timeoutMs, hide: [value] });
+      let stored: string | null;
+      try { stored = await read(service, account); } catch (error) { throw new Error(`The Keychain item wasn't saved: ${scrub((error as Error).message, [value])}`); }
+      if (stored !== value) throw new Error("The Keychain item wasn't saved");
+    },
+    async remove(service, account) {
+      checkNames(service, account);
+      try { await runTool({ label: 'Keychain (security)', bin: keychain(tools), args: ['delete-generic-password', '-s', service, '-a', account], timeoutMs: tools.timeoutMs }); }
+      catch (error) { if (!/could not be found|exit code 44/.test((error as Error).message)) throw error; }
+    },
+  };
+};
+
 // ---------------------------------------------------------------------------------------------------------------
 // Owner actions: setSecret, checkSecret, secretStatus
 // ---------------------------------------------------------------------------------------------------------------
