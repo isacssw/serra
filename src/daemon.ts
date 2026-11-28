@@ -152,6 +152,12 @@ export const startDaemon = async (deps: DaemonDeps): Promise<Daemon> => {
       ...deps.bot,
       ...(agents ? { agents } : {}),
       config, chat, deliver, store, loadIndex, loadKnowledge: (visibility) => briefKnowledge(visibility), logger, clock,
+      // Approvals follow the owner: their own conversation in each other chat that is connected now.
+      ownerSpaces: async (except) => {
+        const found = await Promise.all(chats.connections.filter((connection) => connection.kind !== except && connected.get(connection.kind) === true)
+          .map(async (connection) => (connection.ownerSpace?.() ?? Promise.resolve(null)).catch((error: unknown) => { logger.debug(`${connection.kind}: no owner conversation (${errorMessage(error)})`); return null; })));
+        return found.filter((conversation): conversation is string => conversation !== null);
+      },
       // The app sees the same events as events.jsonl, live.
       events: (name, fields) => { logEvent(name, fields); status?.publish(name, fields); },
     });

@@ -95,7 +95,7 @@ export const ICON_LABELS: Record<RowIcon, string> = {
 
 const REASON_TEXT: Record<NeedsYouReason, string> = {
   'waiting in T3': 'Waiting on you in T3',
-  question: 'A question is open in Slack',
+  question: 'A question is waiting for you',
   'owner pinged': 'Blocked, waiting on you in Slack',
   failed: 'Failed',
 };
@@ -109,7 +109,7 @@ export const rowDetail = (job: JobRow): string | undefined => {
 
 const REASON_PILLS: Record<NeedsYouReason, string> = {
   'waiting in T3': 'Waiting in T3',
-  question: 'Asked in Slack',
+  question: 'Asked in chat',
   'owner pinged': 'Blocked in Slack',
   failed: 'Failed',
 };

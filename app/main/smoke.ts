@@ -791,6 +791,10 @@ const runChatChecks = async (window: BrowserWindow): Promise<string[]> => {
       if (contrast.checked === 0) failures.push(`${theme}: no text found in the chat`);
       for (const item of contrast.low) failures.push(`${theme}: "${item.text}" in the chat reads at ${item.ratio}:1 (${item.color} on ${item.background})`);
       if (shots) writeFileSync(join(shots, `${theme}-chat.png`), (await window.webContents.capturePage()).toPNG());
+      // A run waiting on an approval is a Needs-you row that names no one chat: it may be answered in any of them.
+      const asked = await run<string>(`(async () => { for (const open of document.querySelectorAll('dialog[data-sheet][open]')) open.close(); location.hash = '#/jobs/needs-you'; await new Promise((r) => setTimeout(r, 600)); return document.querySelector('[data-serra-main]')?.textContent ?? ''; })()`);
+      if (!asked.includes('Asked in chat')) failures.push(`${theme}: a run waiting on an approval doesn't read "Asked in chat" in Needs you`);
+      if (shots) writeFileSync(join(shots, `${theme}-jobs-asked.png`), (await window.webContents.capturePage()).toPNG());
       const waiting = await run<ChatReport>(chatScript('#/jobs/needs-you', 'Remove the stale feature flags'));
       if (!waiting.card) failures.push(`${theme}: a run waiting on a permission shows no Allow or Deny`);
       const streaming = await run<ChatReport>(chatScript('#/jobs/running', 'Draft the 4.2 release notes'));

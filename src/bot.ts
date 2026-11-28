@@ -3,7 +3,9 @@ import { randomBytes } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { fillBrief, needsOwner, NO_THREAD } from './brief.ts';
+import { kindOf } from './chat/connection.ts';
 import type { Deliver, Delivery, Refused } from './chat/deliver.ts';
+import { freshStale, mayFollowOwner, refuseCopyPress, STALE_COPY_RETRY_MS, type StaleCopy } from './chat/mirrors.ts';
 import { MAX_ATTACHMENTS, MessageGone, type Audience as Visibility, type ChatPort, type InboundText, type InPlaceOf, type MessageRef, type Notice, type OwnerNotify, type PersonId, type SetupProblem, type Target, type WorkerOut, t3LinkOf } from './chat/port.ts';
 import { stampProposalsFolder, threadProposalsFolder } from './proposals.ts';
 import type { BriefKnowledge } from './knowledge.ts';
@@ -137,6 +139,11 @@ export interface BotDeps {
   events?: BotEvents;
   /** Time and timers. Tests pass a fake one and move it forward instead of sleeping. */
   clock?: Clock;
+  /**
+   * The owner's own conversations in every connected chat but `except` (a chat kind), for copies of an approval card
+   * (`src/chat/mirrors.ts`). None when absent: cards stay in the job's thread.
+   */
+  ownerSpaces?: (except: string) => Promise<string[]>;
 }
 
 /**
@@ -154,6 +161,7 @@ export const createBot = ({
   timing = { quietMs: FOLLOW_UP_QUIET_MS, retryMs: FOLLOW_UP_RETRY_MS },
   events = () => {},
   clock = systemClock,
+  ownerSpaces = async () => [],
 }: BotDeps) => {
   const { allJobs, getJob, putJob } = store;
   const now = (): number => clock.now();
@@ -714,9 +722,30 @@ export const createBot = ({
   const clearQuestion = async (key: string, job: Job, answeredBy?: string, state = cardOf(job), closed = false): Promise<void> => {
     if (!state) return;
     updateJob(key, (latest) => ({ phase: stopWaiting(latest.phase) }));
+    await closeCard(key, job, state, answeredBy, closed);
+    await closeCopies(key, state, answeredBy, closed);
+  };
+
+  /**
+   * Who answered, as `conversation`'s chat shows it: the person who pressed, in their own chat; elsewhere the owner, by
+   * their ID there (only the owner answers a copy), and the chat it was answered in, so no ID crosses chats.
+   */
+  const answeredAs = (conversation: string, answeredBy: string | undefined): { by?: PersonId; via?: string } => {
+    if (answeredBy === undefined) return {};
+    if (kindOf(answeredBy) === kindOf(conversation)) return { by: answeredBy };
+    const owner = ownerIn(conversation);
+    return { ...(owner ? { by: owner } : {}), via: kindOf(answeredBy) };
+  };
+  /** The owner's ID in `conversation`'s chat, or null when that chat isn't connected. */
+  const ownerIn = (conversation: string): PersonId | null => {
+    try { return chat.owner(conversation); } catch { return null; }
+  };
+
+  /** The card in the job's thread, once closed: the answers, through `deliver`, or fixed copy. */
+  const closeCard = async (key: string, job: Job, state: QuestionCard, answeredBy: string | undefined, closed: boolean): Promise<void> => {
     const ref = messageIn(job, state.ts);
     if (!closed) {
-      const revised = await deliver(deliveryFor(job), { op: 'revise', ref, out: { kind: 'answered', card: state, ...(answeredBy ? { by: answeredBy } : {}) } })
+      const revised = await deliver(deliveryFor(job), { op: 'revise', ref, out: { kind: 'answered', card: state, ...answeredAs(job.channel, answeredBy) } })
         .catch((error: unknown) => { logger.debug(`Updating the question in ${key} failed: ${errorMessage(error)}`); return null; });
       if (revised === null || revised.ok) return;
       // Not knowing who can see the thread isn't knowledge taken back: the card says only that it's over.
@@ -726,6 +755,89 @@ export const createBot = ({
       }
     }
     await chat.replaceWithNotice(ref, { kind: 'question-closed' });
+  };
+
+  /** A copy in the owner's own conversation is written to under the owner-only rule, like the copy itself. */
+  const copyDelivery = (conversation: string, owner: PersonId): Delivery => ({ target: { conversation, thread: null }, requester: owner, hearing: { kind: 'owner-only' } });
+
+  /** Fixed copy for a closed copy: what a stale one says when its chat is back. */
+  const staleNotice = (shows: StaleCopy['shows']) => (shows === 'closed' ? { kind: 'question-closed' } as const : { kind: 'question-over', answered: shows === 'answered' } as const);
+
+  /**
+   * Every copy of a closed card shows it's done: the answer chosen (through `deliver`, owner-only), else fixed copy. A
+   * copy whose chat is down now is kept on the job and tried again on later polls (`retryStaleCopies`).
+   */
+  const closeCopies = async (key: string, state: QuestionCard, answeredBy: string | undefined, closed: boolean): Promise<void> => {
+    const shows: StaleCopy['shows'] = closed ? 'closed' : answeredBy === undefined ? 'over' : 'answered';
+    const stale: StaleCopy[] = [];
+    for (const ref of state.mirrors ?? []) {
+      const owner = ownerIn(ref.conversation);
+      let done = false;
+      if (!closed && owner) {
+        done = await deliver(copyDelivery(ref.conversation, owner), { op: 'revise', ref, out: { kind: 'answered', card: state, ...answeredAs(ref.conversation, answeredBy) } })
+          .then((revised) => revised.ok, (error: unknown) => {
+            logger.debug(`Updating the copy of the question in ${key} failed: ${errorMessage(error)}`);
+            // Someone deleted the copy: nothing is left to show as done.
+            return error instanceof MessageGone;
+          });
+      }
+      if (!done) done = await chat.replaceWithNotice(ref, staleNotice(shows)).catch(() => false);
+      if (!done) stale.push({ ...ref, shows, since: now() });
+    }
+    if (stale.length) {
+      logger.info(`${stale.length} copy(ies) of the question in ${key} couldn't show it's done yet; trying again later.`);
+      updateJob(key, (latest) => ({ staleCopies: [...(latest.staleCopies ?? []), ...stale] }));
+    }
+  };
+
+  /** When each job's stale copies were last tried. */
+  const staleTried = new Map<string, number>();
+  /** Stale copies whose chat is back show they're done, with fixed copy. Tried at most once a minute per job. */
+  const retryStaleCopies = async (key: string): Promise<void> => {
+    const job = getJob(key);
+    if (!job?.staleCopies?.length || now() - (staleTried.get(key) ?? 0) < STALE_COPY_RETRY_MS) return;
+    staleTried.set(key, now());
+    const left: StaleCopy[] = [];
+    for (const copy of freshStale(job.staleCopies, now())) {
+      const done = await chat.replaceWithNotice({ conversation: copy.conversation, id: copy.id }, staleNotice(copy.shows)).catch(() => false);
+      if (!done) left.push(copy);
+    }
+    const id = (copy: StaleCopy): string => `${copy.conversation} ${copy.id}`;
+    const tried = new Set(job.staleCopies.map(id));
+    updateJob(key, (latest) => {
+      // Copies added while these were tried stay.
+      const kept = [...left, ...(latest.staleCopies ?? []).filter((copy) => !tried.has(id(copy)))];
+      return { staleCopies: kept.length ? kept : undefined };
+    });
+  };
+
+  /**
+   * Approvals follow the owner (`src/chat/mirrors.ts`): a copy of an approval card for the owner's own request goes to
+   * the owner's own conversation in each other connected chat, written under the owner-only rule. Each copy is saved
+   * on the card; a copy that can't go out now is skipped, never posted later.
+   */
+  const copyToOwner = async (key: string, job: Job, card: QuestionCard): Promise<void> => {
+    if (!mayFollowOwner(card) || !isOwner(job.requester)) return;
+    const home = kindOf(job.channel);
+    const spaces = (await ownerSpaces(home).catch(() => [])).filter((conversation) => kindOf(conversation) !== home);
+    if (!spaces.length) return;
+    const link = await chat.permalink(messageIn(job, card.ts)).catch(() => null);
+    const copies: MessageRef[] = [];
+    for (const conversation of spaces) {
+      const owner = ownerIn(conversation);
+      if (!owner) continue;
+      const sent = await deliver(copyDelivery(conversation, owner), { op: 'send', out: { kind: 'question', card, to: owner, copyOf: { chat: home, link } } })
+        .catch((error: unknown) => { logger.warn(`Couldn't copy the approval in ${key} to ${kindOf(conversation)}: ${errorMessage(error)}`); return null; });
+      if (sent?.ok) {
+        copies.push({ conversation, id: sent.value });
+        events('approval_copied', { key, requestId: card.requestId, chat: kindOf(conversation) });
+      } else if (sent) logger.info(`Didn't copy the approval in ${key} to ${kindOf(conversation)}: ${sent.why}.`);
+    }
+    if (!copies.length) return;
+    updateJob(key, (latest) => {
+      const open = cardOf(latest);
+      return open?.requestId === card.requestId && open.nonce === card.nonce ? { phase: waitFor(latest.phase, { ...open, mirrors: copies }) } : {};
+    });
   };
 
   const showQuestion = async (key: string, job: Job, thread: T3Thread, request: T3QuestionRequest): Promise<void> => {
@@ -749,6 +861,7 @@ export const createBot = ({
     if (!posted.ok) return;
     updateJob(key, (latest) => ({ phase: waitFor(latest.phase, { ...state, ts: posted.value }), ownerFollows: latest.ownerFollows || isOwner(recipient) }));
     events('question_shown', { key, requestId: request.requestId, count: request.questions.length });
+    await copyToOwner(key, getJob(key) ?? job, { ...state, ts: posted.value });
   };
 
   const questionFeedback = (job: Job, hint: Extract<Notice, { kind: 'question-hint' }>['hint']): Promise<unknown> =>
@@ -819,14 +932,38 @@ export const createBot = ({
     events('question_answered', { key, requestId: state.requestId, user });
   };
 
+  /** Whether `person` is the owner as `conversation`'s own chat knows them: an ID from another chat never is. */
+  const isOwnerIn = (person: PersonId, conversation: string): boolean => kindOf(person) === kindOf(conversation) && isOwner(person);
+
   const handleQuestionAction = async (action: QuestionInteraction): Promise<void> => {
-    const found = allJobs().find(([, job]) => job.channel === action.channel && cardOf(job)?.ts === action.messageTs);
+    const onCard = (job: Job): boolean => job.channel === action.channel && cardOf(job)?.ts === action.messageTs;
+    const onCopy = (job: Job): boolean => cardOf(job)?.mirrors?.some((ref) => ref.conversation === action.channel && ref.id === action.messageTs) === true;
+    const found = allJobs().find(([, job]) => onCard(job) || onCopy(job));
     if (!found) return;
     const [key] = found;
     await exclusive(key, async () => {
       const job = getJob(key);
       const card = job ? cardOf(job) : undefined;
-      if (!job || !card || card.nonce !== action.nonce) return;
+      if (!job || !card) return;
+      if (!onCard(job)) {
+        // A copy in the owner's own conversation: only the owner there answers it, and only while it is this card's.
+        const refused = refuseCopyPress(card, action, isOwnerIn);
+        if (refused) {
+          logger.warn(`A press on a copy of the question in ${key} was refused (${refused}).`);
+          events('approval_copy_refused', { key, requestId: card.requestId, chat: kindOf(action.channel), reason: refused, user: action.user });
+          return;
+        }
+        const answer = choiceAnswer(card.questions[0]!, action.indices);
+        if (answer === null) return;
+        events('approval_copy_answered', { key, requestId: card.requestId, chat: kindOf(action.channel) });
+        await submitAnswer(key, job, answer, action.user).catch(async (error: unknown) => {
+          logger.error(`Answering question in ${key} from ${kindOf(action.channel)} failed: ${errorMessage(error)}`);
+          // Said where the owner pressed: fixed copy, none of the worker's words.
+          await chat.notice({ conversation: action.channel, thread: null }, { kind: 'question-hint', hint: 'not-sent' }).catch(() => {});
+        });
+        return;
+      }
+      if (card.nonce !== action.nonce) return;
       if (!mayAnswer(job, action.user, card)) {
         if (isApproval(card) && isAllowed(action.user) && action.user === job.requester) await questionFeedback(job, 'owner-only');
         return;
@@ -1145,6 +1282,7 @@ export const createBot = ({
     try {
       const at = now();
       for (const [key, job] of allJobs()) {
+        if (job.staleCopies?.length) await exclusive(key, () => retryStaleCopies(key)).catch((error: unknown) => logger.debug(`Retrying copies in ${key} failed: ${errorMessage(error)}`));
         if (!isDue(key, job, at)) continue;
         await exclusive(key, () => pollJob(key)).catch((error: unknown) => {
           logger.error(`Polling ${key} (T3 thread ${job.threadId}) failed: ${errorMessage(error)}`);

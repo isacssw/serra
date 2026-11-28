@@ -194,6 +194,9 @@ export const createTelegramConnection = (options: TelegramConnectionOptions): Ch
     },
 
     saw() {},
+
+    // The owner's private chat with the bot has the owner's own user ID.
+    ownerSpace: async () => (owner === null ? null : telegramId(owner)),
   };
   return { connection, writer };
 };

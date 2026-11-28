@@ -33,6 +33,10 @@ export const chatId = (kind: ChatKind, raw: string): string => (kind === SLACK ?
 /** The chat's own ID back from one `chatId` made. */
 export const rawId = (kind: ChatKind, id: string): string => (kind === SLACK || !id.startsWith(`${kind}:`) ? id : id.slice(kind.length + 1));
 
+/** A chat's name as people know it, for copy such as "From Slack". */
+const CHAT_NAMES: Readonly<Record<string, string>> = { slack: 'Slack', telegram: 'Telegram', discord: 'Discord' };
+export const chatName = (kind: ChatKind): string => CHAT_NAMES[kind] ?? kind.charAt(0).toUpperCase() + kind.slice(1);
+
 /** Who the bot is in a chat, once it signed in. */
 export interface ChatIdentity {
   /** The bot's own person ID there. */
@@ -85,6 +89,13 @@ export interface ChatConnection {
    * each DM is, so its check that the owner's DM is theirs alone has an answer.
    */
   saw(msg: Pick<IncomingMessage, 'channel' | 'user' | 'botId'>): void;
+  /**
+   * The owner's own private conversation with the bot in this chat, where a copy of an approval may follow them
+   * (`src/chat/mirrors.ts`), or null when the chat can't be sure which one it is (not paired yet; on Slack, until the
+   * owner wrote to the bot there). Never a guess: only a conversation the chat knows is the owner's alone. Absent: the
+   * chat takes no copies.
+   */
+  ownerSpace?(): Promise<string | null>;
   /** Meeting capture, in a chat that has the owner's DM. Absent: meetings are never caught in this chat. */
   readonly meetings?: MeetingSeam;
 }

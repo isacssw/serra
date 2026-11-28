@@ -12,6 +12,7 @@ import { clearedFor, type Cleared, type WorkerWriter } from '../chat/writer.ts';
 import { comparableSlackText, slackErrorCode, type SlackApi } from './api.ts';
 import { receiveAttachments } from './attachments.ts';
 import { incomingFiles } from './incoming.ts';
+import { readOwnerDm, writeOwnerDm } from './owner-dm.ts';
 import { answeredMessage, closedMessage, overMessage, questionMessage, type Blocks } from './questions.ts';
 
 /** A message's content, without where it goes. */
@@ -83,7 +84,7 @@ export interface SlackChatOptions {
 }
 
 export const createSlackChat = ({ client, owner, botUserId, botToken, profileDir, logger, clock, receive = receiveAttachments }: SlackChatOptions):
-  { chat: ChatPort; writer: WorkerWriter; sawDm: (conversation: string, person: PersonId) => void } => {
+  { chat: ChatPort; writer: WorkerWriter; sawDm: (conversation: string, person: PersonId) => void; sawOwnerWrite: (conversation: string, person: PersonId) => void; ownerDm: () => string | null } => {
   const now = (): number => clock.now();
   const mention = (person: PersonId): string => `<@${person}>`;
 
@@ -151,6 +152,9 @@ export const createSlackChat = ({ client, owner, botUserId, botToken, profileDir
    * the app doesn't request.
    */
   const dmOwners = new Map<string, PersonId>();
+  /** The owner's own DM, as learned from a message they wrote there (`owner-dm.ts`): theirs from the start. */
+  let ownerDm = readOwnerDm(profileDir, owner);
+  if (ownerDm) dmOwners.set(ownerDm, owner);
   /**
    * The owner's DM is theirs alone, unless a message in it came from someone else: then it is that person's DM. A DM
    * not seen since the start counts as the owner's, as their requests say.
@@ -210,8 +214,8 @@ export const createSlackChat = ({ client, owner, botUserId, botToken, profileDir
         ], unfurl_links: false };
       }
       case 'progress': return { text: out.text, blocks: [{ type: 'markdown', text: out.text }], unfurl_links: false };
-      case 'question': return { ...questionMessage(out.card, out.to), unfurl_links: false };
-      case 'answered': return answeredMessage(out.card, out.by);
+      case 'question': return { ...questionMessage(out.card, out.to, out.copyOf), unfurl_links: false };
+      case 'answered': return answeredMessage(out.card, out.by, out.via);
       case 'review': return { text: out.markdown.slice(0, SLACK_FALLBACK_LIMIT), blocks: [
         { type: 'markdown', text: out.markdown },
         { type: 'context', elements: [{ type: 'mrkdwn', text: `Prepared by ${out.from} for ${mention(owner)} · <${out.link}|request thread>` }] },
@@ -411,5 +415,12 @@ export const createSlackChat = ({ client, owner, botUserId, botToken, profileDir
     if (isDm(conversation) && person !== botUserId()) dmOwners.set(conversation, person);
   };
 
-  return { chat, writer, sawDm };
+  /** A message someone wrote (never a click): one the owner wrote in a DM makes it their DM, saved for copies. */
+  const sawOwnerWrite = (conversation: string, person: PersonId): void => {
+    if (!isDm(conversation) || person !== owner || ownerDm === conversation) return;
+    ownerDm = conversation;
+    writeOwnerDm(profileDir, owner, conversation);
+  };
+
+  return { chat, writer, sawDm, sawOwnerWrite, ownerDm: () => ownerDm };
 };

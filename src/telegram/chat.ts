@@ -7,7 +7,7 @@
  * chat, a group) counts as outside, since Telegram can't say who is on the owner's team.
  */
 import { extname } from 'node:path';
-import { chatId, rawId } from '../chat/connection.ts';
+import { chatId, chatName, rawId } from '../chat/connection.ts';
 import { MessageGone, type Audience, type ChatPort, type HistoryLine, type InPlaceOf, type Notice, type OwnerNotify, type PersonId, type Replacement, type Result, type Target, type WorkerOut } from '../chat/port.ts';
 import { clearedFor, type Cleared, type WorkerWriter } from '../chat/writer.ts';
 import type { Clock } from '../clock.ts';
@@ -124,7 +124,11 @@ export const createTelegramChat = ({ api, store, botId, username, owner, names, 
   const replyHtml = (body: string, link_: string | null, notify: OwnerNotify): string =>
     `${notify === 'callout' ? '<b>This one needs you.</b>\n\n' : ''}${messageHtml(body, footer(link_, notify))}`;
 
-  const questionHtml = (card: QuestionCard): { html: string; keyboard?: InlineKeyboard } => {
+  /** A copy's line saying where the card is from (`src/chat/mirrors.ts`). */
+  const fromLine = (copyOf: { chat: string; link: string | null }): string =>
+    `<i>From ${escapeHtml(chatName(copyOf.chat))}${copyOf.link ? ` · ${link(copyOf.link, 'Open thread')}` : ''}</i>`;
+
+  const questionHtml = (card: QuestionCard, copyOf?: { chat: string; link: string | null }): { html: string; keyboard?: InlineKeyboard } => {
     const question = card.questions[card.index];
     if (!question) throw new Error(`The card has no question ${card.index + 1}`);
     const head = `<b>I need your input${card.questions.length > 1 ? ` (${card.index + 1}/${card.questions.length})` : ''}.</b>\n${markdownToHtml(question.question)}`;
@@ -137,18 +141,20 @@ export const createTelegramChat = ({ api, store, botId, username, owner, names, 
       : buttons ? (custom ? 'Tap an answer, or reply with your own.' : 'Tap an answer.')
         : question.multiSelect ? 'Reply with the numbers, like 1,3.' : 'Reply with a number.';
     const who = question.id === 'permission' ? ' Only the bot owner can answer.' : '';
-    const html = `${head}${listed}\n\n<i>${how}${who}</i>`.slice(0, 4000);
+    // A copy is answered by its buttons only: a message here would be a new request, not an answer.
+    const html = (copyOf ? `${head}${listed}\n\n${fromLine(copyOf)}` : `${head}${listed}\n\n<i>${how}${who}</i>`).slice(0, 4000);
     if (!buttons) return { html };
     return { html, keyboard: question.options.map((option, index) => [{ text: option.label.slice(0, 60), callback_data: questionData(card.nonce, index) }]) };
   };
 
-  const answeredHtml = (card: QuestionCard, by?: PersonId): string => {
+  const answeredHtml = (card: QuestionCard, by?: PersonId, via?: string): string => {
     const lines = card.questions.flatMap((question) => {
       const answer = Object.hasOwn(card.answers, question.id) ? card.answers[question.id] : undefined;
       const label = (value: string): string => question.options.find((option) => (option.value ?? option.label) === value)?.label ?? value;
       return answer === undefined ? [] : [`${markdownToHtml(question.question)}\n<b>${escapeHtml(Array.isArray(answer) ? answer.map(label).join(', ') : label(answer))}</b>`];
     });
-    return [by ? 'Answer sent. Continuing…' : 'This question is no longer waiting for an answer.', ...lines].join('\n\n').slice(0, 4000);
+    const head = via ? `Answered in ${chatName(via)}.` : by ? 'Answer sent. Continuing…' : 'This question is no longer waiting for an answer.';
+    return [escapeHtml(head), ...lines].join('\n\n').slice(0, 4000);
   };
 
   const render = (out: WorkerOut): { html: string; keyboard?: InlineKeyboard } => {
@@ -159,8 +165,8 @@ export const createTelegramChat = ({ api, store, botId, username, owner, names, 
         return { html: messageHtml(out.markdown, `<i>Updated ${at} · ${link(out.link, 'T3 thread')}</i>`) };
       }
       case 'progress': return { html: `<i>${escapeHtml(out.text.slice(0, 500))}</i>` };
-      case 'question': return questionHtml(out.card);
-      case 'answered': return { html: answeredHtml(out.card, out.by) };
+      case 'question': return questionHtml(out.card, out.copyOf);
+      case 'answered': return { html: answeredHtml(out.card, out.by, out.via) };
       case 'review': return { html: messageHtml(out.markdown, `<i>Prepared by ${escapeHtml(out.from)} · ${link(out.link, 'request thread')}</i>`) };
       case 'failure-detail': return { html: `Something went wrong on my side.\n<code>${escapeHtml(out.line.slice(0, 500))}</code>` };
     }

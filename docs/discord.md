@@ -32,6 +32,11 @@ until you connect again. To revoke the token itself, **Reset Token** in the port
 - 👀 means the bot has your message; ⏳ means it waits for an update to finish.
 - Questions with a few answers come as buttons; tool approvals are yours alone. Files you attach reach the agent (up to
   20 MB); files the agent names come back in the chat. Nothing the bot posts pings anyone.
+- **Approvals follow you:** when an agent working on your own request asks to run a tool, the approval also comes to
+  your private chat with the bot here, even for a job in another chat, with a line saying where it's from. Tap an
+  answer here or there: the first one counts, and every copy then says it's done ("Answered in Slack"). Slack gets a
+  copy in your DM with the bot once you've written to it there. Teammates' approvals and other questions stay in their
+  thread.
 
 ## Limits (alpha)
 
