@@ -79,7 +79,7 @@ type Row = Awaited<ReturnType<Handlers<'jobs'>['list']>>[number];
 const withNames = (rows: Row[], names: SlackNames, others: ReadonlyMap<string, string> = new Map()): Row[] => {
   const texts = rows.flatMap((row) => [row.title, row.ownerQuestion ?? '', row.error ?? '']).join('\n');
   const mentioned = slackMentions(texts);
-  // Slack is asked only about its own IDs: a Telegram job's people and chat aren't Slack's to name.
+  // Slack is asked only about its own IDs: a Telegram or Discord job's people and chat aren't Slack's to name.
   const slack = (id: string): boolean => kindOf(id) === SLACK;
   void names.request({
     users: [...rows.map((row) => row.requester).filter(slack), ...mentioned.users],
@@ -100,12 +100,16 @@ const withNames = (rows: Row[], names: SlackNames, others: ReadonlyMap<string, s
   });
 };
 
-/** The owner by their Telegram ID, when paired: the only person a Telegram job comes from today. */
-const telegramNames = (profileDir: string): Map<string, string> => {
+/** The owner by their Telegram and Discord IDs, when paired: the only person a job there comes from today. */
+const channelNames = (profileDir: string): Map<string, string> => {
   try {
     const profile = readProfileFile(profileDir);
-    const owner = profile.channels?.telegram?.ownerId;
-    return new Map(owner ? [[`telegram:${owner}`, profile.owner.name]] : []);
+    const telegram = profile.channels?.telegram?.ownerId;
+    const discord = profile.channels?.discord?.ownerId;
+    return new Map([
+      ...(telegram ? [[`telegram:${telegram}`, profile.owner.name] as const] : []),
+      ...(discord ? [[`discord:${discord}`, profile.owner.name] as const] : []),
+    ]);
   } catch { return new Map(); }
 };
 
@@ -136,7 +140,7 @@ export const jobsHandlers = (context: CoreContext, { run = runCommand, now = () 
         // Tasks started in the app, and Slack jobs saved as running, are read from T3 on every reload: T3 says what runs.
         ...(t3Bin ? { threads: cachedLookup(threads, t3Bin, run, () => now().getTime()), tasks: t3TaskState(t3Bin, run), runs: t3TaskState(t3Bin, run) } : {}),
       });
-      return withNames(jobs, namesFor(profileDir), telegramNames(profileDir));
+      return withNames(jobs, namesFor(profileDir), channelNames(profileDir));
     },
     chat: async (value) => {
       const { threadId, backend } = runOf(value);

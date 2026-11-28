@@ -96,7 +96,7 @@
     },
     {
       // A chat adapter: the chat's API, and the WorkerWriter it makes.
-      "files": ["src/slack/**", "src/telegram/**"],
+      "files": ["src/slack/**", "src/telegram/**", "src/discord/**"],
       "rules": {
         "react/rules-of-hooks": "off",
         "no-restricted-imports": ["error", { "patterns": [
@@ -160,7 +160,7 @@
     },
     {
       // New folders start strict: no `!` assertions either. Old code moves here as it is reworked.
-      "files": ["src/lib/**", "src/chat/**", "src/slack/**", "src/telegram/**"],
+      "files": ["src/lib/**", "src/chat/**", "src/slack/**", "src/telegram/**", "src/discord/**"],
       "rules": { "typescript/no-non-null-assertion": "error" }
     },
     {

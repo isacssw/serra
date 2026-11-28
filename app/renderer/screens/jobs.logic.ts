@@ -26,7 +26,7 @@ export const APP_TASK_CHANNEL_LABEL = 'Serra app';
 
 /** A channel as the screen shows it: its name once Slack named it, else the raw ID (APP-29). */
 const channelLabel = (channel: string, name?: string): string =>
-  channel === APP_TASK_CHANNEL ? APP_TASK_CHANNEL_LABEL : channel.startsWith('telegram:') ? 'Telegram' : name || channel;
+  channel === APP_TASK_CHANNEL ? APP_TASK_CHANNEL_LABEL : channel.startsWith('telegram:') ? 'Telegram' : channel.startsWith('discord:') ? 'Discord' : name || channel;
 
 /** The channel in a row's meta line: `#name` for a named Slack channel, else as `channelLabel` shows it. */
 export const channelTag = (job: JobRow): string =>

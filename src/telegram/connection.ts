@@ -16,7 +16,7 @@ import { createTelegramChat, HELD, TELEGRAM, telegramId } from './chat.ts';
 import { nameOf, translateUpdate } from './incoming.ts';
 import { pairTelegramOwner, takePairingCode } from './pairing.ts';
 import { escapeHtml } from './markup.ts';
-import { createThreadStore, type ThreadStore } from './threads.ts';
+import { createThreadStore, type ThreadStore } from '../chat/threads.ts';
 
 type Logger = { info(message: string): void; warn(message: string): void; error(message: string): void; debug(message: string): void };
 
@@ -51,7 +51,7 @@ const REFUSED = 'Sorry, I only take requests from my owner.';
 export const createTelegramConnection = (options: TelegramConnectionOptions): ChatAdapter => {
   const { profileDir, logger, clock, pollSeconds = 25, retryMs = 5_000 } = options;
   const api = options.api ?? createTelegramApi(options.token, options.fetch);
-  const store = options.store ?? createThreadStore(profileDir, (message) => logger.warn(message));
+  const store = options.store ?? createThreadStore(profileDir, 'telegram', (message) => logger.warn(message));
   let botId = '';
   let username = '';
   let owner: string | null = options.ownerId ?? null;

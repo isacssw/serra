@@ -1,12 +1,16 @@
-// Settings › Channels (SB-5): where people reach the bot. Slack, set up in setup, and Telegram, connected here: paste
-// the token @BotFather gives, then open the bot from the link to make it yours. One row per chat, one action each.
+// Settings › Channels (SB-5, SB-6): where people reach the bot. Slack, set up in setup; Telegram and Discord, connected
+// here: paste the bot's token, then make the bot yours (Telegram: open it from the link; Discord: add it to a server
+// and DM it the code). One row per chat, one action each.
 import { useCallback, useEffect, useId, useState, type FormEvent, type ReactNode } from 'react';
-import { Send } from 'lucide-react';
+import { Copy, Plus, Send } from 'lucide-react';
 import type { BotStatus, ChannelsView } from '../../../../src/contracts.ts';
 import { serra } from '../../bridge.ts';
 import { useBotStatus } from '../../shell/live.ts';
 import { Badge, BrandMark, Button, Dialog, Input, Page, useToast } from '../../ui/index.ts';
-import { slackRow, telegramRow, tokenProblem, type RowState } from './channels.logic.ts';
+import { discordRow, discordTokenProblem, slackRow, spacedCode, telegramRow, tokenProblem, type RowState } from './channels.logic.ts';
+
+type Chat = 'telegram' | 'discord';
+const CHAT_NAMES: Record<Chat, string> = { telegram: 'Telegram', discord: 'Discord' };
 
 const errorText = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
@@ -32,23 +36,43 @@ const useApply = (status: BotStatus | null) => {
   }, [status, toast]);
 };
 
-const ConnectDialog = ({ open, onClose, onConnected }: { open: boolean; onClose: () => void; onConnected: (view: ChannelsView) => void }) => {
+const linkButton = 'font-medium text-ink underline decoration-line-strong underline-offset-2 hover:decoration-ink';
+
+/** What the Connect dialog asks for each chat. */
+const CONNECT: Record<Chat, { description: ReactNode; placeholder: string; problem: (token: string) => string | null; connect: (token: string) => Promise<ChannelsView> | undefined }> = {
+  telegram: {
+    description: <>Ask <button type="button" className={linkButton} onClick={() => { void serra()?.app.openExternal('https://t.me/BotFather'); }}>@BotFather</button> for a new bot, then paste its token.</>,
+    placeholder: '123456:ABC…',
+    problem: tokenProblem,
+    connect: (token) => serra()?.channels.connectTelegram(token),
+  },
+  discord: {
+    description: <>Make a bot in the <button type="button" className={linkButton} onClick={() => { void serra()?.app.openExternal('https://discord.com/developers/applications'); }}>Developer Portal</button>, turn on Message Content Intent, then paste its token.</>,
+    placeholder: 'MTI…',
+    problem: discordTokenProblem,
+    connect: (token) => serra()?.channels.connectDiscord(token),
+  },
+};
+
+const ConnectDialog = ({ chat, onClose, onConnected }: { chat: Chat | null; onClose: () => void; onConnected: (view: ChannelsView) => void }) => {
+  const open = chat !== null;
+  const ask = CONNECT[chat ?? 'telegram'];
   const formId = useId();
   const [token, setToken] = useState('');
   const [tried, setTried] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => { if (open) { setToken(''); setTried(false); setError(null); } }, [open]);
-  const problem = tokenProblem(token);
+  const problem = ask.problem(token);
   const submit = async (event: FormEvent): Promise<void> => {
     event.preventDefault();
     setTried(true);
-    const bridge = serra();
-    if (problem || !bridge) return;
+    if (problem || !serra()) return;
     setBusy(true);
     setError(null);
     try {
-      const view = await bridge.channels.connectTelegram(token);
+      const view = await ask.connect(token);
+      if (!view) return;
       setToken('');
       onConnected(view);
     } catch (caught) {
@@ -59,8 +83,8 @@ const ConnectDialog = ({ open, onClose, onConnected }: { open: boolean; onClose:
     <Dialog
       open={open}
       onClose={onClose}
-      title="Connect Telegram"
-      description={<>Ask <button type="button" className="font-medium text-ink underline decoration-line-strong underline-offset-2 hover:decoration-ink" onClick={() => { void serra()?.app.openExternal('https://t.me/BotFather'); }}>@BotFather</button> for a new bot, then paste its token.</>}
+      title={`Connect ${CHAT_NAMES[chat ?? 'telegram']}`}
+      description={ask.description}
       actions={(
         <>
           <Button variant="ghost" onClick={onClose}>Cancel</Button>
@@ -76,7 +100,7 @@ const ConnectDialog = ({ open, onClose, onConnected }: { open: boolean; onClose:
           autoComplete="off"
           spellCheck={false}
           inputClassName="font-mono placeholder:font-sans"
-          placeholder="123456:ABC…"
+          placeholder={ask.placeholder}
           value={token}
           error={error ?? (tried ? problem : null)}
           hint="Kept in your Keychain. A 1Password reference (op://…) works too."
@@ -93,8 +117,8 @@ export const Channels = () => {
   const apply = useApply(status);
   const [view, setView] = useState<ChannelsView | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [connecting, setConnecting] = useState(false);
-  const [confirming, setConfirming] = useState(false);
+  const [connecting, setConnecting] = useState<Chat | null>(null);
+  const [confirming, setConfirming] = useState<Chat | null>(null);
 
   const load = useCallback(async () => {
     const bridge = serra();
@@ -103,8 +127,8 @@ export const Channels = () => {
     catch (error) { setLoadError(errorText(error)); }
   }, []);
   useEffect(() => { void load(); }, [load]);
-  // While it waits for the owner to open the bot, look again now and then: pairing happens in Telegram.
-  const pairing = view?.telegram.state === 'pairing';
+  // While it waits for the owner, look again now and then: pairing happens in the chat.
+  const pairing = view?.telegram.state === 'pairing' || view?.discord.state === 'pairing';
   useEffect(() => {
     if (!pairing) return;
     const timer = setInterval(() => { void load(); }, 3_000);
@@ -112,12 +136,21 @@ export const Channels = () => {
   }, [pairing, load]);
 
   const telegram = view?.telegram ?? null;
-  const disconnect = async (): Promise<void> => {
+  const discord = view?.discord ?? null;
+  const disconnect = async (which: Chat): Promise<void> => {
     const bridge = serra();
     if (!bridge) return;
-    setConfirming(false);
-    try { setView(await bridge.channels.disconnectTelegram()); await apply(); toast({ message: 'Telegram disconnected.', tone: 'success' }); }
-    catch (error) { toast({ message: errorText(error), tone: 'error' }); }
+    setConfirming(null);
+    try {
+      setView(await (which === 'telegram' ? bridge.channels.disconnectTelegram() : bridge.channels.disconnectDiscord()));
+      await apply();
+      toast({ message: `${CHAT_NAMES[which]} disconnected.`, tone: 'success' });
+    } catch (error) { toast({ message: errorText(error), tone: 'error' }); }
+  };
+  const copy = (text: string): void => {
+    void navigator.clipboard.writeText(text)
+      .then(() => toast({ message: 'Copied.', tone: 'success' }))
+      .catch((failure: unknown) => toast({ message: errorText(failure), tone: 'error' }));
   };
 
   return (
@@ -131,33 +164,59 @@ export const Channels = () => {
           detail={telegram && telegram.state !== 'off' ? `@${telegram.username}` : 'Message your bot from your phone.'}
           state={telegramRow(telegram, status)}
         >
-          {telegram?.state === 'off' && <Button variant="primary" size="sm" onClick={() => setConnecting(true)}>Connect</Button>}
+          {telegram?.state === 'off' && <Button variant="primary" size="sm" onClick={() => setConnecting('telegram')}>Connect</Button>}
           {telegram?.state === 'pairing' && (
             <Button variant="primary" size="sm" icon={<Send size={13} aria-hidden />} onClick={() => { void serra()?.app.openExternal(telegram.link); }}>Open in Telegram</Button>
           )}
-          {telegram?.state === 'paired' && <Button variant="ghost" size="sm" onClick={() => setConfirming(true)}>Disconnect</Button>}
+          {telegram?.state === 'paired' && <Button variant="ghost" size="sm" onClick={() => setConfirming('telegram')}>Disconnect</Button>}
+        </Row>
+        <Row
+          icon={<BrandMark brand="discord" />}
+          name="Discord"
+          detail={discord && discord.state !== 'off' ? discord.username : 'Mentions, DMs and threads in your server.'}
+          state={discordRow(discord, status)}
+        >
+          {discord?.state === 'off' && <Button variant="primary" size="sm" onClick={() => setConnecting('discord')}>Connect</Button>}
+          {discord?.state === 'pairing' && (
+            <Button variant="primary" size="sm" icon={<Plus size={13} aria-hidden />} onClick={() => { void serra()?.app.openExternal(discord.invite); }}>Add to server</Button>
+          )}
+          {discord?.state === 'paired' && <Button variant="ghost" size="sm" onClick={() => setConfirming('discord')}>Disconnect</Button>}
         </Row>
       </ul>
       {telegram?.state === 'pairing' && (
         <p className="flex flex-wrap items-center gap-x-2 text-[13px] text-muted">
           Open your bot in Telegram and tap Start. That makes it yours.
-          <Button variant="ghost" size="sm" onClick={() => setConfirming(true)}>Disconnect</Button>
+          <Button variant="ghost" size="sm" onClick={() => setConfirming('telegram')}>Disconnect</Button>
+        </p>
+      )}
+      {discord?.state === 'pairing' && (
+        <p className="flex flex-wrap items-center gap-x-2 text-[13px] text-muted">
+          <span>Add your bot to a server, then DM it this code. That makes it yours.</span>
+          <button
+            type="button"
+            className="inline-flex items-center gap-1.5 rounded-md bg-control px-2 py-0.5 font-mono text-[13px] tracking-wider text-ink hover:bg-control-hover"
+            aria-label={`Copy the code ${discord.code}`}
+            onClick={() => copy(discord.code)}
+          >
+            {spacedCode(discord.code)}<Copy size={12} aria-hidden />
+          </button>
+          <Button variant="ghost" size="sm" onClick={() => setConfirming('discord')}>Disconnect</Button>
         </p>
       )}
       <ConnectDialog
-        open={connecting}
-        onClose={() => setConnecting(false)}
-        onConnected={(next) => { setView(next); setConnecting(false); void apply(); }}
+        chat={connecting}
+        onClose={() => setConnecting(null)}
+        onConnected={(next) => { setView(next); setConnecting(null); void apply(); }}
       />
       <Dialog
-        open={confirming}
-        onClose={() => setConfirming(false)}
-        title="Disconnect Telegram?"
+        open={confirming !== null}
+        onClose={() => setConfirming(null)}
+        title={`Disconnect ${CHAT_NAMES[confirming ?? 'telegram']}?`}
         description="Your bot stops answering there. You can connect it again any time."
         actions={(
           <>
-            <Button variant="ghost" onClick={() => setConfirming(false)}>Cancel</Button>
-            <Button variant="danger" onClick={() => { void disconnect(); }}>Disconnect</Button>
+            <Button variant="ghost" onClick={() => setConfirming(null)}>Cancel</Button>
+            <Button variant="danger" onClick={() => { if (confirming) void disconnect(confirming); }}>Disconnect</Button>
           </>
         )}
       />
