@@ -27,6 +27,8 @@ import type { SecretName, SecretStatus } from './contracts.ts';
 import { isTokenVerdict } from './token-errors.ts';
 import { readSecretsFile, scrub, SECRET_NAMES, secretStatus, slackWorkspace, sourceLabel, type SecretOptions } from './secrets.ts';
 import { hasServiceHost, serviceHost } from './service.ts';
+import { readState } from './state.ts';
+import { readTasks } from './tasks.ts';
 import { run } from './t3.ts';
 
 /** How to start the knowledge interview (docs/knowledge-interview.md) for a profile. */
@@ -348,6 +350,8 @@ export interface SetupProgress {
   next: SetupStepId | null;
   /** The service is installed (whether or not it runs). */
   installed: boolean;
+  /** The bot has had a job: one in `state.json` or a task started in the app. False shows a new bot's first-job hint. */
+  hadJob: boolean;
 }
 
 /**
@@ -396,6 +400,12 @@ export const serviceInstalled = (profileDir: string, profile: Profile, { launchA
  * to call often. Tokens that are present but never checked don't finish the Slack step: `summarizeProfile` reports
  * them as found, so the window can check them instead of asking for them again.
  */
+/** Whether the profile has ever had a job. A file that can't be read counts as yes, so no first-run hint shows by mistake. */
+const hadJob = (directory: string): boolean => {
+  try { return Object.keys(readState(join(directory, 'state.json')).jobs).length > 0 || readTasks(directory).length > 0; }
+  catch { return true; }
+};
+
 export const setupProgress = (profileDir: string | null, lookup: ServiceLookup = {}): SetupProgress => {
   const directory = profileDir ? resolve(profileDir) : null;
   let profile: Profile | null = null;
@@ -409,7 +419,7 @@ export const setupProgress = (profileDir: string | null, lookup: ServiceLookup =
   if (!directory || !profile) {
     add('profile', false, profileProblem);
     for (const id of ['slack', 'owner', 'service'] as const) add(id, false, 'Needs a profile first');
-    return { profileDir: directory, bot: null, owner: null, steps, next: 'profile', installed: false };
+    return { profileDir: directory, bot: null, owner: null, steps, next: 'profile', installed: false, hadJob: false };
   }
   add('profile', true, profile.bot.name);
   let checks: ReturnType<typeof readSecretsFile>['checks'] = {};
@@ -447,6 +457,7 @@ export const setupProgress = (profileDir: string | null, lookup: ServiceLookup =
     steps,
     next: steps.find((step) => !step.done)?.id ?? null,
     installed,
+    hadJob: hadJob(directory),
   };
 };
 

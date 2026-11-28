@@ -25,9 +25,9 @@ export interface FlowStep {
 /** The steps, in order. */
 export const FLOW: readonly FlowStep[] = [
   { id: 'profile', path: '/setup/you', title: 'You and your repository', short: 'You & repo' },
-  { id: 'slack', path: '/setup/slack', title: 'Connect Slack', short: 'Slack', summary: 'Create the app, then add its two tokens.' },
+  { id: 'slack', path: '/setup/slack', title: 'Connect Slack', short: 'Slack' },
   { id: 'owner', path: '/setup/owner', title: 'Confirm it’s you', short: 'Confirm you', summary: 'Slack checks your member ID.' },
-  { id: 'service', path: '/setup/service', title: 'Install and start', short: 'Install', summary: 'Runs every check, then starts the bot.' },
+  { id: 'service', path: '/setup/service', title: 'Install and start', short: 'Install', summary: 'It runs in the background and starts again when you log in.' },
 ];
 
 /** Add… › Profile (SB-10): the new step first, then the profile form for a new profile. */
@@ -149,7 +149,7 @@ export const slackAppCard = (tokens: readonly TokenSummary[]): { tone: 'todo' | 
   }
   if (tokens.length && tokens.every((token) => token.state === 'verified')) return { tone: 'done', text: 'Your Slack app is connected.', create: false };
   if (tokens.length && tokens.every((token) => token.state !== 'missing')) return { tone: 'done', text: 'Your app’s tokens are here.', create: false };
-  return { tone: 'todo', text: 'Create it from Serra’s manifest, then install it to your workspace.', create: true };
+  return { tone: 'todo', text: 'Create Serra’s app and install it to your workspace.', create: true };
 };
 
 /** The rows of the "found" card, in step order. */

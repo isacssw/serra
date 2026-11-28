@@ -1,7 +1,7 @@
 // Step 1: who the bot works for and where it works. Fields Serra can find are filled in (Git name, `gh` login, the
 // repository's base branch and GitHub name); the form is saved as it's typed, so quitting halfway loses nothing.
 // Once the profile exists, the step shows it instead.
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { ChevronRight, FolderOpen, UserRound } from 'lucide-react';
 import { Navigate, useLocation, useNavigate } from 'react-router';
 import { serra } from '../bridge.ts';
@@ -15,12 +15,10 @@ import {
 import { setupChanged, useSetup } from './SetupState.tsx';
 
 const step = FLOW[0]!;
-
-const Section = ({ title, children }: { title: string; children: ReactNode }) => (
-  <fieldset className="flex flex-col gap-4">
-    <legend className="mb-3.5 text-[13px] font-semibold text-ink">{title}</legend>
-    {children}
-  </fieldset>
+/** The fields under More options. */
+const HIDDEN_FIELDS = ['githubLogin', 'githubRepo', 'baseRef', 'remote', 'botId', 't3Bin', 'directory'] as const;
+const loginInput = (draft: DraftForm, set: (key: keyof DraftForm) => (event: { target: { value: string } }) => void, error: string | undefined) => (
+  <Input label="GitHub login" autoComplete="username" placeholder="octocat" inputClassName="font-mono" value={draft.githubLogin} onChange={set('githubLogin')} error={error} spellCheck={false} />
 );
 
 const Existing = () => {
@@ -65,6 +63,9 @@ const ProfileForm = ({ adding }: { adding?: NewProfileChoice }) => {
   const [error, setError] = useState<string | null>(null);
   const [repoNote, setRepoNote] = useState<string | null>(null);
   const saved = useRef<string>('');
+  const more = useRef<HTMLDetailsElement>(null);
+  /** Whether `gh` found the GitHub login. When it didn't, the field is required and stays in view. */
+  const [loginFound, setLoginFound] = useState(true);
 
   // The saved draft first, then what Serra can find for the fields still empty. Adding a profile starts from its name,
   // with you as the profile in use has you: the same person sets up every bot.
@@ -90,6 +91,7 @@ const ProfileForm = ({ adding }: { adding?: NewProfileChoice }) => {
       const defaults = await bridge.setup.defaults().catch(() => null);
       if (!live || !defaults) return;
       setRoot(defaults.profileRoot);
+      setLoginFound(Boolean(defaults.githubLogin));
       setDraft((current) => current && ({
         ...current,
         githubLogin: current.githubLogin || defaults.githubLogin,
@@ -152,6 +154,10 @@ const ProfileForm = ({ adding }: { adding?: NewProfileChoice }) => {
     setTouched(true);
     const problems = draftErrors(draft);
     if (Object.keys(problems).length) {
+      // Fields Serra fills in itself wait under More options; one to fix there opens it first, so focus can land on it.
+      // The GitHub login is in view when `gh` didn't find it.
+      const hidden = HIDDEN_FIELDS.filter((key) => loginFound || key !== 'githubLogin');
+      if (more.current && hidden.some((key) => problems[key])) more.current.open = true;
       // Focus the first field to fix, so keyboard and screen-reader users land on it.
       setTimeout(() => document.querySelector<HTMLElement>('[data-serra-setup] input[aria-invalid="true"]')?.focus(), 0);
       return;
@@ -176,50 +182,43 @@ const ProfileForm = ({ adding }: { adding?: NewProfileChoice }) => {
   };
 
   return (
-    <form className="flex flex-1 flex-col gap-8 pb-10" noValidate onSubmit={(event) => { event.preventDefault(); void create(); }}>
-      <Section title="You">
-        <div className="grid gap-4 sm:grid-cols-2">
-          <Input label="Your name" autoComplete="name" placeholder="Alex Morgan" value={draft.ownerName} onChange={set('ownerName')} error={errors.ownerName} hint="As the bot will call you" />
-          <Input label="GitHub login" autoComplete="username" placeholder="octocat" inputClassName="font-mono" value={draft.githubLogin} onChange={set('githubLogin')} error={errors.githubLogin} hint="Your GitHub username" />
-        </div>
+    <form className="flex flex-1 flex-col gap-5 pb-10" noValidate onSubmit={(event) => { event.preventDefault(); void create(); }}>
+      <div className="grid gap-5 sm:grid-cols-2">
+        <Input label="Your name" autoComplete="name" placeholder="Alex Morgan" value={draft.ownerName} onChange={set('ownerName')} error={errors.ownerName} />
         <Input label="Slack member ID" placeholder="U0123456789" inputClassName="font-mono" value={draft.ownerSlackUserId}
-          onChange={set('ownerSlackUserId')} error={errors.ownerSlackUserId} hint="In Slack: your profile › ⋮ › Copy member ID" spellCheck={false} />
-      </Section>
-
-      <Section title="Repository">
-        <div className="flex items-start gap-2">
-          <Input label="Folder" placeholder="/Users/you/project" inputClassName="font-mono" className="min-w-0 flex-1" value={draft.projectPath}
-            onChange={set('projectPath')} onBlur={() => void detect()} error={errors.projectPath}
-            hint={repoNote ?? 'The repository you open in T3 Code'} spellCheck={false} />
-          {/* Level with the field: its label (16px) and the gap under it (6px). */}
-          <Button className="mt-[22px]" icon={<FolderOpen size={14} aria-hidden />} onClick={() => void choose()}>Choose…</Button>
-        </div>
-        <div className="grid gap-4 sm:grid-cols-2">
-          <Input label="Base branch (optional)" placeholder="origin/main" inputClassName="font-mono" value={draft.baseRef} onChange={set('baseRef')} spellCheck={false} hint="Where task branches start" />
-          <Input label="GitHub repository (optional)" placeholder="owner/repo" inputClassName="font-mono" value={draft.githubRepo}
-            onChange={set('githubRepo')} error={errors.githubRepo} spellCheck={false} hint="Found from the Git remote" />
-        </div>
-      </Section>
-
-      <Section title="Bot">
-        <Input label="Name" placeholder="Friday" value={draft.botName} onChange={set('botName')} error={errors.botName ?? errors.botId}
+          onChange={set('ownerSlackUserId')} error={errors.ownerSlackUserId} hint="Slack: your profile › ⋮ › Copy member ID" spellCheck={false} />
+      </div>
+      <div className="flex items-start gap-2">
+        <Input label="Repository" placeholder="/Users/you/project" inputClassName="font-mono" className="min-w-0 flex-1" value={draft.projectPath}
+          onChange={set('projectPath')} onBlur={() => void detect()} error={errors.projectPath}
+          hint={repoNote ?? 'The folder you open in T3 Code'} spellCheck={false} />
+        {/* Level with the field: its label (16px) and the gap under it (6px). */}
+        <Button className="mt-[22px]" icon={<FolderOpen size={14} aria-hidden />} onClick={() => void choose()}>Choose…</Button>
+      </div>
+      <div className="grid gap-5 sm:grid-cols-2">
+        <Input label="Bot name" placeholder="Friday" value={draft.botName} onChange={set('botName')} error={errors.botName}
           hint="How it appears in Slack" />
-        <details className="group text-[13px]">
-          <summary className="flex w-fit cursor-pointer list-none items-center gap-1 rounded text-[13px] font-medium text-muted hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus [&::-webkit-details-marker]:hidden"><ChevronRight size={13} aria-hidden className="transition-transform group-open:rotate-90" />More options</summary>
-          <div className="mt-4 grid gap-4 sm:grid-cols-2">
-            <Input label="Bot ID" placeholder={suggestId(draft.botName)} inputClassName="font-mono" value={draft.botId} onChange={set('botId')}
-              error={errors.botId} hint="Names the service and job branches" spellCheck={false} />
-            <Input label="Git remote" inputClassName="font-mono" value={draft.remote} onChange={set('remote')} onBlur={() => void detect()} error={errors.remote} spellCheck={false} />
-            <Input label="Profile folder" inputClassName="font-mono" placeholder={root ? profileFolder(draft, root) : ''} value={draft.directory}
-              onChange={set('directory')} error={errors.directory} spellCheck={false} />
-            <Input label="T3 CLI" inputClassName="font-mono" placeholder="~/.t3/bin/t3" value={draft.t3Bin} onChange={set('t3Bin')} error={errors.t3Bin} spellCheck={false} />
-          </div>
-        </details>
-      </Section>
+        {!loginFound && loginInput(draft, set, errors.githubLogin)}
+      </div>
+      <details ref={more} className="group text-[13px]">
+        <summary className="flex w-fit cursor-pointer list-none items-center gap-1 rounded text-[13px] font-medium text-muted hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus [&::-webkit-details-marker]:hidden"><ChevronRight size={13} aria-hidden className="transition-transform group-open:rotate-90" />More options</summary>
+        <div className="mt-4 grid gap-4 sm:grid-cols-2">
+          {loginFound && loginInput(draft, set, errors.githubLogin)}
+          <Input label="GitHub repository" placeholder="owner/repo" inputClassName="font-mono" value={draft.githubRepo}
+            onChange={set('githubRepo')} error={errors.githubRepo} spellCheck={false} />
+          <Input label="Base branch" placeholder="origin/main" inputClassName="font-mono" value={draft.baseRef} onChange={set('baseRef')} spellCheck={false} hint="Where task branches start" />
+          <Input label="Git remote" inputClassName="font-mono" value={draft.remote} onChange={set('remote')} onBlur={() => void detect()} error={errors.remote} spellCheck={false} />
+          <Input label="Bot ID" placeholder={suggestId(draft.botName)} inputClassName="font-mono" value={draft.botId} onChange={set('botId')}
+            error={errors.botId} hint="Names the service and job branches" spellCheck={false} />
+          <Input label="T3 CLI" inputClassName="font-mono" placeholder="~/.t3/bin/t3" value={draft.t3Bin} onChange={set('t3Bin')} error={errors.t3Bin} spellCheck={false} />
+          <Input label="Profile folder" inputClassName="font-mono" className="sm:col-span-2" placeholder={root ? profileFolder(draft, root) : ''} value={draft.directory}
+            onChange={set('directory')} error={errors.directory} spellCheck={false} />
+        </div>
+      </details>
 
       {error && <Alert>{error}</Alert>}
       <StepFooter back={adding ? NEW_PROFILE_PATH : SETUP_PATH}>
-        <Button type="submit" variant="primary" disabled={busy}>{busy ? 'Creating…' : 'Create profile'}</Button>
+        <Button type="submit" variant="primary" disabled={busy}>{busy ? 'Saving…' : 'Continue'}</Button>
       </StepFooter>
     </form>
   );

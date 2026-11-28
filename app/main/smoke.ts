@@ -1137,6 +1137,173 @@ const runChannelsChecks = async (window: BrowserWindow): Promise<string[]> => {
   return failures;
 };
 
+interface FirstRunScreen {
+  hash: string;
+  heading: string | null;
+  /** Enabled primary buttons in view: each step has exactly one way on. */
+  primary: string[];
+  words: number;
+  /** Power features a first run must not mention (profiles, servers, other chats, cloud agents). */
+  extras: string[];
+}
+
+/** What a first-run screen shows, read in the page. */
+const firstRunScreenScript = `(() => {
+  const main = document.querySelector('[data-serra-main]');
+  const visible = (el) => el.checkVisibility ? el.checkVisibility({ visibilityProperty: true }) : el.offsetParent !== null;
+  const primary = [...document.querySelectorAll('button')].filter((b) => /(^|\\s)bg-accent(\\s|$)/.test(b.className) && !b.disabled && b.getAttribute('aria-disabled') !== 'true' && visible(b)).map((b) => b.textContent.trim());
+  const count = (text) => (text.match(/[\\p{L}\\p{N}][\\p{L}\\p{N}'’.-]*/gu) ?? []).length;
+  let words = 0; let shown = '';
+  const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+  for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+    const el = node.parentElement;
+    if (!el || !node.textContent.trim() || el.closest('[hidden], [aria-hidden="true"], .sr-only, dialog:not([open])')) continue;
+    if (el.closest('details:not([open])') && !el.closest('summary')) continue;
+    if (!visible(el)) continue;
+    words += count(node.textContent); shown += ' ' + node.textContent;
+  }
+  const extras = ['server', 'telegram', 'discord', 'eve', 'vercel', 'profiles', '1password'].filter((w) => new RegExp('\\\\b' + w + '\\\\b', 'i').test(shown));
+  return { hash: location.hash, heading: main?.querySelector('h1')?.textContent ?? null, primary, words, extras };
+})()`;
+
+/**
+ * A brand-new owner's first run, end to end, with fakes (no Slack, Keychain or launchd): the welcome, the profile
+ * form, Slack with no tokens and then with fixture tokens checked, the owner confirmed, the install, the end, and the
+ * screen setup lands on. Each screen has one primary action, few words, and says nothing of profiles, servers, other
+ * chats or cloud agents. `SERRA_SMOKE_SHOTS` saves each in light and dark as `first-run-<theme>-<n>-<step>.png`.
+ */
+const runFirstRunChecks = async (window: BrowserWindow): Promise<string[]> => {
+  const failures: string[] = [];
+  const shots = process.env.SERRA_SMOKE_SHOTS;
+  if (shots) mkdirSync(shots, { recursive: true });
+  const root = mkdtempSync(join(tmpdir(), 'serra-smoke-first-run-'));
+  const repo = join(root, 'project');
+  mkdirSync(repo, { recursive: true });
+  const run = async <T>(script: string): Promise<T> => await window.webContents.executeJavaScript(script) as T;
+  const helpers = `const wait = async (check) => { for (let i = 0; i < 100 && !check(); i++) await new Promise((r) => setTimeout(r, 50)); return check(); };
+    const settle = () => new Promise((r) => setTimeout(r, 450));
+    const button = (text) => [...document.querySelectorAll('button')].find((b) => b.textContent.trim().startsWith(text));
+    const type = (input, value) => { if (!input) return; Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, value); input.dispatchEvent(new Event('input', { bubbles: true })); };
+    const field = (label) => { const l = [...document.querySelectorAll('label')].find((x) => x.textContent.trim() === label); return l ? document.getElementById(l.htmlFor) : null; };`;
+  /** Each step's screen: read, checked, and saved for both themes. */
+  const screens: Record<string, FirstRunScreen> = {};
+  let n = 0;
+  const capture = async (step: string, want: { primary: number | null; maxWords: number }): Promise<void> => {
+    n += 1;
+    await run(`(async () => { ${helpers} await settle(); })()`);
+    const screen = await run<FirstRunScreen>(firstRunScreenScript);
+    screens[step] = screen;
+    if (want.primary !== null && screen.primary.length !== want.primary) failures.push(`first run ${step}: ${screen.primary.length} primary buttons (${screen.primary.join(', ')}), not ${want.primary}`);
+    if (screen.words > want.maxWords) failures.push(`first run ${step}: ${screen.words} words on screen, more than ${want.maxWords}`);
+    if (screen.extras.length) failures.push(`first run ${step}: mentions ${screen.extras.join(', ')}`);
+    // Setup has no sidebar, so the theme is picked on Appearance (opened by its address) and the step opened again.
+    const pick = async (theme: 'light' | 'dark' | 'system'): Promise<void> => {
+      await run(`(async () => { ${helpers} location.hash = '#/settings/appearance'; await wait(() => document.querySelector('[data-serra-sidebar]')); })()`);
+      await run(themeControlScript(theme));
+    };
+    for (const theme of ['light', 'dark'] as const) {
+      await pick(theme);
+      const report = await run<ContrastReport>(contrastScript(screen.hash));
+      for (const item of report.low) failures.push(`first run ${theme} ${step}: "${item.text}" reads at ${item.ratio}:1`);
+      if (shots) writeFileSync(join(shots, `first-run-${theme}-${n}-${step}.png`), (await window.webContents.capturePage()).toPNG());
+    }
+    await pick('system');
+    await run(`(async () => { ${helpers} location.hash = ${JSON.stringify(screen.hash)}; await settle(); })()`);
+  };
+  let server: Awaited<ReturnType<typeof startStatusServer>> | null = null;
+  let directory = '';
+  // A new owner's window: the size prefs start with.
+  const [width, height] = window.getSize();
+  window.setSize(1100, 720);
+  try {
+    // 1. The welcome, with no profile anywhere.
+    await run(`(async () => { ${helpers}
+      await window.serra.app.setPrefs({ profileDir: null, setupDraft: null });
+      window.dispatchEvent(new Event('serra:setup-changed'));
+      location.hash = '#/setup';
+      await wait(() => button('Get started'));
+    })()`);
+    await capture('welcome', { primary: 1, maxWords: 45 });
+    // 2. The profile form: fill what Serra can't find, in a throwaway folder.
+    await run(`(async () => { ${helpers}
+      button('Get started')?.click();
+      await wait(() => document.querySelector('[data-serra-setup] form'));
+      await settle();
+    })()`);
+    await capture('you', { primary: 1, maxWords: 70 });
+    const created = await run<string | null>(`(async () => { ${helpers}
+      type(field('Your name'), 'Alex Morgan');
+      type(field('GitHub login'), 'octocat');
+      type(field('Slack member ID'), 'U0123456789');
+      type(field('Folder') ?? field('Repository'), ${JSON.stringify(repo)});
+      type(field('Base branch (optional)') ?? field('Base branch'), 'origin/main');
+      type(field('GitHub repository (optional)') ?? field('GitHub repository'), 'acme/project');
+      type(field('Name') ?? field('Bot name'), 'Friday');
+      type(field('Profile folder'), ${JSON.stringify(join(root, 'friday'))});
+      await settle();
+      document.querySelector('[data-serra-setup] form button[type="submit"]')?.click();
+      await wait(() => location.hash === '#/setup/slack');
+      return location.hash === '#/setup/slack' ? (await window.serra.app.getPrefs()).profileDir : null;
+    })()`);
+    if (!created) { failures.push('first run: Create profile did not go on to Slack'); return failures; }
+    directory = created;
+    // 3. Slack, nothing pasted yet.
+    await run(`(async () => { ${helpers} await wait(() => document.querySelector('[data-token]')); })()`);
+    await capture('slack', { primary: 1, maxWords: 70 });
+    // 3b. Fixture tokens, already checked (as if pasted and accepted), and the owner Slack confirmed.
+    const now = new Date().toISOString();
+    writeFileSync(join(directory, '.env'), 'SLACK_BOT_TOKEN=xoxb-1111-2222-fixturevalue\nSLACK_APP_TOKEN=xapp-1-1111-2222-fixturevalue\n', { mode: 0o600 });
+    writeFileSync(join(directory, 'secrets.json'), `${JSON.stringify({ version: 1, sources: { SLACK_BOT_TOKEN: { kind: 'env' }, SLACK_APP_TOKEN: { kind: 'env' } }, checks: { SLACK_BOT_TOKEN: { verifiedAt: now, error: null }, SLACK_APP_TOKEN: { verifiedAt: now, error: null } } }, null, 2)}\n`);
+    writeFileSync(join(directory, 'setup.json'), `${JSON.stringify({ version: 1, owner: { slackUserId: 'U0123456789', slackName: 'alex', checkedAt: now } }, null, 2)}\n`);
+    await run(`(async () => { ${helpers}
+      location.hash = '#/setup/you'; await settle(); location.hash = '#/setup/slack';
+      window.dispatchEvent(new Event('serra:setup-changed'));
+      await wait(() => [...document.querySelectorAll('[data-token]')].every((row) => row.dataset.state === 'verified'));
+    })()`);
+    await capture('slack-connected', { primary: 1, maxWords: 70 });
+    // 4. The owner (already confirmed by the fixture), then the install.
+    const reached = await run<string>(`(async () => { ${helpers}
+      button('Continue')?.click();
+      await wait(() => location.hash !== '#/setup/slack');
+      await settle();
+      return location.hash;
+    })()`);
+    if (reached === '#/setup/owner') {
+      await capture('owner', { primary: 1, maxWords: 40 });
+      await run(`(async () => { ${helpers} button('Continue')?.click(); await wait(() => location.hash === '#/setup/service'); })()`);
+    }
+    const onService = await run<boolean>(`(async () => { ${helpers} await wait(() => location.hash === '#/setup/service'); return location.hash === '#/setup/service'; })()`);
+    if (!onService) { failures.push(`first run: Slack's Continue went to ${reached}, not the next step`); return failures; }
+    await capture('install', { primary: 1, maxWords: 45 });
+    // 5. Installed and answering: a fake status socket says the bot is up and on Slack.
+    writeFileSync(join(directory, 'active.json'), `${JSON.stringify({ version: 1 })}\n`);
+    writeFileSync(join(directory, 'setup.json'), `${JSON.stringify({ version: 1, owner: { slackUserId: 'U0123456789', slackName: 'alex', checkedAt: now }, serviceAnsweredAt: now }, null, 2)}\n`);
+    server = await startStatusServer({ profileDir: directory, status: () => ({ state: 'up', pid: process.pid, startedAt: now, slackConnected: true, chats: [{ kind: 'slack', connected: true }], counts: { needsYou: 0, running: 0 } }) });
+    const done = await run<boolean>(`(async () => { ${helpers}
+      window.dispatchEvent(new Event('serra:setup-changed'));
+      await wait(() => button('Continue') && button('Continue').getAttribute('aria-disabled') !== 'true');
+      button('Continue')?.click();
+      // The end's main button is Open Serra once the status says the bot is up and on Slack.
+      await wait(() => location.hash === '#/setup/done' && /bg-accent/.test(button('Open Serra')?.className ?? ''));
+      return location.hash === '#/setup/done';
+    })()`);
+    if (!done) { failures.push('first run: the install step did not reach the end'); return failures; }
+    await capture('done', { primary: 1, maxWords: 30 });
+    // 6. Where setup lands: the shell, with nothing of profiles, servers or other chats in view.
+    await run(`(async () => { ${helpers} button('Open Serra')?.click(); await wait(() => document.querySelector('[data-serra-sidebar]')); })()`);
+    await capture('home', { primary: null, maxWords: 90 });
+    if (!screens.home?.hash.startsWith('#/jobs')) failures.push(`first run: Open Serra opened ${screens.home?.hash}, not Jobs`);
+    console.log('[serra] smoke first run:', JSON.stringify(Object.fromEntries(Object.entries(screens).map(([step, s]) => [step, { words: s.words, primary: s.primary }]))));
+  } finally {
+    if (server) await server.close().catch(() => {});
+    await run(themeControlScript('system')).catch(() => null);
+    await run(`(async () => { await window.serra.app.setPrefs({ profileDir: null, setupDraft: null }); window.dispatchEvent(new Event('serra:setup-changed')); })()`).catch(() => null);
+    window.setSize(width ?? 1100, height ?? 720);
+    rmSync(root, { recursive: true, force: true });
+  }
+  return failures;
+};
+
 export const runSmokeChecks = async (window: BrowserWindow, resendStatus: () => void): Promise<boolean> => {
   const timer = setTimeout(resendStatus, 300);
   let report: PageReport;
@@ -1147,6 +1314,13 @@ export const runSmokeChecks = async (window: BrowserWindow, resendStatus: () => 
   const missing = missingRuntimeFiles(codeRoot);
   console.log(`[serra] smoke: codeRoot ${codeRoot}, runtime files ${missing.length ? `missing: ${missing.join(', ')}` : 'all present'}`);
   const stopped = (value: unknown): boolean => (value as { state?: string } | null)?.state === 'stopped';
+  // `SERRA_SMOKE_ONLY=first-run` runs only the first-run walk, for a quick look at setup's screens.
+  if (process.env.SERRA_SMOKE_ONLY === 'first-run') {
+    const only = await runFirstRunChecks(window);
+    for (const failure of only) console.error(`[serra] smoke failed: ${failure}`);
+    if (only.length === 0) console.log('[serra] smoke passed');
+    return only.length === 0;
+  }
   const failures = [
     report.require !== 'undefined' && 'the page can reach require',
     report.process !== 'undefined' && 'the page can reach process',
@@ -1179,6 +1353,7 @@ export const runSmokeChecks = async (window: BrowserWindow, resendStatus: () => 
     ...await runChatChecks(window),
     ...await runCustomAcpAgentChecks(window),
     ...await runChannelsChecks(window),
+    ...await runFirstRunChecks(window),
   ].filter((failure): failure is string => typeof failure === 'string');
   for (const failure of failures) console.error(`[serra] smoke failed: ${failure}`);
   if (failures.length === 0) console.log('[serra] smoke passed');

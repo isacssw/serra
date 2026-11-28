@@ -40,6 +40,15 @@ export const ServiceStep = () => {
     return () => clearTimeout(timer);
   }, [waiting, running]);
 
+  // Installed here and now answering on Slack: nothing is left to decide, so the end opens by itself.
+  useEffect(() => {
+    if (!waiting || !running || !installed) return;
+    let live = true;
+    void refresh().then((latest) => { if (live) void navigate(nextPath(latest ?? progress, step.path)); });
+    return () => { live = false; };
+  // oxlint-disable-next-line react-hooks/exhaustive-deps -- runs when the bot first answers after Install; progress and refresh change with it.
+  }, [waiting, running, installed]);
+
   const install = async () => {
     const bridge = serra();
     if (!bridge) return;
@@ -87,7 +96,7 @@ export const ServiceStep = () => {
         <div className="flex items-center gap-3">
           <StateIcon tone={tone} />
           <p className="min-w-0 flex-1 text-[14px] break-words" role="status">{line}</p>
-          {!running && !disconnected && !busy && !waiting && installed && <Button size="sm" onClick={() => void start()}>Start</Button>}
+          {!running && !disconnected && !busy && !waiting && installed && <Button size="sm" variant={canContinue ? 'secondary' : 'primary'} onClick={() => void start()}>Start</Button>}
           {!running && !busy && !disconnected && (!waiting || late) && (
             <Button size="sm" variant={installed ? 'ghost' : 'primary'} onClick={() => void install()}>
               {installed ? 'Install again' : 'Install and start'}
@@ -109,11 +118,13 @@ export const ServiceStep = () => {
       </Card>
       {result && <Alert>{result.text}</Alert>}
       {error && <Alert>{error}</Alert>}
-      <p className="text-[13px] text-muted">It starts again on its own when you log in.</p>
       <StepFooter back={previousPath(step.path)}>
-        <Button variant="primary" aria-disabled={canContinue ? undefined : true} onClick={() => { if (canContinue) void refresh().then((latest) => navigate(nextPath(latest ?? progress, step.path))); }}>
-          Continue
-        </Button>
+        {/* The card's button is the way on until the bot answers; then the end opens by itself, or from here. */}
+        {canContinue && (
+          <Button variant="primary" onClick={() => void refresh().then((latest) => navigate(nextPath(latest ?? progress, step.path)))}>
+            Continue
+          </Button>
+        )}
       </StepFooter>
     </div>
   );

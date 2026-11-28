@@ -12,7 +12,7 @@
 
 <p align="center"><img src="assets/readme/slack-thread.png" alt="A Slack thread: a teammate asks the bot for an empty state, gets a draft PR, asks for a change, and the bot pushes it to the same PR" width="800"><br><sub>Demo workspace and data</sub></p>
 
-> **Alpha** (latest: `0.1.0-alpha.7`). macOS on Apple silicon, Slack only, not notarized. Formats may change between
+> **Alpha** (latest: `0.1.0-alpha.7`). macOS on Apple silicon (the bot also runs on Linux), Slack first, not notarized. Formats may change between
 > versions. Read [Alpha limits](#alpha-limits) before you point it at a repository that matters.
 
 - [What it does](#what-it-does) · [Quick start](#quick-start) · [Agent backends](#agent-backends) · [Knowledge](#knowledge)
@@ -94,7 +94,7 @@ left halfway) and resumes at the first missing step.
 
 | Step | What it asks for |
 |---|---|
-| **You & repo** | Your name, GitHub login and Slack member ID (Slack › your picture › **Profile** › **⋮** › **Copy member ID**), the repository folder, and the bot's name. |
+| **You & repo** | Your name, Slack member ID (Slack › your picture › **Profile** › **⋮** › **Copy member ID**), the repository folder, and the bot's name. Your GitHub login comes from `gh`. |
 | **Connect Slack** | **Create in Slack** opens Slack's "create from manifest" page with your manifest filled in. Install it, then paste the bot token (`xoxb-…`) and the app-level token (`xapp-…`, scope `connections:write`). They go to the Keychain, or 1Password or `.env` if you choose. |
 | **Confirm you** | Nothing to type: Slack checks your member ID. |
 | **Install and start** | Runs every check, installs the bot as a launchd service, and waits until it answers. If a check fails, nothing is installed. |

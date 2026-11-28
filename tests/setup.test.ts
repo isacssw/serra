@@ -273,6 +273,28 @@ test('progress with no profile, and for a profile made with pnpm run setup', (t)
   assert.equal(setupProgress(dir, { launchAgentsDir: agents }).steps.find((step) => step.id === 'service')!.done, true);
 });
 
+test('setup progress: a new bot has had no job until one is saved, even one that finished days ago', (t) => {
+  const f = fixture(t);
+  const dir = join(f.root, 'fresh');
+  createProfile(dir, {
+    version: 1, bot: { id: 'friday', name: 'Friday' }, owner: { name: 'Alex', slackUserId: OWNER, githubLogin: 'alex' },
+    project: { path: f.project, remote: 'origin', baseRef: 'origin/main', githubRepo: 'acme/project' }, allowedUsers: [],
+  });
+  assert.equal(setupProgress(null).hadJob, false);
+  assert.equal(setupProgress(dir).hadJob, false);
+  const old = new Date(Date.now() - 3 * 86_400_000).toISOString();
+  writeFileSync(join(dir, 'state.json'), JSON.stringify({
+    'C0123456789:1700000000.000001': {
+      t3ThreadId: 'thread-a', channel: 'C0123456789', threadTs: '1700000000.000001', requester: OWNER,
+      pendingReactionTs: null, lastPostedRunId: null, watching: false, createdAt: old, lastActivityAt: old,
+    },
+  }));
+  assert.equal(setupProgress(dir).hadJob, true);
+  // A state file that can't be read doesn't bring the first-job hint back.
+  writeFileSync(join(dir, 'state.json'), '{');
+  assert.equal(setupProgress(dir).hadJob, true);
+});
+
 test('create refuses an existing profile and an invalid form, leaving files as they were', async (t) => {
   const f = fixture(t);
   const dir = join(f.root, 'friday');
@@ -403,7 +425,7 @@ test('a broken manifest.json is reported, not replaced by the template; a missin
 const progressWith = (done: string[], profileDir: string | null = '/Users/you/.local/share/serra/friday'): SetupProgress => {
   const ids = ['profile', 'slack', 'owner', 'service'] as const;
   const steps = ids.map((id) => ({ id, done: done.includes(id), detail: '' }));
-  return { profileDir, bot: { id: 'friday', name: 'Friday' }, owner: null, steps, next: steps.find((step) => !step.done)?.id ?? null, installed: done.includes('service') };
+  return { profileDir, bot: { id: 'friday', name: 'Friday' }, owner: null, steps, next: steps.find((step) => !step.done)?.id ?? null, installed: done.includes('service'), hadJob: false };
 };
 
 const summaryWith = (done: string[], extra: Partial<ProfileSummary> = {}): ProfileSummary => ({

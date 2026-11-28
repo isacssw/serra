@@ -51,7 +51,8 @@ export const DoneStep = () => {
         </span>
         <h1 className="text-[28px] font-semibold tracking-tight">{name} is ready</h1>
         <p className="max-w-sm text-[15px] text-muted">
-          Mention <span className="font-mono text-[14px] text-ink">@{progress?.bot?.id}</span> in Slack to try it.
+          Invite <span className="font-mono text-[14px] text-ink">@{progress?.bot?.id}</span> to a Slack channel, then try
+          {' '}<span className="whitespace-nowrap text-ink">“@{progress?.bot?.id} what does this repo do?”</span>
         </p>
       </div>
       <div className="flex flex-col items-center gap-3">
