@@ -48,7 +48,7 @@ export const slackUpload = (client: SlackApi, target: Target, available: () => b
  * A chat in memory: no Slack anywhere. It implements `ChatPort` and `WorkerWriter` and records what the core asked of
  * each, so a test shows the core works against the port alone, as a second adapter would.
  */
-export const createFakeChat = ({ self = 'BOT', audiences = {} }: { self?: string; audiences?: Record<string, Audience> } = {}) => {
+export const createFakeChat = ({ self = 'BOT', owner = 'OWNER', audiences = {} }: { self?: string; owner?: string; audiences?: Record<string, Audience> } = {}) => {
   let next = 0;
   const id = (): string => `m${++next}`;
   const notices: { target: Target; notice: Notice; inPlaceOf?: InPlaceOf }[] = [];
@@ -58,9 +58,10 @@ export const createFakeChat = ({ self = 'BOT', audiences = {} }: { self?: string
   const audienceOf = (target: Target): Result<Audience> => ({ ok: true, value: audiences[target.conversation] ?? 'team' });
   const chat: ChatPort = {
     self: () => self,
+    owner: () => owner,
     displayName: async (person) => person,
-    parse: (text) => ({ mentions: text.includes(`@${self}`) ? [self] : [], prose: text.replaceAll(`@${self}`, ' ') }),
-    read: async (text) => ({ text: text.replaceAll(`@${self}`, '').trim(), mentions: text.includes(`@${self}`) ? [self] : [], prose: text }),
+    parse: (_conversation, text) => ({ mentions: text.includes(`@${self}`) ? [self] : [], prose: text.replaceAll(`@${self}`, ' ') }),
+    read: async (_conversation, text) => ({ text: text.replaceAll(`@${self}`, '').trim(), mentions: text.includes(`@${self}`) ? [self] : [], prose: text }),
     history: async () => ({ lines: [], more: false }),
     receiveFiles: async () => '',
     permalink: async (ref) => `chat://${ref.conversation}/${ref.id}`,

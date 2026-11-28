@@ -130,7 +130,8 @@ const migrateJob = (key: string, value: unknown, now: number): { job: Job; repai
   // an older build ran after a rollback and moved the job to another thread, so its `t3ThreadId` is the current one.
   const threadId = isRecord(value) ? threadOf(value) : null;
   if (!isRecord(value) || threadId === null) return null;
-  const split = key.indexOf(':');
+  // The thread is after the last colon: a conversation outside Slack has one of its own (`telegram:42:7`).
+  const split = key.lastIndexOf(':');
   const [keyChannel, keyThread] = split === -1 ? [key, key] : [key.slice(0, split), key.slice(split + 1)];
   let repaired = value.threadId !== threadId;
   const pick = <T>(field: string, guard: (x: unknown) => x is T, fallback: T): T => {
@@ -228,4 +229,8 @@ export const createStore = (file: string, { warn = (_message: string): void => {
   return { getJob, allJobs, putJob };
 };
 
-export const slackKey = (channel: string, threadTs: string): string => `${channel}:${threadTs}`;
+/**
+ * A job's key in state.json: its conversation and thread. A conversation outside Slack names its chat (`telegram:42`),
+ * so keys from two chats never meet; a Slack key is what it always was (`C0123:1700000000.000100`).
+ */
+export const jobKey = (channel: string, threadTs: string): string => `${channel}:${threadTs}`;

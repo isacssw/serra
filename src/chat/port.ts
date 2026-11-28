@@ -1,6 +1,8 @@
 /**
  * What the core needs from a chat: reading what people wrote, Serra's own fixed notices, and acknowledgements. Slack
- * implements it in `src/slack/`; a second chat is another adapter, with no change here or in the core.
+ * implements it in `src/slack/`; a second chat is another adapter (a `ChatConnection`, `connection.ts`), with no change
+ * here or in the core. The core holds one port for every connected chat (`router.ts`): each call goes to the chat its
+ * conversation, message or person ID names.
  *
  * Nothing in `ChatPort` takes free text to post. The worker's words go out only through `deliver` (`deliver.ts`), the
  * one function handed a `WorkerWriter` (`writer.ts`), which checks who can see the target right before each write.
@@ -12,7 +14,10 @@ import type { IncomingFile } from '../types.ts';
 /** Who can see a conversation: only the owner, the owner's team, or people outside it as well. */
 export type Audience = Visibility;
 
-/** A person in the chat, by the chat's own ID. Only compared with other IDs (such as the owner's), never parsed. */
+/**
+ * A person in a chat, by the chat's own ID with the chat's name in front (`telegram:123`; Slack's stay bare, see
+ * `connection.ts`). Only compared with other IDs (such as the owner's), never parsed.
+ */
 export type PersonId = string;
 
 /**
@@ -141,21 +146,26 @@ interface ReplyIntent { runId: string; at: string; text?: string }
 
 /**
  * Everything the core may call freely: none of it can post the worker's words. An adapter may need to learn from inbound
- * events too (Slack's learns whose each DM is, `sawDm`): that stays between the adapter and the wiring that feeds it.
+ * events too (Slack's learns whose each DM is): that stays between the connection and the daemon (`ChatConnection.saw`).
  */
 export interface ChatPort {
-  /** The bot's own ID. Known only after the chat connects. */
-  self(): PersonId;
+  /** The bot's own ID in `conversation`'s chat. Known only after the chat connects. */
+  self(conversation: string): PersonId;
+  /**
+   * The owner's ID in `conversation`'s chat: who approves tools there and whose DM is theirs alone. Owner-only checks
+   * compare against this, so an approval is never taken from the same number in another chat.
+   */
+  owner(conversation: string): PersonId;
   /** A person's name as the chat shows it, or their ID when it can't say. */
   displayName(person: PersonId): Promise<string>;
-  /** Who a message mentions, and its words without the mentions: enough to tell who it is for, with no lookup. */
-  parse(text: string): Pick<InboundText, 'mentions' | 'prose'>;
+  /** Who a message in `conversation` mentions, and its words without the mentions: enough to tell who it is for, with no lookup. */
+  parse(conversation: string, text: string): Pick<InboundText, 'mentions' | 'prose'>;
   /** A message's text as the worker reads it: mentions as the names `nameOf` gives. */
-  read(text: string, nameOf: (person: PersonId) => Promise<string>): Promise<InboundText>;
+  read(conversation: string, text: string, nameOf: (person: PersonId) => Promise<string>): Promise<InboundText>;
   /** The thread's messages before `before`, oldest first; `more` when older ones were left out. Null when it can't be read. */
   history(target: Target, before: string): Promise<{ lines: HistoryLine[]; more: boolean } | null>;
-  /** Downloads attached files for the worker and says where they are, or why one couldn't be had. */
-  receiveFiles(files: IncomingFile[], limit: number): Promise<string>;
+  /** Downloads files attached in `conversation` for the worker and says where they are, or why one couldn't be had. */
+  receiveFiles(conversation: string, files: IncomingFile[], limit: number): Promise<string>;
   permalink(ref: MessageRef): Promise<string | null>;
   /** The ID of the reply to `intent.runId` the bot already posted in the thread, or null when there is none or the chat can't say. */
   findReply(target: Target, intent: ReplyIntent): Promise<string | null>;

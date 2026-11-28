@@ -1,65 +1,66 @@
 /**
- * The daemon: Bolt's listeners, the update pause, held requests, the poll timer, the status socket and shutdown,
- * around the bot. Everything it touches comes in as `DaemonDeps`, so the scenarios in `tests/scenarios/` run the real
- * wiring with Slack envelopes in, a recording Slack client and a fake T3 out, and a fake clock. `src/index.ts` only
- * builds the real dependencies and handles signals.
+ * The daemon: the chat connections, the update pause, held requests, the poll timer, the status socket and shutdown,
+ * around the bot. It starts every chat it serves (Slack, and any `chats` it is given) as a `ChatConnection`
+ * (`src/chat/connection.ts`), hands their inbound messages to the bot, and gives the bot one `ChatPort` over all of
+ * them (`src/chat/router.ts`) and one `deliver` holding each chat's writer. Everything it touches comes in as
+ * `DaemonDeps`, so the scenarios in `tests/scenarios/` run the real wiring with Slack envelopes in, a recording Slack
+ * client and a fake T3 out, and a fake clock. `src/index.ts` only loads the profile and handles signals.
  */
 import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
-import type { App, Logger } from '@slack/bolt';
 import { createBot, type BotDeps } from './bot.ts';
 import { createBackendPool, type AgentBackends } from './agent/pool.ts';
 import { createT3Backend } from './agent/t3.ts';
 import { startInterview, startTask } from './tasks.ts';
 import type { RunRequest } from './status-socket.ts';
-import { createDeliver } from './chat/deliver.ts';
+import { kindOf, SLACK, type ChatConnection, type ChatIdentity, type ConnectionState, type Inbound, type MeetingSeam } from './chat/connection.ts';
+import { createDeliver, type ChatAdapter } from './chat/deliver.ts';
+import { routeChats } from './chat/router.ts';
 import { proposeBriefUpdate } from './brief.ts';
 import { systemClock, createTracker, type Clock } from './clock.ts';
 import { defaultProfileRoot, type Config } from './config.ts';
-import { incomingMessage } from './slack/incoming.ts';
 import { acknowledgePause, admit, dropHeld, holdRequest, markAttempt, readHeld, readPause } from './intake.ts';
 import type { createKnowledge } from './knowledge.ts';
 import { errorMessage } from './lib/errors.ts';
 import { acquireLock } from './lock.ts';
-import { eventLog } from './logging.ts';
+import { eventLog, type Logger } from './logging.ts';
 import { watchProfile as watchProfileFile } from './profile-reload.ts';
 import { checkProjectAccess } from './project-access.ts';
 import { answerNameRequests, createSlackNames } from './slack-names.ts';
 import type { SlackApi } from './slack/api.ts';
 import type { receiveAttachments } from './slack/attachments.ts';
-import { createSlackChat } from './slack/chat.ts';
-import { QUESTION_ACTION, questionInteraction } from './slack/questions.ts';
+import { createSlackConnection, slackSocketApp, type SlackApp, type SlackConnectionEvents } from './slack/connection.ts';
 import { createStore } from './state.ts';
 import { jobCounts, startStatusServer, type StatusServer } from './status-socket.ts';
 import type { IncomingMessage } from './types.ts';
-import { readAttachmentText } from './slack/attachments.ts';
 import { createMeetingCapture, meetingsFirst, type MeetingCaptureDeps } from './meeting-capture.ts';
 import { createMeetingRuns } from './meeting-runs.ts';
 import { chosenBackend } from './agent/select.ts';
 import { reviewDue, runKnowledgeReview } from './knowledge-review.ts';
 
 const POLL_MS = 15_000;
-const HELD_REACTION = 'hourglass_flowing_sand';
-
-/** Bolt's socket client connection events, so the status socket can say whether Slack is connected. */
-interface ConnectionEvents { on(event: 'connected' | 'disconnected' | 'reconnecting', listener: () => void): unknown }
 
 export interface DaemonDeps {
   config: Config;
-  /** A Bolt app whose receiver delivers Slack's events. Its listeners are registered here. */
-  app: Pick<App, 'event' | 'message' | 'action' | 'start' | 'stop'>;
-  /** The Web API the daemon and bot call. In production, `app.client`. */
-  client: SlackApi;
+  /**
+   * A Bolt app whose receiver delivers Slack's events, and the Web API the Slack connection calls (`client`, in
+   * production `app.client`). Without them the daemon makes Bolt's Socket Mode app from the profile's tokens.
+   */
+  app?: SlackApp;
+  client?: SlackApi;
+  /** The Slack socket's connection events, for the status socket. */
+  connection?: SlackConnectionEvents;
+  /** More chats to serve beside Slack, each with its own writer for `deliver`. */
+  chats?: ChatAdapter[];
   logger: Logger;
   knowledge: Pick<ReturnType<typeof createKnowledge>, 'checkKnowledge' | 'loadIndex' | 'briefKnowledge' | 'seedApproved' | 'untaggedPages'>;
   clock?: Clock;
-  connection?: ConnectionEvents;
   /** T3, questions, uploads and other bot seams. Production uses the real ones. */
   bot?: Partial<Pick<BotDeps, 'agents' | 't3' | 'questions' | 'fetchBase' | 'share' | 'reviewRequest' | 'timing'>>;
   /** Downloads the files people attach. Production uses the real one. */
   receive?: typeof receiveAttachments;
   checkAccess?: (paths: string[]) => Promise<void>;
-  /** Takes a lock file and returns its release. Two daemons never serve one profile or one Slack identity. */
+  /** Takes a lock file and returns its release. Two daemons never serve one profile or one bot identity in a chat. */
   lock?: (path: string) => () => void;
   locksDir?: string;
   /** The app's live view over `status.sock`. Off in tests that don't need it. */
@@ -96,12 +97,12 @@ const runForApp = async (request: RunRequest, agents: AgentBackends, profileDir:
 };
 
 /**
- * Checks access, connects to Slack and starts serving. Rejects before touching Slack when a repository can't be read
+ * Checks access, connects the chats and starts serving. Rejects before touching Slack when a repository can't be read
  * (macOS blocks a background service from Documents, Desktop and Downloads until the owner allows it).
  */
 export const startDaemon = async (deps: DaemonDeps): Promise<Daemon> => {
   const {
-    config, app, client, logger, knowledge, clock = systemClock, connection, checkAccess = checkProjectAccess,
+    config, logger, knowledge, clock = systemClock, checkAccess = checkProjectAccess,
     lock = acquireLock, locksDir = join(defaultProfileRoot, 'locks'), statusSocket = true, watchProfile = true,
     pid = process.pid, pollMs = POLL_MS,
   } = deps;
@@ -119,19 +120,26 @@ export const startDaemon = async (deps: DaemonDeps): Promise<Daemon> => {
 
   async function serve(): Promise<Daemon> {
     const { checkKnowledge, loadIndex, briefKnowledge, seedApproved, untaggedPages } = knowledge;
-    let slackConnected = false;
-    let botUserId = '';
-    let botId = '';
+    /** Each chat's connection state, for the status socket. */
+    const connected = new Map<string, boolean>();
     const logsDir = join(config.profileDir, 'logs');
     mkdirSync(logsDir, { recursive: true, mode: 0o700 });
     const store = createStore(config.statePath, { warn: (message) => logger.warn(message), now: () => new Date(clock.now()) });
     const logEvent = eventLog(join(logsDir, 'events.jsonl'), () => new Date(clock.now()));
     let status: StatusServer | null = null;
-    // The Slack adapter. Its writer goes straight to `deliver`, the only code that ever holds it.
-    const { chat, writer, sawDm } = createSlackChat({
-      client, owner: config.owner, botUserId: () => botUserId, botToken: config.botToken, profileDir: config.profileDir, logger, clock,
-      ...(deps.receive ? { receive: deps.receive } : {}),
+    // The chats. Slack first: Bolt's Socket Mode app from the profile's tokens, unless a test hands one in.
+    if (deps.app && !deps.client) throw new Error('A Slack app needs its client');
+    const bolt = deps.app && deps.client ? { app: deps.app, client: deps.client, events: deps.connection }
+      : slackSocketApp({ botToken: config.botToken, appToken: config.appToken, logger });
+    const slack = createSlackConnection({
+      app: bolt.app, client: bolt.client, ...(bolt.events ? { events: bolt.events } : {}), owner: config.owner, botToken: config.botToken,
+      profileDir: config.profileDir, messageTriggers: () => config.messageTriggers, logger, clock, ...(deps.receive ? { receive: deps.receive } : {}),
     });
+    const adapters = [slack, ...(deps.chats ?? [])];
+    // The bot sees every chat as one port. Each chat's writer goes straight to `deliver`, the only code that holds one.
+    const chats = routeChats(adapters.map(({ connection }) => connection));
+    const deliver = createDeliver(new Map(adapters.map(({ connection, writer }) => [connection.kind, writer])), briefKnowledge);
+    const { chat, connectionOf } = chats;
     // The agent backends jobs run on (src/agent/pool.ts): T3, and the ACP agent the owner picked. Tests that pass a fake
     // T3 keep the bot's own single-T3 default.
     const agents = deps.bot?.agents ?? (deps.bot?.t3 ? undefined : createBackendPool({
@@ -140,7 +148,7 @@ export const startDaemon = async (deps: DaemonDeps): Promise<Daemon> => {
     const bot = createBot({
       ...deps.bot,
       ...(agents ? { agents } : {}),
-      config, chat, deliver: createDeliver(writer, briefKnowledge), store, loadIndex, loadKnowledge: (visibility) => briefKnowledge(visibility), logger, clock,
+      config, chat, deliver, store, loadIndex, loadKnowledge: (visibility) => briefKnowledge(visibility), logger, clock,
       // The app sees the same events as events.jsonl, live.
       events: (name, fields) => { logEvent(name, fields); status?.publish(name, fields); },
     });
@@ -158,9 +166,8 @@ export const startDaemon = async (deps: DaemonDeps): Promise<Daemon> => {
       }
     };
     const start = async (msg: IncomingMessage): Promise<void> => {
-      // Whose a DM is, for the adapter's check that the owner's DM is theirs alone: from every message handled, held
-      // requests replayed after a restart included.
-      if (!msg.botId) sawDm(msg.channel, msg.user);
+      // The chat learns from every message handled, held requests replayed after a restart included (Slack: whose a DM is).
+      connectionOf(msg.channel)?.saw(msg);
       starting += 1;
       try { await track(bot.handle(msg)); } finally { starting -= 1; acknowledge(); }
     };
@@ -184,19 +191,18 @@ export const startDaemon = async (deps: DaemonDeps): Promise<Daemon> => {
     });
     const extractor = deps.meetings?.extractor ?? { extract: runs.extract };
     const sources = deps.meetings?.sources ?? { fetchTranscript: runs.fetchTranscript };
+    // Meetings are caught only in the chat that has the owner's DM for them (Slack's); every other chat's messages are
+    // ordinary requests.
+    const meetingChat = chats.connections.find((connection) => connection.meetings);
+    const meetingSeam: MeetingSeam = meetingChat?.meetings ?? {
+      chat: { post: async () => undefined, remove: async () => {}, earlierInThread: async () => 0 },
+      readFile: async () => { throw new Error('No chat takes meetings'); },
+    };
+    const inMeetingChat = (msg: IncomingMessage): boolean => meetingChat !== undefined && kindOf(msg.channel) === meetingChat.kind;
     const meetings = createMeetingCapture({
       profileDir: config.profileDir, knowledgeDir: config.knowledgeDir, owner: config.owner,
-      chat: {
-        // No unfurling: meeting text is never turned into a link preview.
-        post: async (channel, text, threadTs) => (await client.chat.postMessage({ channel, text, unfurl_links: false, unfurl_media: false, ...(threadTs ? { thread_ts: threadTs } : {}) })).ts,
-        remove: async (channel, ts) => { await client.chat.delete({ channel, ts }); },
-        earlierInThread: async (channel, threadTs, beforeTs) => {
-          const replies = await client.conversations.replies({ channel, ts: threadTs, limit: 20 });
-          // People's messages only: an agent-view conversation can open with the app's own greeting.
-          return (replies.messages ?? []).filter((message) => message.ts !== undefined && message.ts < beforeTs && !message.bot_id && message.user !== botUserId).length;
-        },
-      },
-      readFile: deps.meetings?.readFile ?? ((file, maxChars) => readAttachmentText(client, file, config.botToken, maxChars)),
+      chat: meetingSeam.chat,
+      readFile: deps.meetings?.readFile ?? meetingSeam.readFile,
       sources, extractor,
       paused: () => readPause(config.profileDir, clock.now()) !== null,
       busy: (channel, threadTs) => owns(channel, threadTs),
@@ -226,7 +232,7 @@ export const startDaemon = async (deps: DaemonDeps): Promise<Daemon> => {
           await start(msg);
           return;
         }
-        await client.reactions.add({ channel: msg.channel, timestamp: msg.messageTs, name: HELD_REACTION }).catch(() => {});
+        await connectionOf(msg.channel)?.hold({ conversation: msg.channel, id: msg.messageTs }, true);
         logger.info(`Holding a new request in ${msg.channel} until Serra finishes updating.`);
         acknowledge();
         return;
@@ -234,7 +240,8 @@ export const startDaemon = async (deps: DaemonDeps): Promise<Daemon> => {
       await start(msg);
     };
     // Meetings first (SERRA-62): before the pause hold and before any job starts or continues.
-    const receive = meetingsFirst((msg) => meetings.intercept(msg), trackMeeting, receiveRequest);
+    const intercept = (msg: IncomingMessage): { work: Promise<void> } | null => (inMeetingChat(msg) ? meetings.intercept(msg) : null);
+    const receive = meetingsFirst(intercept, trackMeeting, receiveRequest);
 
     let releasing = false;
     /**
@@ -249,15 +256,16 @@ export const startDaemon = async (deps: DaemonDeps): Promise<Daemon> => {
         for (;;) {
           // Checked again before each one: an update may have paused new work meanwhile.
           if (stopping || readPause(config.profileDir, clock.now())) return;
-          const next = readHeld(config.profileDir)[0];
+          // A request held in a chat this daemon doesn't serve now waits on disk for one that does.
+          const next = readHeld(config.profileDir).find((held) => connectionOf(held.channel) !== undefined);
           if (!next) return;
           // On disk before anything else: if this daemon stops while starting it, the next one looks for its thread.
           const marked = markAttempt(config.profileDir, next, new Date(clock.now()).toISOString());
           releasingNow = marked;
           try {
-            await client.reactions.remove({ channel: next.channel, timestamp: next.messageTs, name: HELD_REACTION }).catch(() => {});
+            await connectionOf(next.channel)?.hold({ conversation: next.channel, id: next.messageTs }, false);
             // A meeting message is never started as a job, held or not (SERRA-62).
-            const meeting = meetings.intercept(next);
+            const meeting = intercept(next);
             if (meeting) await trackMeeting(meeting.work);
             // Only a replay carries `attemptedAt` to the bot: a first attempt has no earlier thread to look for.
             // A start that throws is told in its thread like any failed request, then let go: retrying it would
@@ -275,26 +283,18 @@ export const startDaemon = async (deps: DaemonDeps): Promise<Daemon> => {
     /** Releases held requests; a file that can't be read or written is logged and tried again on the next poll. */
     const release = (): Promise<void> => track(releaseHeld()).catch((error: unknown) => logger.error(`Releasing held requests failed: ${errorMessage(error)}`));
 
-    app.event('app_mention', async ({ event }) => {
-      if (stopping) return;
-      const msg = incomingMessage(event, 'app_mention', botUserId, owns, { messageTriggers: config.messageTriggers, botId });
-      if (msg) await receive(msg);
-    });
-    // Agent view emits this when someone opens the app. Wait for their message before starting work.
-    app.event('app_home_opened', async () => {});
-    app.action(QUESTION_ACTION, async ({ ack, body }) => {
-      await ack();
-      if (stopping) return;
-      const interaction = questionInteraction(body);
-      if (!interaction) return;
-      sawDm(interaction.channel, interaction.user);
-      await track(bot.handleQuestionAction(interaction));
-    });
-    app.message(async ({ message }) => {
-      if (stopping) return;
-      const msg = incomingMessage(message, 'message', botUserId, owns, { messageTriggers: config.messageTriggers, botId });
-      if (msg) await receive(msg);
-    });
+    /** What every chat hands the daemon: messages for the core, card answers, and which threads are the bot's. */
+    const inbound: Inbound = {
+      owns,
+      message: async (msg) => {
+        if (stopping) return;
+        await receive(msg);
+      },
+      answer: async (interaction) => {
+        if (stopping) return;
+        await track(bot.handleQuestionAction(interaction));
+      },
+    };
 
     // A missing index stops the daemon here instead of failing the first request. An index over its cap and page problems only warn.
     loadIndex();
@@ -314,21 +314,33 @@ export const startDaemon = async (deps: DaemonDeps): Promise<Daemon> => {
 
     // Meeting requests an older Serra held during an update are closed and dropped before intake opens, never replayed.
     {
-      const { drop, replies } = meetings.closeHeld(readHeld(config.profileDir));
+      const { drop, replies } = meetings.closeHeld(readHeld(config.profileDir).filter(inMeetingChat));
       for (const msg of drop) dropHeld(config.profileDir, msg);
       void Promise.allSettled(replies);
     }
 
-    const auth = await client.auth.test();
-    botUserId = auth.user_id ?? '';
-    botId = auth.bot_id ?? '';
-    if (!botUserId) throw new Error('Slack auth.test returned no bot user ID');
+    // Each chat signs in, then its bot identity is locked (two daemons never answer as one bot), then it listens.
     mkdirSync(locksDir, { recursive: true, mode: 0o700 });
-    releases.push(lock(join(locksDir, `${botUserId}.lock`)));
-    connection?.on('connected', () => { slackConnected = true; status?.refresh(); });
-    for (const state of ['disconnected', 'reconnecting'] as const) connection?.on(state, () => { slackConnected = false; status?.refresh(); });
-    await app.start();
-    slackConnected = true;
+    const identities: (ChatIdentity & { kind: string })[] = [];
+    for (const { connection } of adapters) {
+      const identity = await connection.identify();
+      releases.push(lock(join(locksDir, `${identity.lock}.lock`)));
+      identities.push({ ...identity, kind: connection.kind });
+    }
+    const listening: ChatConnection[] = [];
+    try {
+      for (const { connection } of adapters) {
+        connected.set(connection.kind, false);
+        connection.watch((state: ConnectionState) => { connected.set(connection.kind, state === 'connected'); status?.refresh(); });
+        await connection.listen(inbound);
+        listening.push(connection);
+        connected.set(connection.kind, true);
+      }
+    } catch (error) {
+      // A chat that can't start fails the daemon, and the ones already listening stop: no half-started bot.
+      for (const connection of listening) await connection.stop().catch(() => {});
+      throw error;
+    }
     const startedAt = new Date(clock.now()).toISOString();
     if (statusSocket) {
       // The app's Jobs names (SERRA-55): the app asks over the status socket and gets names back, so it never reads the
@@ -337,7 +349,11 @@ export const startDaemon = async (deps: DaemonDeps): Promise<Daemon> => {
       // The app's live view. Without it the bot still works, and the app shows "stopped".
       status = await startStatusServer({
         profileDir: config.profileDir,
-        status: () => ({ state: 'up', pid, startedAt, slackConnected, counts: jobCounts(store.allJobs().map(([, job]) => job)) }),
+        status: () => ({
+          state: 'up', pid, startedAt, slackConnected: connected.get(SLACK) ?? false,
+          chats: [...connected].map(([kind, up]) => ({ kind, connected: up })),
+          counts: jobCounts(store.allJobs().map(([, job]) => job)),
+        }),
         names: answerNameRequests(slackNames),
         // The app's tasks, interview, replies and answers on an ACP agent run here, where the agent lives.
         ...(agents ? { runs: (request) => runForApp(request, agents, config.profileDir) } : {}),
@@ -347,8 +363,9 @@ export const startDaemon = async (deps: DaemonDeps): Promise<Daemon> => {
       });
     }
     const readyPath = join(config.profileDir, 'ready.json');
+    const botUserId = identities.find((identity) => identity.kind === SLACK)?.self ?? identities[0]?.self ?? '';
     writeFileSync(readyPath, JSON.stringify({ pid, botUserId, startedAt }), { mode: 0o600 });
-    logger.info(`${config.name} is up as @${auth.user} in ${auth.team}. Project ${config.project}, base ${config.baseRef}.`);
+    logger.info(`${config.name} is up as ${identities.map((identity) => identity.describe).join(', ')}. Project ${config.project}, base ${config.baseRef}.`);
     logger.info(`Knowledge: ${checked.pages.length} pages, ${checked.unverified.length} not verified, ${checked.proposals.length} proposals waiting.`);
     // People and message triggers apply as soon as profile.json changes. Other sections wait for a restart.
     const profileWatcher = watchProfile
@@ -402,7 +419,8 @@ export const startDaemon = async (deps: DaemonDeps): Promise<Daemon> => {
         if (existsSync(readyPath)) rmSync(readyPath);
         await status?.close();
         status?.removeSocketFile();
-        await app.stop();
+        // No chat delivers anything new from here on.
+        for (const connection of listening) await connection.stop();
         // Messages still waiting for a quiet moment go to their workers now, so a restart loses none.
         await bot.drain();
         await idle();

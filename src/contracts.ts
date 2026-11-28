@@ -155,7 +155,10 @@ export type BotStatus =
     state: 'up';
     pid: number;
     startedAt: string;
+    /** Slack's connection, as the app shows it. */
     slackConnected: boolean;
+    /** Every chat the daemon serves (Slack included) and whether it is connected now. Absent from daemons before chats. */
+    chats?: { kind: string; connected: boolean }[];
     counts: { needsYou: number; running: number };
   };
 
