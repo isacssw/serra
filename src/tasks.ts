@@ -14,6 +14,7 @@ import { fillBrief, renderBrief, type BriefInput } from './brief.ts';
 import { codeRoot, loadConfig, writeFileAtomic, type Config } from './config.ts';
 import { createKnowledge } from './knowledge.ts';
 import { parseJson } from './lib/guards.ts';
+import { heldForMove } from './moves/hold.ts';
 import { APP_PROPOSALS_FOLDER, stampProposalsFolder } from './proposals.ts';
 import { threadOf } from './state.ts';
 import { worktreeRun, type AgentBackend } from './agent/backend.ts';
@@ -151,6 +152,8 @@ const startRecorded = async (profileDir: string, config: Config, input: StartThr
   startThread: start = startThread, showThread: show = showThread, fetchBase: fetch = fetchBase, now = () => new Date(),
   agent = createT3Backend({ bin: config.t3Bin, cli: { startThread: start, showThread: show } }),
 }: TaskDeps): Promise<StartedTask> => {
+  // Held for a move or a restore: the profile is being copied, so nothing new may start on it here.
+  if (heldForMove(profileDir)) throw new Error('This profile is being moved or restored. Start the task once that is done.');
   await fetch(config);
   const threadId = await agent.start(worktreeRun(input));
   const task: AppTask = {

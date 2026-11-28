@@ -7,7 +7,7 @@
 // `gateway/update.json` records the update as it goes, the commit to go back to included, so a server that restarts
 // part way knows where it was. The updater runs outside the gateway (a transient systemd unit), because restarting
 // the gateway would otherwise stop it. It never publishes, tags or pushes anything: it only reads tags from origin.
-import { existsSync } from 'node:fs';
+import { existsSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { compareVersions, parseVersion } from '../app-updates.ts';
 import { pnpmCommand } from '../deploy.ts';
@@ -36,6 +36,19 @@ const statePath = (root: string): string => join(root, 'gateway', 'update.json')
 export const readUpdateState = (root: string): UpdateState | null => readJsonOrNull(statePath(root), isUpdateState);
 
 const writeState = (root: string, state: UpdateState): void => writeFileAtomic(statePath(root), `${JSON.stringify(state, null, 2)}\n`);
+
+/**
+ * Records an update as started, before the gateway answers the Mac: the Mac then never reads the last update's ending
+ * as this one's, and a second request sees this one running (`updateProblem`). `runServerUpdate` fills in the rest.
+ */
+export const markUpdateStarted = (root: string, version: string, now = new Date()): void =>
+  writeState(root, { state: 'updating', from: '', to: version, at: now.toISOString(), message: null });
+
+/** Puts back the state from before `markUpdateStarted`, for an update that couldn't even be launched. */
+export const putBackUpdateState = (root: string, before: UpdateState | null): void => {
+  if (before) writeState(root, before);
+  else rmSync(statePath(root), { force: true });
+};
 
 /** Runs a command and returns its stdout. Rejects with a short message when it fails. */
 type Exec = (cmd: string, args: string[], options?: { timeoutMs?: number }) => Promise<string>;
