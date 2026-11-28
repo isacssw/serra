@@ -306,6 +306,8 @@ const liveOf = (value: unknown): LiveTurn | null => {
 
 /** How often a streaming turn is written to its record, at most. */
 const LIVE_SAVE_MS = 250;
+/** How long close waits for a connection to close before it ends the agent's process anyway. */
+const CLOSE_WAIT_MS = 2_000;
 
 export const createAcpBackend = ({
   agent, env = async () => process.env, worktreeRoot, runsDir, attachmentsDir, model, spawnAgent = defaultSpawn, log = () => {}, mcpServers = [], now = () => new Date(),
@@ -779,7 +781,13 @@ export const createAcpBackend = ({
       if (connection) {
         const open = connection;
         connection = null;
-        await open.then((value) => value.close(), () => {});
+        // An agent that never answered its start (eve stuck in npx) is not waited for: its process ends below.
+        let settle: NodeJS.Timeout | undefined;
+        await Promise.race([
+          open.then((value) => value.close(), () => {}),
+          new Promise<void>((resolve) => { settle = setTimeout(resolve, CLOSE_WAIT_MS); }),
+        ]);
+        clearTimeout(settle);
       }
       if (!running || running.exitCode !== null || running.signalCode !== null) return;
       const ended = new Promise<void>((resolve) => { running.once('exit', () => resolve()); });

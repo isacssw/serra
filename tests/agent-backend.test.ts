@@ -351,6 +351,19 @@ test('ACP: meeting runs work on an ACP agent: read-only extraction, and a link r
   await assert.rejects(asking.ask('t', 'ASK:execute'), /The Fake Agent run stopped to ask for approval or a question.*Serra stopped it in Fake Agent\./);
 });
 
+test('ACP: close ends an agent that never answers its start (eve stuck in npx), without waiting for it', async (t) => {
+  const fake = fakeAcp(t);
+  const backend = fake.backend({ agent: { id: 'mute', name: 'Mute Agent', command: process.execPath, args: ['-e', 'setInterval(() => {}, 1e9)'] } });
+  const checking = backend.check!().catch((error: unknown) => error);
+  await until(() => fake.children.length === 1);
+  const started = Date.now();
+  await backend.close();
+  assert.ok(Date.now() - started < 8_000, 'close returned');
+  const [child] = fake.children;
+  assert.ok(child!.exitCode !== null || child!.signalCode !== null, 'the agent is gone');
+  assert.ok(await checking instanceof Error, 'the check that was waiting fails');
+});
+
 test('ACP: a failed turn says why in a fixed sentence (usage limit, sign-in), never the agent\'s text, and a wait wakes as soon as a turn ends', async (t) => {
   const fake = fakeAcp(t);
   const workspace = join(fake.dir, 'meetings');
