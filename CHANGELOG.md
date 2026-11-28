@@ -17,6 +17,7 @@ Serra follows [Semantic Versioning](https://semver.org) once it reaches 1.0. Unt
 - Fixed (move and restore): **Restore…** on a running profile always timed out and put today's copy back, because the restored bot was still held; once restored it also held new requests for half an hour. **Move back to this Mac** always failed when the profile's tokens went into the Keychain. If a move's last answer from the other computer is lost, the copy that started there is now stopped and set aside before this one runs again, so the bot never runs on both. A move or restore also waits for the app's own tasks on an ACP agent, and no new task starts while a profile is held.
 - Fixed: **Check** on an eve agent that never answered (stuck installing or starting) could wait forever and leave its process running. It now gives up after a minute and ends the process.
 - Fixed: a Telegram or Discord bot whose token was refused, or that was offline, when the bot started showed **Connected** in Settings › Channels until it came back. It now shows **Not reachable** until it really connects.
+- Fixed: `serra server gateway --install` with `--root`, `--port` or `--listen` installed a service that ignored them and served `~/.local/share/serra` on the default port. The service now keeps them.
 
 ## 0.1.0-alpha.9 (2026-11-28)
 
