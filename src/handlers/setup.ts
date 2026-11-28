@@ -13,10 +13,12 @@ import type { SecretName } from '../contracts.ts';
 import { secretStatus, type SecretOptions } from '../secrets.ts';
 import {
   certainPresence, confirmOwner, createSetupProfile, detectGithubLogin, detectProject, installService, recordServiceAnswered, setupProgress, slackManifest,
-  summarizeProfile, type InstallOptions, type MemberLookup, type ProfileDraft, type SetupProgress,
+  isSetupChat, summarizeProfile, type InstallOptions, type MemberLookup, type ProfileDraft, type SetupProgress,
 } from '../setup.ts';
 import { run } from '../t3.ts';
-import type { Handlers, SetupDetection } from '../api.ts';
+import { findT3, installedKnownAgents, writeAgentBackend } from '../agent/acp-agents.ts';
+import { toolSearchPath } from '../shell-path.ts';
+import type { Handlers, SetupAgent, SetupDetection } from '../api.ts';
 import { profilesUnder } from '../profiles.ts';
 import { isRecord } from '../lib/guards.ts';
 import type { CoreContext } from './context.ts';
@@ -44,10 +46,14 @@ export interface SetupDeps {
   answerWaitMs?: number;
   /** Where log lines go besides the window (default: the main process's console). */
   echo?: (line: string) => void;
+  /** The search path for agent commands (default: the login shell's; tests: a fake folder). */
+  searchPath?: () => Promise<string>;
+  /** The home folder T3 Code installs into (tests: a temp folder). */
+  home?: string;
 }
 
 const DRAFT_FIELDS = [
-  'botName', 'botId', 'ownerName', 'ownerSlackUserId', 'githubLogin', 'projectPath', 'remote', 'baseRef', 'githubRepo', 't3Bin', 'directory',
+  'botName', 'botId', 'ownerName', 'ownerSlackUserId', 'githubLogin', 'projectPath', 'remote', 'baseRef', 'githubRepo', 't3Bin', 'directory', 'chat', 'agent',
 ] as const satisfies readonly (keyof ProfileDraft)[];
 
 /** Copies only the known text fields, so nothing else from the window reaches the service. */
@@ -65,9 +71,14 @@ export const parseDraft = (value: unknown): ProfileDraft => {
     botName: given.get('botName') ?? '', ownerName: given.get('ownerName') ?? '', ownerSlackUserId: given.get('ownerSlackUserId') ?? '',
     githubLogin: given.get('githubLogin') ?? '', projectPath: given.get('projectPath') ?? '',
   };
-  for (const field of ['botId', 'remote', 'baseRef', 'githubRepo', 't3Bin', 'directory'] as const) {
+  for (const field of ['botId', 'remote', 'baseRef', 'githubRepo', 't3Bin', 'directory', 'agent'] as const) {
     const item = given.get(field);
     if (item !== undefined) draft[field] = item;
+  }
+  const chat = given.get('chat');
+  if (chat !== undefined && chat !== '') {
+    if (!isSetupChat(chat)) throw new Error('Pick Slack, Telegram or Discord.');
+    draft.chat = chat;
   }
   return draft;
 };
@@ -81,6 +92,14 @@ const nodeOnPath = (node: string): void => {
 
 export const setupHandlers = (context: CoreContext, deps: SetupDeps = {}): Handlers<'setup'> => {
   const root = deps.root ?? context.profileRoot ?? defaultProfileRoot;
+  const home = deps.home ?? homedir();
+  const searchPath = deps.searchPath ?? toolSearchPath;
+  /** The coding agents on this Mac: T3 first when it's there, then each known ACP agent whose command is installed. */
+  const agentsHere = async (): Promise<{ t3: string | null; agents: SetupAgent[] }> => {
+    const path = await searchPath();
+    const t3 = findT3(path, home);
+    return { t3, agents: [...(t3 ? [{ id: 't3', name: 'T3 Code' }] : []), ...installedKnownAgents(path)] };
+  };
   const find = deps.findNode ?? ((profileDir: string) => findNode(profileDir));
   const echo = deps.echo ?? ((line: string) => console.log(`[serra] ${line}`));
   let installing = false;
@@ -139,7 +158,9 @@ export const setupHandlers = (context: CoreContext, deps: SetupDeps = {}): Handl
     const directory = context.profileDirOrNull();
     if (!directory) return setupProgress(null, lookup);
     let present: Partial<Record<SecretName, boolean>> | undefined;
-    if (setupProgress(directory, { ...lookup, running: false }).steps.find((step) => step.id === 'slack')?.done) {
+    // Only Slack's tokens are looked for in the Keychain here; a Telegram or Discord bot's chat step reads profile.json.
+    const first = setupProgress(directory, { ...lookup, running: false });
+    if (first.chat === 'slack' && first.steps.find((step) => step.id === 'chat')?.done) {
       present = await presence(directory);
     }
     const base = { ...lookup, ...(present ? { present } : {}) };
@@ -199,11 +220,14 @@ export const setupHandlers = (context: CoreContext, deps: SetupDeps = {}): Handl
     },
 
     defaults: async () => {
-      const [githubLogin, ownerName] = await Promise.all([
+      // The agents are looked for alongside the login and name, not after them. A slow `gh` still delays the answer, but
+      // a form sent before it arrives is safe: create picks T3 when it's here, else the agent it finds.
+      const [githubLogin, ownerName, { agents }] = await Promise.all([
         (deps.githubLogin ?? detectGithubLogin)(),
         (deps.gitName ?? (() => run('git', ['config', '--global', 'user.name'], { timeoutMs: 5_000 }).then((v) => v.trim())))().catch(() => ''),
+        agentsHere(),
       ]);
-      return { githubLogin, ownerName, profileRoot: root };
+      return { githubLogin, ownerName, profileRoot: root, agents };
     },
 
     detectProject: (path, remote) => {
@@ -213,7 +237,18 @@ export const setupHandlers = (context: CoreContext, deps: SetupDeps = {}): Handl
     },
 
     create: async (value) => {
-      const directory = await createSetupProfile(parseDraft(value), { root });
+      const draft = parseDraft(value);
+      // The agent picked must be one found here (T3 too, unless its CLI is named). With none picked, T3 when it's here,
+      // else the first ACP agent found: never a T3 profile on a Mac without T3. T3 found outside its own folder is
+      // remembered as the profile's T3 CLI.
+      const here = (draft.agent && draft.agent !== 't3') || !draft.t3Bin ? await agentsHere() : null;
+      const wanted = draft.agent || (here && !here.t3 && here.agents[0] ? here.agents[0].id : 't3');
+      const agent = wanted !== 't3' ? wanted : null;
+      if (agent && !here?.agents.some((entry) => entry.id === agent)) throw new Error('That coding agent isn’t installed on this Mac. Pick another one.');
+      if (!agent && draft.agent === 't3' && !draft.t3Bin && !here?.t3) throw new Error('T3 Code isn’t installed on this Mac. Pick another coding agent.');
+      if (!agent && !draft.t3Bin && here?.t3 && here.t3 !== join(home, '.t3/bin/t3')) draft.t3Bin = here.t3;
+      const directory = await createSetupProfile(draft, { root });
+      if (agent) writeAgentBackend(directory, { backend: 'acp', agent });
       // Remember the new profile so the app (and its next launch from Finder) manages it.
       context.selectProfile(directory, { setupFinished: true });
       const current = context.profileDirOrNull();

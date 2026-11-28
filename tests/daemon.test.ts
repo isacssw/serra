@@ -13,6 +13,7 @@ import { startTestDaemon, TestReceiver } from './fakes/daemon.ts';
 import { BOT, OWNER, SAM, testProfile } from './fakes/profile.ts';
 import { writeMeetingSettings } from '../src/meeting-settings.ts';
 import { createFakeSlack } from './fakes/slack.ts';
+import { createSecondChat } from './fakes/second-chat.ts';
 
 const mention = (ts: string, text: string): Record<string, unknown> => ({
   type: 'event_callback', team_id: 'THOME', api_app_id: 'A1', event_id: `Ev${ts}`, event_time: 1,
@@ -170,4 +171,23 @@ test('an image sent to an agent that can\'t see images is never dropped silently
     assert.equal(told, !sees, sees ? 'nothing to say when the agent sees images' : 'the thread is told');
     await h.stop();
   }
+});
+
+test('a bot that isn\'t on Slack (Telegram or Discord only) starts on its other chat and never reads a Slack token', async (t) => {
+  const { config: base } = testProfile(t);
+  const config = Object.defineProperties({ ...base, slack: false, owner: '' }, {
+    botToken: { get: () => { throw new Error('read the Slack bot token'); } },
+    appToken: { get: () => { throw new Error('read the Slack app token'); } },
+  }) as typeof base;
+  const quiet = { debug() {}, info() {}, warn() {}, error() {}, setLevel() {}, getLevel: () => LogLevel.INFO, setName() {} };
+  const deps = {
+    config, logger: quiet, knowledge: createKnowledge(config.knowledgeDir), clock: fakeClock(), statusSocket: false, watchProfile: false,
+    lock: () => () => {}, checkAccess: async () => {}, pid: 4242,
+    bot: { t3: {} as never, questions: {} as never, fetchBase: async () => {}, share: async (text: string) => text, reviewRequest: async (text: string) => ({ reply: text, postedFor: null }) },
+  };
+  await assert.rejects(startDaemon({ ...deps, chats: [] }), /No chat to listen on/);
+  const second = createSecondChat();
+  const daemon = await startDaemon({ ...deps, chats: [second.adapter] });
+  t.after(() => daemon.stop());
+  assert.ok(existsSync(join(config.profileDir, 'ready.json')), 'it says it is ready');
 });

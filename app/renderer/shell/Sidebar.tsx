@@ -5,7 +5,7 @@ import { useEffect, type ComponentType, type KeyboardEvent, type ReactNode } fro
 import { Link, NavLink, useLocation } from 'react-router';
 import {
   Gauge, Activity, AudioLines, Bell, BookOpen, Box, ChevronLeft, Cpu, Download, FileText, Inbox, KeyRound, Layers, ScrollText, Search,
-  Server, Settings, SquarePen, SquareTerminal, SunMoon, UserRound, UserRoundPlus, Users, Waypoints, type LucideProps,
+  Plus, Server, Settings, SquarePen, SquareTerminal, SunMoon, UserRound, UserRoundPlus, Users, Waypoints, type LucideProps,
 } from 'lucide-react';
 import type { BotStatus } from '../../../src/contracts.ts';
 import { badgeText, type BadgeCounts } from '../badges.logic.ts';
@@ -19,6 +19,7 @@ import { focusScreen } from './Shortcuts.tsx';
 import { SETTINGS_PATH } from './shortcuts.logic.ts';
 import { SetupRow } from '../setup/SetupRow.tsx';
 import { TitleRow } from './Switcher.tsx';
+import { openAdd } from './AddSheet.tsx';
 
 /** Each screen's icon, shared with the command palette's Go to rows. */
 export const routeIcons: Partial<Record<RouteId, ComponentType<LucideProps>>> = {
@@ -237,6 +238,13 @@ export const Sidebar = ({ status, counts }: { status: BotStatus | null; counts: 
               {settingsRoutes.filter((route) => route.group === group && shown(route)).map((route) => <ScreenLink key={route.id} route={route} counts={counts} />)}
             </Group>
           ))}
+        </div>
+        {/* The quiet way to more: another chat, another profile (a cloud agent is picked there) or a server. */}
+        <div className="shrink-0 border-t border-line px-2 py-2">
+          <button type="button" data-nav data-settings-add aria-haspopup="dialog" onClick={() => openAdd()} className={itemClass(false)}>
+            <Plus size={15} strokeWidth={1.75} aria-hidden className={iconClass} />
+            <span className="flex-1 text-left">Add…</span>
+          </button>
         </div>
       </nav>
     </aside>

@@ -130,15 +130,20 @@ export const startDaemon = async (deps: DaemonDeps): Promise<Daemon> => {
     const store = createStore(config.statePath, { warn: (message) => logger.warn(message), now: () => new Date(clock.now()) });
     const logEvent = eventLog(join(logsDir, 'events.jsonl'), () => new Date(clock.now()));
     let status: StatusServer | null = null;
-    // The chats. Slack first: Bolt's Socket Mode app from the profile's tokens, unless a test hands one in.
+    // The chats. Slack first: Bolt's Socket Mode app from the profile's tokens, unless a test hands one in. A bot that
+    // isn't on Slack (no owner member ID: Telegram or Discord only) opens no Slack connection at all.
     if (deps.app && !deps.client) throw new Error('A Slack app needs its client');
-    const bolt = deps.app && deps.client ? { app: deps.app, client: deps.client, events: deps.connection }
-      : slackSocketApp({ botToken: config.botToken, appToken: config.appToken, logger });
-    const slack = createSlackConnection({
-      app: bolt.app, client: bolt.client, ...(bolt.events ? { events: bolt.events } : {}), owner: config.owner, botToken: config.botToken,
-      profileDir: config.profileDir, messageTriggers: () => config.messageTriggers, logger, clock, ...(deps.receive ? { receive: deps.receive } : {}),
-    });
-    const adapters = [slack, ...(deps.chats ?? [])];
+    const onSlack = config.slack !== false || Boolean(deps.app);
+    const slack = onSlack ? (() => {
+      const bolt = deps.app && deps.client ? { app: deps.app, client: deps.client, events: deps.connection }
+        : slackSocketApp({ botToken: config.botToken, appToken: config.appToken, logger });
+      return createSlackConnection({
+        app: bolt.app, client: bolt.client, ...(bolt.events ? { events: bolt.events } : {}), owner: config.owner, botToken: config.botToken,
+        profileDir: config.profileDir, messageTriggers: () => config.messageTriggers, logger, clock, ...(deps.receive ? { receive: deps.receive } : {}),
+      });
+    })() : null;
+    const adapters = [...(slack ? [slack] : []), ...(deps.chats ?? [])];
+    if (adapters.length === 0) throw new Error('No chat to listen on: connect Slack, Telegram or Discord first.');
     // The bot sees every chat as one port. Each chat's writer goes straight to `deliver`, the only code that holds one.
     const chats = routeChats(adapters.map(({ connection }) => connection));
     const deliver = createDeliver(new Map(adapters.map(({ connection, writer }) => [connection.kind, writer])), briefKnowledge);
@@ -356,16 +361,18 @@ export const startDaemon = async (deps: DaemonDeps): Promise<Daemon> => {
     if (statusSocket) {
       // The app's Jobs names (SERRA-55): the app asks over the status socket and gets names back, so it never reads the
       // bot token. The token is the one this process already holds; it never leaves it, and lookups never throw.
-      const slackNames = createSlackNames({ token: async () => config.botToken, log: (message) => logger.warn(message) });
+      const slackNames = onSlack ? createSlackNames({ token: async () => config.botToken, log: (message) => logger.warn(message) }) : null;
       // The app's live view. Without it the bot still works, and the app shows "stopped".
       status = await startStatusServer({
         profileDir: config.profileDir,
         status: () => ({
-          state: 'up', pid, startedAt, slackConnected: connected.get(SLACK) ?? false,
+          // A bot without Slack reports its own chats here, so every reader of "connected" (the app's header, the
+          // menubar, setup) sees a Telegram- or Discord-only bot as connected when it is.
+          state: 'up', pid, startedAt, slackConnected: onSlack ? connected.get(SLACK) ?? false : [...connected.values()].every(Boolean),
           chats: [...connected].map(([kind, up]) => ({ kind, connected: up })),
           counts: jobCounts(store.allJobs().map(([, job]) => job)),
         }),
-        names: answerNameRequests(slackNames),
+        names: slackNames ? answerNameRequests(slackNames) : async () => ({ users: {}, channels: {} }),
         // The app's tasks, interview, replies and answers on an ACP agent run here, where the agent lives.
         ...(agents ? { runs: (request) => runForApp(request, agents, config.profileDir) } : {}),
       }).catch((error: unknown) => {

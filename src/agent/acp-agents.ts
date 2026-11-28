@@ -318,6 +318,16 @@ export const launchFor = (agent: AcpAgent, path: string): AcpLaunch | { missing:
   return { command: process.execPath, args: [entry, ...agent.args], env: { ELECTRON_RUN_AS_NODE: '1', [agent.bundled.cliEnv]: cli } };
 };
 
+/** The known ACP agents installed on this Mac, for setup's agent choice before a profile exists (no custom or cloud ones). */
+export const installedKnownAgents = (path: string): { id: string; name: string }[] =>
+  KNOWN_ACP_AGENTS.filter((agent) => !('missing' in launchFor(agent, path))).map(({ id, name }) => ({ id, name }));
+
+/** Where `t3` is: T3 Code's own place in the home folder, else the search path. Null when it isn't on this Mac. */
+export const findT3 = (path: string, home: string): string | null => {
+  const own = join(home, '.t3/bin/t3');
+  try { accessSync(own, constants.X_OK); return own; } catch { return findCommand('t3', path); }
+};
+
 /** One agent as the Settings picker shows it: whether it can start here, and whether the owner added it. Never its env. */
 export interface AcpAgentChoice {
   id: string; name: string; command: string; installed: boolean; custom: boolean;

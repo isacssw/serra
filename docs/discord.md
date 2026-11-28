@@ -6,6 +6,9 @@ like Slack's Socket Mode, so nothing listens on your Mac and no server is needed
 
 ## Connect
 
+Picked **Discord** on setup's first screen? Setup walks you through the same steps, and the bot runs on Discord alone
+(no Slack needed). To add Discord to a bot that already runs, use **Settings › Channels**:
+
 1. Open the [Discord Developer Portal](https://discord.com/developers/applications) and click **New Application**.
 2. Under **Bot**: click **Reset Token** and copy the token, turn on **Message Content Intent**, and turn off
    **Public Bot** (so only you can add it to a server).

@@ -8,10 +8,9 @@ import { serra } from '../bridge.ts';
 import { useBotStatus } from '../shell/live.ts';
 import { Button } from '../ui/index.ts';
 import { Alert, Card, errorText, StateIcon, StepFooter, StepHeader } from './parts.tsx';
-import { FLOW, nextPath, outcomeText, previousPath, stepDone } from './setup.logic.ts';
+import { chatConnected, chatName, flowFor, nextPath, outcomeText, previousPath, stepDone } from './setup.logic.ts';
 import { setupChanged, useSetup } from './SetupState.tsx';
 
-const step = FLOW[3]!;
 /** How long to wait for a freshly started bot to answer before saying so. */
 const ANSWER_WITHIN_MS = 45_000;
 
@@ -20,9 +19,12 @@ export const ServiceStep = () => {
   const { progress, refresh } = useSetup();
   const status = useBotStatus();
   const installed = progress?.installed === true;
-  // Really running: the daemon answers and is connected to Slack.
-  const running = status?.state === 'up' && status.slackConnected;
-  const disconnected = status?.state === 'up' && !status.slackConnected;
+  const chat = progress?.chat ?? 'slack';
+  const step = flowFor(chat).find((entry) => entry.id === 'service')!;
+  const where = chatName(chat);
+  // Really running: the daemon answers and is connected to the chat picked first.
+  const running = chatConnected(status, chat);
+  const disconnected = status?.state === 'up' && !running;
   const name = progress?.bot?.name ?? 'The bot';
   const [busy, setBusy] = useState<'install' | 'start' | null>(null);
   const [log, setLog] = useState<string[]>([]);
@@ -39,6 +41,15 @@ export const ServiceStep = () => {
     const timer = setTimeout(() => setLate(true), ANSWER_WITHIN_MS);
     return () => clearTimeout(timer);
   }, [waiting, running]);
+
+  // Installed here and now answering on its chat: nothing is left to decide, so the end opens by itself.
+  useEffect(() => {
+    if (!waiting || !running || !installed) return;
+    let live = true;
+    void refresh().then((latest) => { if (live) void navigate(nextPath(latest ?? progress, step.path)); });
+    return () => { live = false; };
+  // oxlint-disable-next-line react-hooks/exhaustive-deps -- runs when the bot first answers after Install; progress and refresh change with it.
+  }, [waiting, running, installed]);
 
   const install = async () => {
     const bridge = serra();
@@ -71,8 +82,8 @@ export const ServiceStep = () => {
   const tone = running ? 'done' : disconnected && !busy ? 'problem' : busy || waiting ? (late ? 'problem' : 'busy') : result ? 'problem' : 'todo';
   // Setup counts the step done once the bot has answered; stopped since, Continue still goes on (Done offers Start).
   const canContinue = (running && installed) || stepDone(progress, 'service');
-  const line = running ? `${name} is running and connected to Slack.`
-    : disconnected && !busy ? `${name} is running but not connected to Slack yet.`
+  const line = running ? `${name} is running and connected to ${where}.`
+    : disconnected && !busy ? `${name} is running but not connected to ${where} yet.`
     : busy === 'install' ? (log.at(-1) ?? 'Preparing…')
     : busy === 'start' ? `Starting ${name}…`
     : waiting ? (late ? `${name} hasn’t answered yet. Diagnostics shows why; Skip for now keeps setup open.` : `Waiting for ${name} to answer…`)
@@ -87,7 +98,7 @@ export const ServiceStep = () => {
         <div className="flex items-center gap-3">
           <StateIcon tone={tone} />
           <p className="min-w-0 flex-1 text-[14px] break-words" role="status">{line}</p>
-          {!running && !disconnected && !busy && !waiting && installed && <Button size="sm" onClick={() => void start()}>Start</Button>}
+          {!running && !disconnected && !busy && !waiting && installed && <Button size="sm" variant={canContinue ? 'secondary' : 'primary'} onClick={() => void start()}>Start</Button>}
           {!running && !busy && !disconnected && (!waiting || late) && (
             <Button size="sm" variant={installed ? 'ghost' : 'primary'} onClick={() => void install()}>
               {installed ? 'Install again' : 'Install and start'}
@@ -109,11 +120,13 @@ export const ServiceStep = () => {
       </Card>
       {result && <Alert>{result.text}</Alert>}
       {error && <Alert>{error}</Alert>}
-      <p className="text-[13px] text-muted">It starts again on its own when you log in.</p>
-      <StepFooter back={previousPath(step.path)}>
-        <Button variant="primary" aria-disabled={canContinue ? undefined : true} onClick={() => { if (canContinue) void refresh().then((latest) => navigate(nextPath(latest ?? progress, step.path))); }}>
-          Continue
-        </Button>
+      <StepFooter back={previousPath(step.path, chat)}>
+        {/* The card's button is the way on until the bot answers; then the end opens by itself, or from here. */}
+        {canContinue && (
+          <Button variant="primary" onClick={() => void refresh().then((latest) => navigate(nextPath(latest ?? progress, step.path)))}>
+            Continue
+          </Button>
+        )}
       </StepFooter>
     </div>
   );

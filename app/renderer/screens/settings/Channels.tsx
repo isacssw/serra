@@ -1,4 +1,5 @@
-// Settings › Channels (SB-5, SB-6): where people reach the bot. Slack, set up in setup; Telegram and Discord, connected
+// Settings › Channels (SB-5, SB-6): where people reach the bot. Slack, set up in setup (not set up on a bot that began on
+// Telegram or Discord); Telegram and Discord, connected
 // here: paste the bot's token, then make the bot yours (Telegram: open it from the link; Discord: add it to a server
 // and DM it the code). One row per chat, one action each.
 import { useCallback, useEffect, useId, useState, type FormEvent, type ReactNode } from 'react';
@@ -6,6 +7,7 @@ import { Copy, Plus, Send } from 'lucide-react';
 import type { BotStatus, ChannelsView } from '../../../../src/contracts.ts';
 import { serra } from '../../bridge.ts';
 import { useBotStatus } from '../../shell/live.ts';
+import { useSetup } from '../../setup/SetupState.tsx';
 import { Badge, BrandMark, Button, Dialog, Input, Page, useToast } from '../../ui/index.ts';
 import { discordRow, discordTokenProblem, slackRow, spacedCode, telegramRow, tokenProblem, type RowState } from './channels.logic.ts';
 
@@ -115,6 +117,9 @@ export const Channels = () => {
   const status = useBotStatus();
   const toast = useToast();
   const apply = useApply(status);
+  // A bot set up on Telegram or Discord has no Slack app yet.
+  const { progress } = useSetup();
+  const onSlack = (progress?.chat ?? 'slack') === 'slack';
   const [view, setView] = useState<ChannelsView | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [connecting, setConnecting] = useState<Chat | null>(null);
@@ -157,7 +162,7 @@ export const Channels = () => {
     <Page title="Channels" subtitle="Where people can reach your bot.">
       {loadError && <p role="alert" className="rounded-xl border border-down/30 bg-down/8 px-4 py-2.5 text-[13px]">{loadError}</p>}
       <ul className="divide-y divide-line overflow-hidden rounded-xl border border-line bg-raised">
-        <Row icon={<BrandMark brand="slack" />} name="Slack" detail="Mentions, DMs and threads in your workspace." state={slackRow(status)} />
+        <Row icon={<BrandMark brand="slack" />} name="Slack" detail="Mentions, DMs and threads in your workspace." state={slackRow(status, onSlack)} />
         <Row
           icon={<BrandMark brand="telegram" />}
           name="Telegram"

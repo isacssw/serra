@@ -7,14 +7,18 @@ import { defaultPath } from '../routes.ts';
 import { useBotStatus } from '../shell/live.ts';
 import { Button } from '../ui/index.ts';
 import { useSetup } from './SetupState.tsx';
+import { useFirstTry } from './ChatStep.tsx';
+import { chatConnected, chatName } from './setup.logic.ts';
 
 export const DoneStep = () => {
   const navigate = useNavigate();
   const { progress } = useSetup();
   const status = useBotStatus();
   const name = progress?.bot?.name ?? 'Your bot';
-  // The same "running" setup counts: answering and connected to Slack.
-  const running = status?.state === 'up' && status.slackConnected;
+  const chat = progress?.chat ?? 'slack';
+  // The same "running" setup counts: answering and connected to its chat.
+  const running = chatConnected(status, chat);
+  const tryIt = useFirstTry();
   const answering = status?.state === 'up';
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -31,7 +35,7 @@ export const DoneStep = () => {
         <div className="flex flex-col items-center gap-3">
           <span aria-hidden className="grid size-14 place-items-center rounded-full border border-line-strong text-muted"><Power size={24} /></span>
           <h1 className="text-[28px] font-semibold tracking-tight">{name} is installed</h1>
-          <p className="max-w-sm text-[15px] text-muted">{answering ? 'It’s running, but not connected to Slack. Diagnostics shows why.' : 'It isn’t running right now.'}</p>
+          <p className="max-w-sm text-[15px] text-muted">{answering ? `It’s running, but not connected to ${chatName(chat)}. Diagnostics shows why.` : 'It isn’t running right now.'}</p>
           {error && <p role="alert" className="text-[13px] text-down">{error}</p>}
         </div>
         <div className="flex flex-col items-center gap-3">
@@ -50,9 +54,11 @@ export const DoneStep = () => {
           <Check size={28} strokeWidth={2.5} />
         </span>
         <h1 className="text-[28px] font-semibold tracking-tight">{name} is ready</h1>
-        <p className="max-w-sm text-[15px] text-muted">
-          Mention <span className="font-mono text-[14px] text-ink">@{progress?.bot?.id}</span> in Slack to try it.
-        </p>
+        {tryIt && (
+          <p className="max-w-sm text-[15px] text-muted">
+            {tryIt.lead}{' '}<span className="whitespace-nowrap text-ink">{tryIt.example}</span>
+          </p>
+        )}
       </div>
       <div className="flex flex-col items-center gap-3">
         <Button variant="primary" className="h-10 px-5 text-[14px]" onClick={() => void navigate(defaultPath)}>Open Serra</Button>

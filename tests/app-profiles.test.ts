@@ -379,7 +379,7 @@ test('Add… › Profile: the new one goes last (no one else’s ⌘ number move
     baseRef: 'origin/main', githubRepo: 'acme/project',
   };
   const progress = await profiles.create({ draft, color: '#4f55b8', agent: null });
-  assert.equal(progress.next, 'slack', 'setup goes on from Slack');
+  assert.equal(progress.next, 'chat', 'setup goes on from Slack');
   const listed = await profiles.list();
   // "Ada" sorts before "Saitama" by folder, but is added after it.
   assert.deepEqual(profileRows(listed, null).map((row) => [row.name, row.shortcut, row.active, row.setupDone]), [

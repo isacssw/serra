@@ -29,6 +29,7 @@ const TokenRow = ({ status, checking, workspace, onChange }: { status: SecretSta
   const [value, setValue] = useState('');
   const [replacing, setReplacing] = useState(false);
   const field = useRef<HTMLInputElement>(null);
+  const row = useRef<HTMLLIElement>(null);
   const replaceButton = useRef<HTMLButtonElement>(null);
   // Opening the field puts focus in it; Cancel gives it back to Replace, so a screen reader never loses its place.
   const startReplacing = (): void => { setReplacing(true); requestAnimationFrame(() => field.current?.focus()); };
@@ -65,13 +66,21 @@ const TokenRow = ({ status, checking, workspace, onChange }: { status: SecretSta
       onChange(saved);
       onChange(await bridge.secrets.check(status.name));
       setReplacing(false);
+      // The field just went away: if focus was in it, it moves on to the next token still to paste or check, or to
+      // Continue. Someone who moved elsewhere during a slow check stays where they are.
+      requestAnimationFrame(() => {
+        if (document.activeElement && document.activeElement !== document.body && !row.current?.contains(document.activeElement)) return;
+        const next = document.querySelector<HTMLElement>('[data-token][data-state="missing"] input, [data-token][data-state="rejected"] input, [data-token] [data-token-check]')
+          ?? document.querySelector<HTMLElement>('[data-slack-continue]');
+        next?.focus();
+      });
     } catch (failure) { setValue(''); setError(errorText(failure)); }
     finally { setBusy(false); }
   };
 
   const fieldId = `token-${status.name}`;
   return (
-    <li className="flex flex-col gap-3 px-4 py-3.5" data-token={status.name} data-state={token.state}>
+    <li ref={row} className="flex flex-col gap-3 px-4 py-3.5" data-token={status.name} data-state={token.state}>
       <div className="flex items-center gap-3">
         <StateIcon tone={tone} />
         <div className="flex min-w-0 flex-1 flex-col">
@@ -82,7 +91,7 @@ const TokenRow = ({ status, checking, workspace, onChange }: { status: SecretSta
           </p>
         </div>
         {(token.state === 'found' || (token.state === 'rejected' && !refused)) && !checking && (
-          <Button size="sm" onClick={() => void check()} disabled={busy}>{token.state === 'found' ? 'Check' : 'Check again'}</Button>
+          <Button data-token-check size="sm" onClick={() => void check()} disabled={busy}>{token.state === 'found' ? 'Check' : 'Check again'}</Button>
         )}
         {(token.state === 'verified' || (token.state === 'rejected' && !refused)) && !replacing && (
           <Button ref={replaceButton} size="sm" variant="ghost" onClick={startReplacing}>Replace</Button>
@@ -159,45 +168,47 @@ export const SlackStep = () => {
     void navigate(nextPath(latest ?? progress, step.path));
   };
 
+  // Once the app's tokens are in, the create and manifest tools step aside (a refused token brings them back).
+  const making = appCard.create || appCard.tone === 'problem';
   return (
-    <div className="flex flex-1 flex-col gap-8">
+    <div className="flex flex-1 flex-col gap-6">
       <StepHeader step={step} icon={<BrandMark brand="slack" size={18} />} />
       {error && <Alert>{error}</Alert>}
 
-      <section aria-labelledby="slack-app" className="flex flex-col gap-3">
-        <h2 id="slack-app" className="text-[13px] font-semibold text-ink">1 · The Slack app</h2>
+      <section aria-label="The Slack app">
         <Card className="flex flex-col gap-3 px-4 py-3.5">
           <div className="flex items-center gap-3">
             <StateIcon tone={appCard.tone} />
             <p className="min-w-0 flex-1 text-[13px]" role="status">{appCard.text}</p>
+            {making && (
+              <Button variant={appCard.create && !connected ? 'primary' : 'secondary'} size="sm" icon={<ExternalLink size={13} aria-hidden />} disabled={!manifest}
+                onClick={() => { if (manifest) serra()?.app.openExternal(manifest.createUrl).catch((failure) => setError(errorText(failure))); }}>
+                Create in Slack
+              </Button>
+            )}
           </div>
-          <div className="flex flex-wrap gap-2 pl-8">
-            <Button variant={appCard.create ? 'primary' : 'secondary'} size="sm" icon={<ExternalLink size={13} aria-hidden />} disabled={!manifest}
-              onClick={() => { if (manifest) serra()?.app.openExternal(manifest.createUrl).catch((failure) => setError(errorText(failure))); }}>
-              Create in Slack
-            </Button>
-            <Button size="sm" icon={<Copy size={13} aria-hidden />} disabled={!manifest} onClick={() => void copy()}>Copy manifest</Button>
-          </div>
-          {manifest && (
+          {manifest && making && (
             <details className="group pl-8 text-[13px]">
-              <summary className="flex w-fit cursor-pointer list-none items-center gap-1 rounded text-muted hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus [&::-webkit-details-marker]:hidden"><ChevronRight size={13} aria-hidden className="transition-transform group-open:rotate-90" />Show manifest</summary>
-              <pre className="mt-2 max-h-56 overflow-auto rounded-md border border-line bg-raised px-3 py-2 font-mono text-[11px]" data-manifest>{manifest.json}</pre>
+              <summary className="flex w-fit cursor-pointer list-none items-center gap-1 rounded text-muted hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus [&::-webkit-details-marker]:hidden"><ChevronRight size={13} aria-hidden className="transition-transform group-open:rotate-90" />Manifest</summary>
+              <div className="mt-2 flex flex-col items-start gap-2">
+                <Button size="sm" icon={<Copy size={13} aria-hidden />} onClick={() => void copy()}>Copy manifest</Button>
+                <pre className="max-h-56 w-full overflow-auto rounded-md border border-line bg-raised px-3 py-2 font-mono text-[11px]" data-manifest>{manifest.json}</pre>
+              </div>
             </details>
           )}
         </Card>
       </section>
 
-      <section aria-labelledby="slack-tokens" className="flex flex-col gap-3">
-        <h2 id="slack-tokens" className="text-[13px] font-semibold text-ink">2 · Its tokens</h2>
+      <section aria-label="Its tokens" className="flex flex-col gap-3">
         <Card>
           {statuses
             ? <ul className="flex flex-col divide-y divide-line-subtle">{statuses.map((status) => <TokenRow key={status.name} status={status} checking={checking.includes(status.name)} workspace={workspace} onChange={replace} />)}</ul>
             : <p className="px-4 py-3.5 text-[13px] text-muted" role="status">Looking for tokens…</p>}
           <div className="flex items-center justify-between gap-3 border-t border-line-subtle py-1.5 pr-2 pl-4">
-            <p className="flex items-center gap-1.5 text-xs text-faint"><KeyRound size={12} aria-hidden /> Saved to your Keychain</p>
+            <p className="flex items-center gap-1.5 text-xs text-faint"><KeyRound size={12} aria-hidden /> Pasted tokens go to your Keychain</p>
             <Button variant="ghost" size="sm" aria-expanded={advanced} onClick={() => setAdvanced(!advanced)}
               icon={<ChevronRight size={13} aria-hidden className={cx('transition-transform', advanced && 'rotate-90')} />}>
-              {advanced ? 'Hide other sources' : 'Use 1Password or .env'}
+              {advanced ? 'Hide other token storage' : 'Other token storage'}
             </Button>
           </div>
         </Card>
@@ -207,8 +218,8 @@ export const SlackStep = () => {
       </section>
 
       <StepFooter back={previousPath(step.path)}>
-        {!connected && <span id="slack-continue-note" className="sr-only">Add both tokens first.</span>}
-        <Button variant="primary" aria-disabled={connected ? undefined : true} aria-describedby={connected ? undefined : 'slack-continue-note'} title={connected ? undefined : 'Both tokens need a passing check'} onClick={() => void proceed()}>
+        {!connected && <span id="slack-continue-note" className="text-xs text-faint">Add and check both tokens to continue</span>}
+        <Button data-slack-continue variant="primary" aria-disabled={connected ? undefined : true} aria-describedby={connected ? undefined : 'slack-continue-note'} onClick={() => void proceed()}>
           Continue
         </Button>
       </StepFooter>

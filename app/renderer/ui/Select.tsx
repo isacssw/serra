@@ -178,7 +178,7 @@ export const Select = <V extends string>({
         onMouseDown={(event) => event.preventDefault()}
         className={cx(
           'fixed inset-auto m-0 max-w-[min(360px,calc(100vw-16px))] overflow-y-auto overscroll-contain rounded-[10px] border-0 bg-overlay p-1 text-ink shadow-overlay',
-          'animate-[serra-pop_120ms_ease-out]',
+          'motion-safe:animate-[serra-pop_120ms_ease-out]',
         )}
       >
         {groups.map(({ group, items }) => {

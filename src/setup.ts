@@ -27,6 +27,8 @@ import type { SecretName, SecretStatus } from './contracts.ts';
 import { isTokenVerdict } from './token-errors.ts';
 import { readSecretsFile, scrub, SECRET_NAMES, secretStatus, slackWorkspace, sourceLabel, type SecretOptions } from './secrets.ts';
 import { hasServiceHost, serviceHost } from './service.ts';
+import { readState } from './state.ts';
+import { readTasks } from './tasks.ts';
 import { run } from './t3.ts';
 
 /** How to start the knowledge interview (docs/knowledge-interview.md) for a profile. */
@@ -108,12 +110,21 @@ export const detectProject = async (path: string, remote = 'origin'): Promise<De
 // ---------------------------------------------------------------------------------------------------------------
 
 /** What the wizard's first step asks for. Everything else gets the same defaults as `pnpm run setup`. */
+/** Where the owner talks to the bot, picked on setup's first screen. Each is a full way in on its own. */
+export type SetupChat = 'slack' | 'telegram' | 'discord';
+export const SETUP_CHATS: readonly SetupChat[] = ['slack', 'telegram', 'discord'];
+export const isSetupChat = (value: unknown): value is SetupChat => typeof value === 'string' && (SETUP_CHATS as readonly string[]).includes(value);
+
 export interface ProfileDraft {
+  /** The chat picked first. Defaults to Slack (the CLI and older apps). Only Slack needs `ownerSlackUserId`. */
+  chat?: SetupChat;
+  /** The coding agent picked: `t3` (the default) or a known ACP agent's id, saved in `agent-backend.json`. */
+  agent?: string;
   botName: string;
   /** Defaults to `suggestBotId(botName)`. */
   botId?: string;
   ownerName: string;
-  ownerSlackUserId: string;
+  ownerSlackUserId?: string;
   githubLogin: string;
   projectPath: string;
   remote?: string;
@@ -143,12 +154,14 @@ export const profileFromDraft = async (draft: ProfileDraft, { root = defaultProf
   const profile: Profile = {
     version: 1,
     bot: { id, name: botName },
-    owner: { name: text(draft.ownerName), slackUserId: text(draft.ownerSlackUserId), githubLogin: text(draft.githubLogin) },
+    // A bot on Telegram or Discord has no Slack member ID: it runs without Slack (config.slack).
+    owner: { name: text(draft.ownerName), slackUserId: chatOf(draft) === 'slack' ? text(draft.ownerSlackUserId) : '', githubLogin: text(draft.githubLogin) },
     project: { path, remote, baseRef: text(draft.baseRef) || detected!.baseRef, githubRepo: text(draft.githubRepo) || detected!.githubRepo },
     allowedUsers: [],
     repositories: [],
     ...(t3Bin ? { t3Bin } : {}),
   };
+  if (chatOf(draft) === 'slack' && !profile.owner.slackUserId) throw new Error('Enter your Slack member ID.');
   validateProfile(profile);
   const directory = text(draft.directory) || join(root, id);
   if (!isAbsolute(directory)) throw new Error('The profile folder must be an absolute path.');
@@ -162,8 +175,13 @@ export const profileFromDraft = async (draft: ProfileDraft, { root = defaultProf
 export const createSetupProfile = async (draft: ProfileDraft, options: { root?: string } = {}): Promise<string> => {
   const { directory, profile } = await profileFromDraft(draft, options);
   createProfile(directory, profile);
+  // The chat picked first decides setup's next steps; Slack is what a profile without the record means.
+  const chat = chatOf(draft);
+  if (chat !== 'slack') writeSetupFile(directory, { ...readSetupFile(directory), chat });
   return directory;
 };
+
+const chatOf = (draft: ProfileDraft): SetupChat => (isSetupChat(draft.chat) ? draft.chat : 'slack');
 
 // ---------------------------------------------------------------------------------------------------------------
 // Step 2: the Slack app
@@ -197,6 +215,8 @@ export const slackManifest = (profileDir: string): SlackManifest => {
 /** `setup.json` in the profile: what the wizard verified. Never a token. */
 interface SetupFile {
   version: 1;
+  /** The chat the owner picked on setup's first screen. Missing: Slack. */
+  chat?: SetupChat;
   /** The owner member ID Slack confirmed with this bot's token, and when. */
   owner?: { slackUserId: string; slackName: string; checkedAt: string };
   /**
@@ -208,6 +228,10 @@ interface SetupFile {
 
 export const SETUP_FILE = 'setup.json';
 
+const writeSetupFile = (profileDir: string, file: SetupFile): void => {
+  writeFileAtomic(join(resolve(profileDir), SETUP_FILE), JSON.stringify(file, null, 2) + '\n', { mode: 0o600 });
+};
+
 /** `setup.json`, keeping each part that reads right. A missing or broken file, or a broken part, is not verified. */
 const readSetupFile = (profileDir: string): SetupFile => {
   const value = readJsonOrNull(join(resolve(profileDir), SETUP_FILE), isRecord);
@@ -215,6 +239,7 @@ const readSetupFile = (profileDir: string): SetupFile => {
   const owner = value.owner;
   return {
     version: 1,
+    ...(isSetupChat(value.chat) ? { chat: value.chat } : {}),
     ...(isRecord(owner) && isString(owner.slackUserId) && isString(owner.slackName) && isString(owner.checkedAt)
       ? { owner: { slackUserId: owner.slackUserId, slackName: owner.slackName, checkedAt: owner.checkedAt } } : {}),
     ...(isString(value.serviceAnsweredAt) ? { serviceAnsweredAt: value.serviceAnsweredAt } : {}),
@@ -325,10 +350,18 @@ export const installService = async (profileDir: string, options: InstallOptions
 // Progress
 // ---------------------------------------------------------------------------------------------------------------
 
-/** The setup steps, in order. The Slack step covers the app and both of its tokens. */
-export type SetupStepId = 'profile' | 'slack' | 'owner' | 'service';
+/**
+ * The setup steps. `chat` connects the chat picked first (Slack: the app and both tokens; Telegram or Discord: the
+ * bot's token). `owner` makes the bot yours: Slack confirms your member ID; on Telegram or Discord you message the
+ * running bot, so there it comes after `service`.
+ */
+export type SetupStepId = 'profile' | 'chat' | 'owner' | 'service';
 
-export const SETUP_STEP_IDS: readonly SetupStepId[] = ['profile', 'slack', 'owner', 'service'];
+export const SETUP_STEP_IDS: readonly SetupStepId[] = ['profile', 'chat', 'owner', 'service'];
+
+/** The steps in the order a chat takes them. */
+export const stepOrder = (chat: SetupChat): readonly SetupStepId[] =>
+  chat === 'slack' ? SETUP_STEP_IDS : ['profile', 'chat', 'service', 'owner'];
 
 export interface SetupStep {
   id: SetupStepId;
@@ -338,6 +371,8 @@ export interface SetupStep {
 }
 
 export interface SetupProgress {
+  /** The chat picked first: Slack for a profile set up before the choice, or by the CLI. */
+  chat: SetupChat;
   /** The profile folder the wizard works on, or null before one is chosen. */
   profileDir: string | null;
   /** From the profile, once it exists. */
@@ -348,6 +383,8 @@ export interface SetupProgress {
   next: SetupStepId | null;
   /** The service is installed (whether or not it runs). */
   installed: boolean;
+  /** The bot has had a job: one in `state.json` or a task started in the app. False shows a new bot's first-job hint. */
+  hadJob: boolean;
 }
 
 /**
@@ -396,6 +433,12 @@ export const serviceInstalled = (profileDir: string, profile: Profile, { launchA
  * to call often. Tokens that are present but never checked don't finish the Slack step: `summarizeProfile` reports
  * them as found, so the window can check them instead of asking for them again.
  */
+/** Whether the profile has ever had a job. A file that can't be read counts as yes, so no first-run hint shows by mistake. */
+const hadJob = (directory: string): boolean => {
+  try { return Object.keys(readState(join(directory, 'state.json')).jobs).length > 0 || readTasks(directory).length > 0; }
+  catch { return true; }
+};
+
 export const setupProgress = (profileDir: string | null, lookup: ServiceLookup = {}): SetupProgress => {
   const directory = profileDir ? resolve(profileDir) : null;
   let profile: Profile | null = null;
@@ -408,10 +451,12 @@ export const setupProgress = (profileDir: string | null, lookup: ServiceLookup =
   const add = (id: SetupStepId, done: boolean, detail: string): void => { steps.push({ id, done, detail }); };
   if (!directory || !profile) {
     add('profile', false, profileProblem);
-    for (const id of ['slack', 'owner', 'service'] as const) add(id, false, 'Needs a profile first');
-    return { profileDir: directory, bot: null, owner: null, steps, next: 'profile', installed: false };
+    for (const id of ['chat', 'owner', 'service'] as const) add(id, false, 'Needs a profile first');
+    return { chat: 'slack', profileDir: directory, bot: null, owner: null, steps, next: 'profile', installed: false, hadJob: false };
   }
   add('profile', true, profile.bot.name);
+  const setup = readSetupFile(directory);
+  const chat: SetupChat = setup.chat ?? 'slack';
   let checks: ReturnType<typeof readSecretsFile>['checks'] = {};
   let secretsProblem: string | null = null;
   try { checks = readSecretsFile(directory).checks; }
@@ -429,24 +474,33 @@ export const setupProgress = (profileDir: string | null, lookup: ServiceLookup =
   // Slack busy, a locked Keychain) doesn't undo it.
   const verified = (check: typeof bot): boolean => Boolean(check?.verifiedAt && (!check.error || !isTokenVerdict(check.error)));
   const slackDone = verified(bot) && verified(app);
-  add('slack', slackDone, secretsProblem ?? (slackDone ? 'Both tokens checked with Slack'
-    : bot?.error || app?.error || `${[!verified(bot) && 'Bot token', !verified(app) && 'app token'].filter(Boolean).join(' and ')} not checked yet`));
-  const setup = readSetupFile(directory);
-  const ownerDone = setup.owner?.slackUserId === profile.owner.slackUserId;
-  add('owner', ownerDone, ownerDone ? `Slack knows ${profile.owner.slackUserId} as ${setup.owner!.slackName}` : `${profile.owner.slackUserId} not confirmed yet`);
+  // Telegram and Discord keep their bot in profile.json once its token checked out, and its owner once paired.
+  const other = chat === 'slack' ? null : profile.channels?.[chat];
+  const label = chat === 'telegram' ? 'Telegram' : 'Discord';
+  if (chat === 'slack') {
+    add('chat', slackDone, secretsProblem ?? (slackDone ? 'Both tokens checked with Slack'
+      : bot?.error || app?.error || `${[!verified(bot) && 'Bot token', !verified(app) && 'app token'].filter(Boolean).join(' and ')} not checked yet`));
+  } else add('chat', Boolean(other), other ? `${label} bot ${other.bot.username}` : `No ${label} bot yet`);
+  const ownerDone = chat === 'slack' ? setup.owner?.slackUserId === profile.owner.slackUserId : Boolean(other?.ownerId);
+  add('owner', ownerDone, chat !== 'slack' ? (ownerDone ? `Yours on ${label}` : `Message the bot on ${label} to make it yours`)
+    : ownerDone ? `Slack knows ${profile.owner.slackUserId} as ${setup.owner!.slackName}` : `${profile.owner.slackUserId} not confirmed yet`);
   const installed = serviceInstalled(directory, profile, lookup);
   // Done once the installed bot has answered (recorded in setup.json), or answers now. The CLI, which can't tell,
   // counts an installed service.
   // A bot set up before this was recorded counts too when it left `ready.json`, written once it reached Slack.
   const answered = Boolean(setup.serviceAnsweredAt) || existsSync(join(directory, 'ready.json')) || (lookup.running ?? true);
   add('service', installed && answered, !installed ? 'Not installed yet' : lookup.running ? 'Running' : answered ? 'Installed' : 'Installed, hasn’t answered yet');
+  const order = stepOrder(chat);
+  steps.sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id));
   return {
+    chat,
     profileDir: directory,
     bot: { id: profile.bot.id, name: profile.bot.name },
-    owner: { name: profile.owner.name, slackUserId: profile.owner.slackUserId, slackName: ownerDone ? setup.owner!.slackName : null },
+    owner: { name: profile.owner.name, slackUserId: profile.owner.slackUserId, slackName: chat === 'slack' && ownerDone ? setup.owner!.slackName : null },
     steps,
     next: steps.find((step) => !step.done)?.id ?? null,
     installed,
+    hadJob: hadJob(directory),
   };
 };
 

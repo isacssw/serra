@@ -16,6 +16,7 @@ import { mod } from '../shell/keys.ts';
 import { othersNeedingYou, profileRows, showsSwitcher } from '../profiles.logic.ts';
 import { resumePath } from '../setup/setup.logic.ts';
 import { useSetup } from '../setup/SetupState.tsx';
+import { useFirstTry } from '../setup/ChatStep.tsx';
 import { Avatar, Badge, BrandMark, Button, Dialog, EmptyState, Page, Select, cx, useToast } from '../ui/index.ts';
 import { registerActions } from '../commands/registry.ts';
 import { RunChat, type ChatRun } from './chat/RunChat.tsx';
@@ -323,6 +324,7 @@ export const Jobs = ({ group }: { group: JobGroup }) => {
   const setup = useSetup();
   // Before setup is done, an empty Needs you isn't good news: say what's missing instead.
   const setupLeft = setup.progress?.next != null;
+  const tryIt = useFirstTry();
   const { load, reload } = useJobs(status?.state);
   const now = useNow(30_000);
   const toast = useToast();
@@ -394,13 +396,16 @@ export const Jobs = ({ group }: { group: JobGroup }) => {
   const sections = groupJobs(filterJobs(rows, channel));
   const current = sections.find((section) => section.group === group) ?? sections[0]!;
   const empty = EMPTY_STATES[group];
+  // A new bot that has never had a job (not one whose jobs finished on earlier days): nothing to filter or clean up
+  // yet, and its empty list says how to start (⌘K still has Clean up worktrees).
+  const fresh = ready && rows.length === 0 && !channel && !setupLeft && setup.progress?.hadJob === false;
 
   return (
     <div data-screen-label="Jobs">
       <Page
         title="Jobs"
         titleAside={ready ? <JobTabs sections={sections} group={group} onPick={pick} /> : undefined}
-        actions={(
+        actions={!ready || fresh ? undefined : (
           <>
             <ChannelFilter
               // Named Slack channels carry the # as an icon, so the button reads "# eng" whichever is picked.
@@ -443,6 +448,17 @@ export const Jobs = ({ group }: { group: JobGroup }) => {
                 ? (channel
                   ? (
                     <EmptyState className={EMPTY_CLASS} icon={<Hash size={16} strokeWidth={1.75} />} title={`Nothing here in ${channelChoices(rows, channel).find((c) => c.value === channel)?.label ?? 'this channel'}`} action={<Button size="sm" onClick={() => setChannel(null)}>Show all channels</Button>} />
+                  )
+                  : fresh && setup.progress?.bot
+                  ? (
+                    <EmptyState
+                      className={EMPTY_CLASS}
+                      icon={<MessageSquareText size={18} strokeWidth={1.75} />}
+                      title={tryIt ? 'Send your first request' : 'No jobs yet'}
+                      action={<Button size="sm" icon={<Plus size={14} />} onClick={() => void navigate('/jobs/new')}>New task</Button>}
+                    >
+                      {tryIt && <>{tryIt.lead}{' '}<span className="whitespace-nowrap text-ink">{tryIt.example}</span></>}
+                    </EmptyState>
                   )
                   : setupLeft && current.group === 'needs you'
                   ? (

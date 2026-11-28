@@ -12,7 +12,7 @@
 
 <p align="center"><img src="assets/readme/slack-thread.png" alt="A Slack thread: a teammate asks the bot for an empty state, gets a draft PR, asks for a change, and the bot pushes it to the same PR" width="800"><br><sub>Demo workspace and data</sub></p>
 
-> **Alpha** (latest: `0.1.0-alpha.7`). macOS on Apple silicon, Slack only, not notarized. Formats may change between
+> **Alpha** (latest: `0.1.0-alpha.7`). macOS on Apple silicon (the bot also runs on Linux), Slack first, not notarized. Formats may change between
 > versions. Read [Alpha limits](#alpha-limits) before you point it at a repository that matters.
 
 - [What it does](#what-it-does) · [Quick start](#quick-start) · [Agent backends](#agent-backends) · [Knowledge](#knowledge)
@@ -89,17 +89,20 @@ Serra lives in the menubar. If macOS says the app "is damaged", see
 
 ### 3. First run
 
-Serra opens on setup until it's done. It finds any existing profile (from `pnpm run setup`, an older app, or a setup
-left halfway) and resumes at the first missing step.
+Serra opens on setup until it's done. Its one question is where you want to talk to your agent: **Slack**,
+**Telegram** or **Discord**. Setup connects only that chat; add another later from **Settings › Add…**. It also finds
+any existing profile (from `pnpm run setup`, an older app, or a setup left halfway) and resumes at the first missing step.
 
-| Step | What it asks for |
-|---|---|
-| **You & repo** | Your name, GitHub login and Slack member ID (Slack › your picture › **Profile** › **⋮** › **Copy member ID**), the repository folder, and the bot's name. |
-| **Connect Slack** | **Create in Slack** opens Slack's "create from manifest" page with your manifest filled in. Install it, then paste the bot token (`xoxb-…`) and the app-level token (`xapp-…`, scope `connections:write`). They go to the Keychain, or 1Password or `.env` if you choose. |
-| **Confirm you** | Nothing to type: Slack checks your member ID. |
-| **Install and start** | Runs every check, installs the bot as a launchd service, and waits until it answers. If a check fails, nothing is installed. |
+| Step | Slack | Telegram or Discord |
+|---|---|---|
+| **You & repo** | Your name, Slack member ID (Slack › your picture › **Profile** › **⋮** › **Copy member ID**), the repository folder and the bot's name. | Your name, the repository folder and the bot's name. |
+| **Coding agent** (same step) | Shown when there's a choice: T3 Code (picked when found), or an ACP agent installed here (Claude Code, Codex, Gemini CLI, OpenCode). | The same. |
+| **Connect** | **Create in Slack** opens Slack's "create from manifest" page with your manifest filled in. Install it, then paste the bot token (`xoxb-…`) and the app-level token (`xapp-…`, scope `connections:write`). | Paste the bot's token: from @BotFather, or from the Discord Developer Portal with Message Content Intent on. |
+| **Confirm you / Make it yours** | Nothing to type: Slack checks your member ID. | After the install: open the bot in Telegram and tap **Start**, or add it to your Discord and DM it the code shown. |
+| **Install and start** | Runs every check for the agent you picked (T3's for T3, the agent's own for an ACP agent), installs the bot as a launchd service, and waits until it answers. If a check fails, nothing is installed. | The same. |
 
-Then invite the bot to a test channel (`/invite @friday`) and ask `@friday what does this repository do?`.
+Tokens go to the Keychain (1Password or `.env` if you choose). Your GitHub login comes from `gh`. The end of setup
+says what to try first, such as `@friday what does this repository do?` in a Slack channel you invited it to.
 
 If something fails, **Settings › Diagnostics** lists failing checks first, each with a button to the fix. Setup stays
 under **Serra › Set Up Serra…** and ⌘K. Full setup details: [docs/app/install.md](docs/app/install.md#setup).

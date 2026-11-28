@@ -5,6 +5,9 @@ the chat you asked in. It reaches Telegram by long polling, so nothing listens o
 
 ## Connect
 
+Picked **Telegram** on setup's first screen? Setup walks you through the same steps, and the bot runs on Telegram alone
+(no Slack needed). To add Telegram to a bot that already runs, use **Settings › Channels**:
+
 1. In Telegram, open [@BotFather](https://t.me/BotFather), send `/newbot`, and pick a name and a username. It answers
    with a token like `123456:ABC…`.
 2. In Serra, **Settings › Channels** › Telegram › **Connect**, and paste the token. Serra checks it with Telegram and

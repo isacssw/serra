@@ -12,7 +12,9 @@ const reached = (status: BotStatus | null, kind: string): boolean | null => {
   return status.chats?.find((chat) => chat.kind === kind)?.connected ?? null;
 };
 
-export const slackRow = (status: BotStatus | null): RowState => {
+export const slackRow = (status: BotStatus | null, onSlack = true): RowState => {
+  // A bot set up on Telegram or Discord has no Slack app: nothing to reach.
+  if (!onSlack) return { tone: 'neutral', label: 'Not set up' };
   if (status === null) return { tone: 'neutral', label: 'Checking…' };
   if (status.state !== 'up') return { tone: 'neutral', label: 'Bot stopped' };
   return reached(status, 'slack') ? { tone: 'up', label: 'Connected' } : { tone: 'down', label: 'Not reachable' };

@@ -15,7 +15,7 @@ export const OwnerStep = () => {
   const navigate = useNavigate();
   const { progress, refresh } = useSetup();
   const owner = progress?.owner ?? null;
-  const slackReady = stepDone(progress, 'slack');
+  const slackReady = stepDone(progress, 'chat');
   const confirmed = stepDone(progress, 'owner');
   const [id, setId] = useState(owner?.slackUserId ?? '');
   const [busy, setBusy] = useState(false);
@@ -31,8 +31,10 @@ export const OwnerStep = () => {
     try {
       await bridge.setup.confirmOwner(memberId.trim());
       setupChanged();
-      await refresh();
+      const latest = await refresh();
       setEditing(false);
+      // Confirmed just now: nothing is left on this step, so the next one opens.
+      void navigate(nextPath(latest ?? progress, step.path));
     } catch (failure) { setError(errorText(failure)); setEditing(true); }
     finally { setBusy(false); }
   };
@@ -60,20 +62,19 @@ export const OwnerStep = () => {
             {owner && <p className="font-mono text-[12px] text-muted">{owner.slackUserId}</p>}
           </div>
           {confirmed && !editing && <Button size="sm" variant="ghost" onClick={() => setEditing(true)}>Use another ID</Button>}
-          {!slackReady && <Button size="sm" onClick={() => void navigate(pathForStep('slack'))}>Connect Slack</Button>}
+          {!slackReady && <Button size="sm" onClick={() => void navigate(pathForStep('chat'))}>Connect Slack</Button>}
         </div>
         {editing && slackReady && (
           <form className="flex items-start gap-2 pl-8" onSubmit={(event) => { event.preventDefault(); void confirm(id); }}>
             <Input aria-label="Your Slack member ID" inputClassName="font-mono" className="min-w-0 flex-1" value={id} spellCheck={false} autoFocus
               onChange={(event) => { setId(event.target.value); setError(null); }} hint="In Slack: your profile › ⋮ › Copy member ID" />
-            <Button type="submit" disabled={busy || !id.trim()}>Check</Button>
+            <Button type="submit" variant={confirmed ? 'secondary' : 'primary'} disabled={busy || !id.trim()}>Check</Button>
           </form>
         )}
       </Card>
       <StepFooter back={previousPath(step.path)}>
-        <Button variant="primary" aria-disabled={confirmed ? undefined : true} onClick={() => { if (confirmed) void navigate(nextPath(progress, step.path)); }}>
-          Continue
-        </Button>
+        {/* Until Slack confirms the ID there is nothing to go on to; the card says what's happening. */}
+        {confirmed && <Button variant="primary" onClick={() => void navigate(nextPath(progress, step.path))}>Continue</Button>}
       </StepFooter>
     </div>
   );

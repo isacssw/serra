@@ -111,10 +111,31 @@ Until every step is done, the window opens on setup, a full-window flow without 
 
 The first screen looks for what already exists: the profile in use and every profile under `~/.local/share/serra/`. For each it shows the profile, where the Slack tokens are (`.env`, Keychain or 1Password; presence only, and 1Password isn't opened), whether the owner was confirmed and whether the service is installed (an activated release or a launchd plist) and running (it answers on `status.sock`). It then resumes at the first missing step. With several profiles it asks which one.
 
-1. **You & repo**: your name, GitHub login and Slack member ID, the repository folder (its base branch and GitHub name are read from Git), and the bot's name. The ID, remote, profile folder and T3 CLI are under **More options**. The folder defaults to `~/.local/share/serra/<bot-id>`, and the app remembers it.
-2. **Connect Slack**: **Create in Slack** opens Slack's "create an app from a manifest" page with the bot's `manifest.json` filled in. Paste the `xoxb-` bot token and the `xapp-` app-level token (`connections:write`); each is stored in the Keychain and checked with Slack. Tokens already in `.env` or the Keychain are checked as the step opens and shown for you to confirm; 1Password ones wait for **Check**, so nothing asks to unlock. **Use 1Password or .env instead** shows the same editors as the Secrets screen.
-3. **Confirm you**: the owner's member ID is looked up in Slack with the bot token as the step opens, so a typo shows now rather than when the bot first needs you. The result is kept in `setup.json` (no token).
-4. **Install and start**: prepares a release from the app's code, runs every Diagnostics check and only then installs and starts the launchd service, then waits until the bot answers. A failing check leaves nothing installed. This needs `pnpm` next to the Node it finds, as Updates › Prepare does.
+The welcome asks one question: where you want to talk to your agent, **Slack**, **Telegram** or **Discord**, as equal
+choices with none picked. Setup then connects only that chat (kept in `setup.json` as `chat`; a profile without it is
+Slack's). A bot set up on Telegram or Discord has no Slack member ID and runs without Slack: the daemon opens no Slack
+connection and Diagnostics skips Slack's checks. Another chat, another profile (where an eve agent is picked) or a
+server is added later from **Settings › Add…**, the last row of Settings, or ⌘⇧N.
+
+Step 1 also picks the coding agent when there's a choice: T3 Code when it's found (in `~/.t3/bin` or on the search
+path), or any ACP agent whose command is installed (Claude Code, Codex, Gemini CLI, OpenCode). Only agents found on this
+Mac are offered, and with one there is nothing to pick. An ACP pick is saved in `agent-backend.json`, and the install's
+checks then check that agent instead of T3. Custom ACP agents (such as Antigravity) and eve are added later in
+**Settings › Worker**.
+
+On Slack the steps are:
+
+1. **You & repo**: your name, Slack member ID, the repository folder and the bot's name. Your GitHub login (from `gh`), the base branch and GitHub name (from Git), the bot ID, remote, profile folder and T3 CLI are under **More options**, which opens on its own when one of them needs fixing; the GitHub login stays in view when `gh` doesn't know it. The folder defaults to `~/.local/share/serra/<bot-id>`, and the app remembers it.
+2. **Connect Slack**: **Create in Slack** opens Slack's "create an app from a manifest" page with the bot's `manifest.json` filled in (**Manifest** has it to copy). Paste the `xoxb-` bot token and the `xapp-` app-level token (`connections:write`); each is stored in the Keychain and checked with Slack, and focus moves on to the next token. Tokens already in `.env` or the Keychain are checked as the step opens and shown for you to confirm; 1Password ones wait for **Check**, so nothing asks to unlock. **Other token storage** shows the same editors as the Secrets screen (1Password or `.env`). Once both tokens pass, the create and manifest tools step aside.
+3. **Confirm you**: the owner's member ID is looked up in Slack with the bot token as the step opens, so a typo shows now rather than when the bot first needs you; once Slack confirms it, the next step opens. The result is kept in `setup.json` (no token).
+4. **Install and start**: prepares a release from the app's code, runs every Diagnostics check and only then installs and starts the launchd service, then waits until the bot answers and opens the end by itself. A failing check leaves nothing installed. This needs `pnpm` next to the Node it finds, as Updates › Prepare does.
+
+On Telegram or Discord they are **You & repo** (no member ID), **Connect Telegram** or **Connect Discord** (paste the
+bot's token, checked and kept as in **Settings › Channels**), **Install and start**, then **Make it yours**: open the
+bot in Telegram and tap **Start**, or add it to your Discord and DM it the code shown. It goes on by itself once the
+bot knows you.
+
+The end says where to reach the bot and gives a first request to try. Until the bot has a job, **Jobs** says the same, with **New task** as its one button.
 
 ## Live status
 

@@ -7,6 +7,8 @@ import { fillBrief } from './brief.ts';
 import { createKnowledge } from './knowledge.ts';
 import { createStore } from './state.ts';
 import { run } from './t3.ts';
+import { readAgentBackend } from './agent/acp-agents.ts';
+import { acpRunner, chosenAcpAgent } from './agent/select.ts';
 import { secretSource, sourceLabel } from './secrets.ts';
 import type { SecretName } from './contracts.ts';
 
@@ -63,7 +65,8 @@ export const diagnose = async (config: Config, { offline = false, nodeBinary, sl
     if (problem) throw new Error(`${path} is Node ${version}. ${problem}`);
     return `${version} (${path}, the Node the bot runs on)`;
   });
-  await check('Tokens', () => {
+  // A bot that isn't on Slack (Telegram or Discord only) has no Slack tokens or account to check.
+  if (config.slack) await check('Tokens', () => {
     if (!/^xoxb-.+/.test(config.botToken) || !/^xapp-.+/.test(config.appToken) || /replace-me|\.\.\./.test(config.botToken + config.appToken)) throw new Error('Set real xoxb and xapp tokens in the profile .env or with pnpm bot secrets set');
     const from = (name: SecretName): string => sourceLabel(secretSource(config.profileDir, name));
     return `Both token types present (bot token from ${from('SLACK_BOT_TOKEN')}, app token from ${from('SLACK_APP_TOKEN')}); values hidden`;
@@ -100,10 +103,21 @@ export const diagnose = async (config: Config, { offline = false, nodeBinary, sl
     if (!name) throw new Error('Set git user.name and user.email in the project');
     return 'An author identity is configured';
   });
-  await check('T3 executable', async () => { await run(config.t3Bin, ['thread', 'start', '--help']); return config.t3Bin; });
+  // The agent the owner picked is the one checked: T3, or an ACP agent (Claude Code, Codex…), never T3 for an ACP pick.
+  const onT3 = readAgentBackend(config.profileDir).backend === 't3';
+  if (onT3) await check('T3 executable', async () => { await run(config.t3Bin, ['thread', 'start', '--help']); return config.t3Bin; });
+  else {
+    await check('Coding agent', async () => {
+      const agent = chosenAcpAgent(config.profileDir);
+      if (!agent) return 'eve on Vercel (checked in Settings › Worker)';
+      const runner = await acpRunner(agent);
+      if (!runner.ready) throw new Error(runner.detail);
+      return runner.label;
+    });
+  }
   await check('GitHub CLI', async () => { await run('gh', ['--version']); return 'Installed'; });
   if (!offline) {
-    await check('T3 connection and project', async () => {
+    if (onT3) await check('T3 connection and project', async () => {
       await run(config.t3Bin, ['thread', 'list', '--project', config.project, '--json'], { timeoutMs: 15_000 });
       return 'Server reachable; project registered';
     });
@@ -112,7 +126,7 @@ export const diagnose = async (config: Config, { offline = false, nodeBinary, sl
       if (config.githubLogin && login.toLowerCase() !== config.githubLogin.toLowerCase()) throw new Error(`Expected ${config.githubLogin}; gh uses ${login}`);
       return login;
     });
-    await check('Slack account', () => slack(config.botToken, config.owner));
+    if (config.slack) await check('Slack account', () => slack(config.botToken, config.owner));
   }
   return results;
 };

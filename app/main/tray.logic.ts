@@ -3,6 +3,20 @@
 import type { BotStatus } from '../../src/contracts.ts';
 
 /** Which brand status icon (`assets/brand/serra-status-<icon>.png`) the menubar shows. */
+/**
+ * The chat a status's "connected" is about, as the header and menubar name it: Slack whenever the bot is on Slack (and
+ * for daemons from before chats), else the bot's own chat, such as Telegram for a bot set up there.
+ */
+/** Kept equal to `statusChat` in app/renderer/status.logic.ts (main can't import renderer code). */
+const statusChat = (status: Extract<BotStatus, { state: 'up' }>): string => {
+  const kinds = status.chats?.map((chat) => chat.kind) ?? [];
+  if (kinds.length === 0 || kinds.includes('slack')) return 'Slack';
+  // Down: the chat that dropped; up: the first one.
+  const kind = (status.slackConnected ? undefined : status.chats?.find((chat) => !chat.connected)?.kind) ?? kinds[0]!;
+  return kind === 'telegram' ? 'Telegram' : kind === 'discord' ? 'Discord' : kind;
+};
+
+
 export type TrayIcon = 'up' | 'needs-you' | 'down';
 
 export interface TrayState {
@@ -42,7 +56,7 @@ export const trayView = ({ status, profileSelected, restarting, restartError }: 
   if (!profileSelected) headline = 'No bot profile selected';
   else if (status.state === 'stopped') headline = 'Serra is stopped';
   else {
-    headline = `Serra is up · Slack ${status.slackConnected ? 'connected' : 'disconnected'}`;
+    headline = `Serra is up · ${statusChat(status)} ${status.slackConnected ? 'connected' : 'disconnected'}`;
     const { needsYou, running } = status.counts;
     if (status.slackConnected) icon = needsYou > 0 ? 'needs-you' : 'up';
     details.push({ kind: 'needs-you', label: plural(needsYou, 'needs you', 'need you') });
@@ -83,7 +97,7 @@ export const rowPresence = (status: BotStatus | null, setupDone = true, server: 
   }
   if (!status) return { dot: 'faint', phrase: 'checking' };
   if (status.state === 'stopped') return { dot: 'down', phrase: 'stopped' };
-  if (!status.slackConnected) return { dot: 'down', phrase: 'Slack disconnected' };
+  if (!status.slackConnected) return { dot: 'down', phrase: `${statusChat(status)} disconnected` };
   const { needsYou, running } = status.counts;
   if (needsYou > 0) return { dot: 'warn', phrase: `${needsYou} ${needsYou === 1 ? 'needs' : 'need'} you` };
   if (running > 0) return { dot: 'up', phrase: `${running} running` };

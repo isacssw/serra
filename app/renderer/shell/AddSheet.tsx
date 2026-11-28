@@ -1,8 +1,8 @@
-// Add… (⌘⇧N): a profile, or a server (SB-32). Server pairs this Mac with a server the owner runs, in one short flow:
+// Add… (⌘⇧N, and Settings' Add… row): a chat beside the first one (Settings › Channels), a profile, or a server (SB-32). Server pairs this Mac with a server the owner runs, in one short flow:
 // its address and the code `serra server pair` shows, the three words compared, then ready. Or over SSH, with the
 // owner's keys. The steps and words are in pair.logic.ts; the code goes to the server only after "They match".
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
-import { ChevronRight, Server, SquareTerminal, UserPlus } from 'lucide-react';
+import { ChevronRight, MessagesSquare, Server, SquareTerminal, UserPlus } from 'lucide-react';
 import { useNavigate } from 'react-router';
 import { serra } from '../bridge.ts';
 import { presence } from '../presence.logic.ts';
@@ -153,7 +153,8 @@ export const AddSheet = () => {
       case 'add':
         return (
           <div className="flex flex-col gap-2">
-            <Choice autoFocus icon={<UserPlus size={17} strokeWidth={1.75} />} title="Profile" line="Another bot with its own Slack and knowledge" onClick={() => { close(); void navigate(ADD_PROFILE_PATH); }} />
+            <Choice autoFocus icon={<MessagesSquare size={17} strokeWidth={1.75} />} title="Chat" line="Telegram or Discord, beside the one you use" onClick={() => { close(); void navigate('/settings/channels'); }} />
+            <Choice icon={<UserPlus size={17} strokeWidth={1.75} />} title="Profile" line="Another bot with its own chat, knowledge and agent" onClick={() => { close(); void navigate(ADD_PROFILE_PATH); }} />
             <Choice icon={<Server size={17} strokeWidth={1.75} />} title="Server" line="Keep profiles on another computer, always on" onClick={() => toAddress()} />
           </div>
         );

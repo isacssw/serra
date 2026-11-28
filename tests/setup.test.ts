@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { delimiter, join } from 'node:path';
 import test, { type TestContext } from 'node:test';
 import { secretsHandlers } from '../src/handlers/secrets.ts';
-import { setupHandlers } from '../src/handlers/setup.ts';
+import { parseDraft, setupHandlers } from '../src/handlers/setup.ts';
 import type { MenuItemConstructorOptions } from 'electron';
 import { createBridge, type InvokeResult } from '../app/main/bridge.ts';
 import { registerHandlers } from '../app/main/router.ts';
@@ -16,10 +16,12 @@ import { isSetupIncomplete, SETUP_INCOMPLETE, SETUP_INCOMPLETE_MESSAGE, SetupInc
 import { isTokenVerdict } from '../src/token-errors.ts';
 import { stoppedStatusSource } from '../src/status-source.ts';
 import {
-  announcement, DONE_PATH, draftErrors, lockedReason, draftRequest, draftToSave, emptyDraft, foundLine, nextPath, outcomeText, pickable, previousPath,
+  announcement, CHAT_CHOICES, DONE_PATH, draftErrors, firstTry, flowFor, gateView, lockedReason, draftRequest, draftToSave, emptyDraft, foundLine, nextPath, outcomeText, pickable, previousPath,
   plainError, restoreDraft, slackAppCard, resumePath, ringDash, shortPath, tokenRefused, tokenText, setupRowLabel, slackLine, startView, stepOpen, suggestId, summaryRows, tokensToPrecheck, toToken,
 } from '../app/renderer/setup/setup.logic.ts';
 import type { SecretStatus } from '../src/contracts.ts';
+import { statusChat, statusView } from '../app/renderer/status.logic.ts';
+import { ownerForm } from '../app/renderer/screens/settings/settings.logic.ts';
 import { loadConfig, readProfileFile } from '../src/config.ts';
 import { serviceHost, type ServiceDriver } from '../src/service.ts';
 import { diagnose, type SlackAccountCheck } from '../src/doctor.ts';
@@ -164,6 +166,9 @@ test('the wizard takes an empty profile folder to a valid profile, an installed 
     lookup,
     githubLogin: async () => 'alex',
     gitName: async () => 'Alex',
+    // No coding agent on the search path but T3 in its own folder: T3 is the one found.
+    searchPath: async () => '',
+    home: join(f.root, 'home'),
     echo: (line) => logged.push(line),
     install: { deploy: { driver, launchAgentsDir: agents }, diagnose: { slack }, prepareRelease: prepareWithoutInstall },
   });
@@ -175,14 +180,14 @@ test('the wizard takes an empty profile folder to a valid profile, an installed 
   const start = await call(setup.progress());
   assert.equal(start.next, 'profile');
   assert.equal(start.profileDir, null);
-  assert.deepEqual(await call(setup.defaults()), { githubLogin: 'alex', ownerName: 'Alex', profileRoot: join(f.root, 'profiles') });
+  assert.deepEqual(await call(setup.defaults()), { githubLogin: 'alex', ownerName: 'Alex', profileRoot: join(f.root, 'profiles'), agents: [] });
   const detected = await call(setup.detectProject(f.project, 'origin'));
   assert.deepEqual(detected, { baseRef: 'origin/main', githubRepo: 'acme/project', problem: null });
 
   // 1. Profile: created in the empty folder and selected as the app's profile.
   const created = await call(setup.create(draft(f, dir)));
   assert.equal(created.profileDir, dir);
-  assert.equal(created.next, 'slack');
+  assert.equal(created.next, 'chat');
   assert.equal(ctx.prefs.get().profileDir, dir);
   const profile = readProfileFile(dir);
   assert.deepEqual(profile.project, { path: f.project, remote: 'origin', baseRef: 'origin/main', githubRepo: 'acme/project' });
@@ -262,15 +267,37 @@ test('progress with no profile, and for a profile made with pnpm run setup', (t)
   });
   const agents = join(f.root, 'agents');
   const progress = setupProgress(dir, { launchAgentsDir: agents });
-  assert.equal(progress.next, 'slack');
+  assert.equal(progress.next, 'chat');
   assert.deepEqual(progress.bot, { id: 'friday', name: 'Friday' });
   assert.deepEqual(progress.owner, { name: 'Alex', slackUserId: OWNER, slackName: null });
-  assert.match(progress.steps.find((step) => step.id === 'slack')!.detail, /Bot token and app token not checked yet/);
+  assert.match(progress.steps.find((step) => step.id === 'chat')!.detail, /Bot token and app token not checked yet/);
   // A service installed by the CLI has a plist but no active.json: it counts as installed.
   assert.equal(progress.steps.find((step) => step.id === 'service')!.done, false);
   mkdirSync(agents);
   writeFileSync(join(agents, serviceHost().fileName('dev.serra.friday')), '<plist/>');
   assert.equal(setupProgress(dir, { launchAgentsDir: agents }).steps.find((step) => step.id === 'service')!.done, true);
+});
+
+test('setup progress: a new bot has had no job until one is saved, even one that finished days ago', (t) => {
+  const f = fixture(t);
+  const dir = join(f.root, 'fresh');
+  createProfile(dir, {
+    version: 1, bot: { id: 'friday', name: 'Friday' }, owner: { name: 'Alex', slackUserId: OWNER, githubLogin: 'alex' },
+    project: { path: f.project, remote: 'origin', baseRef: 'origin/main', githubRepo: 'acme/project' }, allowedUsers: [],
+  });
+  assert.equal(setupProgress(null).hadJob, false);
+  assert.equal(setupProgress(dir).hadJob, false);
+  const old = new Date(Date.now() - 3 * 86_400_000).toISOString();
+  writeFileSync(join(dir, 'state.json'), JSON.stringify({
+    'C0123456789:1700000000.000001': {
+      t3ThreadId: 'thread-a', channel: 'C0123456789', threadTs: '1700000000.000001', requester: OWNER,
+      pendingReactionTs: null, lastPostedRunId: null, watching: false, createdAt: old, lastActivityAt: old,
+    },
+  }));
+  assert.equal(setupProgress(dir).hadJob, true);
+  // A state file that can't be read doesn't bring the first-job hint back.
+  writeFileSync(join(dir, 'state.json'), '{');
+  assert.equal(setupProgress(dir).hadJob, true);
 });
 
 test('create refuses an existing profile and an invalid form, leaving files as they were', async (t) => {
@@ -401,9 +428,9 @@ test('a broken manifest.json is reported, not replaced by the template; a missin
 // ---------------------------------------------------------------------------------------------------------------
 
 const progressWith = (done: string[], profileDir: string | null = '/Users/you/.local/share/serra/friday'): SetupProgress => {
-  const ids = ['profile', 'slack', 'owner', 'service'] as const;
+  const ids = ['profile', 'chat', 'owner', 'service'] as const;
   const steps = ids.map((id) => ({ id, done: done.includes(id), detail: '' }));
-  return { profileDir, bot: { id: 'friday', name: 'Friday' }, owner: null, steps, next: steps.find((step) => !step.done)?.id ?? null, installed: done.includes('service') };
+  return { chat: 'slack', profileDir, bot: { id: 'friday', name: 'Friday' }, owner: null, steps, next: steps.find((step) => !step.done)?.id ?? null, installed: done.includes('service'), hadJob: false };
 };
 
 const summaryWith = (done: string[], extra: Partial<ProfileSummary> = {}): ProfileSummary => ({
@@ -416,24 +443,24 @@ test('setup logic: where to resume, and which step comes next', () => {
   assert.equal(resumePath(null), '/setup');
   assert.equal(resumePath(fresh), '/setup/you');
   assert.equal(stepOpen(fresh, 'profile'), true);
-  assert.equal(stepOpen(fresh, 'slack'), false);
+  assert.equal(stepOpen(fresh, 'chat'), false);
 
   const made = progressWith(['profile']);
   assert.equal(resumePath(made), '/setup/slack');
   // Steps open in order: the owner check needs Slack's token, the install's checks need both.
-  assert.equal(stepOpen(made, 'slack'), true);
+  assert.equal(stepOpen(made, 'chat'), true);
   assert.equal(stepOpen(made, 'owner'), false);
   assert.equal(stepOpen(made, 'service'), false);
   assert.equal(lockedReason(made, 'service'), 'available after Confirm you');
   assert.equal(lockedReason(made, 'owner'), 'available after Slack');
   // A step done out of order (an install from the CLI) stays open.
   assert.equal(stepOpen(progressWith(['profile', 'service']), 'service'), true);
-  assert.equal(stepOpen(progressWith(['profile', 'slack', 'owner']), 'service'), true);
+  assert.equal(stepOpen(progressWith(['profile', 'chat', 'owner']), 'service'), true);
   assert.equal(nextPath(made, '/setup/you'), '/setup/slack');
   // A later step already done is skipped; the end comes once nothing is left.
-  assert.equal(nextPath(progressWith(['profile', 'slack', 'owner']), '/setup/slack'), '/setup/service');
-  assert.equal(nextPath(progressWith(['profile', 'slack', 'service']), '/setup/you'), '/setup/owner');
-  assert.equal(nextPath(progressWith(['profile', 'slack', 'owner', 'service']), '/setup/service'), DONE_PATH);
+  assert.equal(nextPath(progressWith(['profile', 'chat', 'owner']), '/setup/slack'), '/setup/service');
+  assert.equal(nextPath(progressWith(['profile', 'chat', 'service']), '/setup/you'), '/setup/owner');
+  assert.equal(nextPath(progressWith(['profile', 'chat', 'owner', 'service']), '/setup/service'), DONE_PATH);
   assert.equal(previousPath('/setup/you'), '/setup');
   assert.equal(previousPath('/setup/owner'), '/setup/slack');
   assert.equal(announcement('/setup/slack'), 'Step 2 of 4: Connect Slack');
@@ -445,7 +472,7 @@ test('setup logic: the first screen welcomes, summarises what was found, or asks
   assert.equal(startView({ ...base, selected: null, others: [] }), 'fresh');
   assert.equal(startView({ ...base, selected: summaryWith([]), others: [] }), 'fresh');
   assert.equal(startView({ ...base, selected: summaryWith(['profile']), others: [] }), 'summary');
-  const two = { ...base, selected: null, others: [summaryWith(['profile']), summaryWith(['profile', 'slack'], { profileDir: '/p/jarvis' })] };
+  const two = { ...base, selected: null, others: [summaryWith(['profile']), summaryWith(['profile', 'chat'], { profileDir: '/p/jarvis' })] };
   assert.equal(startView(two), 'picker');
   assert.equal(pickable(two).length, 2);
 
@@ -460,7 +487,7 @@ test('setup logic: the first screen welcomes, summarises what was found, or asks
   assert.equal(foundLine(legacy), '2 of 4 done');
   assert.equal(summaryRows(summaryWith(['profile'], { service: 'installed' }))[3]!.value, 'Installed, hasn’t answered yet');
   assert.equal(summaryRows(summaryWith(['profile'], { service: 'disconnected' }))[3]!.value, 'Running, not connected to Slack');
-  assert.equal(foundLine(summaryWith(['profile', 'slack', 'owner', 'service'], { service: 'disconnected' })), 'Set up, but not connected to Slack.');
+  assert.equal(foundLine(summaryWith(['profile', 'chat', 'owner', 'service'], { service: 'disconnected' })), 'Set up, but not connected to Slack.');
   assert.equal(isTokenVerdict("1Password (op) failed: \"Serra\" isn't an item in the \"Private\" vault"), true);
   assert.equal(shortPath('/Users/you/.local/share/serra/friday', '/Users/you'), '~/.local/share/serra/friday');
   assert.equal(shortPath('/Volumes/x/friday', '/Users/you'), '/Volumes/x/friday');
@@ -472,7 +499,7 @@ test('setup logic: the first screen welcomes, summarises what was found, or asks
   ]);
   assert.equal(slackLine([{ name: 'SLACK_BOT_TOKEN', state: 'verified', where: 'Keychain', error: null }, { name: 'SLACK_APP_TOKEN', state: 'verified', where: 'Keychain', error: null }], 'acme.slack.com'), 'Connected to acme.slack.com');
   assert.equal(slackLine([{ name: 'SLACK_BOT_TOKEN', state: 'found', where: 'Keychain', error: null }, { name: 'SLACK_APP_TOKEN', state: 'missing', where: '.env', error: null }], null), 'No app token yet');
-  assert.equal(foundLine(summaryWith(['profile', 'slack', 'owner', 'service'], { service: 'running' })), 'All set up');
+  assert.equal(foundLine(summaryWith(['profile', 'chat', 'owner', 'service'], { service: 'running' })), 'All set up');
 });
 
 test('setup logic: found tokens are checked on their own, except 1Password ones, which would prompt', () => {
@@ -570,7 +597,7 @@ test('a CLI profile with tokens in .env is summarised as found, not missing, and
   writeFileSync(join(agents, serviceHost().fileName('dev.serra.friday')), '<plist/>');
 
   const summary = await summarizeProfile(dir, { launchAgentsDir: agents });
-  assert.equal(summary.next, 'slack');
+  assert.equal(summary.next, 'chat');
   assert.equal(summary.repo, 'acme/project');
   assert.deepEqual(summary.tokens.map((token) => [token.name, token.state, token.where]), [
     ['SLACK_BOT_TOKEN', 'found', '.env'], ['SLACK_APP_TOKEN', 'found', '.env'],
@@ -686,12 +713,12 @@ test('a passing check counts only while the token is still there, and a stopped 
   writeFileSync(join(dir, '.env'), `SLACK_BOT_TOKEN=${BOT}\nSLACK_APP_TOKEN=${APP}\n`);
   const at = '2026-11-22T00:00:00.000Z';
   writeFileSync(join(dir, 'secrets.json'), JSON.stringify({ version: 1, sources: {}, checks: { SLACK_BOT_TOKEN: { verifiedAt: at, error: null }, SLACK_APP_TOKEN: { verifiedAt: at, error: null } } }));
-  assert.equal(setupProgress(dir, { launchAgentsDir: agents }).steps.find((step) => step.id === 'slack')!.done, true);
+  assert.equal(setupProgress(dir, { launchAgentsDir: agents }).steps.find((step) => step.id === 'chat')!.done, true);
 
   // The values were removed from .env after the checks passed: Slack isn't connected any more.
   writeFileSync(join(dir, '.env'), '');
   const progress = setupProgress(dir, { launchAgentsDir: agents });
-  assert.equal(progress.next, 'slack');
+  assert.equal(progress.next, 'chat');
   const summary = await summarizeProfile(dir, { launchAgentsDir: agents });
   assert.deepEqual(summary.tokens.map((token) => token.state), ['missing', 'missing']);
 
@@ -740,13 +767,13 @@ test('a deleted Keychain item isn\'t connected, even with a passing check on rec
   }));
   writeFileSync(join(f.root, 'keychain.json'), JSON.stringify({ 'dev.serra.friday/SLACK_BOT_TOKEN': BOT, 'dev.serra.friday/SLACK_APP_TOKEN': APP }));
   const handlers = setupHandlers(engineContext(context(dir)), { launchAgentsDir: join(f.root, 'agents'), answerWaitMs: 0, presenceCacheMs: 0 });
-  assert.equal((await handlers.progress()).steps.find((step) => step.id === 'slack')!.done, true);
+  assert.equal((await handlers.progress()).steps.find((step) => step.id === 'chat')!.done, true);
   // The app token's item was deleted from the Keychain.
   writeFileSync(join(f.root, 'keychain.json'), JSON.stringify({ 'dev.serra.friday/SLACK_BOT_TOKEN': BOT }));
   const progress = await handlers.progress();
-  assert.equal(progress.next, 'slack');
+  assert.equal(progress.next, 'chat');
   const summary = await summarizeProfile(dir, { launchAgentsDir: join(f.root, 'agents') });
-  assert.equal(summary.steps.find((step) => step.id === 'slack')!.done, false);
+  assert.equal(summary.steps.find((step) => step.id === 'chat')!.done, false);
   assert.equal(summary.tokens.find((token) => token.name === 'SLACK_APP_TOKEN')!.state, 'missing');
 });
 
@@ -808,7 +835,7 @@ test('a check that only failed to run keeps an earlier pass; a verdict against t
 
   // Slack refusing the token is a verdict: Slack isn't connected any more.
   await checkSecret(dir, 'SLACK_BOT_TOKEN', { verify: async () => { throw Object.assign(new Error('An API error occurred'), { data: { error: 'invalid_auth' } }); } });
-  assert.equal(setupProgress(dir, { launchAgentsDir: agents, running: false }).next, 'slack');
+  assert.equal(setupProgress(dir, { launchAgentsDir: agents, running: false }).next, 'chat');
 });
 
 test('a Keychain item gone for sure is missing even after an offline recheck; ready.json is recorded before a restart clears it', async (t) => {
@@ -837,7 +864,138 @@ test('a Keychain item gone for sure is missing even after an offline recheck; re
 
   // The bot token's item is deleted: gone for sure, so Slack reopens and the row asks for a new token.
   writeFileSync(join(f.root, 'keychain.json'), JSON.stringify({ 'dev.serra.friday/SLACK_APP_TOKEN': APP }));
-  assert.equal((await handlers.progress()).next, 'slack');
+  assert.equal((await handlers.progress()).next, 'chat');
   const summary = await summarizeProfile(dir, { launchAgentsDir: agents });
   assert.equal(summary.tokens.find((token) => token.name === 'SLACK_BOT_TOKEN')!.state, 'missing');
+});
+
+// ---------------------------------------------------------------------------------------------------------------
+// The first screen's chat: Slack, Telegram or Discord, each a full way in
+// ---------------------------------------------------------------------------------------------------------------
+
+test('setup on Telegram: no Slack member ID, the bot runs without Slack, and you make it yours after it starts', async (t) => {
+  const f = fixture(t);
+  const dir = join(f.root, 'telegram');
+  const { ownerSlackUserId: _unused, ...rest } = draft(f, dir);
+  await createSetupProfile({ ...rest, chat: 'telegram' });
+  assert.equal(readProfileFile(dir).owner.slackUserId, '');
+  assert.equal(loadConfig({ profileDir: dir, env: {} }).slack, false);
+  const agents = join(f.root, 'agents');
+  let progress = setupProgress(dir, { launchAgentsDir: agents, running: false });
+  assert.equal(progress.chat, 'telegram');
+  assert.deepEqual(progress.steps.map((step) => step.id), ['profile', 'chat', 'service', 'owner']);
+  assert.equal(progress.next, 'chat');
+  // The bot's token checked out: Settings › Channels' connect wrote the bot into profile.json.
+  const profile = JSON.parse(readFileSync(join(dir, 'profile.json'), 'utf8')) as Record<string, unknown>;
+  writeFileSync(join(dir, 'profile.json'), JSON.stringify({ ...profile, channels: { telegram: { bot: { id: '1111111', username: 'friday_serra_bot' } } } }));
+  progress = setupProgress(dir, { launchAgentsDir: agents, running: false });
+  assert.equal(progress.next, 'service');
+  writeFileSync(join(dir, 'active.json'), '{}');
+  writeFileSync(join(dir, 'ready.json'), '{}');
+  assert.equal(setupProgress(dir, { launchAgentsDir: agents, running: false }).next, 'owner');
+  writeFileSync(join(dir, 'profile.json'), JSON.stringify({ ...profile, channels: { telegram: { bot: { id: '1111111', username: 'friday_serra_bot' }, ownerId: '2222222' } } }));
+  assert.equal(setupProgress(dir, { launchAgentsDir: agents, running: false }).next, null);
+  // Diagnostics has no Slack to check on a bot that isn't on Slack.
+  const checks = await diagnose(loadConfig({ profileDir: dir, env: {} }), { offline: true });
+  assert.equal(checks.some((check) => check.name === 'Tokens' || check.name === 'Slack account'), false);
+});
+
+test('setup on Slack still asks for your member ID; a draft names only a chat Serra knows', async (t) => {
+  const f = fixture(t);
+  const { ownerSlackUserId: _unused, ...rest } = draft(f, join(f.root, 'slack'));
+  await assert.rejects(createSetupProfile({ ...rest, chat: 'slack' }), /Slack member ID/);
+  await assert.rejects(createSetupProfile(rest), /Slack member ID/);
+  assert.throws(() => parseDraft({ ...rest, chat: 'irc' }), /Slack, Telegram or Discord/);
+  assert.equal(parseDraft({ ...rest, chat: 'discord' }).chat, 'discord');
+});
+
+test('setup logic: each chat has its own steps, and only Slack asks for a member ID', () => {
+  assert.deepEqual(flowFor('slack').map((step) => step.path), ['/setup/you', '/setup/slack', '/setup/owner', '/setup/service']);
+  assert.deepEqual(flowFor('telegram').map((step) => step.path), ['/setup/you', '/setup/telegram', '/setup/service', '/setup/telegram/yours']);
+  assert.deepEqual(flowFor('discord').map((step) => step.short), ['You & repo', 'Discord', 'Install', 'Make it yours']);
+  const order = ['profile', 'chat', 'service', 'owner'];
+  const slackOrdered = progressWith(['profile', 'chat']);
+  const steps = [...slackOrdered.steps].sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id));
+  const onTelegram: SetupProgress = { ...slackOrdered, chat: 'telegram', steps, next: 'service' };
+  assert.equal(resumePath(onTelegram), '/setup/service');
+  assert.equal(nextPath(onTelegram, '/setup/telegram'), '/setup/service');
+  assert.equal(nextPath({ ...onTelegram, steps: onTelegram.steps.map((step) => ({ ...step, done: step.id !== 'owner' })), next: 'owner' }, '/setup/service'), '/setup/telegram/yours');
+  assert.equal(announcement('/setup/discord/yours'), 'Step 4 of 4: Make it yours');
+  const form = { ...emptyDraft(), botName: 'Friday', ownerName: 'Alex', githubLogin: 'alex', projectPath: '/Users/you/project' };
+  assert.ok(draftErrors({ ...form, chat: 'slack' }).ownerSlackUserId);
+  assert.equal(draftErrors({ ...form, chat: 'telegram' }).ownerSlackUserId, undefined);
+  assert.deepEqual(firstTry('telegram', 'friday', 'friday_serra_bot'), { lead: 'Message @friday_serra_bot in Telegram, like', example: '“what does this repo do?”' });
+  assert.deepEqual(firstTry('slack', 'friday', null), { lead: 'Invite @friday to a Slack channel, then try', example: '“@friday what does this repo do?”' });
+  assert.deepEqual(CHAT_CHOICES.map((choice) => choice.id), ['slack', 'telegram', 'discord']);
+});
+
+test('two finished bots and no saved choice (lost prefs): a screen that needs a profile offers to pick one, not to set up', () => {
+  const base = { pinned: false, profileRoot: '/Users/you/.local/share/serra', home: '/Users/you' };
+  const all = ['profile', 'chat', 'owner', 'service'];
+  const detection = { ...base, selected: null, others: [summaryWith(all), summaryWith(all, { profileDir: '/Users/you/.local/share/serra/jarvis' })] };
+  const none = setupProgress(null);
+  assert.deepEqual(gateView(none, detection), { kind: 'pick', count: 2 });
+  // The first screen opens on the same choice.
+  assert.equal(startView(detection), 'picker');
+  assert.deepEqual(gateView(none, { ...base, selected: null, others: [] }), { kind: 'setup' });
+  assert.deepEqual(gateView(none, null), { kind: 'setup' }, 'before the folders are read, the calm default');
+  assert.deepEqual(gateView(progressWith(['profile']), detection), { kind: 'continue' });
+});
+
+test('a bot on Telegram or Discord: the status names its own chat, screen readers count its own steps, and its owner saves with no member ID', () => {
+  const up = (chats: { kind: string; connected: boolean }[], slackConnected = true) => ({ state: 'up' as const, pid: 1, startedAt: '2026-11-28T12:00:00.000Z', slackConnected, chats, counts: { needsYou: 0, running: 0 } });
+  assert.equal(statusChat(up([{ kind: 'telegram', connected: true }])), 'Telegram');
+  assert.equal(statusChat(up([{ kind: 'slack', connected: true }, { kind: 'discord', connected: true }])), 'Slack');
+  assert.equal(statusChat(up([])), 'Slack', 'a daemon from before chats');
+  assert.equal(statusView(up([{ kind: 'discord', connected: false }], false)).label, 'Discord disconnected');
+  assert.equal(statusView(up([{ kind: 'telegram', connected: true }, { kind: 'discord', connected: false }], false)).label, 'Discord disconnected', 'the chat that dropped');
+  assert.equal(lockedReason(setupProgress(null), 'owner', 'telegram'), 'available after Install');
+  assert.equal(announcement('/setup/service', 'telegram'), 'Step 3 of 4: Install and start');
+  assert.equal(announcement('/setup/service', 'slack'), 'Step 4 of 4: Install and start');
+  assert.equal(announcement('/setup/telegram/yours', 'telegram'), 'Step 4 of 4: Make it yours');
+  assert.deepEqual(ownerForm.parse({ name: 'Alex', slackUserId: '', githubLogin: 'alex' }).errors, {});
+  assert.ok(ownerForm.parse({ name: 'Alex', slackUserId: 'nope', githubLogin: 'alex' }).errors.slackUserId);
+});
+
+test('setup picks the coding agent: T3 first when found, ACP agents only when installed, and the checks follow the pick', async (t) => {
+  const f = fixture(t);
+  const tools = join(f.root, 'tools');
+  mkdirSync(tools);
+  script(join(tools, 't3'), 'process.exit(0)');
+  script(join(tools, 'codex'), 'process.exit(0)');
+  const setup = setupHandlers(engineContext(context()), {
+    root: join(f.root, 'profiles'), githubLogin: async () => 'alex', gitName: async () => 'Alex',
+    searchPath: async () => tools, home: join(f.root, 'home'),
+  });
+  // T3 (found on the search path) leads; Codex is offered because its command is there; Claude, Gemini and OpenCode aren't.
+  assert.deepEqual((await setup.defaults()).agents, [{ id: 't3', name: 'T3 Code' }, { id: 'codex', name: 'Codex' }]);
+  const { ownerSlackUserId: _unused, ...rest } = draft(f, join(f.root, 'profiles', 'friday'));
+  await assert.rejects(async () => setup.create({ ...rest, chat: 'telegram', agent: 'gemini' }), /isn’t installed/);
+  await setup.create({ ...rest, chat: 'telegram', agent: 'codex' });
+  const dir = join(f.root, 'profiles', 'friday');
+  assert.deepEqual(JSON.parse(readFileSync(join(dir, 'agent-backend.json'), 'utf8')), { backend: 'acp', agent: 'codex', models: {} });
+  // Diagnostics checks Codex, not T3, for a bot that runs on Codex.
+  const previous = process.env.SERRA_TOOLS_PATH;
+  process.env.SERRA_TOOLS_PATH = tools;
+  t.after(() => { if (previous === undefined) delete process.env.SERRA_TOOLS_PATH; else process.env.SERRA_TOOLS_PATH = previous; });
+  const checks = await diagnose(loadConfig({ profileDir: dir, env: {} }), { offline: true });
+  assert.equal(checks.some((check) => check.name.startsWith('T3')), false);
+  assert.deepEqual(checks.find((check) => check.name === 'Coding agent'), { name: 'Coding agent', ok: true, detail: 'Codex (ACP)' });
+});
+
+test('setup never makes a T3 profile on a Mac without T3: an ACP agent found stands in, and T3 picked there is refused', async (t) => {
+  const f = fixture(t);
+  const tools = join(f.root, 'tools');
+  mkdirSync(tools);
+  script(join(tools, 'codex'), 'process.exit(0)');
+  const setup = setupHandlers(engineContext(context()), {
+    root: join(f.root, 'profiles'), githubLogin: async () => 'alex', gitName: async () => 'Alex',
+    searchPath: async () => tools, home: join(f.root, 'home'),
+  });
+  assert.deepEqual((await setup.defaults()).agents, [{ id: 'codex', name: 'Codex' }]);
+  const { ownerSlackUserId: _unused, t3Bin: _t3, ...rest } = draft(f, join(f.root, 'profiles', 'scout'));
+  await assert.rejects(async () => setup.create({ ...rest, chat: 'telegram', agent: 't3' }), /T3 Code isn’t installed/);
+  // Submitted before the agents were known (no agent in the draft): Codex, the one found, not T3.
+  await setup.create({ ...rest, chat: 'telegram' });
+  assert.equal(JSON.parse(readFileSync(join(f.root, 'profiles', 'scout', 'agent-backend.json'), 'utf8')).agent, 'codex');
 });
