@@ -7,15 +7,16 @@ import { run } from './t3.ts';
  * owner is installing, and a refusal stops the daemon with the reason instead of failing jobs later.
  */
 export const checkProjectAccess = async (paths: readonly string[],
-  { timeoutMs = 15_000, git = 'git' }: { timeoutMs?: number; git?: string } = {}): Promise<void> => {
+  { timeoutMs = 15_000, git = 'git', platform = process.platform }: { timeoutMs?: number; git?: string; platform?: NodeJS.Platform } = {}): Promise<void> => {
   for (const path of new Set(paths)) {
     try { await run(git, ['-C', path, 'rev-parse', '--git-dir'], { timeoutMs }); }
-    catch (error) { throw new Error(projectAccessMessage(path, error)); }
+    catch (error) { throw new Error(projectAccessMessage(path, error, platform)); }
   }
 };
 
-const projectAccessMessage = (path: string, error: unknown): string => {
+const projectAccessMessage = (path: string, error: unknown, platform: NodeJS.Platform): string => {
   const reason = (error instanceof Error ? error.message : String(error)).split('\n')[0];
+  if (platform !== 'darwin') return `Can't read the repository ${path} (${reason}). Check that the path is right and this user can read it.`;
   return `Can't read the repository ${path} (${reason}). If it is in Documents, Desktop or Downloads, macOS must ` +
     'allow this background service to read it: answer the macOS prompt, or allow "node" in System Settings › ' +
     'Privacy & Security › Files and Folders, then restart the bot. Or move the repository out of those folders.';

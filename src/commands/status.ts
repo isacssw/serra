@@ -1,15 +1,16 @@
 import { existsSync } from 'node:fs';
 import { loadConfig } from '../config.ts';
-import { launchd, readPrepared } from '../deploy.ts';
+import { readPrepared } from '../deploy.ts';
 import type { Command } from '../manage.ts';
+import { serviceHost } from '../service.ts';
 
 const command: Command = {
   summary: 'Show whether the service is loaded and which release is active.',
   usage: ['pnpm bot status --profile /absolute/profile'],
-  macOnly: true,
+  service: true,
   async run({ profileDir: directory, log }) {
     const config = loadConfig({ profileDir: directory, env: {} });
-    log(`Service ${config.serviceLabel}: ${await launchd.loaded(config.serviceLabel) ? 'loaded' : 'stopped'}`);
+    log(`Service ${config.serviceLabel}: ${await serviceHost().driver.loaded(config.serviceLabel) ? 'loaded' : 'stopped'}`);
     log(`Profile: ${directory}\nLogs: ${directory}/logs/bot.log`);
     const active = readPrepared(`${directory}/active.json`);
     if (active) log(`Active release: ${active.release}`);

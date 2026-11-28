@@ -1,17 +1,18 @@
 /**
- * Start, stop and restart the bot's background service through launchd (`deploy.ts`'s driver).
+ * Start, stop and restart the bot's background service: launchd on macOS, systemd on Linux (`service.ts`).
  * The CLI's `start`, `stop` and `restart` commands and the app's menubar and bridge all call these.
  */
 import { existsSync, rmSync } from 'node:fs';
-import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { loadConfig } from './config.ts';
-import { launchd, type ServiceDriver } from './deploy.ts';
 import { acquireLock } from './lock.ts';
+import { serviceHost, type ServiceDriver, type ServiceHost } from './service.ts';
 
 export interface BotServiceOptions {
+  /** Default: this computer's (`serviceHost`). */
+  host?: ServiceHost;
   driver?: ServiceDriver;
-  /** Where the service's plist lives. Default `~/Library/LaunchAgents`. */
+  /** Where the service file lives. Default: the host's folder (`~/Library/LaunchAgents`, `~/.config/systemd/user`). */
   launchAgentsDir?: string;
 }
 
@@ -20,8 +21,9 @@ interface Service { directory: string; label: string; plist: string; driver: Ser
 const service = (profileDir: string, options: BotServiceOptions): Service => {
   const directory = resolve(profileDir);
   const label = loadConfig({ profileDir: directory, env: {} }).serviceLabel;
-  const plist = join(options.launchAgentsDir ?? join(homedir(), 'Library/LaunchAgents'), `${label}.plist`);
-  return { directory, label, plist, driver: options.driver ?? launchd };
+  const host = options.host ?? serviceHost();
+  const plist = join(options.launchAgentsDir ?? host.dir, host.fileName(label));
+  return { directory, label, plist, driver: options.driver ?? host.driver };
 };
 
 /**

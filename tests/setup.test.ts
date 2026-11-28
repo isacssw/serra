@@ -22,7 +22,7 @@ import {
 } from '../app/renderer/setup/setup.logic.ts';
 import type { SecretStatus } from '../src/contracts.ts';
 import { loadConfig, readProfileFile } from '../src/config.ts';
-import type { ServiceDriver } from '../src/deploy.ts';
+import { serviceHost, type ServiceDriver } from '../src/service.ts';
 import { diagnose, type SlackAccountCheck } from '../src/doctor.ts';
 import { prepareNextRelease } from '../src/releases.ts';
 import { checkSecret, type SlackVerify } from '../src/secrets.ts';
@@ -215,7 +215,7 @@ test('the wizard takes an empty profile folder to a valid profile, an installed 
   const outcome = await call(setup.installService());
   assert.equal(outcome.ok, true, JSON.stringify(outcome));
   assert.deepEqual(calls, ['stop', 'start', 'ready']);
-  assert.ok(existsSync(join(agents, 'dev.serra.friday.plist')));
+  assert.ok(existsSync(join(agents, serviceHost().fileName('dev.serra.friday'))));
   assert.ok(ctx.pushed.some((line) => line === 'PASS Slack account: @friday in Acme; owner found.'));
 
   // Installed isn't done: the last step waits until the bot answers on its status socket.
@@ -269,7 +269,7 @@ test('progress with no profile, and for a profile made with pnpm run setup', (t)
   // A service installed by the CLI has a plist but no active.json: it counts as installed.
   assert.equal(progress.steps.find((step) => step.id === 'service')!.done, false);
   mkdirSync(agents);
-  writeFileSync(join(agents, 'dev.serra.friday.plist'), '<plist/>');
+  writeFileSync(join(agents, serviceHost().fileName('dev.serra.friday')), '<plist/>');
   assert.equal(setupProgress(dir, { launchAgentsDir: agents }).steps.find((step) => step.id === 'service')!.done, true);
 });
 
@@ -343,7 +343,7 @@ test('a failing check refuses the install before launchd is touched', async (t) 
   assert.equal(outcome.ok, false);
   assert.ok(!outcome.ok && outcome.stage === 'checks' && /Slack account: invalid_auth/.test(outcome.error));
   assert.deepEqual(calls, []);
-  assert.equal(existsSync(join(agents, 'dev.serra.friday.plist')), false);
+  assert.equal(existsSync(join(agents, serviceHost().fileName('dev.serra.friday'))), false);
   assert.ok(lines.includes('FAIL Slack account: invalid_auth'));
   assert.equal(setupProgress(dir, { launchAgentsDir: agents }).steps.find((step) => step.id === 'service')!.done, false);
 });
@@ -567,7 +567,7 @@ test('a CLI profile with tokens in .env is summarised as found, not missing, and
   writeFileSync(join(dir, '.env'), `SLACK_BOT_TOKEN=${BOT}\nSLACK_APP_TOKEN=${APP}\n`);
   const agents = join(f.root, 'agents');
   mkdirSync(agents);
-  writeFileSync(join(agents, 'dev.serra.friday.plist'), '<plist/>');
+  writeFileSync(join(agents, serviceHost().fileName('dev.serra.friday')), '<plist/>');
 
   const summary = await summarizeProfile(dir, { launchAgentsDir: agents });
   assert.equal(summary.next, 'slack');

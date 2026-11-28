@@ -38,7 +38,8 @@ const slackAccount: SlackAccountCheck = async (botToken, owner) => {
   return `@${auth.user} in ${auth.team}; owner found. App-token connection is checked at startup.`;
 };
 
-const nodeProblem = (version: string): string | null => {
+/** Why this Node version can't run Serra, or null when it can. */
+export const nodeProblem = (version: string): string | null => {
   const [major = 0, minor = 0] = version.split('.').map(Number);
   return major < 22 || major === 23 || (major === 22 && minor < 18) ? 'Use Node 22.18+ on the 22.x line, or Node 24+' : null;
 };

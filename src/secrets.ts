@@ -11,8 +11,9 @@
  */
 import { execFile, spawnSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { isAbsolute, join, resolve } from 'node:path';
 import type { Profile, SecretName, SecretSource, SecretStatus } from './contracts.ts';
+import { findExecutable } from './exec.ts';
 import { writeFileAtomic } from './lib/atomic.ts';
 import { readEnv } from './lib/env.ts';
 
@@ -21,7 +22,7 @@ export const SECRET_NAMES: readonly SecretName[] = ['SLACK_BOT_TOKEN', 'SLACK_AP
 
 /** The external tools and how long each may take. Tests point these at fake binaries. */
 export interface SecretTools {
-  /** The macOS `security` CLI. */
+  /** The macOS `security` CLI. Where it can't be found (Linux) there is no Keychain. */
   security: string;
   /** The 1Password CLI. */
   op: string;
@@ -29,6 +30,13 @@ export interface SecretTools {
 }
 // 30 s leaves time for a 1Password unlock prompt.
 const DEFAULT_SECRET_TOOLS: SecretTools = { security: 'security', op: 'op', timeoutMs: 30_000 };
+
+/** The `security` CLI, or a clear error where there is none, so no Keychain (Linux). */
+const keychain = (tools: SecretTools): string => {
+  const found = isAbsolute(tools.security) ? existsSync(tools.security) : findExecutable(tools.security, process.env.PATH ?? '') !== null;
+  if (!found) throw new Error('The Keychain is only on macOS. Use 1Password or the profile .env here.');
+  return tools.security;
+};
 
 interface CheckRecord { verifiedAt: string | null; error: string | null }
 
@@ -183,7 +191,7 @@ const runToolSync = (call: ToolCall): string => {
 
 const readCall = (source: Exclude<SecretSource, { kind: 'env' }>, tools: SecretTools): ToolCall =>
   source.kind === 'keychain'
-    ? { label: 'Keychain (security)', bin: tools.security, args: ['find-generic-password', '-s', source.service, '-a', source.account, '-w'], timeoutMs: tools.timeoutMs }
+    ? { label: 'Keychain (security)', bin: keychain(tools), args: ['find-generic-password', '-s', source.service, '-a', source.account, '-w'], timeoutMs: tools.timeoutMs }
     : { label: '1Password (op)', bin: tools.op, args: ['read', '--no-newline', source.reference], timeoutMs: tools.timeoutMs };
 
 const PREFIX: Record<SecretName, string> = { SLACK_BOT_TOKEN: 'xoxb-', SLACK_APP_TOKEN: 'xapp-' };
@@ -218,7 +226,7 @@ const resolveSecret = async (profileDir: string, name: SecretName, source: Secre
 
 const keychainHas = async (source: SecretSource & { kind: 'keychain' }, tools: SecretTools): Promise<boolean> => {
   // Without -w, `security` prints the item's attributes only, so this never reads the value.
-  try { await runTool({ label: 'Keychain (security)', bin: tools.security, args: ['find-generic-password', '-s', source.service, '-a', source.account], timeoutMs: tools.timeoutMs }); return true; }
+  try { await runTool({ label: 'Keychain (security)', bin: keychain(tools), args: ['find-generic-password', '-s', source.service, '-a', source.account], timeoutMs: tools.timeoutMs }); return true; }
   catch (error) {
     if (/could not be found|exit code 44/.test((error as Error).message)) return false;
     throw error;
@@ -232,7 +240,7 @@ const keychainHas = async (source: SecretSource & { kind: 'keychain' }, tools: S
 const keychainWrite = async (name: SecretName, source: SecretSource & { kind: 'keychain' }, value: string, tools: SecretTools): Promise<void> => {
   if (/["'\\\s]/.test(value)) throw new Error(`${name} contains quotes, backslashes or whitespace`);
   const line = `add-generic-password -U -s "${source.service}" -a "${source.account}" -l "Serra ${name}" -w "${value}"\n`;
-  await runTool({ label: 'Keychain (security)', bin: tools.security, args: ['-i'], input: line, timeoutMs: tools.timeoutMs, hide: [value] });
+  await runTool({ label: 'Keychain (security)', bin: keychain(tools), args: ['-i'], input: line, timeoutMs: tools.timeoutMs, hide: [value] });
   // `security -i` exits 0 even when a command in it fails, so read the item back.
   let stored: string;
   try { stored = fromOutput(name, source, await runTool(readCall(source, tools))); }

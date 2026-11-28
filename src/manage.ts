@@ -2,6 +2,7 @@ import { realpathSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { profileArgument } from './config.ts';
+import { hasServiceHost } from './service.ts';
 
 /** What a command gets: its arguments, parsed helpers and the profile folder. Commands print with `log`. */
 export interface CommandContext {
@@ -11,7 +12,7 @@ export interface CommandContext {
   option: (key: string) => string | undefined;
   /** Whether a bare flag like `--apply` is present. */
   flag: (key: string) => boolean;
-  /** Absolute profile folder from `--profile` or `BOT_PROFILE`. */
+  /** Absolute profile folder from `--profile` or `BOT_PROFILE`. Empty for a command with `profile: false`. */
   profileDir: string;
   log: (text: string) => void;
 }
@@ -25,8 +26,10 @@ export interface Command {
   summary: string;
   /** Example invocations for `--help`. */
   usage?: string[];
-  /** Needs launchd, so macOS only. */
-  macOnly?: boolean;
+  /** Runs the background service: launchd on macOS, systemd on Linux. */
+  service?: boolean;
+  /** About this computer, not one bot: no `--profile` needed. */
+  profile?: false;
   run: (context: CommandContext) => Promise<void>;
 }
 
@@ -54,6 +57,7 @@ export const commands: CommandTable = {
   tools: () => import('./commands/tools.ts'),
   task: () => import('./commands/task.ts'),
   interview: () => import('./commands/interview.ts'),
+  server: () => import('./commands/server.ts'),
 };
 
 export const helpText = async (table: CommandTable = commands): Promise<string> => {
@@ -61,9 +65,10 @@ export const helpText = async (table: CommandTable = commands): Promise<string> 
   const width = Math.max(...loaded.map(([name]) => name.length));
   return [
     'Usage: pnpm bot <command> --profile /absolute/profile/folder [options]',
+    '       pnpm bot server doctor',
     '',
     'Commands:',
-    ...loaded.map(([name, command]) => `  ${name.padEnd(width)}  ${command.summary}${command.macOnly ? ' (macOS)' : ''}`),
+    ...loaded.map(([name, command]) => `  ${name.padEnd(width)}  ${command.summary}${command.service ? ' (macOS, Linux)' : ''}`),
     '',
     ...loaded.flatMap(([, command]) => command.usage ?? []),
   ].join('\n');
@@ -83,11 +88,11 @@ export const runCli = async (argv: string[], {
     const load = Object.hasOwn(table, name) ? table[name] : undefined;
     if (!load) throw new Error(`Unknown bot command: ${name}. Run pnpm bot --help.`);
     const command = (await load()).default;
-    if (command.macOnly && platform !== 'darwin') {
-      throw new Error('Background service management currently supports macOS. Run pnpm start --profile ... in the foreground on other systems.');
+    if (command.service && !hasServiceHost(platform)) {
+      throw new Error('Background service management supports macOS and Linux. Run pnpm start --profile ... in the foreground on other systems.');
     }
-    const profile = profileArgument(args);
-    if (!profile) throw new Error('--profile /absolute/profile/folder is required');
+    const profile = command.profile === false ? '' : profileArgument(args) ?? '';
+    if (command.profile !== false && !profile) throw new Error('--profile /absolute/profile/folder is required');
     const option = (key: string): string | undefined => {
       const index = args.indexOf(key);
       if (index === -1) return undefined;
@@ -95,7 +100,7 @@ export const runCli = async (argv: string[], {
       if (!value || value.startsWith('--')) throw new Error(`${key} needs a value`);
       return value;
     };
-    await command.run({ args, option, flag: (key) => args.includes(key), profileDir: resolve(profile), log });
+    await command.run({ args, option, flag: (key) => args.includes(key), profileDir: profile ? resolve(profile) : '', log });
     return 0;
   } catch (caught) {
     error(caught instanceof Error ? caught.message : String(caught));

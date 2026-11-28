@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test, { type TestContext } from 'node:test';
 import { restartBot, startBot, stopBot } from '../src/bot-service.ts';
-import type { ServiceDriver } from '../src/deploy.ts';
+import { serviceHost, type ServiceDriver } from '../src/service.ts';
 
 const LABEL = 'dev.serra.test-bot';
 
@@ -18,7 +18,7 @@ const fixture = (t: TestContext, { installed = true, loaded = true } = {}) => {
   mkdirSync(launchAgentsDir);
   const example = JSON.parse(readFileSync(new URL('../examples/profile.json', import.meta.url), 'utf8')) as Record<string, unknown>;
   writeFileSync(join(profileDir, 'profile.json'), JSON.stringify({ ...example, serviceLabel: LABEL }));
-  const plist = join(launchAgentsDir, `${LABEL}.plist`);
+  const plist = join(launchAgentsDir, serviceHost().fileName(LABEL));
   if (installed) writeFileSync(plist, 'plist');
   const calls: string[] = [];
   let isLoaded = loaded;

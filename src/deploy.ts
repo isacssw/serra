@@ -1,7 +1,6 @@
 import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { accessSync, chmodSync, constants, copyFileSync, cpSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
-import { homedir } from 'node:os';
 import { delimiter, dirname, join, relative, resolve } from 'node:path';
 import { codeRoot, loadConfig } from './config.ts';
 import { assertHealthy } from './doctor.ts';
@@ -9,6 +8,7 @@ import {
   isArrayOf, isBoolean, isNonEmptyString, isOneOf, isOptional, isRecord, isString, readJsonFile, readJsonOrNull,
 } from './lib/guards.ts';
 import { acquireLock, processAlive } from './lock.ts';
+import { serviceHost, type ServiceDriver, type ServiceHost } from './service.ts';
 import { run } from './t3.ts';
 
 const writeJson = (path: string, value: unknown): void => {
@@ -26,7 +26,6 @@ const digest = (root: string, names: string[]): string => {
   return hash.digest('hex');
 };
 
-const xmlEscape = (value: string): string => value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&apos;');
 const shellQuote = (value: string): string => `'${value.split("'").join("'\"'\"'")}'`;
 
 /**
@@ -34,7 +33,7 @@ const shellQuote = (value: string): string => `'${value.split("'").join("'\"'\"'
  * Electron, so callers there must pass the real Node path (see `findNode` in releases.ts) instead of relying on this.
  */
 export const defaultNode = (): string => {
-  if (process.versions.electron) throw new Error('Running inside Electron: pass the Node binary path explicitly so launchd does not run the bot with Electron.');
+  if (process.versions.electron) throw new Error('Running inside Electron: pass the Node binary path explicitly so the service does not run the bot with Electron.');
   return process.execPath;
 };
 
@@ -150,22 +149,6 @@ export const releaseSourceRoot = (root: string = codeRoot): string => {
   throw new Error(`Can't prepare a release: the Serra code isn't in ${root} or ${shipped} (missing ${missing.join(', ')}). Rebuild the app with pnpm app:package, or prepare from a checkout with pnpm bot prepare.`);
 };
 
-export const servicePlist = ({ directory, release, label, node = defaultNode() }: { directory: string; release: string; label: string; node?: string }): string => {
-  const s = (value: string): string => `<string>${xmlEscape(value)}</string>`;
-  return `<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0"><dict>
-<key>Label</key>${s(label)}
-<key>WorkingDirectory</key>${s(release)}
-<key>ProgramArguments</key><array>${[node, join(release, 'src/index.ts'), '--profile', directory].map(s).join('')}</array>
-<key>EnvironmentVariables</key><dict><key>HOME</key>${s(homedir())}<key>PATH</key>${s(`${dirname(node)}:${process.env.PATH ?? '/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin'}`)}</dict>
-<key>RunAtLoad</key><true/><key>KeepAlive</key><true/><key>ThrottleInterval</key><integer>30</integer>
-<key>ExitTimeOut</key><integer>75</integer>
-<key>StandardOutPath</key>${s(join(directory, 'logs/bot.log'))}
-<key>StandardErrorPath</key>${s(join(directory, 'logs/bot.log'))}
-</dict></plist>\n`;
-};
-
 export interface Prepared {
   version: 1;
   release: string;
@@ -208,8 +191,6 @@ const isActivation = (value: unknown): value is Activation =>
   && isString(value.backup) && isString(value.plist) && isBoolean(value.hadPlist) && isBoolean(value.wasLoaded)
   && isBoolean(value.profileIsAuthoritative) && isPrepared(value.prepared) && isOptional(isPrepared)(value.previousActive);
 
-const isReady = (value: unknown): value is { pid: number } => isRecord(value) && Number.isSafeInteger(value.pid);
-
 /** The release record at `path` (`prepared.json` or `active.json`), or null when it is missing or isn't one. */
 export const readPrepared = (path: string): Prepared | null => readJsonOrNull(path, isPrepared);
 
@@ -220,11 +201,13 @@ export interface PrepareOptions {
   install?: boolean;
   /** Node binary for the service and the helper scripts. Required inside Electron. */
   node?: string;
+  /** Which service file the release carries. Default: this computer's (`serviceHost`). */
+  host?: ServiceHost;
   log?: DeployLog;
 }
 
 /** Snapshot code and install its dependencies without touching launchd or the live checkout. */
-export const prepareRelease = async (directory: string, { root, install = true, node, log = quiet }: PrepareOptions = {}): Promise<Prepared> => {
+export const prepareRelease = async (directory: string, { root, install = true, node, host = serviceHost(), log = quiet }: PrepareOptions = {}): Promise<Prepared> => {
   directory = resolve(directory);
   node ??= defaultNode();
   const config = loadConfig({ profileDir: directory, env: {} });
@@ -250,7 +233,7 @@ export const prepareRelease = async (directory: string, { root, install = true, 
     const source = { ...shippedBuild(root), ...await codeCommit(root) };
     if (source.commit) log(`Code at ${source.commit.slice(0, 12)}${source.dirty ? ' with uncommitted changes' : ''}`);
     if (source.commit && updates) await warnIfBehind(root, source.commit, updates.ref ?? DEFAULT_UPDATES_REF, log);
-    writeFileSync(join(release, 'service.plist'), servicePlist({ directory, release, label: config.serviceLabel, node }), { mode: 0o600 });
+    writeFileSync(join(release, host.releaseFile), host.unit({ directory, release, label: config.serviceLabel, node }), { mode: 0o600 });
     const releaseFiles = files(release);
     const releaseHash = digest(release, releaseFiles);
     if (install) {
@@ -277,60 +260,12 @@ export const prepareRelease = async (directory: string, { root, install = true, 
   return prepared;
 };
 
-export interface ServiceDriver {
-  loaded(label: string): Promise<boolean>;
-  stop(label: string): Promise<void>;
-  start(plist: string): Promise<void>;
-  ready(directory: string): Promise<void>;
-}
-const domain = (): string => `gui/${process.getuid!()}`;
-const missingService = (error: unknown): boolean => /Could not find service|No such process|Could not find specified service/i.test(String(error));
-const delay = (ms: number): Promise<void> => new Promise((done) => setTimeout(done, ms));
-
-/** The last error the daemon logged while it was starting, so a failed start says why. Older lines are ignored. */
-export const startupError = (logPath: string, since: number): string | undefined => {
-  try {
-    if (statSync(logPath).mtimeMs < since) return undefined;
-    const line = readFileSync(logPath, 'utf8').trimEnd().split('\n').slice(-50).findLast((l) => l.includes('[ERROR]'));
-    const at = line ? Date.parse(line.slice(0, line.indexOf(' '))) : NaN;
-    return line && !(at < since - 1000) ? line.replace(/^\S+ \[ERROR\] (?:\S+ )?/, '') : undefined;
-  } catch { return undefined; }
-};
-
-export const launchd: ServiceDriver = {
-  async loaded(label) {
-    try { await run('launchctl', ['print', `${domain()}/${label}`]); return true; }
-    catch (error) { if (missingService(error)) return false; throw error; }
-  },
-  async stop(label) {
-    let info: string;
-    try { info = await run('launchctl', ['print', `${domain()}/${label}`]); }
-    catch (error) { if (missingService(error)) return; throw error; }
-    const pid = Number(/^\s*pid = (\d+)/m.exec(info)?.[1] ?? 0);
-    await run('launchctl', ['bootout', `${domain()}/${label}`], { timeoutMs: 90_000 });
-    const deadline = Date.now() + 10_000;
-    while (pid && processAlive(pid)) {
-      if (Date.now() > deadline) throw new Error(`Old PID ${pid} has not stopped. Refusing to start another bot.`);
-      await delay(100);
-    }
-  },
-  async start(plist) { await run('launchctl', ['bootstrap', domain(), plist]); },
-  async ready(directory) {
-    const started = Date.now();
-    const deadline = started + 25_000;
-    do {
-      // A marker that doesn't read yet may still be being written by the daemon.
-      const ready = readJsonOrNull(join(directory, 'ready.json'), isReady);
-      if (ready && processAlive(ready.pid)) return;
-      await delay(250);
-    } while (Date.now() < deadline);
-    const reason = startupError(join(directory, 'logs/bot.log'), started);
-    throw new Error(`Bot did not become ready${reason ? `: ${reason}` : ''}. Check ${join(directory, 'logs/bot.log')}`);
-  },
-};
-
 export interface DeployOptions {
+  /** The service manager. Default: this computer's (`serviceHost`): launchd on macOS, systemd on Linux. */
+  host?: ServiceHost;
+  /** Replaces the host's driver (tests). */
   driver?: ServiceDriver;
+  /** Replaces the host's folder for installed service files (tests). */
   launchAgentsDir?: string;
   preflight?: (directory: string) => Promise<void>;
   /**
@@ -342,18 +277,23 @@ export interface DeployOptions {
   expect?: (plan: Prepared) => void;
   log?: DeployLog;
 }
-const defaults = (options: DeployOptions) => ({
+const defaults = (options: DeployOptions) => {
+  const host = options.host ?? serviceHost();
+  return {
+  host,
   log: options.log ?? quiet,
-  driver: options.driver ?? launchd,
-  launchAgentsDir: options.launchAgentsDir ?? join(homedir(), 'Library/LaunchAgents'),
+  driver: options.driver ?? host.driver,
+  launchAgentsDir: options.launchAgentsDir ?? host.dir,
   preflight: options.preflight ?? (async (directory: string) => { await assertHealthy(loadConfig({ profileDir: directory, env: {} })); }),
-});
+  };
+};
 
 /**
  * Why the prepared release can't be activated, in the order `activate` checks them. Empty when it can.
- * Reads files only: no launchd, no network, no health checks.
+ * Reads files only: no service manager, no network, no health checks. `releaseFile` is the service file this
+ * computer's host needs (`ServiceHost.releaseFile`).
  */
-export const preparedProblems = (directory: string): string[] => {
+export const preparedProblems = (directory: string, releaseFile = serviceHost().releaseFile): string[] => {
   directory = resolve(directory);
   const transaction = readJsonFile(join(directory, 'activation.json'), isActivation);
   if (transaction.state === 'invalid') return [ACTIVATION_UNREADABLE];
@@ -364,6 +304,7 @@ export const preparedProblems = (directory: string): string[] => {
   const plan = prepared.value;
   if (loadConfig({ profileDir: directory, env: {} }).serviceLabel !== plan.label) return ['The service label changed. Prepare a new release before activation.'];
   if (!existsSync(plan.release) || digest(plan.release, plan.releaseFiles) !== plan.releaseHash) return ['Prepared release changed. Prepare a new release before activation.'];
+  if (!existsSync(join(plan.release, releaseFile))) return ['The prepared release is for another system. Run prepare again.'];
   if (!existsSync(join(plan.release, 'node_modules/@slack/bolt'))) return ['Prepared dependencies missing. Run prepare again.'];
   if (readPrepared(join(directory, 'active.json'))?.release === plan.release) return ['This release is already active'];
   return [];
@@ -396,11 +337,11 @@ export class CutoverError extends Error {
 /** This is the only upgrade operation that stops the bot. All downloads and checks happen first. */
 export const activate = async (directory: string, options: DeployOptions = {}): Promise<void> => {
   directory = resolve(directory);
-  const { driver, launchAgentsDir, preflight, log } = defaults(options);
+  const { host, driver, launchAgentsDir, preflight, log } = defaults(options);
   const unlock = acquireLock(join(directory, 'deployment.lock'));
   try {
     log('Checking the prepared release');
-    const problem = preparedProblems(directory)[0];
+    const problem = preparedProblems(directory, host.releaseFile)[0];
     if (problem) throw new Error(problem);
     const plan = readPrepared(join(directory, 'prepared.json'));
     if (!plan) throw new Error("prepared.json can't be read. Run prepare again.");
@@ -411,7 +352,8 @@ export const activate = async (directory: string, options: DeployOptions = {}): 
     log('Running health checks');
     await preflight(directory);
     mkdirSync(launchAgentsDir, { recursive: true });
-    const plist = join(launchAgentsDir, `${plan.label}.plist`);
+    // `plist` is the installed service file: a launchd plist or a systemd unit (the name predates Linux).
+    const plist = join(launchAgentsDir, host.fileName(plan.label));
     const hadPlist = existsSync(plist);
     const wasLoaded = await driver.loaded(plan.label);
     // A fresh installation must never take over another profile's existing service.
@@ -430,7 +372,7 @@ export const activate = async (directory: string, options: DeployOptions = {}): 
       transaction.profileIsAuthoritative = true;
       writeJson(join(directory, 'activation.json'), transaction);
       rmSync(join(directory, 'ready.json'), { force: true });
-      copyPrivate(join(plan.release, 'service.plist'), plist);
+      copyPrivate(join(plan.release, host.releaseFile), plist);
       log(`Starting ${plan.release}`);
       await driver.start(plist);
       log('Waiting for the bot to connect');
@@ -460,7 +402,7 @@ const restore = async (directory: string, transaction: Activation, driver: Servi
   log(`Stopping ${transaction.prepared.label}`);
   await driver.stop(transaction.prepared.label);
   if (transaction.hadPlist) copyPrivate(join(transaction.backup, 'service.plist'), transaction.plist);
-  else rmSync(transaction.plist, { force: true });
+  else { rmSync(transaction.plist, { force: true }); await driver.forget?.(transaction.plist); }
   const activePath = join(directory, 'active.json');
   if (transaction.previousActive) writeJson(activePath, transaction.previousActive);
   else rmSync(activePath, { force: true });
