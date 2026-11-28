@@ -50,6 +50,66 @@ jobs:
       - run: pnpm knowledge
       - run: ./scripts/install.sh --help
 
+  # The bot on Linux, without the app: types and lint, the tests of everything but the app (macOS only), and the
+  # systemd driver against this runner's real user manager.
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - run: git show-ref --verify --quiet refs/heads/main || git branch main origin/main
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: |
+          mkdir -p "$RUNNER_TEMP/pnpm-bin"
+          corepack enable --install-directory "$RUNNER_TEMP/pnpm-bin" pnpm
+          echo "$RUNNER_TEMP/pnpm-bin" >> "$GITHUB_PATH"
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm check
+      - name: Test the core, with a real systemd user service
+        env:
+          SERRA_SYSTEMD_TEST: '1'
+        run: |
+          sudo loginctl enable-linger "$(id -un)"
+          export XDG_RUNTIME_DIR="/run/user/$(id -u)"
+          for _ in $(seq 1 40); do [ -S "$XDG_RUNTIME_DIR/bus" ] && break; sleep 0.25; done
+          systemctl --user show-environment > /dev/null
+          node --test --test-timeout=60000 $(ls tests/*.test.ts | grep -v '^tests/app-')
+
+  # install.sh on a clean Debian with no Node, as a normal user: it fetches the pinned Node, installs the bot, and the
+  # bot starts and reaches Slack (which refuses the placeholder token). Nothing here needs a secret.
+  linux-install:
+    runs-on: ubuntu-latest
+    container: debian:12-slim
+    steps:
+      - run: apt-get update && apt-get install -y --no-install-recommends ca-certificates curl git
+      - uses: actions/checkout@v4
+      - run: useradd --create-home serra && chown -R serra "$GITHUB_WORKSPACE"
+      - name: Install with no Node on the machine
+        run: |
+          if command -v node; then echo "Node is already here; this job needs a machine without it"; exit 1; fi
+          su serra -c './scripts/install.sh --no-setup'
+      - name: Check the machine and start the bot
+        run: |
+          su serra -c 'set -eu
+            export PATH="$HOME/.local/bin:$PATH"
+            serra server doctor | tee doctor.log || true
+            grep -q "^PASS Node: 24.22.3$" doctor.log
+            grep -q "^PASS User: serra$" doctor.log
+            mkdir -p ~/project && cd ~/project && git init -q && git remote add origin https://github.com/acme/project.git
+            git -c user.name=ci -c user.email=ci@example.com commit -q --allow-empty -m init && git update-ref refs/remotes/origin/main HEAD
+            cd "$GITHUB_WORKSPACE"
+            sed "s|/absolute/path/to/your/repo|$HOME/project|" examples/profile.json > ~/profile.json
+            node=$(ls -d ~/.local/share/serra/runtime/node-v*/bin)/node
+            "$node" src/setup.ts --config ~/profile.json --profile ~/bot
+            printf "SLACK_APP_TOKEN=xapp-1-A111-2222-fixturevalue\nSLACK_BOT_TOKEN=xoxb-1111-2222-fixturevalue\n" > ~/bot/.env
+            status=0; timeout 60 "$node" src/index.ts --profile ~/bot > start.log 2>&1 || status=$?
+            cat start.log
+            test "$status" = 1
+            grep -q "invalid_auth" start.log'
+
   # Builds the app the way a release does (unsigned, ad-hoc), runs its smoke test and keeps the .dmg for a week, so
   # every PR and every merge shows the app still packages. No secrets: this runs fork PR code.
   app:

@@ -22,7 +22,7 @@ import {
 } from '../app/renderer/setup/setup.logic.ts';
 import type { SecretStatus } from '../src/contracts.ts';
 import { loadConfig, readProfileFile } from '../src/config.ts';
-import type { ServiceDriver } from '../src/deploy.ts';
+import type { ServiceDriver } from '../src/service.ts';
 import { diagnose, type SlackAccountCheck } from '../src/doctor.ts';
 import { prepareNextRelease } from '../src/releases.ts';
 import { checkSecret, type SlackVerify } from '../src/secrets.ts';

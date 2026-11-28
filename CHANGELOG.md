@@ -4,6 +4,7 @@ Serra follows [Semantic Versioning](https://semver.org) once it reaches 1.0. Unt
 
 ## Unreleased
 
+- **Linux:** the bot runs on a Linux machine without the app, as a systemd user service. `./scripts/install.sh` installs it from a checkout, adding Node 24 for you only (checksum-pinned) when it's missing, and a `serra` command; `serra server doctor` checks the machine. No sudo, no open port. See `docs/linux.md`.
 - **Profiles:** run more than one bot from one app. Click the name at the top of the sidebar (or ⌘⇧N) and pick **Add…** to set up another bot with its own Slack app, knowledge, agent and settings. From the second one the top row shows the bot in use, and its menu, ⌘1…⌘9 and ⌘K switch between them without mixing anything. **Settings › Profiles** orders them, picks each one's colour, and removes one after saving a checked backup (tokens left out) and moving its folder to the Trash. With one bot, the app looks as before, and nothing in your profile folder changes.
 
 ## 0.1.0-alpha.9 (2026-11-28)

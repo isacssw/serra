@@ -17,7 +17,7 @@ import {
 import { createAppUpdater, type AppUpdateView } from '../app/main/app-updater.ts';
 import { botSyncDecision, type BotSyncInput } from '../app/main/bot-sync.ts';
 import { updatesService } from '../app/main/ipc/updates.ts';
-import { type ServiceDriver } from '../src/deploy.ts';
+import { serviceHost, type ServiceDriver } from '../src/service.ts';
 import { createProfile } from '../src/setup.ts';
 import { acknowledgePause, pauseIntake, readPause } from '../src/intake.ts';
 
@@ -280,7 +280,7 @@ test('prepare uses the Node findNode resolves, never process.execPath, and strea
   assert.deepEqual(asked, [f.directory]);
   assert.equal(plan.node, fakeNode);
   assert.notEqual(plan.node, process.execPath);
-  assert.match(readFileSync(join(plan.release, 'service.plist'), 'utf8'), new RegExp(`<string>${fakeNode}</string>`));
+  assert.match(readFileSync(join(plan.release, serviceHost().releaseFile), 'utf8'), new RegExp(fakeNode));
   assert.match(readFileSync(join(f.directory, 'activate.sh'), 'utf8'), new RegExp(`exec '?${fakeNode}'?`));
   assert.equal(pushes[0], 'Looking for Node');
   assert.equal(pushes[1], `Using ${fakeNode}`);

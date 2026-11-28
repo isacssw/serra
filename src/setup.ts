@@ -12,7 +12,6 @@
  * No token value is returned or written to `setup.json`. Errors from Slack are scrubbed before they are thrown.
  */
 import { chmodSync, cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { homedir } from 'node:os';
 import { basename, isAbsolute, join, resolve } from 'node:path';
 import { createInterface } from 'node:readline/promises';
 import { stdin, stdout } from 'node:process';
@@ -27,6 +26,7 @@ import { activateRelease, prepareNextRelease, type ActivationOutcome } from './r
 import type { SecretName, SecretStatus } from './contracts.ts';
 import { isTokenVerdict } from './token-errors.ts';
 import { readSecretsFile, scrub, SECRET_NAMES, secretStatus, slackWorkspace, sourceLabel, type SecretOptions } from './secrets.ts';
+import { hasServiceHost, serviceHost } from './service.ts';
 import { run } from './t3.ts';
 
 /** How to start the knowledge interview (docs/knowledge-interview.md) for a profile. */
@@ -351,7 +351,7 @@ export interface SetupProgress {
 }
 
 /**
- * Where launchd keeps the bot's plist (tests pass a temp folder), and whether the daemon answers on its status
+ * Where the service manager keeps the bot's service file (tests pass a temp folder), and whether the daemon answers on its status
  * socket and is connected to Slack. Only the app knows that (it follows the socket); given, the service step needs the bot running, not only
  * installed. The CLI leaves it out.
  */
@@ -381,16 +381,18 @@ export const recordServiceAnswered = (profileDir: string, now = new Date()): voi
   writeFileAtomic(join(directory, SETUP_FILE), JSON.stringify(file, null, 2) + '\n', { mode: 0o600 });
 };
 
-/** Whether the bot's service was installed: an activated release (`active.json`) or a plist from an older install. */
+/** Whether the bot's service was installed: an activated release (`active.json`) or a service file from an older install. */
 export const serviceInstalled = (profileDir: string, profile: Profile, { launchAgentsDir }: ServiceLookup = {}): boolean => {
   if (existsSync(join(profileDir, 'active.json'))) return true;
+  if (!hasServiceHost()) return false;
+  const host = serviceHost();
   const label = profile.serviceLabel ?? `dev.serra.${profile.bot.id}`;
-  return existsSync(join(launchAgentsDir ?? join(homedir(), 'Library/LaunchAgents'), `${label}.plist`));
+  return existsSync(join(launchAgentsDir ?? host.dir, host.fileName(label)));
 };
 
 /**
  * Which steps are done, from the profile's files only: `profile.json`, the last token checks in `secrets.json`,
- * `setup.json`, `active.json` and the launchd plist. Runs no `security`, `op`, Slack or launchd call, so it is cheap
+ * `setup.json`, `active.json` and the service file. Runs no `security`, `op`, Slack or service manager call, so it is cheap
  * to call often. Tokens that are present but never checked don't finish the Slack step: `summarizeProfile` reports
  * them as found, so the window can check them instead of asking for them again.
  */
@@ -437,7 +439,7 @@ export const setupProgress = (profileDir: string | null, lookup: ServiceLookup =
   // counts an installed service.
   // A bot set up before this was recorded counts too when it left `ready.json`, written once it reached Slack.
   const answered = Boolean(setup.serviceAnsweredAt) || existsSync(join(directory, 'ready.json')) || (lookup.running ?? true);
-  add('service', installed && answered, !installed ? 'Not installed yet' : lookup.running ? 'Running' : answered ? 'Installed under launchd' : 'Installed, hasn’t answered yet');
+  add('service', installed && answered, !installed ? 'Not installed yet' : lookup.running ? 'Running' : answered ? 'Installed' : 'Installed, hasn’t answered yet');
   return {
     profileDir: directory,
     bot: { id: profile.bot.id, name: profile.bot.name },

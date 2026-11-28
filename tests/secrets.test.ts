@@ -109,6 +109,19 @@ test('setSecret stores a Keychain value through stdin, never argv, and loadConfi
   assert.equal(config.appToken, APP);
 });
 
+test('without a Keychain (Linux), a Keychain source is refused with the alternatives and nothing changes', async (t) => {
+  const f = fixture(t);
+  const linux = { tools: { ...f.tools, security: null } };
+  const source = { kind: 'keychain' as const, service: 'dev.serra.friday', account: 'SLACK_BOT_TOKEN' };
+  await assert.rejects(setSecret(f.dir, 'SLACK_BOT_TOKEN', source, BOT, linux), /Keychain is only on macOS\. Use 1Password or the profile \.env/);
+  await assert.rejects(setSecret(f.dir, 'SLACK_BOT_TOKEN', source, undefined, linux), /only on macOS/);
+  assert.deepEqual(readSecretsFile(f.dir).sources, {});
+  assert.equal(f.calls(), '');
+  // 1Password and .env still work there.
+  f.putVault('op://Serra/Friday/bot', BOT);
+  assert.equal((await setSecret(f.dir, 'SLACK_BOT_TOKEN', { kind: '1password', reference: 'op://Serra/Friday/bot' }, undefined, linux)).source.kind, '1password');
+});
+
 test('a 1Password reference resolves through op; a bad one fails without the value', async (t) => {
   const f = fixture(t);
   for (const reference of ['op://Private/Serra', 'op://Private//bot', 'op://Private/Serra/bot\nx', 'op://Private/Serra/ bot']) {

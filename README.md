@@ -40,6 +40,8 @@
 
 Each engineer runs their own bot: their own Slack app, their own Mac, their own GitHub login.
 
+The bot can also run on a Linux machine, without the app: [docs/linux.md](docs/linux.md).
+
 ## Quick start
 
 ### What you need
@@ -186,7 +188,8 @@ Replacing the app keeps your profile, tokens and service. Running Serra from a c
 
 ## Alpha limits
 
-- macOS and Slack only, and only an Apple silicon build is published. One bot per Slack app.
+- macOS and Slack only, and only an Apple silicon build is published. One bot per Slack app. On Linux the bot runs
+  from a checkout, without the app ([docs/linux.md](docs/linux.md)).
 - The bot acts with **your** GitHub login and your agent's sign-in. Anyone on the allowed list can have it read your
   repository and open PRs as you. Keep the list short.
 - Your Mac and T3 Code must stay on. Messages sent while the bot is down aren't replayed.

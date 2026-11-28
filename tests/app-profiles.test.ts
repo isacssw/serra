@@ -22,7 +22,7 @@ import { lettersFor, newProfileLook, profileLooks, profileRows, rowLabel, showsS
 import { statusHeader, statusView } from '../app/renderer/status.logic.ts';
 import { ADD_PROFILE_PATH, profileShortcut } from '../app/renderer/shell/shortcuts.logic.ts';
 import type { BotStatus, StatusMessage } from '../src/contracts.ts';
-import type { ServiceDriver } from '../src/deploy.ts';
+import type { ServiceDriver } from '../src/service.ts';
 import { MANIFEST_FILE } from '../src/profile-backup.ts';
 import { createProfile } from '../src/setup.ts';
 
