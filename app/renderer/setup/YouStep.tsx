@@ -191,6 +191,7 @@ const ProfileForm = ({ adding }: { adding?: NewProfileChoice }) => {
     finally { setBusy(false); }
   };
 
+  const choosing = !adding && agents !== null && agents.length > 1;
   const botNameInput = (
     <Input label="Bot name" placeholder="Friday" value={draft.botName} onChange={set('botName')} error={errors.botName}
       hint={chat === 'slack' ? 'How it appears in Slack' : undefined} />
@@ -212,19 +213,20 @@ const ProfileForm = ({ adding }: { adding?: NewProfileChoice }) => {
         {/* Level with the field: its label (16px) and the gap under it (6px). */}
         <Button className="mt-[22px]" icon={<FolderOpen size={14} aria-hidden />} onClick={() => void choose()}>Choose…</Button>
       </div>
-      {/* Only a real choice is shown: two or more agents found. With one there is nothing to pick; with none, why. */}
-      {!adding && agents && agents.length > 1 && (
-        <Select label="Coding agent" value={draft.agent} onChange={(agent) => setDraft({ ...draft, agent })} className="sm:max-w-[calc(50%-10px)]"
-          options={agents.map((entry) => ({ value: entry.id, label: entry.name }))} />
+      {/* Bot name (on Slack), the coding agent and the GitHub login share one two-column grid, so no field sits alone. The
+          agent shows only for a real choice (two or more found); with one there's nothing to pick; with none, why. */}
+      {(chat === 'slack' || choosing || !loginFound) && (
+        <div className="grid gap-5 sm:grid-cols-2">
+          {chat === 'slack' && botNameInput}
+          {choosing && (
+            <Select label="Coding agent" value={draft.agent} onChange={(agent) => setDraft({ ...draft, agent })}
+              options={agents!.map((entry) => ({ value: entry.id, label: entry.name }))} />
+          )}
+          {!loginFound && loginInput(draft, set, errors.githubLogin)}
+        </div>
       )}
       {!adding && agents && agents.length === 0 && (
         <p className="text-[13px] text-muted" data-no-agent>No coding agent found on this Mac. Install T3 Code, Claude Code or Codex, then come back.</p>
-      )}
-      {(chat === 'slack' || !loginFound) && (
-        <div className="grid gap-5 sm:grid-cols-2">
-          {chat === 'slack' && botNameInput}
-          {!loginFound && loginInput(draft, set, errors.githubLogin)}
-        </div>
       )}
       <details ref={more} className="group text-[13px]">
         <summary className="flex w-fit cursor-pointer list-none items-center gap-1 rounded text-[13px] font-medium text-muted hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus [&::-webkit-details-marker]:hidden"><ChevronRight size={13} aria-hidden className="transition-transform group-open:rotate-90" />More options</summary>
@@ -237,7 +239,7 @@ const ProfileForm = ({ adding }: { adding?: NewProfileChoice }) => {
           <Input label="Bot ID" placeholder={suggestId(draft.botName)} inputClassName="font-mono" value={draft.botId} onChange={set('botId')}
             error={errors.botId} hint="Names the service and job branches" spellCheck={false} />
           {/* Only for T3: an ACP agent has no T3 CLI to point at. */}
-          {(draft.agent === 't3' || draft.agent === '') && (
+          {(adding ? adding.agent === null && !adding.eve : draft.agent === 't3' || draft.agent === '') && (
             <Input label="T3 CLI" inputClassName="font-mono" placeholder="~/.t3/bin/t3" value={draft.t3Bin} onChange={set('t3Bin')} error={errors.t3Bin} spellCheck={false} />
           )}
           <Input label="Profile folder" inputClassName="font-mono" className="sm:col-span-2" placeholder={root ? profileFolder(draft, root) : ''} value={draft.directory}

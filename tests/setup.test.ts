@@ -982,3 +982,20 @@ test('setup picks the coding agent: T3 first when found, ACP agents only when in
   assert.equal(checks.some((check) => check.name.startsWith('T3')), false);
   assert.deepEqual(checks.find((check) => check.name === 'Coding agent'), { name: 'Coding agent', ok: true, detail: 'Codex (ACP)' });
 });
+
+test('setup never makes a T3 profile on a Mac without T3: an ACP agent found stands in, and T3 picked there is refused', async (t) => {
+  const f = fixture(t);
+  const tools = join(f.root, 'tools');
+  mkdirSync(tools);
+  script(join(tools, 'codex'), 'process.exit(0)');
+  const setup = setupHandlers(engineContext(context()), {
+    root: join(f.root, 'profiles'), githubLogin: async () => 'alex', gitName: async () => 'Alex',
+    searchPath: async () => tools, home: join(f.root, 'home'),
+  });
+  assert.deepEqual((await setup.defaults()).agents, [{ id: 'codex', name: 'Codex' }]);
+  const { ownerSlackUserId: _unused, t3Bin: _t3, ...rest } = draft(f, join(f.root, 'profiles', 'scout'));
+  await assert.rejects(async () => setup.create({ ...rest, chat: 'telegram', agent: 't3' }), /T3 Code isn’t installed/);
+  // Submitted before the agents were known (no agent in the draft): Codex, the one found, not T3.
+  await setup.create({ ...rest, chat: 'telegram' });
+  assert.equal(JSON.parse(readFileSync(join(f.root, 'profiles', 'scout', 'agent-backend.json'), 'utf8')).agent, 'codex');
+});

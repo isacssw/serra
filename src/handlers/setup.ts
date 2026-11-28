@@ -220,11 +220,12 @@ export const setupHandlers = (context: CoreContext, deps: SetupDeps = {}): Handl
     },
 
     defaults: async () => {
-      const [githubLogin, ownerName] = await Promise.all([
+      // The agents are looked for alongside the login and name, so a slow `gh` never holds up the agent choice.
+      const [githubLogin, ownerName, { agents }] = await Promise.all([
         (deps.githubLogin ?? detectGithubLogin)(),
         (deps.gitName ?? (() => run('git', ['config', '--global', 'user.name'], { timeoutMs: 5_000 }).then((v) => v.trim())))().catch(() => ''),
+        agentsHere(),
       ]);
-      const { agents } = await agentsHere();
       return { githubLogin, ownerName, profileRoot: root, agents };
     },
 
@@ -236,10 +237,14 @@ export const setupHandlers = (context: CoreContext, deps: SetupDeps = {}): Handl
 
     create: async (value) => {
       const draft = parseDraft(value);
-      // The agent picked must be one found here. T3 found outside its own folder is remembered as the profile's T3 CLI.
-      const agent = draft.agent && draft.agent !== 't3' ? draft.agent : null;
-      const here = agent || !draft.t3Bin ? await agentsHere() : null;
+      // The agent picked must be one found here (T3 too, unless its CLI is named). With none picked, T3 when it's here,
+      // else the first ACP agent found: never a T3 profile on a Mac without T3. T3 found outside its own folder is
+      // remembered as the profile's T3 CLI.
+      const here = (draft.agent && draft.agent !== 't3') || !draft.t3Bin ? await agentsHere() : null;
+      const wanted = draft.agent || (here && !here.t3 && here.agents[0] ? here.agents[0].id : 't3');
+      const agent = wanted !== 't3' ? wanted : null;
       if (agent && !here?.agents.some((entry) => entry.id === agent)) throw new Error('That coding agent isn’t installed on this Mac. Pick another one.');
+      if (!agent && draft.agent === 't3' && !draft.t3Bin && !here?.t3) throw new Error('T3 Code isn’t installed on this Mac. Pick another coding agent.');
       if (!agent && !draft.t3Bin && here?.t3 && here.t3 !== join(home, '.t3/bin/t3')) draft.t3Bin = here.t3;
       const directory = await createSetupProfile(draft, { root });
       if (agent) writeAgentBackend(directory, { backend: 'acp', agent });
