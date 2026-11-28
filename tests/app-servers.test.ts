@@ -17,7 +17,7 @@ const up = (needsYou: number, running: number): BotStatus =>
   ({ state: 'up', pid: 1, startedAt: '2026-11-28T08:00:00.000Z', slackConnected: true, counts: { needsYou, running } }) as BotStatus;
 
 const server = (extra: Partial<ServerHealth> = {}): ServerHealth => ({
-  id: 's_7f3k2q', name: 't480', via: 'address', address: 't480:47820', state: 'up', skew: null, protocol: 1,
+  id: 's_7f3k2q', name: 't480', via: 'address', address: 't480:47820', state: 'up', skew: null, protocol: 1, version: null, behind: null,
   lastSeen: '2026-11-28T10:00:00.000Z', fingerprint: 'sha256 9f3c…a1',
   profiles: [{ id: 'researcher', name: 'Researcher', status: up(0, 1) }], ...extra,
 });

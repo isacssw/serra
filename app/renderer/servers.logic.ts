@@ -41,10 +41,26 @@ export const serverAction = (server: Pick<ServerHealth, 'state'>): 'retry' | 'pa
   return null;
 };
 
-/** The one Diagnostics line (UX rule C7): where it is, its protocol, its certificate. */
+/** The one Diagnostics line (UX rule C7): where it is, its Serra version, its protocol, its certificate. */
 export const serverDiagnostics = (server: ServerHealth): string =>
-  [server.via === 'ssh' ? `ssh ${server.address}` : server.address, server.protocol === null ? null : `protocol ${server.protocol}`, server.fingerprint]
+  [server.via === 'ssh' ? `ssh ${server.address}` : server.address, server.version ? `Serra ${server.version}` : null, server.protocol === null ? null : `protocol ${server.protocol}`, server.fingerprint]
     .filter(Boolean).join(' · ');
+
+/** The server's update button, when one side is behind: `Update t480`, or `Update Serra` when the app is older. */
+export const updateAction = (server: Pick<ServerHealth, 'state' | 'behind' | 'skew' | 'name'>): { label: string; target: 'server' | 'app' } | null => {
+  if (server.state !== 'up') return null;
+  const behind = server.behind ?? (server.skew === 'server' ? 'server' : server.skew === 'app' ? 'app' : null);
+  if (behind === 'server') return { label: `Update ${server.name}`, target: 'server' };
+  if (behind === 'app') return { label: 'Update Serra', target: 'app' };
+  return null;
+};
+
+/** How an update ended, in a few words (ux-rules A4 Skew). */
+export const updateEnding = (name: string, state: 'done' | 'rolled-back' | 'failed', message: string | null): { title: string; body: string } => {
+  if (state === 'done') return { title: `${name} is updated`, body: '' };
+  if (state === 'rolled-back') return { title: `${name} wasn’t updated`, body: `The new version didn’t start, so ${name} went back unchanged.` };
+  return { title: `${name} wasn’t updated`, body: message ?? `Run serra server update on ${name}.` };
+};
 
 /** A device's line after its name: `this Mac`, `last used 3 days ago`, `not used yet`. */
 export const deviceLine = (device: ServerDevice, now: Date): string => {

@@ -48,7 +48,8 @@ export const selfSignedCert = (name: string, { now = new Date(), days = 3650 }: 
   const subject = sequence(set(sequence(oid('2.5.4.3'), utf8(name.slice(0, 64) || 'Serra'))));
   const notAfter = new Date(now.getTime() + days * 86_400_000);
   const serial = randomBytes(16);
-  serial[0] = serial[0]! & 0x7f;
+  // Positive, and never a leading zero byte: DER wants the shortest form, and one certificate in 128 broke without it.
+  serial[0] = (serial[0]! & 0x7f) | 0x40;
   const dnsName = (host: string): Buffer => tlv(0x82, Buffer.from(host, 'ascii'));
   const extensions = explicit(3, sequence(
     // Basic constraints: its own trust anchor and nothing below it (CA, path length 0), so the pinned certificate

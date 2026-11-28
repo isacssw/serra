@@ -117,6 +117,75 @@ export interface ServerDevice {
 
 export type { ServerHealth };
 
+/** Something that stops a move or a restore from starting, in a few words. One is shown at a time (council). */
+export interface MoveBlock {
+  /** `waiting`: a job waits for you (Open). `update`: the server needs an update first (Update). Others: just the words. */
+  kind: 'waiting' | 'offline' | 'update' | 'busy' | 'target';
+  text: string;
+}
+
+/** What the confirm shows before a move or a restore. */
+export interface MovePreflight {
+  /** The profile's name, and the hosts' (`this Mac`, `t480`). A restore has one host. */
+  name: string;
+  fromName: string;
+  toName: string;
+  /** Empty when it can start. */
+  blocks: MoveBlock[];
+  /** About how long the bot is away, in whole minutes (at least 1). */
+  awayMinutes: number;
+  /** Jobs that run now and finish first. */
+  running: number;
+}
+
+/** A move or restore as the window follows it (`on.move`). The journal on this Mac, minus nothing secret (it has none). */
+export interface MoveView {
+  id: string;
+  kind: 'move' | 'restore';
+  /** The profile's ref where it started (`local/scout`, `s_7f3k2q/scout`), its name, and the hosts. */
+  ref: string;
+  name: string;
+  from: string;
+  to: string;
+  fromName: string;
+  toName: string;
+  /** Restore: the backup it goes back to. */
+  backup: string | null;
+  step: 'drain' | 'pause' | 'backup' | 'copy' | 'start' | 'archive';
+  state: 'running' | 'done' | 'stopped' | 'later' | 'interrupted';
+  startedAt: string;
+  endedAt: string | null;
+  error: string | null;
+  running: number;
+  waiting: number;
+  copied: number;
+  total: number;
+}
+
+/** A checked backup of a profile, on this Mac or a server, as Settings lists it. */
+export interface BackupView {
+  id: string;
+  /** `local` or the server's id, and its name. */
+  host: string;
+  hostName: string;
+  kind: 'removed' | 'moved' | 'restore';
+  at: string;
+  /** For a move: where it went. For a restore: the backup it went back to. */
+  detail: string | null;
+  /** Null when Restore can run; otherwise why not, in a few words (`Live on t480`, `t480 is offline`). */
+  blocked: string | null;
+}
+
+/** How a server's update is going, as the window shows it. */
+export interface ServerUpdateView {
+  /** Null before any update. */
+  state: 'updating' | 'done' | 'rolled-back' | 'failed' | null;
+  /** The version it runs now, and the one asked for. */
+  version: string | null;
+  to: string | null;
+  message: string | null;
+}
+
 /** What Add… › Profile creates: the setup form, plus the colour and agent picked first. */
 export interface NewProfile {
   draft: ProfileDraft;
@@ -209,6 +278,33 @@ export interface SerraApi {
     revoke(serverId: string, deviceId: string): ServerDevice[];
     /** Unpairs: revokes this Mac on the server when it can, then drops its entry and key here. Deletes no data. */
     forget(serverId: string): { revoked: boolean };
+    /** Asks the server to update its Serra to this app's version (SB-34). It goes back by itself if that fails. */
+    update(serverId: string): ServerUpdateView;
+    /** How the server's last update went. */
+    updateState(serverId: string): ServerUpdateView;
+  };
+  /**
+   * Moves and restores (SB-34), run by the Mac app itself, like `servers`: a move spans this Mac and a server, so no one
+   * engine holds it. Progress pushes on `on.move`. A move or restore runs one at a time.
+   */
+  moves: {
+    /** What moving `ref` to `to` (`local` or a server id) needs first, and how long the bot is away. Changes nothing. */
+    preflight(ref: string, to: string): MovePreflight;
+    /** Starts the move: jobs finish, the profile pauses, is backed up, copied and checked, starts there, then leaves here. */
+    start(ref: string, to: string): MoveView;
+    /** The same for putting a backup back in place. */
+    restorePreflight(ref: string, backupId: string): MovePreflight;
+    restore(ref: string, backupId: string): MoveView;
+    /** Move later (while jobs finish) or Cancel (until it starts on the target). False once it can't stop. */
+    stop(moveId: string): boolean;
+    /** Tries an interrupted move again: it finishes, or the source comes back as it was. */
+    resume(moveId: string): MoveView;
+    /** Moves and restores running, interrupted, or ended and not yet seen. */
+    list(): MoveView[];
+    /** The window showed how it ended. */
+    dismiss(moveId: string): void;
+    /** A profile's checked backups on this Mac and on each server that is up, newest first. */
+    backups(ref: string): BackupView[];
   };
   /** Setup (APP-27, SERRA-51): find what exists, create the profile, the Slack app, the owner and the service. Tokens use `secrets`. */
   setup: {
@@ -548,6 +644,8 @@ export interface SerraPushes {
   presence: Record<string, BotStatus | null>;
   /** Every paired server's state and profiles, whenever one changes (SB-33). */
   servers: ServerHealth[];
+  /** A move or restore moved on (SB-34). */
+  move: MoveView;
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -564,7 +662,8 @@ const methods = <N extends Namespace>() => <const L extends readonly string[]>(l
 /** Every method by namespace. The type check keeps it equal to `SerraApi`; the app's preload and router loop over it. */
 export const bridgeMethods = {
   app: methods<'app'>()(['info', 'getPrefs', 'setPrefs', 'openExternal', 'openProfileFolder', 'rendered']),
-  servers: methods<'servers'>()(['probe', 'pair', 'cancel', 'pairOverSsh', 'list', 'status', 'retry', 'devices', 'revoke', 'forget']),
+  servers: methods<'servers'>()(['probe', 'pair', 'cancel', 'pairOverSsh', 'list', 'status', 'retry', 'devices', 'revoke', 'forget', 'update', 'updateState']),
+  moves: methods<'moves'>()(['preflight', 'start', 'restorePreflight', 'restore', 'stop', 'resume', 'list', 'dismiss', 'backups']),
   setup: methods<'setup'>()([
     'progress', 'detect', 'useProfile', 'chooseFolder', 'defaults', 'detectProject', 'create', 'manifest', 'confirmOwner', 'installService',
   ]),

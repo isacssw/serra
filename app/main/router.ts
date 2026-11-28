@@ -1,5 +1,5 @@
-// The app's router: each call from the window goes to whoever answers it. `app.*` and `servers.*` are the app's own
-// (host.ts, servers.ts); every other namespace goes to the engine that holds the profile in use. Today that is the
+// The app's router: each call from the window goes to whoever answers it. `app.*`, `servers.*` and `moves.*` are the
+// app's own (host.ts, servers.ts, moves.ts); every other namespace goes to the engine that holds the profile in use. Today that is the
 // engine running in this process (src/handlers); a profile on a paired server routes to that server's engine
 // (`remoteEngine` in src/gateway/client.ts has the same shape) once the window can pick one (phase 6). Kept free of
 // Electron imports so tests can register on a fake ipcMain.
@@ -10,7 +10,7 @@ import { invokeChannel, type Handlers, type InvokeResult, type Namespace } from 
 export type AllHandlers = { [N in Namespace]: Handlers<N> };
 
 /** Every namespace's handlers: the app's own, and the engine's (local only for now). */
-export const routeHandlers = (host: Handlers<'app'>, servers: Handlers<'servers'>, engine: EngineHandlers): AllHandlers => ({ app: host, servers, ...engine });
+export const routeHandlers = (host: Handlers<'app'>, servers: Handlers<'servers'>, moves: Handlers<'moves'>, engine: EngineHandlers): AllHandlers => ({ app: host, servers, moves, ...engine });
 
 /** The part of `ipcMain` registration needs. `event.senderFrame.url` is checked before a handler runs. */
 export interface IpcRegistrar {

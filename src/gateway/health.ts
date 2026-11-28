@@ -7,6 +7,7 @@
 //
 // Nothing secret is in a view: no token, no certificate, only the server's name, how it is reached, and a short
 // fingerprint for the Diagnostics line.
+import { compareVersions, parseVersion } from '../app-updates.ts';
 import { isBotStatus } from '../status-socket.ts';
 import { GatewayUnreachable, NotPaired, type GatewayClient } from './client.ts';
 import type { ServerProfile } from './engines.ts';
@@ -28,6 +29,10 @@ export interface ServerHealth {
   skew: 'server' | 'app' | null;
   /** The protocol the server last said it speaks; null before it answered. */
   protocol: number | null;
+  /** The Serra version it last said it runs; null before it answered, or from a server before SB-34. */
+  version: string | null;
+  /** Which side runs an older Serra than the other (SB-34): `server` offers Update t480, `app` Update Serra. */
+  behind: 'server' | 'app' | null;
   /** When it last answered (ISO), for `last seen`; null before it ever did. */
   lastSeen: string | null;
   /** `sha256 9f3c…a1`, for the Diagnostics line. */
@@ -64,6 +69,7 @@ interface Followed {
   server: PairedServer;
   state: ServerState;
   protocol: number | null;
+  version: string | null;
   lastSeen: string | null;
   profiles: ServerProfile[];
   stop: () => void;
@@ -72,7 +78,14 @@ interface Followed {
   generation: number;
 }
 
-export const serverHealth = ({ servers, client, offlineAfterMs = 15_000, retryMs, now = () => new Date(), log = () => {} }: {
+/** Which of two Serra versions is older, or null when they match or either is unknown. */
+const versionBehind = (server: string | null, app: string | undefined): ServerHealth['behind'] => {
+  if (!server || !app || !parseVersion(server) || !parseVersion(app)) return null;
+  const order = compareVersions(server, app);
+  return order < 0 ? 'server' : order > 0 ? 'app' : null;
+};
+
+export const serverHealth = ({ servers, client, offlineAfterMs = 15_000, retryMs, now = () => new Date(), log = () => {}, appVersion }: {
   /** The paired servers (`ServerPairing.list`). */
   servers: () => PairedServer[];
   /** A client for one (`ServerPairing.client`). */
@@ -84,13 +97,15 @@ export const serverHealth = ({ servers, client, offlineAfterMs = 15_000, retryMs
   now?: () => Date;
   /** One line per problem, never with a token (the client's errors carry none). */
   log?: (line: string) => void;
+  /** This app's version, to say which side is behind. */
+  appVersion?: string;
 }): ServerHealthFollower => {
   const followed = new Map<string, Followed>();
   const listeners = new Set<() => void>();
   let closed = false;
   const changed = (): void => { for (const listener of listeners) { try { listener(); } catch { /* one bad listener can't stop the rest */ } } };
 
-  const set = (entry: Followed, patch: Partial<Pick<Followed, 'state' | 'protocol' | 'lastSeen' | 'profiles'>>): void => {
+  const set = (entry: Followed, patch: Partial<Pick<Followed, 'state' | 'protocol' | 'version' | 'lastSeen' | 'profiles'>>): void => {
     Object.assign(entry, patch);
     changed();
   };
@@ -109,7 +124,7 @@ export const serverHealth = ({ servers, client, offlineAfterMs = 15_000, retryMs
       if (closed || generation !== entry.generation || followed.get(entry.server.id) !== entry) return;
       if (entry.offlineTimer) { clearTimeout(entry.offlineTimer); entry.offlineTimer = null; }
       const profiles = answer.profiles.map((profile) => ({ ...profile, status: isBotStatus(profile.status) ? profile.status : null }));
-      set(entry, { state: 'up', protocol: answer.server.protocol, lastSeen: now().toISOString(), profiles });
+      set(entry, { state: 'up', protocol: answer.server.protocol, version: answer.server.version, lastSeen: now().toISOString(), profiles });
     } catch (error) {
       if (closed || generation !== entry.generation) return;
       if (error instanceof NotPaired) { unpaired(entry); return; }
@@ -181,7 +196,7 @@ export const serverHealth = ({ servers, client, offlineAfterMs = 15_000, retryMs
       // Paired again (a new token, a new route): follow it afresh.
       if (known && known.server.deviceId === server.deviceId && JSON.stringify(known.server.route) === JSON.stringify(server.route)) continue;
       if (known) stopEntry(known);
-      const entry: Followed = { server, state: 'checking', protocol: null, lastSeen: null, profiles: [], stop: () => {}, offlineTimer: null, generation: 0 };
+      const entry: Followed = { server, state: 'checking', protocol: null, version: null, lastSeen: null, profiles: [], stop: () => {}, offlineTimer: null, generation: 0 };
       followed.set(server.id, entry);
       start(entry);
       changed();
@@ -198,6 +213,8 @@ export const serverHealth = ({ servers, client, offlineAfterMs = 15_000, retryMs
       state: entry.state,
       skew: entry.protocol === null ? null : protocolSkew(entry.protocol),
       protocol: entry.protocol,
+      version: entry.version,
+      behind: versionBehind(entry.version, appVersion),
       lastSeen: entry.lastSeen,
       fingerprint: shortFingerprint(entry.server.fingerprint),
       profiles: entry.profiles,
