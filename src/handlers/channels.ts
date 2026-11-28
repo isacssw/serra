@@ -6,6 +6,8 @@
 // Discord the same way: the token is checked with Discord (`/users/@me`, and `/applications/@me` for the Message
 // Content intent, which must be on), kept like Telegram's, and `channels.discord` names the bot. The owner adds the bot
 // to a server with the invite link and DMs it the one-time code (`src/chat/pairing.ts`).
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
 import { readProfileFile } from '../config.ts';
 import type { ChannelsView, DiscordView, SecretName, SecretSource } from '../contracts.ts';
 import type { Handlers } from '../api.ts';
@@ -15,7 +17,7 @@ import {
 } from '../secrets.ts';
 import { chatPairingCode, clearChatPairing, updateChannel } from '../chat/pairing.ts';
 import { clearPairing, pairingCode, updateTelegramChannel } from '../telegram/pairing.ts';
-import { isRecord } from '../lib/guards.ts';
+import { isRecord, isString, readJsonOrNull } from '../lib/guards.ts';
 import type { CoreContext } from './context.ts';
 
 const TOKEN = 'TELEGRAM_BOT_TOKEN';
@@ -50,6 +52,18 @@ export const channelsView = (profileDir: string, now = Date.now()): ChannelsView
   const { username } = telegram.bot;
   if (telegram.ownerId) return { telegram: { state: 'paired', username }, discord: discordView };
   return { telegram: { state: 'pairing', username, link: `https://t.me/${username}?start=${pairingCode(profileDir, now)}` }, discord: discordView };
+};
+
+/**
+ * Refuses a chat the installed bot can't run: its active release has no code for it. A bot from before Telegram and
+ * Discord (alpha.9) refuses a profile that names one, so connecting it while that bot still runs (the bot updates once
+ * no job is running) would stop the bot at its next start. Nothing installed yet, or a release gone: nothing to protect.
+ */
+const needsNewerBot = (dir: string, chat: 'telegram' | 'discord'): void => {
+  const release = readJsonOrNull(join(dir, 'active.json'), isRecord)?.release;
+  if (!isString(release) || !existsSync(join(release, 'src')) || existsSync(join(release, 'src', chat))) return;
+  const name = chat === 'telegram' ? 'Telegram' : 'Discord';
+  throw new Error(`Update the bot first: it runs an older Serra without ${name}. It updates once no job is running, or press Update now in Settings › Updates.`);
 };
 
 /** Discord's answer as the owner reads it: a refused token says so, anything else is a failed check. */
@@ -99,6 +113,7 @@ export const channelsHandlers = (context: CoreContext, options: ChannelsHandlerO
     async connectTelegram(input) {
       if (typeof input !== 'string' || !input.trim()) throw new Error('Paste the token @BotFather gave you.');
       const dir = context.profileDir();
+      needsNewerBot(dir, 'telegram');
       const value = input.trim();
       try {
         let bot: TelegramBot;
@@ -139,6 +154,7 @@ export const channelsHandlers = (context: CoreContext, options: ChannelsHandlerO
     async connectDiscord(input) {
       if (typeof input !== 'string' || !input.trim()) throw new Error('Paste your bot’s token from the Developer Portal.');
       const dir = context.profileDir();
+      needsNewerBot(dir, 'discord');
       const value = input.trim();
       try {
         const bot = await keepToken(dir, DISCORD_TOKEN, value, (token) => askedDiscord(whoAmI, token), options);
