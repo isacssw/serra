@@ -273,6 +273,15 @@ test('Jobs rows open the chat on both backends; an ACP run has no T3 button', as
   assert.deepEqual(linkButtons(row({ threadId: 't', backend: 't3' }))[1]?.chat, { threadId: 't', backend: 't3' });
 });
 
+test('just after midnight the fixture\'s finished run still shows under today in Jobs', async (t) => {
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), 'serra-chat-')));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const now = new Date(2026, 10, 28, 0, 1);
+  writeChatFixture(dir, now, join(dir, 'agent-images'));
+  const { jobs } = await listJobs(dir, { now });
+  assert.deepEqual(jobs.find((job) => job.title === 'Fix the flaky checkout test')?.chat, { threadId: CHAT_FIXTURE.finished, backend: 'acp' });
+});
+
 test('jobs.chat, image and reply: ACP from its record, T3 through `t3 thread show`, follow-ups to the right backend', async (t) => {
   const { dir, images } = profile(t);
   mkdirSync(images, { recursive: true });
