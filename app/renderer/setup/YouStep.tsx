@@ -7,6 +7,7 @@ import { Navigate, useLocation, useNavigate } from 'react-router';
 import { serra } from '../bridge.ts';
 import { Button, Input } from '../ui/index.ts';
 import { Alert, Card, errorText, StepFooter, StepHeader } from './parts.tsx';
+import { holdEveSecret, takeEveSecret } from './eve.logic.ts';
 import {
   draftErrors, draftRequest, draftToSave, emptyDraft, FLOW, hasProfile, NEW_PROFILE_PATH, nextPath, profileFolder, restoreDraft, SETUP_PATH, suggestId,
   type DraftForm, type NewProfileChoice,
@@ -158,14 +159,19 @@ const ProfileForm = ({ adding }: { adding?: NewProfileChoice }) => {
     const bridge = serra();
     if (!bridge) return;
     setBusy(true);
+    // eve's bypass secret is taken from memory once, and put back if Create fails so a retry still has it.
+    const secret = adding?.eve ? takeEveSecret() : null;
     try {
       created.current = true;
-      if (adding) await bridge.profiles.create({ draft: draftRequest(draft), color: adding.color, agent: adding.agent });
+      if (adding) {
+        const eve = adding.eve ? { url: adding.eve.url, team: adding.eve.team, secret, accept: adding.eve.host } : null;
+        await bridge.profiles.create({ draft: draftRequest(draft), color: adding.color, agent: adding.agent, ...(eve ? { eve } : {}) });
+      }
       else await bridge.setup.create(draftRequest(draft));
       setupChanged();
       const progress = await refresh();
       void navigate(nextPath(progress, step.path));
-    } catch (failure) { created.current = false; setError(errorText(failure)); }
+    } catch (failure) { created.current = false; if (adding?.eve) holdEveSecret(secret); setError(errorText(failure)); }
     finally { setBusy(false); }
   };
 

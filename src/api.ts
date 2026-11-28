@@ -26,6 +26,7 @@ import type { MeetingReviewed, MeetingView } from './meeting-store.ts';
 import type { MeetingSettings } from './meeting-settings.ts';
 import type { MeetingRunner } from './meeting-runs.ts';
 import type { AgentBackendView, CustomAcpAgentInput } from './agent/acp-agents.ts';
+import type { EveCheckView, EveInput } from './agent/eve-connect.ts';
 import type { RunChat } from './agent/runs-view.ts';
 import type { MeetingProvider, ProviderStatus } from './meeting-sources.ts';
 import type { T3Providers } from './t3-providers.ts';
@@ -95,6 +96,8 @@ export interface ProfileEntry {
   status: BotStatus | null;
   /** The agent new work uses: T3, or the ACP agent's name. */
   agent: string;
+  /** The host of its agent on Vercel (eve), for the small cloud mark; null when its agent is on this Mac. */
+  cloud?: string | null;
 }
 
 export interface ProfilesView {
@@ -121,8 +124,10 @@ export type { ServerHealth };
 export interface NewProfile {
   draft: ProfileDraft;
   color: string | null;
-  /** An ACP agent's id, or null for T3. */
+  /** An ACP agent's id, or null for T3. `eve-cloud` with `eve`: the agent on Vercel. */
   agent: string | null;
+  /** The agent on Vercel, with the host whose notice the owner accepted. Saved with the new profile. */
+  eve?: EveInput | null;
 }
 
 /** The star request's memory (SERRA-53). The rules that read it are in app/renderer/star.logic.ts. */
@@ -506,6 +511,12 @@ export interface SerraApi {
     addAcpAgent(input: CustomAcpAgentInput): AgentBackendView;
     /** Removes a custom ACP agent from `agent-backend.json` and returns the refreshed view. */
     removeAcpAgent(id: string): AgentBackendView;
+    /** Starts eve at the URL and opens a session, no prompt, once the notice for its host was accepted. Saves nothing new. */
+    checkEve(input: EveInput): EveCheckView;
+    /** Checks, then saves eve as the profile's agent (its secret in the Keychain). A failed Check changes nothing. */
+    connectEve(input: EveInput): AgentBackendView;
+    /** Removes eve and its Keychain item; new work goes back to T3. */
+    disconnectEve(): AgentBackendView;
     /** Creates `agent-backend.json` if missing and opens it outside the app for manual editing. */
     openAgentBackendConfig(): void;
   };
@@ -585,7 +596,7 @@ export const bridgeMethods = {
   diagnostics: methods<'diagnostics'>()(['run', 'logTail']),
   people: methods<'people'>()(['add']),
   tasks: methods<'tasks'>()(['preview', 'start', 'previewInterview', 'startInterview']),
-  meetings: methods<'meetings'>()(['settings', 'setEnabled', 'sources', 'testSource', 'list', 'history', 'approve', 'discard', 'discardMeeting', 'forget', 'agentBackend', 'setAgentBackend', 'addAcpAgent', 'removeAcpAgent', 'openAgentBackendConfig']),
+  meetings: methods<'meetings'>()(['settings', 'setEnabled', 'sources', 'testSource', 'list', 'history', 'approve', 'discard', 'discardMeeting', 'forget', 'agentBackend', 'setAgentBackend', 'addAcpAgent', 'removeAcpAgent', 'checkEve', 'connectEve', 'disconnectEve', 'openAgentBackendConfig']),
 } satisfies { [N in Namespace]: readonly (keyof SerraApi[N])[] };
 
 /**

@@ -128,6 +128,8 @@ export interface AgentBackend {
     list: (threadId: string) => Promise<QuestionRequest[]>;
     answer: (threadId: string, requestId: string, answers: QuestionAnswers) => Promise<void>;
   };
+  /** Starts the agent and opens a session without a prompt, so no model call: a connection check. Absent: none to run. */
+  check?: () => Promise<{ version: string | null }>;
   /** Whether the agent can see an image it's sent. Absent: it can (T3's providers open attached files themselves). */
   images?: () => Promise<boolean>;
   /** Whether `threadId` (or, without one, any thread) has a turn going, a question waiting or messages queued. Absent: never. */

@@ -12,7 +12,9 @@ import { backupProfile } from '../profile-backup.ts';
 import { createSetupProfile, setupProgress } from '../setup.ts';
 import { toolSearchPath } from '../shell-path.ts';
 import type { Handlers, NewProfile, ProfileEntry, ProfilesView } from '../api.ts';
-import { agentName, findProfiles, inRoot, probeStatus, profileName, readProfilesFile, setupDone, writeProfilesFile } from '../profiles.ts';
+import { EVE_AGENT_ID, eveSentence, normalizeEveUrl } from '../agent/eve-cloud.ts';
+import { eveInput, forgetEveSecret, saveEve, type EveDeps, type EveInput } from '../agent/eve-connect.ts';
+import { agentName, cloudHost, findProfiles, inRoot, probeStatus, profileName, readProfilesFile, setupDone, writeProfilesFile } from '../profiles.ts';
 import { isColor, localRef, moveRef, PROFILE_COLORS, resolveColors, withColor, withLooks, withOrder, withoutRef } from '../profile-order.ts';
 import { parseDraft } from './setup.ts';
 import type { CoreContext } from './context.ts';
@@ -29,6 +31,8 @@ export interface ProfilesDeps {
   /** How long to wait for a daemon's status (tests: short). */
   probeMs?: number;
   now?: () => Date;
+  /** The Keychain eve's bypass secret is kept in (tests: a fake). */
+  eve?: EveDeps;
 }
 
 const PINNED = 'Serra was started with a profile given on the command line, so it can’t switch here. Quit and open it without --profile.';
@@ -55,6 +59,7 @@ export const profilesHandlers = (context: CoreContext, deps: ProfilesDeps = {}):
       setupDone: setupDone(dir, deps.launchAgentsDir),
       status: dir === current ? null : presence ? presence.status(dir) : await probeStatus(dir, deps.probeMs),
       agent: agentName(dir),
+      cloud: cloudHost(dir),
     })));
     return { profiles, pinned: context.profilePinned === true, palette: [...PROFILE_COLORS] };
   };
@@ -112,7 +117,13 @@ export const profilesHandlers = (context: CoreContext, deps: ProfilesDeps = {}):
       if (color !== null && !isColor(color)) throw new Error('Pick one of the colours.');
       const agent = input.agent ?? null;
       if (agent !== null && (typeof agent !== 'string' || !/^[\w-]{1,40}$/.test(agent))) throw new Error('Pick T3 or an installed agent.');
-      if (agent !== null) {
+      // eve on Vercel: its address, and the host whose notice the owner accepted, are checked before anything is written.
+      let eve: EveInput | null = null;
+      if (agent === EVE_AGENT_ID) {
+        eve = eveInput(input.eve);
+        const { host } = normalizeEveUrl(eve.url);
+        if (eve.accept.trim().toLowerCase() !== host.toLowerCase()) throw new Error(eveSentence('consent', host));
+      } else if (agent !== null) {
         // Checked before anything is written, so a missing agent leaves no half-made profile.
         const path = await (deps.searchPath ?? toolSearchPath)();
         // Only the agents Serra knows: a custom one lives in another profile's agent-backend.json.
@@ -129,7 +140,8 @@ export const profilesHandlers = (context: CoreContext, deps: ProfilesDeps = {}):
         file = withOrder(color ? withColor(file, ref, color) : file, [...others, ref]);
         writeProfilesFile(root, withLooks(file, [...others, ref]));
       }
-      if (agent !== null) writeAgentBackend(directory, { backend: 'acp', agent });
+      if (eve) await saveEve(directory, eve, deps.eve);
+      else if (agent !== null) writeAgentBackend(directory, { backend: 'acp', agent });
       context.selectProfile(directory, { setupFinished: true });
       changed();
       return setupProgress(directory, { ...(deps.launchAgentsDir ? { launchAgentsDir: deps.launchAgentsDir } : {}), running: false });
@@ -144,6 +156,8 @@ export const profilesHandlers = (context: CoreContext, deps: ProfilesDeps = {}):
       if (blocked) throw new Error(blocked);
       if (!context.host.trashItem) throw new Error('Removing a profile needs the Trash, which isn’t available here.');
       const name = profileName(target.dir);
+      // Its eve bypass secret, if Serra keeps one, goes with it: the backup holds where it was, never the value.
+      const eve = readAgentBackend(target.dir).eve;
       // 1. Stop it, and take its service out of launchd so it doesn't start again at login.
       let plist: string | null = null;
       try {
@@ -167,6 +181,7 @@ export const profilesHandlers = (context: CoreContext, deps: ProfilesDeps = {}):
       if (inRoot(root, target.dir)) writeProfilesFile(root, withoutRef(withLooks(withOrder(readProfilesFile(root), listedRefs()), listedRefs()), target.ref));
       if (plist) await context.host.trashItem(plist);
       await context.host.trashItem(target.dir);
+      await forgetEveSecret(eve, deps.eve?.store);
       changed();
       return { backup: backup.path, view: await view() };
     },

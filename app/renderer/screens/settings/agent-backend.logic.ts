@@ -95,7 +95,7 @@ export const customAgents = (agents: readonly AcpAgentChoice[]): AcpAgentChoice[
 // ---------------------------------------------------------------------------------------------------------------
 
 /** Which mark an agent or a T3 provider shows: a brand where Serra has one, else a generic glyph. */
-export type AgentMark = 't3' | 'claude' | 'codex' | 'opencode' | 'gemini' | 'cursor' | 'antigravity' | 'custom';
+export type AgentMark = 't3' | 'claude' | 'codex' | 'opencode' | 'gemini' | 'cursor' | 'antigravity' | 'eve' | 'custom';
 
 const MARKS: Record<string, AgentMark> = {
   claude: 'claude', claudeagent: 'claude', codex: 'codex', opencode: 'opencode', gemini: 'gemini', cursor: 'cursor',
@@ -117,14 +117,14 @@ export interface AgentOption {
   custom: boolean;
 }
 
-/** T3 first (the default), then the built-in ACP agents, then the owner's own. */
+/** T3 first (the default), then the built-in ACP agents and eve on Vercel (named by its host), then the owner's own. */
 export const agentOptions = (agents: readonly AcpAgentChoice[]): AgentOption[] => [
   { value: 't3', name: 'T3 Code', detail: 'Default · any provider', mark: 't3', disabled: false, custom: false },
   ...[...agents.filter((agent) => !agent.custom), ...agents.filter((agent) => agent.custom)].map((agent): AgentOption => ({
     value: `acp:${agent.id}`,
     name: agent.name,
-    detail: !agent.installed ? (agent.custom ? 'Not on PATH' : 'Not installed') : agent.custom ? 'Custom · ACP' : 'ACP',
-    mark: agent.custom ? 'custom' : agentMark(agent.id),
+    detail: agent.host ?? (!agent.installed ? (agent.custom ? 'Not on PATH' : 'Not installed') : agent.custom ? 'Custom · ACP' : 'ACP'),
+    mark: agent.host ? 'eve' : agent.custom ? 'custom' : agentMark(agent.id),
     disabled: !agent.installed,
     custom: agent.custom,
   })),

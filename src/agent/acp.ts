@@ -8,7 +8,8 @@
 //   is the run's transcript (Jobs shows it), and after a restart Serra reopens the session with `session/load` and
 //   carries on a turn the restart cut off. Without `runsDir` (meeting runs) a run lives only in this process.
 // - Worktrees: Serra makes one itself (src/agent/worktree.ts) and starts the session in it, except for an agent bound
-//   to its own folder (`cwd`, eve's app root), whose sessions all open there.
+//   to its own folder (`cwd`, eve's app root), whose sessions all open there, and an agent at a URL (`remote`, eve on
+//   Vercel), which gets no worktree and a neutral folder name (src/agent/eve-cloud.ts), never a path on this Mac.
 // - Steer: there is none in ACP v1, so a message sent while a turn runs is queued and sent when the turn ends.
 //
 // Access, never wider than T3 gives the same kind of run:
@@ -33,6 +34,7 @@ import {
   pollUntilSettled, type AgentBackend, type BackendCapabilities, type QuestionAnswers, type QuestionRequest, type RunDetail, type RunToolCall, type StartRun,
 } from './backend.ts';
 import { launchFor, type AcpAgent } from './acp-agents.ts';
+import { eveProblemOf, eveSentence, REMOTE_CWD } from './eve-cloud.ts';
 import { attachedImages, imageContent, saveAgentImage } from './images.ts';
 import { makeWorktree } from './worktree.ts';
 
@@ -518,7 +520,8 @@ export const createAcpBackend = ({
         reject(new Error(exited));
       });
       started.once('exit', (code, signalName) => {
-        exited ??= `${agent.name} stopped (${signalName ?? `exit ${code ?? '?'}`}).`;
+        // An agent at a URL says why in its log (signed out, protected, offline): a fixed sentence, the text dropped.
+        exited ??= agent.remote ? eveSentence(eveProblemOf(stderr), agent.remote.host) : `${agent.name} stopped (${signalName ?? `exit ${code ?? '?'}`}).`;
         if (stderr.trim()) log(`${agent.name} stopped; its last log lines are kept out of Serra's log (${stderr.trim().split('\n').length} lines).`);
         if (child === started) agentGone(exited);
         reject(new Error(exited));
@@ -543,12 +546,17 @@ export const createAcpBackend = ({
   /** A plain sentence for an error starting or reopening a session: sign-in problems say where to sign in. */
   const plain = (error: unknown): Error => {
     if (exited) return new Error(exited);
+    if (agent.remote) return new Error(remoteFailure(error));
     const text = error instanceof Error ? error.message : String(error);
     if ((typeof error === 'object' && error !== null && (error as { code?: unknown }).code === -32000) || /auth|sign[- ]?in|log[- ]?in|credential|api key/i.test(text)) {
       return new Error(`${agent.name} needs you to sign in. Sign in with its own CLI, then try again.`);
     }
     return new Error(`${agent.name}: ${text.slice(0, 300)}`);
   };
+
+  /** Why a call to an agent at a URL failed, as a fixed sentence: eve's own text never shows. */
+  const remoteFailure = (error: unknown): string =>
+    eveSentence(eveProblemOf(`${error instanceof Error ? error.message : String(error)}\n${stderr}`, error), agent.remote?.host ?? agent.name);
 
   /** A message as ACP content: its text, and each image attached to it when the agent takes images. */
   const promptFor = (text: string): acp.ContentBlock[] => {
@@ -580,7 +588,7 @@ export const createAcpBackend = ({
           // carried on when the run is next read, if the agent can reopen it; else agentGone ended it.
           if (runsDir) await new Promise((resolve) => { setTimeout(resolve, 300); });
           if ((runsDir && sessions.get(current.sessionId) !== current) || current.active !== runId) return;
-          current.failed = endAsks(current) ?? exited ?? turnFailure(error, agent.name);
+          current.failed = endAsks(current) ?? exited ?? (agent.remote ? remoteFailure(error) : turnFailure(error, agent.name));
           log(`${agent.name}'s turn ${runId} failed: ${current.failed}`);
         }
       }
@@ -658,7 +666,7 @@ export const createAcpBackend = ({
 
   const start = async (input: StartRun): Promise<string> => {
     const access: RunAccess = input.readOnly ? 'read-only' : input.workspace.kind === 'worktree' ? 'full' : 'ask';
-    const cwd = agent.cwd ?? (input.workspace.kind === 'folder'
+    const cwd = agent.remote ? REMOTE_CWD : agent.cwd ?? (input.workspace.kind === 'folder'
       ? input.workspace.path
       : await makeWorktree({ ...input.workspace, ...(worktreeRoot ? { root: worktreeRoot } : {}) }));
     let created: acp.NewSessionResponse;
@@ -739,6 +747,16 @@ export const createAcpBackend = ({
     list: async () => [],
     settle: async (threadId) => { sessions.delete(threadId); },
     toolCall,
+    // Starts the agent and opens a session, then stops: no prompt, so no model call. A cloud agent is refused before
+    // it starts unless its notice was accepted (the launch check).
+    check: async () => {
+      try {
+        const open = await connect();
+        await open.agent.request(acp.methods.agent.session.new, { cwd: agent.remote ? REMOTE_CWD : agent.cwd ?? process.cwd(), mcpServers: [] });
+      } catch (error) { throw plain(error); }
+      const version = hello?.agentInfo?.version;
+      return { version: typeof version === 'string' && /^[\w.+-]{1,40}$/.test(version) ? version : null };
+    },
     images: async () => {
       await connect().catch((error: unknown) => { throw plain(error); });
       return hello?.agentCapabilities?.promptCapabilities?.image === true;

@@ -66,6 +66,8 @@ export interface ProfileRow extends ProfileLook {
   /** `⌘1`…`⌘9` by place in the order; null from the tenth, and for a server's profile until moves keep them (phase 7). */
   shortcut: string | null;
   agent: string;
+  /** The host of its agent on Vercel (eve), shown as a small cloud mark; null when its agent is on this Mac. */
+  cloud: string | null;
   /** The server it lives on; null on this Mac. A server's profile opens that server's page, not the window. */
   server: { id: string; name: string } | null;
 }
@@ -91,6 +93,7 @@ export const profileRows = (view: ProfilesView | null, live: BotStatus | null, m
     presence: presence(profile.active ? live : profile.status, { setupDone: profile.setupDone }),
     shortcut: index < 9 ? `${mod}${index + 1}` : null,
     agent: profile.agent,
+    cloud: profile.cloud ?? null,
     server: null,
   }));
   const away = remote.map(({ server, profile }, index): ProfileRow => {
@@ -104,6 +107,7 @@ export const profileRows = (view: ProfilesView | null, live: BotStatus | null, m
       presence: { ...own, phrase: `${own.phrase} · ${server.name}` },
       shortcut: null,
       agent: '',
+      cloud: null,
       server: { id: server.id, name: server.name },
     };
   });
@@ -144,7 +148,7 @@ export const windowTitle = (view: ProfilesView | null, servers: readonly ServerH
   return name === 'Serra' ? 'Serra' : `${name} — Serra`;
 };
 
-/** How a screen reader hears a switcher row: "Scout, 2 running, command 2". */
+/** How a screen reader hears a switcher row: "Scout, 2 running, command 2" ("…, agent at researcher.vercel.app, …" for eve on Vercel). */
 export const rowLabel = (row: ProfileRow): string =>
   [row.name, row.server ? row.presence.phrase.replace(` · ${row.server.name}`, `, on ${row.server.name}`) : row.presence.phrase,
-    row.shortcut ? `command ${row.shortcut.slice(-1)}` : null].filter(Boolean).join(', ');
+    row.cloud ? `agent at ${row.cloud}` : null, row.shortcut ? `command ${row.shortcut.slice(-1)}` : null].filter(Boolean).join(', ');

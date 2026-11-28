@@ -7,6 +7,7 @@ import { serra } from '../../bridge.ts';
 import { Input, Select } from '../../ui/index.ts';
 import { agentMark } from './agent-backend.logic.ts';
 import { AddAgentCard, AgentGlyph, AgentPicker, ConfigFileButton, useAgentBackend, type AgentBackend } from './AgentBackend.tsx';
+import { ConnectEveCard, EveStatus } from './EveAgent.tsx';
 import { BRANCH_TOKENS, branchPatternForm, branchPreview, t3BinForm, updatesForm, workerForm } from './settings.logic.ts';
 import { Advanced, FieldsCard, SaveError, SettingsPage, SettingsSection, useSectionForm, useSettings, type SettingsState } from './SettingsKit.tsx';
 
@@ -132,7 +133,8 @@ const WorkerSections = ({ profile, state }: { profile: Profile; state: SettingsS
   return (
     <>
       <SettingsSection title="Agent" description="Runs every new job.">
-        <AgentPicker backend={backend}><AddAgentCard backend={backend} /></AgentPicker>
+        <AgentPicker backend={backend}><AddAgentCard backend={backend} /><ConnectEveCard backend={backend} /></AgentPicker>
+        <EveStatus backend={backend} />
         {backend.draft.choice !== 't3' && <p className="text-xs text-faint">ACP agents can't be steered mid-turn.</p>}
       </SettingsSection>
       <ModelSection backend={backend} profile={profile} state={state} />

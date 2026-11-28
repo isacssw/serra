@@ -12,6 +12,7 @@ import { Avatar, cx, useToast } from '../ui/index.ts';
 import { ariaMod, isMac, mod } from './keys.ts';
 import { useProfiles } from './profiles.tsx';
 import { openAdd } from './AddSheet.tsx';
+import { CloudMark } from './CloudMark.tsx';
 import { serverPath } from '../servers.logic.ts';
 import downIcon from '../../../assets/brand/serra-status-down.png';
 import needsYouIcon from '../../../assets/brand/serra-status-needs-you.png';
@@ -117,7 +118,10 @@ const Menu = ({ anchor, rows, many, icon, onClose }: {
             ? <Avatar letters={row.letters} color={row.color} size={28} dot={row.presence.dot} pulse={row.presence.pulse} dashed={!row.setupDone} surface="overlay" />
             : <img src={icon} alt="" className="size-7 rounded-[7px]" />}
           <span className="flex min-w-0 flex-1 flex-col leading-tight">
-            <span className="truncate text-[13px] font-medium">{many ? row.name : 'Serra'}</span>
+            <span className="flex min-w-0 items-center gap-1.5">
+              <span className="truncate text-[13px] font-medium">{many ? row.name : 'Serra'}</span>
+              {many && <CloudMark host={row.cloud} />}
+            </span>
             <span className="truncate text-xs text-muted">{row.presence.phrase}</span>
           </span>
           {many && row.shortcut && <kbd className="font-sans text-[11px] text-faint" aria-hidden>{row.shortcut.replace('⌘', mod)}</kbd>}

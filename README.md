@@ -116,6 +116,7 @@ Pick one in **Settings › Worker › Agent**; it applies to the next job, and a
 | OpenCode | `opencode` on your `PATH`. |
 | Gemini CLI | `gemini` on your `PATH`. |
 | Your own | Any command that speaks the [Agent Client Protocol](https://agentclientprotocol.com) over stdio. |
+| eve on Vercel | An [eve](https://eve.dev) agent deployed on Vercel, its URL, and `vercel login` on this Mac. **Connect eve agent**, or pick **eve** in **Add…** › **Profile**. See [docs/eve-cloud.md](docs/eve-cloud.md). |
 
 Add your own with **Add ACP agent** on the same screen, or in the profile's `agent-backend.json`:
 

@@ -65,7 +65,7 @@ const OP_PART = String.raw`[^/\s"'\\](?:[^/\r\n\0"'\\]*[^/\s"'\\])?`;
 const OP_REFERENCE = new RegExp(`^op://${OP_PART}/${OP_PART}(/${OP_PART}){1,2}$`);
 
 /** Throws when `source` isn't a well-formed source. Returns it typed. */
-const validateSecretSource = (source: unknown): SecretSource => {
+export const validateSecretSource = (source: unknown): SecretSource => {
   if (!record(source)) throw new Error('A secret source needs a kind: keychain, 1password or env');
   if (source.kind === 'env') return { kind: 'env' };
   if (source.kind === 'keychain') {
@@ -300,6 +300,13 @@ export const keychainStore = (options: { tools?: Partial<SecretTools> } = {}): S
     },
   };
 };
+
+/**
+ * A secret that isn't one of the chat tokens (an eve agent's Vercel bypass secret), read from its Keychain item or
+ * 1Password reference right before it is used. Its value is returned to the caller only, never into an error.
+ */
+export const readStoredSecret = async (source: Exclude<SecretSource, { kind: 'env' }>, options: { tools?: Partial<SecretTools> } = {}): Promise<string> =>
+  (await runTool(readCall(source, { ...DEFAULT_SECRET_TOOLS, ...options.tools }))).replace(/\r?\n$/, '').trim();
 
 // ---------------------------------------------------------------------------------------------------------------
 // Owner actions: setSecret, checkSecret, secretStatus

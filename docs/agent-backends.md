@@ -38,6 +38,10 @@ Serra then starts the agent in that folder and opens every job there instead of 
 model choice, image input or restart resume over ACP. It also runs one local server per app, and a meeting run or
 **Test** starts its own copy of the agent, so those can't run on eve while a job does.
 
+An eve agent deployed on Vercel needs no folder and no file editing: **Connect eve agent** in Settings › Worker (or
+**eve** in **Add…** › **Profile**). What it needs, what leaves this Mac and how secrets are kept:
+[eve-cloud.md](eve-cloud.md).
+
 The agent cards update as soon as the file is saved, and an edit to an agent, or its model, applies to the next job
 without a restart; a turn already going finishes on the setup it started with. `env` values stay in your file and are
 never shown or logged. An agent can't be removed while it has a run going, since the run needs its command to carry on.

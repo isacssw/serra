@@ -8,13 +8,16 @@ import type { AgentBackend } from './backend.ts';
 import { agentEnv } from './pool.ts';
 import { createT3Backend } from './t3.ts';
 
-/** The ACP agent the owner picked, or null when they run on T3. Throws when the pick is no longer in Serra's list. */
+/**
+ * The ACP agent the owner picked, or null when they run on T3. Throws when the pick is no longer in Serra's list. An
+ * agent at a URL (eve on Vercel) gives null too: meeting runs read transcripts, and those stay on this Mac, on T3.
+ */
 export const chosenAcpAgent = (profileDir: string): AcpAgent | null => {
   const settings = readAgentBackend(profileDir);
   if (settings.backend !== 'acp') return null;
   const agent = acpAgents(settings).find((entry) => entry.id === settings.agent);
   if (!agent) throw new Error(`Serra has no ACP agent "${settings.agent}". Pick one in Settings › Meetings.`);
-  return agent;
+  return agent.remote ? null : agent;
 };
 
 /** A new backend for one run, as the owner chose it. */

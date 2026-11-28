@@ -7,7 +7,9 @@ import { join } from 'node:path';
 import { passedEnv } from '../exec.ts';
 import { loginEnvironment, type LoginEnvironment } from '../shell-path.ts';
 import { createAcpBackend, readRunRecord } from './acp.ts';
-import { acpAgents, readAgentBackend } from './acp-agents.ts';
+import { acpAgents, readAgentBackend, type AcpAgent } from './acp-agents.ts';
+import { remoteAgentEnv, type EveSecret } from './eve-cloud.ts';
+import { readStoredSecret } from '../secrets.ts';
 import type { AgentBackend } from './backend.ts';
 
 export interface AgentBackends {
@@ -44,11 +46,20 @@ export const agentEnv = async (login: () => Promise<LoginEnvironment> = loginEnv
   return { ...(found.env ?? passedEnv(source)), PATH: found.path };
 };
 
-export const createBackendPool = ({ profileDir, t3, log = () => {}, makeAcp = createAcpBackend }: {
+/**
+ * The environment an agent starts in, asked for at each start: the login environment, and for an agent at a URL,
+ * cleaned and with its secret read from the Keychain or 1Password right then (src/agent/eve-cloud.ts).
+ */
+export const envFor = (agent: AcpAgent, readSecret: (source: EveSecret) => Promise<string> = readStoredSecret): (() => Promise<NodeJS.ProcessEnv>) =>
+  agent.remote ? () => remoteAgentEnv(agent, () => agentEnv(), readSecret) : () => agentEnv();
+
+export const createBackendPool = ({ profileDir, t3, log = () => {}, makeAcp = createAcpBackend, readSecret }: {
   profileDir: string;
   t3: AgentBackend;
   log?: (message: string) => void;
   makeAcp?: typeof createAcpBackend;
+  /** Reads an agent's secret (tests: a fake); the Keychain or 1Password otherwise. */
+  readSecret?: (source: EveSecret) => Promise<string>;
 }): AgentBackends => {
   // Each agent's newest instance, and the setup it was made from. An edit to the agent (command, args, env, cwd, name)
   // or its model in `agent-backend.json` makes a new instance for the next job; the old one is kept for the turns
@@ -74,13 +85,14 @@ export const createBackendPool = ({ profileDir, t3, log = () => {}, makeAcp = cr
       throw new Error(`Serra has no ACP agent "${id}" any more. Add it back in agent-backend.json to carry on its threads.`);
     }
     const model = settings.models[agent.id];
-    const setup = JSON.stringify([agent.name, agent.command, agent.args, agent.env ?? {}, agent.cwd ?? null, model ?? null]);
+    // A secret counts by where it is and when it was saved, never by its value.
+    const setup = JSON.stringify([agent.name, agent.command, agent.args, agent.env ?? {}, agent.cwd ?? null, model ?? null, agent.remote ?? null]);
     if (held?.setup === setup) return held.backend;
     if (held) {
       retired.set(key, [...retired.get(key) ?? [], held.backend]);
       log(`${agent.name}'s setup changed: new work starts on it as saved.`);
     }
-    const backend = makeAcp({ agent, env: agentEnv, runsDir: agentRunsDir(profileDir), attachmentsDir: join(profileDir, 'attachments'), log, ...(model ? { model } : {}) });
+    const backend = makeAcp({ agent, env: envFor(agent, readSecret), runsDir: agentRunsDir(profileDir), attachmentsDir: join(profileDir, 'attachments'), log, ...(model ? { model } : {}) });
     newest.set(key, { setup, backend });
     sweep(key);
     return backend;
