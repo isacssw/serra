@@ -1,7 +1,7 @@
 // Settings › App › Profiles (SB-10): every profile in ⌘ order, dragged (or Alt+↑↓) to reorder, and a detail with its
 // state, agent, colour and Remove. Remove stops the bot, saves a checked backup, then moves the folder to the Trash.
 import { useState, type DragEvent, type KeyboardEvent } from 'react';
-import { Archive, ChevronLeft, ChevronRight, GripVertical, Plus, Power, Trash2 } from 'lucide-react';
+import { Archive, ChevronLeft, ChevronRight, GripVertical, Laptop, Plus, Power, Server, Trash2 } from 'lucide-react';
 import { useNavigate } from 'react-router';
 import { serra } from '../../bridge.ts';
 import { profileRows, takenColors, type ProfileRow } from '../../profiles.logic.ts';
@@ -9,24 +9,31 @@ import { useBotStatus } from '../../shell/live.ts';
 import { mod } from '../../shell/keys.ts';
 import { useProfiles } from '../../shell/profiles.tsx';
 import { openAdd } from '../../shell/AddSheet.tsx';
+import { serverPath } from '../../servers.logic.ts';
 import { Avatar, Button, cx, Dialog, Page, useToast } from '../../ui/index.ts';
 
 const message = (failure: unknown): string => (failure instanceof Error ? failure.message : String(failure));
 
-const dotText: Record<string, string> = { up: 'text-up', warn: 'text-warn', down: 'text-down', faint: 'text-faint', none: 'text-faint' };
+const dotText: Record<string, string> = { up: 'text-up', warn: 'text-warn', down: 'text-down', faint: 'text-faint', hollow: 'text-faint', none: 'text-faint' };
 
 const List = ({ rows, onOpen }: { rows: ProfileRow[]; onOpen: (ref: string) => void }) => {
-  const { view, refresh } = useProfiles();
+  const { view, servers, refresh } = useProfiles();
+  const navigate = useNavigate();
   const toast = useToast();
   const [dragging, setDragging] = useState<string | null>(null);
-  const many = rows.length > 1;
+  // Only this Mac's profiles have a place in the ⌘ order for now; a server's follow them (SB-33).
+  const many = rows.filter((row) => !row.server).length > 1;
+  // Where shows from the first paired server (UX rule D4); before that the list is as it was.
+  const where = servers.length > 0;
+  const open = (row: ProfileRow): void => { if (row.server) void navigate(serverPath(row.server.id)); else onOpen(row.ref); };
 
   const move = async (ref: string, index: number): Promise<void> => {
     try { await serra()?.profiles.move(ref, index); await refresh(); }
     catch (failure) { toast({ message: message(failure), tone: 'error' }); }
   };
   const onKey = (event: KeyboardEvent<HTMLLIElement>, row: ProfileRow, index: number): void => {
-    if (event.key === 'Enter') { onOpen(row.ref); return; }
+    if (event.key === 'Enter') { open(row); return; }
+    if (row.server) return;
     if (!event.altKey || (event.key !== 'ArrowUp' && event.key !== 'ArrowDown')) return;
     event.preventDefault();
     void move(row.ref, index + (event.key === 'ArrowUp' ? -1 : 1));
@@ -44,27 +51,33 @@ const List = ({ rows, onOpen }: { rows: ProfileRow[]; onOpen: (ref: string) => v
           <li
             key={row.ref}
             tabIndex={0}
-            draggable={many && !view?.pinned}
+            draggable={many && !view?.pinned && !row.server}
             aria-label={`${row.name}, ${row.presence.phrase}${row.shortcut && many ? `, ${row.shortcut}` : ''}`}
-            aria-keyshortcuts={many ? 'Alt+ArrowUp Alt+ArrowDown' : undefined}
+            aria-keyshortcuts={many && !row.server ? 'Alt+ArrowUp Alt+ArrowDown' : undefined}
             data-profile={row.ref}
-            onClick={() => onOpen(row.ref)}
+            onClick={() => open(row)}
             onKeyDown={(event) => onKey(event, row, index)}
             onDragStart={() => setDragging(row.ref)}
             onDragEnd={() => setDragging(null)}
-            onDragOver={(event) => { if (dragging) event.preventDefault(); }}
-            onDrop={(event) => onDrop(event, index)}
+            onDragOver={(event) => { if (dragging && !row.server) event.preventDefault(); }}
+            onDrop={(event) => { if (!row.server) onDrop(event, index); }}
             className={cx(
               'group flex cursor-default items-center gap-3 px-4 py-3 outline-none first:rounded-t-xl last:rounded-b-xl hover:bg-hover focus-visible:bg-hover focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-focus',
               dragging === row.ref && 'opacity-50',
             )}
           >
-            {many && <GripVertical size={14} aria-hidden className="shrink-0 cursor-grab text-faint" />}
+            {many && <GripVertical size={14} aria-hidden className={cx('shrink-0 cursor-grab text-faint', row.server && 'invisible')} />}
             <Avatar letters={row.letters} color={row.color} size={28} dot={row.presence.dot} pulse={row.presence.pulse} dashed={!row.setupDone} surface="panel" />
             <span className="flex min-w-0 flex-1 flex-col leading-tight">
               <span className="truncate text-[13px] font-medium">{row.name}</span>
-              <span className="truncate text-xs text-muted">{row.presence.phrase}</span>
+              <span className="truncate text-xs text-muted">{row.server ? row.presence.phrase.replace(` · ${row.server.name}`, '') : row.presence.phrase}</span>
             </span>
+            {where && (
+              <span className="flex w-32 shrink-0 items-center gap-2 truncate text-[13px] text-muted" data-where>
+                {row.server ? <Server size={14} strokeWidth={1.75} aria-hidden className="shrink-0 text-faint" /> : <Laptop size={14} strokeWidth={1.75} aria-hidden className="shrink-0 text-faint" />}
+                <span className="truncate">{row.server ? row.server.name : 'This Mac'}</span>
+              </span>
+            )}
             <span className="w-28 shrink-0 truncate text-[13px] text-muted">{row.agent}</span>
             <ChevronRight size={14} aria-hidden className="shrink-0 text-faint" />
           </li>
@@ -198,9 +211,9 @@ const Detail = ({ row, onBack }: { row: ProfileRow; onBack: () => void }) => {
 
 export const Profiles = () => {
   const status = useBotStatus();
-  const { view } = useProfiles();
+  const { view, servers } = useProfiles();
   const [open, setOpen] = useState<string | null>(null);
-  const rows = profileRows(view, status, mod);
+  const rows = profileRows(view, status, mod, servers);
   const selected = rows.find((row) => row.ref === open);
   if (selected) return <Detail row={selected} onBack={() => setOpen(null)} />;
   return (

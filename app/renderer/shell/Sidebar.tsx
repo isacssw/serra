@@ -5,7 +5,7 @@ import { useEffect, type ComponentType, type KeyboardEvent, type ReactNode } fro
 import { Link, NavLink, useLocation } from 'react-router';
 import {
   Gauge, Activity, AudioLines, Bell, BookOpen, Box, ChevronLeft, Cpu, Download, FileText, Inbox, KeyRound, Layers, ScrollText, Search,
-  Settings, SquarePen, SquareTerminal, SunMoon, UserRound, UserRoundPlus, Users, Waypoints, type LucideProps,
+  Server, Settings, SquarePen, SquareTerminal, SunMoon, UserRound, UserRoundPlus, Users, Waypoints, type LucideProps,
 } from 'lucide-react';
 import type { BotStatus } from '../../../src/contracts.ts';
 import { badgeText, type BadgeCounts } from '../badges.logic.ts';
@@ -41,6 +41,7 @@ export const routeIcons: Partial<Record<RouteId, ComponentType<LucideProps>>> = 
   diagnostics: SquareTerminal,
   'settings-profiles': UserRoundPlus,
   'settings-appearance': SunMoon,
+  'settings-servers': Server,
 };
 
 /** What a count means, for screen readers: the number alone says nothing. */
@@ -158,8 +159,10 @@ export const Sidebar = ({ status, counts }: { status: BotStatus | null; counts: 
   // The Jobs item stands for every Jobs tab; New task has its own button.
   const inJobs = pathname.startsWith('/jobs/') && pathname !== '/jobs/new';
   const settingsRoutes: readonly Route[] = routes.filter((route) => route.section === 'settings');
-  const { view: profiles } = useProfiles();
-  const active = showsSwitcher(profiles) ? profileRows(profiles, status).find((row) => row.active) : undefined;
+  const { view: profiles, servers } = useProfiles();
+  const active = showsSwitcher(profiles, servers) ? profileRows(profiles, status, '⌘', servers).find((row) => row.active) : undefined;
+  // Settings › Servers shows from the first paired server (UX rule D4).
+  const shown = (route: Route): boolean => route.id !== 'settings-servers' || servers.length > 0;
   return (
     <aside data-serra-sidebar className="flex w-60 shrink-0 flex-col border-r border-line bg-sidebar">
       <TitleRow status={status} />
@@ -231,7 +234,7 @@ export const Sidebar = ({ status, counts }: { status: BotStatus | null; counts: 
         <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-2 pb-3">
           {settingsGroups.map((group) => (
             <Group key={group} id={`settings-${group}`} heading={group}>
-              {settingsRoutes.filter((route) => route.group === group).map((route) => <ScreenLink key={route.id} route={route} counts={counts} />)}
+              {settingsRoutes.filter((route) => route.group === group && shown(route)).map((route) => <ScreenLink key={route.id} route={route} counts={counts} />)}
             </Group>
           ))}
         </div>

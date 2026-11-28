@@ -3,7 +3,10 @@
 import type { Dot } from '../presence.logic.ts';
 import { cx } from './cx.ts';
 
-const dotColor: Record<Exclude<Dot, 'none'>, string> = { up: 'bg-up', warn: 'bg-warn', down: 'bg-down', faint: 'bg-faint' };
+const dotColor: Record<Exclude<Dot, 'none'>, string> = { up: 'bg-up', warn: 'bg-warn', down: 'bg-down', faint: 'bg-faint', hollow: '' };
+
+/** Offline is a ring (UX rule I5: 1.5 px), filled with the surface it sits on. */
+const hollowFill = { sidebar: 'bg-sidebar', overlay: 'bg-overlay', panel: 'bg-panel', canvas: 'bg-canvas' } as const;
 
 const rings = { sidebar: 'ring-sidebar', overlay: 'ring-overlay', panel: 'ring-panel', canvas: 'ring-canvas' } as const;
 
@@ -27,7 +30,10 @@ export const Avatar = ({ letters, color, size, dot = 'none', pulse = false, dash
         {letters}
       </span>
       {dot !== 'none' && !dashed && (
-        <span className={cx('absolute -right-[2px] -bottom-[2px] rounded-full ring-2', rings[surface], dotSize, dotColor[dot], pulse && 'motion-safe:animate-pulse')} />
+        <span className={cx(
+          'absolute -right-[2px] -bottom-[2px] rounded-full ring-2', rings[surface], dotSize,
+          dot === 'hollow' ? cx('border-[1.5px] border-faint', hollowFill[surface]) : dotColor[dot], pulse && 'motion-safe:animate-pulse',
+        )} />
       )}
     </span>
   );

@@ -30,6 +30,7 @@ import type { RunChat } from './agent/runs-view.ts';
 import type { MeetingProvider, ProviderStatus } from './meeting-sources.ts';
 import type { T3Providers } from './t3-providers.ts';
 import type { PairOutcome, PairProbe, ServerView } from './gateway/pairing.ts';
+import type { ServerHealth } from './gateway/health.ts';
 import type { DetectedProject, OwnerConfirmed, ProfileDraft, ProfileSummary, SetupProgress, SlackManifest } from './setup.ts';
 // Pure: the app's preload bundles this module, so it imports types only, plus this one pure module.
 import type { SETUP_INCOMPLETE } from './setup-incomplete.ts';
@@ -103,6 +104,18 @@ export interface ProfilesView {
   /** The avatar colours to pick from. */
   palette: string[];
 }
+
+/** A device that can reach a paired server, as Settings › Servers lists it. Never its token. */
+export interface ServerDevice {
+  id: string;
+  name: string;
+  addedAt: string;
+  lastUsed: string | null;
+  /** This Mac: it has Forget instead of Revoke. */
+  thisMac: boolean;
+}
+
+export type { ServerHealth };
 
 /** What Add… › Profile creates: the setup form, plus the colour and agent picked first. */
 export interface NewProfile {
@@ -186,6 +199,16 @@ export interface SerraApi {
     pairOverSsh(target: string): { ok: true; server: ServerView } | { ok: false; detail: string; message: string };
     /** The servers this Mac is paired with. */
     list(): { id: string; name: string }[];
+    /** Every paired server's state and profiles, as main follows them live (SB-33); `on.servers` pushes each change. */
+    status(): ServerHealth[];
+    /** Connects to the server again now, without waiting (Retry). */
+    retry(serverId: string): void;
+    /** The devices that can reach the server, this Mac marked. Needs the server up. */
+    devices(serverId: string): ServerDevice[];
+    /** Cuts another device off the server. This Mac is refused: Forget is how it leaves. */
+    revoke(serverId: string, deviceId: string): ServerDevice[];
+    /** Unpairs: revokes this Mac on the server when it can, then drops its entry and key here. Deletes no data. */
+    forget(serverId: string): { revoked: boolean };
   };
   /** Setup (APP-27, SERRA-51): find what exists, create the profile, the Slack app, the owner and the service. Tokens use `secrets`. */
   setup: {
@@ -516,6 +539,8 @@ export interface SerraPushes {
   profiles: null;
   /** Every listed profile's live status, by folder, whenever one changes (SB-11). Null: no report yet. */
   presence: Record<string, BotStatus | null>;
+  /** Every paired server's state and profiles, whenever one changes (SB-33). */
+  servers: ServerHealth[];
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -532,7 +557,7 @@ const methods = <N extends Namespace>() => <const L extends readonly string[]>(l
 /** Every method by namespace. The type check keeps it equal to `SerraApi`; the app's preload and router loop over it. */
 export const bridgeMethods = {
   app: methods<'app'>()(['info', 'getPrefs', 'setPrefs', 'openExternal', 'openProfileFolder', 'rendered']),
-  servers: methods<'servers'>()(['probe', 'pair', 'cancel', 'pairOverSsh', 'list']),
+  servers: methods<'servers'>()(['probe', 'pair', 'cancel', 'pairOverSsh', 'list', 'status', 'retry', 'devices', 'revoke', 'forget']),
   setup: methods<'setup'>()([
     'progress', 'detect', 'useProfile', 'chooseFolder', 'defaults', 'detectProject', 'create', 'manifest', 'confirmOwner', 'installService',
   ]),

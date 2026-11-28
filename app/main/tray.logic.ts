@@ -64,14 +64,23 @@ export const trayView = ({ status, profileSelected, restarting, restartError }: 
 // ---------------------------------------------------------------------------------------------------------------
 
 /** A dot's colour, as `presence.logic.ts` (the window's status table, UX rule B1) names it. */
-export type RowDot = 'up' | 'warn' | 'down' | 'faint' | 'none';
+export type RowDot = 'up' | 'warn' | 'down' | 'faint' | 'hollow' | 'none';
+
+/** The server a profile lives on, as `ServerHealth` (src/gateway/health.ts) says how it is doing. */
+export interface TrayServer { id: string; name: string; state: 'checking' | 'up' | 'offline' | 'unpaired'; skew: 'server' | 'app' | null }
 
 /**
  * A profile's dot and row phrase. The same table as the window's `presence()` (app/renderer/presence.logic.ts), which
  * main can't import; `tests/app-profiles-live.test.ts` checks the two agree for every state.
  */
-export const rowPresence = (status: BotStatus | null, setupDone = true): { dot: RowDot; phrase: string } => {
+export const rowPresence = (status: BotStatus | null, setupDone = true, server: TrayServer | null = null): { dot: RowDot; phrase: string } => {
   if (!setupDone) return { dot: 'none', phrase: 'Finish setup' };
+  if (server) {
+    // Every profile on a server shares its reachability (UX rule B9); a refused key reads as offline too.
+    if (server.state === 'offline' || server.state === 'unpaired') return { dot: 'hollow', phrase: 'offline' };
+    if (server.state === 'checking') return { dot: 'faint', phrase: 'checking' };
+    if (server.skew) return { dot: 'warn', phrase: 'update needed' };
+  }
   if (!status) return { dot: 'faint', phrase: 'checking' };
   if (status.state === 'stopped') return { dot: 'down', phrase: 'stopped' };
   if (!status.slackConnected) return { dot: 'down', phrase: 'Slack disconnected' };
@@ -103,10 +112,14 @@ export interface TrayProfile {
   setupDone: boolean;
   /** The daemon's last report; null before the first one. */
   status: BotStatus | null;
+  /** Set for a profile on a paired server (SB-33): its row ends ` · t480` and opens that server's page. */
+  server?: TrayServer;
 }
 
 interface TrayRow {
   dir: string;
+  /** The server it lives on, or null on this Mac. */
+  serverId: string | null;
   /** Line 1: the profile's name. */
   label: string;
   /** Line 2 (macOS 14.4+): its phrase. */
@@ -129,7 +142,7 @@ export interface MultiTrayView {
   rows: TrayRow[];
 }
 
-/** Worst first (UX rule B6): red, then amber, then green. Stopped-by-you, checking and halfway are neutral. */
+/** Worst first (UX rule B6): red, then amber, then green. Stopped-by-you, checking, offline and halfway are neutral. */
 export const worstIcon = (dots: readonly RowDot[]): TrayIcon => {
   if (dots.includes('down')) return 'down';
   if (dots.includes('warn')) return 'needs-you';
@@ -143,11 +156,22 @@ export const multiTrayView = (profiles: readonly TrayProfile[], busy: ReadonlySe
   const rows = profiles.map((profile, index): TrayRow => {
     const letters = avatarLetters(profile.name, taken);
     taken.add(letters);
-    const { dot, phrase } = rowPresence(profile.status, profile.setupDone);
+    const { dot, phrase: own } = rowPresence(profile.status, profile.setupDone, profile.server ?? null);
+    // A remote row's phrase ends with its server; a local one never says "This Mac" (UX rule B3).
+    const phrase = profile.server ? `${own} · ${profile.server.name}` : own;
+    if (profile.server) {
+      // Opening a server's profile in the window comes with moves (phase 7); for now its row opens the server's page.
+      return {
+        dir: profile.dir, serverId: profile.server.id, label: profile.name, sublabel: phrase, oneLine: `${profile.name} — ${phrase}`,
+        avatar: { letters, color: profile.color, dot }, shortcut: null, open: `Show on ${profile.server.name}…`,
+        newTask: null, restart: null, stop: null,
+      };
+    }
     const working = busy.has(profile.dir);
     const running = profile.status?.state === 'up';
     return {
       dir: profile.dir,
+      serverId: null,
       label: profile.name,
       sublabel: phrase,
       oneLine: `${profile.name} — ${phrase}`,

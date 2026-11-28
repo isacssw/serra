@@ -68,4 +68,9 @@ through an SSH tunnel.
 - The gateway's files are in `~/.local/share/serra` (`server.json`, `devices.json`, `gateway/`), readable by you only.
   Its log is `gateway/gateway.log`. Neither the code nor a key is ever written there.
 
-The app lists the server's profiles once paired. Working with them from the app comes next.
+Once paired, the server's profiles show in the app's switcher, menubar and **Settings › Profiles**, each ending
+`· t480`. **Settings › Servers** shows whether each server is `up` or `offline` (after 15 seconds without an answer,
+with **Retry**), the Macs that can reach it (**Revoke** for the others), and **Forget**, which unpairs this Mac and
+revokes its key on the server when it can reach it, without deleting anything there. If it couldn't reach the
+server, run `serra server devices revoke <name>` there. To add a profile on the server, run `pnpm setup` in Serra's
+folder there. Opening a server's profile in the app, and moving profiles between computers, come next.
