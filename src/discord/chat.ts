@@ -13,7 +13,7 @@
  * server channel or thread) counts as outside, since Discord can't say who in a server is on the owner's team.
  */
 import { ButtonStyle, ComponentType } from '@discordjs/core/http-only';
-import { chatId, rawId } from '../chat/connection.ts';
+import { chatId, chatName, rawId } from '../chat/connection.ts';
 import { MessageGone, type Audience, type ChatError, type ChatPort, type HistoryLine, type InPlaceOf, type MessageRef, type Notice, type OwnerNotify, type PersonId, type Replacement, type Result, type Target, type WorkerOut } from '../chat/port.ts';
 import type { ThreadStore } from '../chat/threads.ts';
 import { clearedFor, type Cleared, type WorkerWriter } from '../chat/writer.ts';
@@ -159,7 +159,7 @@ export const createDiscordChat = ({ api, store, botId, owner, names, channels, p
   const replyText = (body: string, link_: string | null, notify: OwnerNotify): string =>
     messageText(`${notify === 'callout' ? '**This one needs you.**\n\n' : ''}${body}`, footer(link_, notify));
 
-  const questionMessage = (card: QuestionCard): { content: string; components?: Buttons } => {
+  const questionMessage = (card: QuestionCard, copyOf?: { chat: string; link: string | null }): { content: string; components?: Buttons } => {
     const question = card.questions[card.index];
     if (!question) throw new Error(`The card has no question ${card.index + 1}`);
     const head = `**I need your input${card.questions.length > 1 ? ` (${card.index + 1}/${card.questions.length})` : ''}.**\n${question.question}`;
@@ -173,7 +173,10 @@ export const createDiscordChat = ({ api, store, botId, owner, names, channels, p
       : buttons ? (custom ? 'Press an answer, or reply with your own.' : 'Press an answer.')
         : question.multiSelect ? 'Reply with the numbers, like 1,3.' : 'Reply with a number.';
     const who = question.id === 'permission' ? ' Only the bot owner can answer.' : '';
-    const content = messageText(`${head}${listed}`, `-# ${how}${who}`);
+    // A copy (`src/chat/mirrors.ts`) is answered by its buttons only: a message here would be a new request.
+    const content = messageText(`${head}${listed}`, copyOf
+      ? `-# From ${chatName(copyOf.chat)}${copyOf.link ? ` · ${link(copyOf.link, 'Open thread')}` : ''}`
+      : `-# ${how}${who}`);
     if (!buttons) return { content };
     const row = (from: number): Buttons[number] => ({
       type: ComponentType.ActionRow,
@@ -184,13 +187,14 @@ export const createDiscordChat = ({ api, store, botId, owner, names, channels, p
     return { content, components: question.options.length > 5 ? [row(0), row(5)] : [row(0)] };
   };
 
-  const answeredText = (card: QuestionCard, by?: PersonId): string => {
+  const answeredText = (card: QuestionCard, by?: PersonId, via?: string): string => {
     const lines = card.questions.flatMap((question) => {
       const answer = Object.hasOwn(card.answers, question.id) ? card.answers[question.id] : undefined;
       const label = (value: string): string => question.options.find((option) => (option.value ?? option.label) === value)?.label ?? value;
       return answer === undefined ? [] : [`${question.question}\n**${Array.isArray(answer) ? answer.map(label).join(', ') : label(answer)}**`];
     });
-    return messageText([by ? 'Answer sent. Continuing…' : 'This question is no longer waiting for an answer.', ...lines].join('\n\n'));
+    const head = via ? `Answered in ${chatName(via)}.` : by ? 'Answer sent. Continuing…' : 'This question is no longer waiting for an answer.';
+    return messageText([head, ...lines].join('\n\n'));
   };
 
   const render = (out: WorkerOut): { content: string; components?: Buttons } => {
@@ -201,8 +205,8 @@ export const createDiscordChat = ({ api, store, botId, owner, names, channels, p
         return { content: messageText(out.markdown, `-# Updated ${at} · ${link(out.link, 'T3 thread')}`) };
       }
       case 'progress': return { content: `-# ${out.text.replace(/\s+/g, ' ').slice(0, 500)}` };
-      case 'question': return questionMessage(out.card);
-      case 'answered': return { content: answeredText(out.card, out.by) };
+      case 'question': return questionMessage(out.card, out.copyOf);
+      case 'answered': return { content: answeredText(out.card, out.by, out.via) };
       case 'review': return { content: messageText(out.markdown, `-# Prepared by ${out.from} · ${link(out.link, 'request thread')}`) };
       case 'failure-detail': return { content: `Something went wrong on my side.\n\`\`\`\n${out.line.slice(0, 500).replace(/`/g, 'ˋ')}\n\`\`\`` };
     }

@@ -1,5 +1,6 @@
 /** Question cards as Slack shows them (Block Kit), and the button and select payloads Slack sends back. */
 import type { webApi } from '@slack/bolt';
+import { chatName } from '../chat/connection.ts';
 import type { QuestionCard, QuestionInteraction } from '../questions.ts';
 
 export const QUESTION_ACTION = /^serra_question_(?:choice_\d+|select|multi|submit)$/;
@@ -11,7 +12,14 @@ export type Blocks = Extract<webApi.ChatPostMessageArguments, { blocks: unknown 
 type QuestionMessage = { text: string; blocks: Blocks };
 
 /** Choice values are indices into the saved form, never provider answers supplied by a Slack payload. */
-export const questionMessage = (state: QuestionCard, recipient: string): QuestionMessage => {
+/** A permalink Slack can show as a link: http(s), with nothing Slack would read as markup. */
+const safeLink = (url: string | null): string | null => (url && /^https?:\/\/[^\s<>|]+$/.test(url) ? url : null);
+
+/**
+ * `copyOf`: a copy of a card shown in another chat, in the owner's own DM (`src/chat/mirrors.ts`). It is answered by
+ * its buttons only, and says where the card is from.
+ */
+export const questionMessage = (state: QuestionCard, recipient: string, copyOf?: { chat: string; link: string | null }): QuestionMessage => {
   const question = state.questions[state.index];
   if (!question) throw new Error(`The card has no question ${state.index + 1}`);
   const blockId = `sq:${state.nonce}:choices`;
@@ -57,7 +65,10 @@ export const questionMessage = (state: QuestionCard, recipient: string): Questio
     : 'Choose an option, or reply in this thread with its label or number.';
   // An agent's tool approval (src/agent/acp.ts) is the owner's alone (src/bot.ts).
   const who = question.id === 'permission' ? 'Only the bot owner can answer.' : 'Only the requester or bot owner can answer.';
-  blocks.push({ type: 'context', elements: [plain(`${instruction} ${who}`)] });
+  if (copyOf) {
+    const link = safeLink(copyOf.link);
+    blocks.push({ type: 'context', elements: [{ type: 'mrkdwn', text: `From ${chatName(copyOf.chat)}${link ? ` · <${link}|Open thread>` : ''}` }] });
+  } else blocks.push({ type: 'context', elements: [plain(`${instruction} ${who}`)] });
   return { text: question.question, blocks };
 };
 
@@ -107,10 +118,16 @@ export const overMessage = (answered: boolean): QuestionMessage => {
   return { text, blocks: [{ type: 'section', text: plain(text) }] };
 };
 
-export const answeredMessage = (state: QuestionCard, answeredBy?: string): QuestionMessage => ({
-  text: answeredBy ? 'Answer sent. Continuing…' : 'This question is no longer waiting for an answer.',
+/** `via`: the chat it was answered in, when another one than this card's (`src/chat/mirrors.ts`). */
+export const answeredMessage = (state: QuestionCard, answeredBy?: string, via?: string): QuestionMessage => {
+  const head = via ? `Answered in ${chatName(via)}.` : answeredBy ? 'Answer sent. Continuing…' : 'This question is no longer waiting for an answer.';
+  return answeredBlocks(state, head, via ? undefined : answeredBy);
+};
+
+const answeredBlocks = (state: QuestionCard, head: string, answeredBy: string | undefined): QuestionMessage => ({
+  text: head,
   blocks: [
-    { type: 'section', text: plain(answeredBy ? 'Answer sent. Continuing…' : 'This question is no longer waiting for an answer.') },
+    { type: 'section', text: plain(head) },
     ...state.questions.flatMap((question) => {
       const answer = Object.hasOwn(state.answers, question.id) ? state.answers[question.id] : undefined;
       const label = (value: string): string => question.options.find((option) => (option.value ?? option.label) === value)?.label ?? value;

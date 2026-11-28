@@ -285,7 +285,7 @@ export const formatJobs = ({ jobs }: JobListing, { now = new Date(), doneTodayOn
 
 const NEEDS_YOU_TEXT: Record<NeedsYouReason, string> = {
   'waiting in T3': 'Waiting on you in T3',
-  question: 'A question is open in Slack',
+  question: 'A question is waiting for you',
   'owner pinged': 'Blocked, waiting on you in Slack',
   failed: 'Failed',
 };

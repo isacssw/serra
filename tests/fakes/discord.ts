@@ -33,6 +33,8 @@ export const createFakeDiscord = ({ token = DISCORD_TOKEN }: { token?: string } 
   const typing: string[] = [];
   const threads: { channel: string; message: string; name: string }[] = [];
   const acks: string[] = [];
+  /** People the bot opened a DM with. */
+  const dmsOpened: string[] = [];
   const uploads: { channel: string; name: string; caption?: string }[] = [];
   /** Every request: method, URL and whether it carried the bot token, to check where it went. */
   const requests: { method: string; url: string; auth: string | null }[] = [];
@@ -93,6 +95,15 @@ export const createFakeDiscord = ({ token = DISCORD_TOKEN }: { token?: string } 
       if (!channel) return fail(404, 10003, 'Unknown Channel');
       return json(200, { id, type: channel.type, ...(channel.parent_id ? { parent_id: channel.parent_id } : {}), ...(channel.recipient ? { recipients: [{ id: channel.recipient, username: 'someone' }] } : {}) });
     }
+    if (method === 'POST' && path === '/users/@me/channels') {
+      // A bot's DM with a person: the same channel every time.
+      const user = String(body.recipient_id);
+      const found = [...channels].find(([, channel]) => channel.type === 1 && channel.recipient === user)?.[0];
+      const id = found ?? snowflake();
+      if (!found) channels.set(id, { type: 1, recipient: user });
+      dmsOpened.push(user);
+      return json(200, { id, type: 1, recipients: [{ id: user, username: 'someone' }] });
+    }
     if ((match = /^\/interactions\/(\d+)\/([^/]+)\/callback$/.exec(path))) { acks.push(match[1] ?? ''); return json(204, null); }
     return fail(404, 0, `404: Not Found ${method} ${path}`);
   };
@@ -151,7 +162,7 @@ export const createFakeDiscord = ({ token = DISCORD_TOKEN }: { token?: string } 
 
   return {
     makeRequest, gateway,
-    sent, edits, reactions, deleted, typing, threads, acks, uploads, requests, channels, history, noThreads,
+    sent, edits, reactions, deleted, typing, threads, acks, uploads, requests, channels, history, noThreads, dmsOpened,
     connects: () => connects, destroyed: () => destroyed, connected: () => events !== null,
     /** The next `n` connections fail as if Discord were unreachable. */
     refuseNextConnects: (n: number) => { refuseConnects = n; },

@@ -73,7 +73,7 @@ export const createSlackConnection = (options: SlackConnectionOptions): ChatAdap
   const { app, client, events, owner, botToken, profileDir, messageTriggers, logger, clock } = options;
   let botUserId = '';
   let botId = '';
-  const { chat, writer, sawDm } = createSlackChat({
+  const { chat, writer, sawDm, sawOwnerWrite, ownerDm } = createSlackChat({
     client, owner, botUserId: () => botUserId, botToken, profileDir, logger, clock, ...(options.receive ? { receive: options.receive } : {}),
   });
 
@@ -141,8 +141,13 @@ export const createSlackConnection = (options: SlackConnectionOptions): ChatAdap
     saw(msg) {
       // Whose a DM is, for the check that the owner's DM is theirs alone: from every message handled, held requests
       // replayed after a restart included. A bot's alert says nothing about whose a DM is.
-      if (!msg.botId) sawDm(msg.channel, msg.user);
+      if (msg.botId) return;
+      sawDm(msg.channel, msg.user);
+      sawOwnerWrite(msg.channel, msg.user);
     },
+
+    // The owner's DM, once they wrote to the bot there: Slack won't say which DM is theirs otherwise (`owner-dm.ts`).
+    ownerSpace: async () => ownerDm(),
   };
   return { connection, writer };
 };

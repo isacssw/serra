@@ -470,6 +470,85 @@ test('Slack, Telegram and Discord run jobs side by side, each answered only in i
   assert.match(discord.sent.at(-1)?.content ?? '', /only take requests from my owner/);
 });
 
+test('approvals follow the owner across Slack, Telegram and Discord: one answer anywhere, every copy done, a chat that was down catches up', async (t) => {
+  const discord = createFakeDiscord();
+  discord.addChannel(CHANNEL, { type: 0, guild: GUILD });
+  const tg = createFakeTelegram();
+  const chats = (config: Config) => [
+    createTelegramConnection({ token: () => TELEGRAM_TOKEN, profileDir: config.profileDir, ownerId: '4242', logger: quiet, clock: { now: () => Date.now() }, fetch: tg.fetch, retryMs: 5 }),
+    createDiscordConnection({ token: () => DISCORD_TOKEN, profileDir: config.profileDir, ownerId: ME, logger: quiet, clock: { now: () => Date.now() }, api: apiOver(discord), gateway: discord.gateway }),
+  ];
+  const h = await startTestDaemon(t, {
+    profile: { channels: { telegram: { bot: { id: String(TELEGRAM_BOT.id), username: TELEGRAM_BOT.username }, ownerId: '4242' }, ...discordProfile(ME).channels } },
+    chats,
+  });
+  await h.clock.settle();
+  const slackEvent = (event: Record<string, unknown>) => ({
+    type: 'event_callback', team_id: 'THOME', api_app_id: 'A1', event_id: `Ev${String(event.ts)}`, event_time: 1,
+    authorizations: [{ team_id: 'THOME', user_id: 'UBOT', is_bot: true }], event: { team: 'THOME', event_ts: event.ts, ...event },
+  });
+  // The owner has written to the Slack bot in a DM, so Slack knows which DM is theirs.
+  await h.deliver(slackEvent({ type: 'message', channel_type: 'im', user: OWNER, text: 'hi', ts: '1700000050.000100', channel: 'D0OWNER1' }));
+  await h.clock.settle();
+
+  // A job in a Discord server channel asks to run a tool.
+  const asked = await discord.say({ from: ME, channel: CHANNEL, guild: GUILD, mention: true, text: 'clean the build folder' });
+  await h.clock.settle();
+  const discordThread = h.t3.threadIds().at(-1);
+  h.t3.ask(approval, discordThread);
+  await h.advance(15_000);
+  await discord.idle();
+  const card = discord.sent.find((sent) => sent.components && sent.channel === asked);
+  assert.ok(card, 'the card is in the job\'s thread');
+  assert.deepEqual(discord.dmsOpened, [], 'no copy in the job\'s own chat');
+  const tgCopy = tg.sent.find((sent) => sent.keyboard);
+  assert.ok(tgCopy?.keyboard, 'a copy with buttons in the owner\'s Telegram chat');
+  assert.equal(tgCopy.chat, '4242');
+  assert.match(tgCopy.text, /From Discord · <a href="https:\/\/discord\.com\/channels\/[^"]+">Open thread<\/a>/);
+  assert.doesNotMatch(tgCopy.text, /Tap an answer|reply/i, 'a copy is answered by its buttons only');
+  const slackCopy = h.slack.callsTo('chat.postMessage').find((args) => args.channel === 'D0OWNER1' && String(JSON.stringify(args.blocks)).includes('serra_question_choice'));
+  assert.ok(slackCopy, 'and one in the owner\'s Slack DM');
+
+  // Someone else pressing a copy (a forged press: only the owner sees it) answers nothing; the owner's press does.
+  await tg.click({ from: 9999, message: tgCopy, data: tgCopy.keyboard[0]?.[0]?.callback_data ?? '' });
+  await h.clock.settle();
+  assert.equal(h.t3.answered.length, 0);
+  await tg.click({ from: 4242, message: tgCopy, data: tgCopy.keyboard[0]?.[0]?.callback_data ?? '' });
+  await h.clock.settle();
+  await discord.idle();
+  assert.deepEqual(h.t3.answered.map(({ answers }) => answers), [{ permission: 'Allow' }], 'one decision');
+  assert.ok(discord.edits.some((edit) => edit.id === card.id && /^Answered in Telegram\./.test(edit.content) && JSON.stringify(edit.components) === '[]'), 'the Discord card says where it was answered, without buttons');
+  assert.ok(tg.edits.some((edit) => edit.id === tgCopy.id && /Answer sent/.test(edit.text)), 'the Telegram copy shows the answer');
+  assert.ok(h.slack.callsTo('chat.update').some((args) => args.channel === 'D0OWNER1' && /Answered in Telegram/.test(String(args.text))), 'the Slack copy too');
+  // The Discord card pressed later answers nothing more.
+  await discord.click({ from: ME, message: card, customId: card.components?.[0]?.components[1]?.custom_id ?? '', guild: GUILD });
+  await h.clock.settle();
+  assert.equal(h.t3.answered.length, 1);
+
+  // A job in Slack: the copy goes to the owner's Discord DM, opened for it. Telegram is down when it's answered there.
+  await h.deliver(slackEvent({ type: 'app_mention', user: OWNER, text: '<@UBOT> tidy the docs', ts: '1700000100.000100', channel: 'C1' }));
+  await h.clock.settle();
+  h.t3.ask({ ...approval, requestId: 'req-2' }, h.t3.threadIds().at(-1));
+  await h.advance(15_000);
+  await discord.idle();
+  assert.deepEqual(discord.dmsOpened, [ME]);
+  const discordCopy = discord.sent.findLast((sent) => sent.components);
+  assert.ok(discordCopy && discordCopy.channel !== CHANNEL && discordCopy.channel !== asked, 'in the owner\'s DM');
+  assert.match(discordCopy.content, /-# From Slack/);
+  const tgCopy2 = tg.sent.findLast((sent) => sent.keyboard);
+  assert.ok(tgCopy2 && tgCopy2.id !== tgCopy.id);
+  tg.setUnreachable(true);
+  await discord.click({ from: ME, message: discordCopy, customId: discordCopy.components?.[0]?.components[1]?.custom_id ?? '' });
+  await h.clock.settle();
+  await discord.idle();
+  assert.deepEqual(h.t3.answered.map(({ requestId, answers }) => [requestId, answers.permission]), [['req-1', 'Allow'], ['req-2', 'Deny']]);
+  assert.ok(h.slack.callsTo('chat.update').some((args) => args.channel === 'C1' && /Answered in Discord/.test(String(args.text))));
+  assert.ok(!tg.edits.some((edit) => edit.id === tgCopy2.id), 'Telegram is down');
+  tg.setUnreachable(false);
+  await h.advance(2 * 60_000);
+  assert.ok(tg.edits.some((edit) => edit.id === tgCopy2.id && /Answer sent/.test(edit.text)), 'back up, the Telegram copy shows it was answered');
+});
+
 test('a Discord token that can\'t be checked at start leaves Discord down, and Slack starts and answers anyway', async (t) => {
   const discord = createFakeDiscord({ token: OTHER_DISCORD_TOKEN });
   const warnings: string[] = [];
