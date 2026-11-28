@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -414,10 +414,22 @@ test('startupError reports the error the daemon logged during this start, ignori
   const log = join(dir, 'bot.log');
   const since = Date.now();
   const old = new Date(since - 60_000).toISOString(); const now = new Date(since + 10).toISOString();
-  writeFileSync(log, `${old} [ERROR] bolt-app An old failure\n`);
+  // File times are set here, not left to the clock, so the answer never depends on when the write landed.
+  const written = (text: string, mtimeMs: number) => { writeFileSync(log, text); utimesSync(log, mtimeMs / 1000, mtimeMs / 1000); };
+  written(`${old} [ERROR] bolt-app An old failure\n`, since + 10);
   assert.equal(startupError(log, since), undefined);
-  writeFileSync(log, `${old} [ERROR] bolt-app An old failure\n${now} [INFO] bolt-app starting\n${now} [ERROR] bolt-app Can't read the repository /x (git timed out)\n`);
+  const thisStart = `${old} [ERROR] bolt-app An old failure\n${now} [INFO] bolt-app starting\n${now} [ERROR] bolt-app Can't read the repository /x (git timed out)\n`;
+  written(thisStart, since + 10);
   assert.equal(startupError(log, since), "Can't read the repository /x (git timed out)");
+  // A file's time comes from a coarser clock than Date.now(): on Linux it can be a tick (a few ms) before `since`
+  // although the write came after it, and on some volumes up to a second. The error still counts.
+  written(thisStart, since - 4);
+  assert.equal(startupError(log, since), "Can't read the repository /x (git timed out)");
+  written(thisStart, since - 900);
+  assert.equal(startupError(log, since), "Can't read the repository /x (git timed out)");
+  // A log nobody wrote to during this start is skipped without being read.
+  written(`${now} [ERROR] bolt-app A line it never reads\n`, since - 60_000);
+  assert.equal(startupError(log, since), undefined);
   assert.equal(startupError(join(dir, 'missing.log'), since), undefined);
 });
 
