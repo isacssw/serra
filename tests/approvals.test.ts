@@ -124,6 +124,31 @@ test('an approval asked in Slack is copied to the owner\'s own conversation in t
   assert.deepEqual(h.state()[`C1:${TS}`]?.phase, { state: 'following' });
 });
 
+test('a press on the first copy counts while the copy to a third chat is still going out', async (t) => {
+  let release: () => void = () => {};
+  const held = new Promise<void>((resolve) => { release = resolve; });
+  const first = createSecondChat({ ownerSpace: 'dm', audiences: { dm: 'owner' } });
+  const slow = createSecondChat({ kind: 'slow', ownerSpace: 'dm', audiences: { dm: 'owner' }, beforeSend: () => held });
+  const h = await startTestDaemon(t, { chats: [first.adapter, slow.adapter] });
+  await h.deliver(mention(OWNER, 'clean the build folder'));
+  await h.clock.settle();
+  h.t3.ask(approval);
+  // The poll that posts the copies waits on the slow chat, so the clock isn't settled until it is let go.
+  const asked = h.advance(15_000);
+  const tick = (): Promise<void> => new Promise((resolve) => { setImmediate(resolve); });
+  for (let i = 0; i < 200 && !first.sent.some(({ out }) => out.kind === 'question'); i += 1) await tick();
+  const copy = first.sent.find(({ out }) => out.kind === 'question');
+  assert.ok(copy, 'the first copy went out');
+  assert.equal(slow.sent.length, 0, 'the second is still going out');
+  const pressed = first.click({ conversation: 'dm', from: '1', messageTs: copy.id, nonce: nonceOf(copy), indices: [0] });
+  for (let i = 0; i < 20; i += 1) await tick();
+  release();
+  await asked;
+  await pressed;
+  await h.clock.settle();
+  assert.deepEqual(h.t3.answered.map(({ answers }) => answers), [{ permission: 'Allow' }], 'the press counted');
+});
+
 test('the owner answering in Slack closes the copy, and a later press on the copy answers nothing', async (t) => {
   const { h, second, copy } = await askedInSlack(t);
   assert.ok(copy);
