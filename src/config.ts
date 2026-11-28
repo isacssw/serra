@@ -48,7 +48,22 @@ export interface Profile {
    * CLI runs from is used.
    */
   updates?: { source: string; ref?: string };
+  /**
+   * Chats the bot serves beside Slack. Telegram: the bot @BotFather made (its token is the `TELEGRAM_BOT_TOKEN` secret)
+   * and, once the owner said hi to it with the pairing code, the owner's Telegram user ID.
+   */
+  channels?: { telegram?: TelegramChannel };
 }
+
+/** A Telegram bot the owner connected. IDs are Telegram's own numbers, as text. */
+interface TelegramChannel {
+  bot: { id: string; username: string };
+  /** The owner's Telegram user ID, set when they open the bot with the pairing code. Absent: not paired yet. */
+  ownerId?: string;
+}
+
+const TELEGRAM_ID = /^\d{1,20}$/;
+const TELEGRAM_USERNAME = /^[A-Za-z][A-Za-z0-9_]{3,31}$/;
 
 const DEFAULT_BRANCH_PATTERN = '{id}/{slug}-{stamp}';
 const BRANCH_PLACEHOLDER = /\{(id|slug|stamp|DDMM|MMDD)\}/g;
@@ -162,6 +177,17 @@ export const validateProfile = (value: unknown): Profile => {
     // `ref` becomes a git argument, so it may not read as a flag.
     if (updates.ref !== undefined && string(updates, 'ref').startsWith('-')) throw new Error('Invalid updates.ref');
   }
+  if (value.channels !== undefined) {
+    const channels = object('channels');
+    for (const key of Object.keys(channels)) if (key !== 'telegram') throw new Error(`Unknown channel: ${key}`);
+    if (channels.telegram !== undefined) {
+      const telegram = channels.telegram;
+      if (!record(telegram) || !record(telegram.bot)) throw new Error('channels.telegram needs its bot');
+      if (!TELEGRAM_ID.test(string(telegram.bot, 'id'))) throw new Error('Invalid Telegram bot ID');
+      if (!TELEGRAM_USERNAME.test(string(telegram.bot, 'username'))) throw new Error('Invalid Telegram bot username');
+      if (telegram.ownerId !== undefined && !TELEGRAM_ID.test(string(telegram, 'ownerId'))) throw new Error('Invalid Telegram owner ID');
+    }
+  }
   if (value.branchPattern !== undefined) {
     const problem = branchPatternProblem(string(value, 'branchPattern'));
     if (problem) throw new Error(problem);
@@ -213,6 +239,8 @@ export interface Config {
   t3Bin: string;
   serviceLabel: string;
   branchPattern: string;
+  /** The Telegram bot, when the owner connected one. Its token is read on first use, like Slack's. */
+  telegram?: TelegramChannel & { token: string };
 }
 
 /** Every bot runs from a profile. The code checkout holds no owner settings, brief, knowledge, or state. */
@@ -231,7 +259,7 @@ export const loadConfig = ({ profileDir = profileArgument(), env = process.env }
   const profile = readProfileFile(directory);
   // A token comes from the process environment, then its source in secrets.json (Keychain or 1Password), then .env.
   // It is read on first use, so commands that never touch Slack (stop, status) never run `security` or `op`.
-  const token = (key: 'SLACK_BOT_TOKEN' | 'SLACK_APP_TOKEN'): () => string => {
+  const token = (key: 'SLACK_BOT_TOKEN' | 'SLACK_APP_TOKEN' | 'TELEGRAM_BOT_TOKEN'): () => string => {
     let value: string | undefined;
     return () => (value ??= env[key]?.trim() || resolveConfiguredSecretSync(directory, key) || required(key));
   };
@@ -239,6 +267,8 @@ export const loadConfig = ({ profileDir = profileArgument(), env = process.env }
   const appToken = token('SLACK_APP_TOKEN');
   const owner = profile.owner.slackUserId;
   const repositories = profile.repositories ?? [];
+  const telegram = profile.channels?.telegram;
+  const telegramToken = token('TELEGRAM_BOT_TOKEN');
   return {
     profileDir: directory, profile,
     id: profile.bot.id, name: profile.bot.name,
@@ -255,5 +285,6 @@ export const loadConfig = ({ profileDir = profileArgument(), env = process.env }
     t3Bin: profile.t3Bin ?? values.T3_BIN?.trim() ?? join(homedir(), '.t3/bin/t3'),
     serviceLabel: profile.serviceLabel ?? `dev.serra.${profile.bot.id}`,
     branchPattern: profile.branchPattern ?? DEFAULT_BRANCH_PATTERN,
+    ...(telegram ? { telegram: { ...telegram, get token() { return telegramToken(); } } } : {}),
   };
 };

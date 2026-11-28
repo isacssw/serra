@@ -9,6 +9,9 @@ import type { Theme } from './bridge.ts';
 import { codeRoot } from '../../src/config.ts';
 import { createJournal } from '../../src/knowledge-journal.ts';
 import { createProfile } from '../../src/setup.ts';
+import { readProfileFile, writeProfileFile } from '../../src/config.ts';
+import { startStatusServer } from '../../src/status-socket.ts';
+import type { BotStatus } from '../../src/contracts.ts';
 import { writeChatFixture } from './chat-fixture.ts';
 import { writeGraphFixture } from './graph-fixture.ts';
 import { windowOptions } from './window-options.ts';
@@ -882,6 +885,126 @@ const runCustomAcpAgentChecks = async (window: BrowserWindow): Promise<string[]>
   return failures;
 };
 
+interface ChannelsReport { slack: string | null; telegram: string | null; buttons: string[]; dialog: string | null; error: string | null }
+
+/** Settings › Channels as the owner sees it: each row's pill and buttons, and an open dialog's title and error. */
+const channelsScript = (action = ''): string => `(async () => {
+  const wait = async (check) => { for (let i = 0; i < 80 && !check(); i++) await new Promise((r) => setTimeout(r, 50)); return check(); };
+  const row = (name) => [...document.querySelectorAll('[data-serra-main] li')].find((li) => li.textContent.includes(name));
+  ${action}
+  await wait(() => row('Telegram')?.querySelector('button, [class*="rounded-md"]'));
+  await new Promise((r) => setTimeout(r, 300));
+  const pill = (name) => row(name)?.querySelector('span.rounded-md')?.textContent ?? null;
+  const dialog = document.querySelector('dialog[open]');
+  return {
+    slack: pill('Slack'), telegram: pill('Telegram'),
+    buttons: [...(row('Telegram')?.querySelectorAll('button') ?? [])].map((b) => b.textContent.trim()),
+    dialog: dialog?.querySelector('h2')?.textContent ?? null,
+    error: dialog?.querySelector('[class*="text-down"]')?.textContent?.split(' · ')[0] ?? null,
+  };
+})()`;
+
+/**
+ * SB-5: Settings › Channels in every state, against a fake status socket (Slack and Telegram connected, no real chat):
+ * not connected, the Connect dialog refusing a bad token, waiting for the owner, connected, and Disconnect. No call
+ * reaches Telegram. `SERRA_SMOKE_SHOTS` saves each state in light and dark.
+ */
+const runChannelsChecks = async (window: BrowserWindow): Promise<string[]> => {
+  const failures: string[] = [];
+  const directory = layoutProfile();
+  const shots = process.env.SERRA_SMOKE_SHOTS;
+  if (shots) mkdirSync(shots, { recursive: true });
+  const run = async <T>(script: string): Promise<T> => await window.webContents.executeJavaScript(script) as T;
+  const telegram = { bot: { id: '1111111', username: 'friday_serra_bot' } };
+  const setTelegram = (value: typeof telegram & { ownerId?: string } | null): void => {
+    const { channels: _channels, ...rest } = readProfileFile(directory);
+    writeProfileFile(directory, value ? { ...rest, channels: { telegram: value } } : rest);
+  };
+  let telegramUp = false;
+  const status = (): Extract<BotStatus, { state: 'up' }> => ({
+    state: 'up', pid: process.pid, startedAt: new Date().toISOString(), slackConnected: true,
+    chats: [{ kind: 'slack', connected: true }, ...(telegramUp ? [{ kind: 'telegram', connected: true }] : [])], counts: { needsYou: 0, running: 0 },
+  });
+  const server = await startStatusServer({ profileDir: directory, status });
+  let serverOpen = true;
+  const open = `location.hash = '#/settings/bot'; await new Promise((r) => setTimeout(r, 150)); location.hash = '#/settings/channels';`;
+  const shot = async (name: string): Promise<void> => {
+    if (!shots) return;
+    // Toasts left by earlier checks would cover the screen.
+    await run(`(async () => { for (const b of document.querySelectorAll('button[aria-label="Dismiss"]')) b.click(); await new Promise((r) => setTimeout(r, 250)); })()`);
+    writeFileSync(join(shots, `${name}.png`), (await window.webContents.capturePage()).toPNG());
+  };
+  const expect = (where: string, report: ChannelsReport, want: Partial<ChannelsReport>): void => {
+    for (const [key, value] of Object.entries(want)) {
+      const got = report[key as keyof ChannelsReport];
+      if (JSON.stringify(got) !== JSON.stringify(value)) failures.push(`channels ${where}: ${key} is ${JSON.stringify(got)}, not ${JSON.stringify(value)}`);
+    }
+  };
+  try {
+    await run(`(async () => {
+      await window.serra.app.setPrefs({ profileDir: ${JSON.stringify(directory)} });
+      window.dispatchEvent(new Event('serra:setup-changed'));
+      await new Promise((r) => setTimeout(r, 500));
+    })()`);
+    for (const theme of ['light', 'dark'] as const) {
+      await run(themeControlScript(theme));
+      setTelegram(null);
+      telegramUp = false;
+      server.refresh();
+      expect(`${theme} off`, await run(channelsScript(open)), { slack: 'Connected', telegram: 'Not connected', buttons: ['Connect'] });
+      const contrast = await run<ContrastReport>(contrastScript('#/settings/channels'));
+      for (const item of contrast.low) failures.push(`${theme}: "${item.text}" on Channels reads at ${item.ratio}:1`);
+      await shot(`${theme}-channels-off`);
+      // Connect: a pasted Slack token is refused before Telegram is asked.
+      expect(`${theme} connect`, await run(channelsScript(`
+        [...document.querySelectorAll('[data-serra-main] li button')].find((b) => b.textContent.trim() === 'Connect')?.click();
+        await wait(() => document.querySelector('dialog[open] input'));
+        const field = document.querySelector('dialog[open] input');
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(field, 'xoxb-not-a-telegram-token');
+        field.dispatchEvent(new Event('input', { bubbles: true }));
+        document.querySelector('dialog[open] button[type=submit]')?.click();
+        await wait(() => document.querySelector('dialog[open] [class*="text-down"]'));
+      `)), { dialog: 'Connect Telegram', error: 'That doesn’t look like a bot token. It looks like 123456:ABC…' });
+      await shot(`${theme}-channels-connect`);
+      await run(`(async () => { [...document.querySelectorAll('dialog[open] button')].find((b) => b.textContent.trim() === 'Cancel')?.click(); await new Promise((r) => setTimeout(r, 200)); })()`);
+      // Connected, waiting for the owner to open the bot.
+      setTelegram(telegram);
+      expect(`${theme} pairing`, await run(channelsScript(open)), { telegram: 'Waiting for you', buttons: ['Open in Telegram'] });
+      await shot(`${theme}-channels-pairing`);
+      // Paired, and the running bot reaches Telegram.
+      setTelegram({ ...telegram, ownerId: '2222222' });
+      telegramUp = true;
+      server.refresh();
+      expect(`${theme} paired`, await run(channelsScript(open)), { slack: 'Connected', telegram: 'Connected', buttons: ['Disconnect'] });
+      await shot(`${theme}-channels-connected`);
+      expect(`${theme} disconnect`, await run(channelsScript(`
+        [...document.querySelectorAll('[data-serra-main] li button')].find((b) => b.textContent.trim() === 'Disconnect')?.click();
+        await wait(() => document.querySelector('dialog[open]'));
+      `)), { dialog: 'Disconnect Telegram?' });
+      await shot(`${theme}-channels-disconnect`);
+      await run(`(async () => { [...document.querySelectorAll('dialog[open] button')].find((b) => b.textContent.trim() === 'Cancel')?.click(); await new Promise((r) => setTimeout(r, 200)); })()`);
+    }
+    // Disconnect for real, with the bot stopped (a running one would be restarted through launchd).
+    await server.close();
+    serverOpen = false;
+    expect('disconnected', await run(channelsScript(`
+      await new Promise((r) => setTimeout(r, 300));
+      [...document.querySelectorAll('[data-serra-main] li button')].find((b) => b.textContent.trim() === 'Disconnect')?.click();
+      await wait(() => document.querySelector('dialog[open]'));
+      [...document.querySelectorAll('dialog[open] button')].find((b) => b.textContent.trim() === 'Disconnect')?.click();
+      await wait(() => [...document.querySelectorAll('[data-serra-main] li button')].some((b) => b.textContent.trim() === 'Connect'));
+    `)), { slack: 'Bot stopped', telegram: 'Not connected', buttons: ['Connect'] });
+    if (readProfileFile(directory).channels?.telegram) failures.push('channels: Disconnect left Telegram in the profile');
+    await shot('dark-channels-disconnected');
+  } finally {
+    if (serverOpen) await server.close().catch(() => {});
+    await run(themeControlScript('system')).catch(() => null);
+    await run(`(async () => { await window.serra.app.setPrefs({ profileDir: null }); window.dispatchEvent(new Event('serra:setup-changed')); })()`).catch(() => null);
+    rmSync(join(directory, '..'), { recursive: true, force: true });
+  }
+  return failures;
+};
+
 export const runSmokeChecks = async (window: BrowserWindow, resendStatus: () => void): Promise<boolean> => {
   const timer = setTimeout(resendStatus, 300);
   let report: PageReport;
@@ -923,6 +1046,7 @@ export const runSmokeChecks = async (window: BrowserWindow, resendStatus: () => 
     ...await runGraphChecks(window),
     ...await runChatChecks(window),
     ...await runCustomAcpAgentChecks(window),
+    ...await runChannelsChecks(window),
   ].filter((failure): failure is string => typeof failure === 'string');
   for (const failure of failures) console.error(`[serra] smoke failed: ${failure}`);
   if (failures.length === 0) console.log('[serra] smoke passed');

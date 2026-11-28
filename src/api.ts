@@ -34,7 +34,7 @@ import type { DetectedProject, OwnerConfirmed, ProfileDraft, ProfileSummary, Set
 // Pure: the app's preload bundles this module, so it imports types only, plus this one pure module.
 import type { SETUP_INCOMPLETE } from './setup-incomplete.ts';
 import type {
-  AppliesWhen, BotEvent, BotStatus, Diagnostic, JobListing, KnowledgePage, Profile, ProfileSection, Proposal,
+  AppliesWhen, BotEvent, BotStatus, ChannelsView, Diagnostic, JobListing, KnowledgePage, Profile, ProfileSection, Proposal,
   ProposalDiff, SecretName, SecretSource, SecretStatus,
 } from './contracts.ts';
 
@@ -355,6 +355,17 @@ export interface SerraApi {
     /** Resolves the token and runs Slack's `auth.test`. */
     check(name: SecretName): SecretStatus;
   };
+  /** Channels (SB-5): chats the bot serves beside Slack. Telegram today. Tokens go through `secrets`' sources, never back to the window. */
+  channels: {
+    status(): ChannelsView;
+    /**
+     * Checks a Telegram bot token with Telegram and keeps it in the Keychain, or points at a 1Password reference
+     * (`op://…`) to one, then connects the bot. It is served once the bot restarts; the owner pairs by opening the link.
+     */
+    connectTelegram(tokenOrReference: string): ChannelsView;
+    /** Forgets the Telegram bot and its owner. Applies when the bot restarts. */
+    disconnectTelegram(): ChannelsView;
+  };
   /** Tools (APP-23, SERRA-39), read-only: what the worker can use. MCP servers by name, never their config. */
   tools: {
     /**
@@ -533,6 +544,7 @@ export const bridgeMethods = {
   brief: methods<'brief'>()(['read', 'save', 'check', 'preview', 'listProposed', 'readProposed', 'applyProposed']),
   settings: methods<'settings'>()(['read', 'sections', 'saveSection', 'addPerson', 'removePerson', 'peopleNames', 't3Providers']),
   secrets: methods<'secrets'>()(['list', 'setSource', 'check']),
+  channels: methods<'channels'>()(['status', 'connectTelegram', 'disconnectTelegram']),
   tools: methods<'tools'>()(['overview', 'clis']),
   updates: methods<'updates'>()([
     'status', 'runningJobs', 'prepare', 'activate', 'rollback', 'syncBot', 'followApp',

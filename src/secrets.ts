@@ -1,5 +1,5 @@
 /**
- * Where the Slack tokens come from (APP-8). Each token has a source: a Keychain item (read through the `security`
+ * Where the Slack and Telegram tokens come from (APP-8). Each token has a source: a Keychain item (read through the `security`
  * CLI), a 1Password reference (read through `op`), or the profile's `.env`, the CLI fallback.
  *
  * Both tools run as child processes with a timeout, so a hang or crash can't take the daemon or the app down.
@@ -18,7 +18,9 @@ import { writeFileAtomic } from './lib/atomic.ts';
 import { readEnv } from './lib/env.ts';
 
 export const SECRETS_FILE = 'secrets.json';
-export const SECRET_NAMES: readonly SecretName[] = ['SLACK_BOT_TOKEN', 'SLACK_APP_TOKEN'];
+export const SECRET_NAMES: readonly SecretName[] = ['SLACK_BOT_TOKEN', 'SLACK_APP_TOKEN', 'TELEGRAM_BOT_TOKEN'];
+/** Slack's tokens, which every bot needs. A channel's token is listed once the channel is connected or has a source. */
+const SLACK_SECRET_NAMES: readonly SecretName[] = ['SLACK_BOT_TOKEN', 'SLACK_APP_TOKEN'];
 
 /** The external tools and how long each may take. Tests point these at fake binaries. */
 export interface SecretTools {
@@ -138,9 +140,9 @@ export const slackWorkspace = (profileDir: string): SlackWorkspace | null => {
 // Running `security` and `op` without leaking values
 // ---------------------------------------------------------------------------------------------------------------
 
-const TOKEN_SHAPE = /\bx(?:ox[a-z]|app)-[A-Za-z0-9-]+/g;
+const TOKEN_SHAPE = /\bx(?:ox[a-z]|app)-[A-Za-z0-9-]+|(?<!\d)\d{5,20}:[A-Za-z0-9_-]{30,}/g;
 
-/** Removes every known value and anything shaped like a Slack token. */
+/** Removes every known value and anything shaped like a Slack or Telegram token. */
 export const scrub = (text: string, values: (string | undefined)[] = []): string => {
   let out = text;
   for (const value of values) {
@@ -194,12 +196,18 @@ const readCall = (source: Exclude<SecretSource, { kind: 'env' }>, tools: SecretT
     ? { label: 'Keychain (security)', bin: keychain(tools), args: ['find-generic-password', '-s', source.service, '-a', source.account, '-w'], timeoutMs: tools.timeoutMs }
     : { label: '1Password (op)', bin: tools.op, args: ['read', '--no-newline', source.reference], timeoutMs: tools.timeoutMs };
 
-const PREFIX: Record<SecretName, string> = { SLACK_BOT_TOKEN: 'xoxb-', SLACK_APP_TOKEN: 'xapp-' };
+/** What each token looks like, and how a message names that shape. */
+const SHAPE: Record<SecretName, { test: (value: string) => boolean; label: string }> = {
+  SLACK_BOT_TOKEN: { test: (value) => value.startsWith('xoxb-'), label: 'xoxb- token' },
+  SLACK_APP_TOKEN: { test: (value) => value.startsWith('xapp-'), label: 'xapp- token' },
+  // @BotFather's tokens: the bot's numeric ID, a colon, and a secret part.
+  TELEGRAM_BOT_TOKEN: { test: (value) => /^\d{5,20}:[A-Za-z0-9_-]{30,}$/.test(value), label: 'Telegram bot token' },
+};
 
 /** Throws, without the value, when `value` can't be the named token. */
-const checkShape = (name: SecretName, value: string, where: string): string => {
+export const checkShape = (name: SecretName, value: string, where: string): string => {
   if (!value) throw new Error(`${name} from ${where} is empty`);
-  if (!value.startsWith(PREFIX[name]) || /replace-me|\.\.\./.test(value)) throw new Error(`${name} from ${where} isn't a real ${PREFIX[name]} token`);
+  if (!SHAPE[name].test(value) || /replace-me|\.\.\./.test(value)) throw new Error(`${name} from ${where} isn't a real ${SHAPE[name].label}`);
   if (/\s/.test(value)) throw new Error(`${name} from ${where} contains whitespace`);
   return value;
 };
@@ -319,10 +327,18 @@ const statusOf = async (profileDir: string, name: SecretName, file: SecretsFile,
   return { name, source, set, verifiedAt: check.verifiedAt, error, ...(lookupFailed ? { lookupFailed: true as const } : {}) };
 };
 
+/** Slack's tokens, and Telegram's once a Telegram bot is connected or its token has a source. */
+const listedNames = (profileDir: string, file: SecretsFile): SecretName[] => {
+  let telegram = Boolean(file.sources.TELEGRAM_BOT_TOKEN);
+  try { telegram ||= Boolean((JSON.parse(readFileSync(join(resolve(profileDir), 'profile.json'), 'utf8')) as Partial<Profile>).channels?.telegram); }
+  catch { /* no profile yet: Slack's only */ }
+  return telegram ? [...SECRET_NAMES] : [...SLACK_SECRET_NAMES];
+};
+
 /** What the Secrets screen and `pnpm bot secrets` show for each token. Never the value. */
 export const secretStatus = async (profileDir: string, options: SecretOptions = {}): Promise<SecretStatus[]> => {
   const file = readSecretsFile(profileDir);
-  return Promise.all(SECRET_NAMES.map((name) => statusOf(profileDir, name, file, toolsFrom(options))));
+  return Promise.all(listedNames(profileDir, file).map((name) => statusOf(profileDir, name, file, toolsFrom(options))));
 };
 
 /**
@@ -350,8 +366,30 @@ export const setSecret = async (profileDir: string, name: SecretName, source: Se
   return statusOf(profileDir, name, file, tools);
 };
 
-/** What Slack says about a token. Throws with Slack's error code when it rejects the token. */
+/** What the chat says about a token. Throws with the chat's error code (`data.error`) when it rejects the token. */
 export type SlackVerify = (name: SecretName, token: string) => Promise<{ url?: string; team?: string }>;
+
+/** A Telegram bot as `getMe` describes it. */
+export interface TelegramBot { id: string; username: string; name: string }
+
+/**
+ * Asks Telegram who a bot token belongs to. Throws `{ data: { error } }` with Telegram's own words when it refuses the
+ * token, and a plain error (never the URL, which holds the token) when Telegram can't be reached.
+ */
+export const telegramGetMe = async (token: string, fetchApi: typeof fetch = fetch): Promise<TelegramBot> => {
+  let body: unknown;
+  try {
+    const response = await fetchApi(`https://api.telegram.org/bot${token}/getMe`, { signal: AbortSignal.timeout(15_000) });
+    body = await response.json();
+  } catch { throw new Error('no answer from api.telegram.org'); }
+  if (!record(body) || body.ok !== true || !record(body.result)) {
+    const description = record(body) && typeof body.description === 'string' ? body.description.slice(0, 200) : 'unknown error';
+    throw Object.assign(new Error(scrub(description, [token])), { data: { error: scrub(description, [token]) } });
+  }
+  const { id, username, first_name: name } = body.result;
+  if (typeof id !== 'number' || typeof username !== 'string') throw new Error('Telegram described the bot without its username');
+  return { id: String(id), username, name: typeof name === 'string' ? name : username };
+};
 
 /**
  * The bot token is checked with `auth.test`, which also names the workspace. An app-level token can't call
@@ -359,6 +397,7 @@ export type SlackVerify = (name: SecretName, token: string) => Promise<{ url?: s
  * opened.
  */
 const slackVerify: SlackVerify = async (name, token) => {
+  if (name === 'TELEGRAM_BOT_TOKEN') { await telegramGetMe(token); return {}; }
   // Loaded here so `loadConfig`, which imports this file, doesn't pull in Bolt.
   const { webApi } = await import('@slack/bolt');
   const client = new webApi.WebClient(token, { retryConfig: { retries: 0 }, timeout: 15_000 });
@@ -389,7 +428,8 @@ export const checkSecret = async (profileDir: string, name: SecretName, options:
     catch (caught) {
       const code = (caught as { data?: { error?: unknown } }).data?.error;
       // Slack's own answer means it refused the token; anything else means the check never reached a verdict.
-      throw new Error(typeof code === 'string' ? `Slack rejected ${name}: ${code}` : `Couldn't reach Slack: ${(caught as Error).message}`);
+      const chat = name === 'TELEGRAM_BOT_TOKEN' ? 'Telegram' : 'Slack';
+      throw new Error(typeof code === 'string' ? `${chat} rejected ${name}: ${code}` : `Couldn't reach ${chat}: ${(caught as Error).message}`);
     }
   } catch (caught) {
     error = scrub(caught instanceof Error ? caught.message : String(caught), [value]);

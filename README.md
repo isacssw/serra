@@ -21,6 +21,8 @@
 ## What it does
 
 - **Requests from Slack.** Mention the bot or DM it; reply in the thread to keep going. 👀 means it saw the message.
+- **And from your phone.** Connect a Telegram bot in **Settings › Channels** and message it from anywhere: same jobs,
+  same knowledge, approval buttons included ([docs/telegram.md](docs/telegram.md)).
 - **A fresh worktree per job.** The agent works in a new Git worktree of your repository, as you, with your GitHub
   login and your agent's own sign-in. No server, no provider keys.
 - **Careful by default.** The default brief asks for **draft** PRs and never to merge, force-push or touch production.
@@ -154,16 +156,17 @@ Most settings are in the app. Each bot has one private profile folder, `~/.local
 | File | What it holds |
 |---|---|
 | `profile.json` | Bot name and ID, owner, repositories, allowed people, worker, alert triggers |
-| `secrets.json`, `.env` | Where each Slack token comes from (Keychain, 1Password), or the tokens themselves in `.env` |
+| `secrets.json`, `.env` | Where each Slack (and Telegram) token comes from (Keychain, 1Password), or the tokens themselves in `.env` |
 | `brief.md`, `policy.md` | The instructions every job gets, and your own rules |
 | `knowledge/` | Knowledge pages and pending proposals |
 | `agent-backend.json`, `agent-runs/` | The backend you picked, models, custom agents, and each ACP run's transcript |
 | `attachments/` | Images and files sent to the bot in Slack |
 | `state.json`, `logs/` | Job state and logs (`logs/bot.log`) |
+| `telegram/` | Telegram's threads as Serra saw them, and a pairing code while one waits |
 
 | Settings screen | What it changes |
 |---|---|
-| Bot & Slack, People, Repositories | The bot's name, who may ask it, and the repositories it works in |
+| Bot & Slack, Channels, People, Repositories | The bot's name, Telegram, who may ask it, and the repositories it works in |
 | Worker | The agent backend, model, branch names, and developer updates |
 | Alerts | Channels whose messages it investigates without a mention (`messageTriggers`) |
 | Brief & policy, Meetings | Its instructions, and meeting capture (off by default) |

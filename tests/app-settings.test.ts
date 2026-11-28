@@ -42,6 +42,7 @@ const fullProfile = (): Required<Profile> => ({
   t3Bin: '/Users/you/.t3/bin/t3',
   branchPattern: '{id}/{slug}-{stamp}',
   updates: { source: '/Users/you/git/serra', ref: 'origin/main' },
+  channels: { telegram: { bot: { id: '1111111', username: 'friday_serra_bot' }, ownerId: '2222222' } },
 });
 
 const forms: SectionForm[] = [botForm, ownerForm, reviewForm, serviceLabelForm, projectForm, workerForm, branchPatternForm, t3BinForm, updatesForm] as SectionForm[];

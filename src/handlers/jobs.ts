@@ -10,6 +10,8 @@ import { showThread } from '../t3.ts';
 import { isRecord } from '../json-guards.ts';
 import { requestRun } from '../status-socket.ts';
 import type { Handlers } from '../api.ts';
+import { kindOf, SLACK } from '../chat/connection.ts';
+import { readProfileFile } from '../config.ts';
 import type { CoreContext } from './context.ts';
 import { profileSlackNames, type ProfileNames, type SlackNamesDeps } from './slack-names.ts';
 
@@ -74,17 +76,19 @@ type Row = Awaited<ReturnType<Handlers<'jobs'>['list']>>[number];
  * bot (an alert from an integration), named through `bots.info`. Title, question and error are Slack text (a T3
  * title is the request's first line), so their mrkdwn is shown as plain text, with mentions named too.
  */
-const withNames = (rows: Row[], names: SlackNames): Row[] => {
+const withNames = (rows: Row[], names: SlackNames, others: ReadonlyMap<string, string> = new Map()): Row[] => {
   const texts = rows.flatMap((row) => [row.title, row.ownerQuestion ?? '', row.error ?? '']).join('\n');
   const mentioned = slackMentions(texts);
+  // Slack is asked only about its own IDs: a Telegram job's people and chat aren't Slack's to name.
+  const slack = (id: string): boolean => kindOf(id) === SLACK;
   void names.request({
-    users: [...rows.map((row) => row.requester), ...mentioned.users],
-    channels: [...rows.map((row) => row.channel), ...mentioned.channels],
+    users: [...rows.map((row) => row.requester).filter(slack), ...mentioned.users],
+    channels: [...rows.map((row) => row.channel).filter(slack), ...mentioned.channels],
   });
   const plain = (text: string): string => slackPlainText(text, { user: names.userName, channel: names.channelName });
   return rows.map((row) => {
-    const requesterName = names.userName(row.requester);
-    const channelName = names.channelName(row.channel);
+    const requesterName = slack(row.requester) ? names.userName(row.requester) : others.get(row.requester);
+    const channelName = slack(row.channel) ? names.channelName(row.channel) : undefined;
     return {
       ...row,
       title: plain(row.title),
@@ -94,6 +98,15 @@ const withNames = (rows: Row[], names: SlackNames): Row[] => {
       ...(channelName ? { channelName } : {}),
     };
   });
+};
+
+/** The owner by their Telegram ID, when paired: the only person a Telegram job comes from today. */
+const telegramNames = (profileDir: string): Map<string, string> => {
+  try {
+    const profile = readProfileFile(profileDir);
+    const owner = profile.channels?.telegram?.ownerId;
+    return new Map(owner ? [[`telegram:${owner}`, profile.owner.name]] : []);
+  } catch { return new Map(); }
 };
 
 export const jobsHandlers = (context: CoreContext, { run = runCommand, now = () => new Date(), worktreesRoot, names, slackNames = {}, daemon = requestRun }: JobsDeps = {}): Handlers<'jobs'> => {
@@ -123,7 +136,7 @@ export const jobsHandlers = (context: CoreContext, { run = runCommand, now = () 
         // Tasks started in the app, and Slack jobs saved as running, are read from T3 on every reload: T3 says what runs.
         ...(t3Bin ? { threads: cachedLookup(threads, t3Bin, run, () => now().getTime()), tasks: t3TaskState(t3Bin, run), runs: t3TaskState(t3Bin, run) } : {}),
       });
-      return withNames(jobs, namesFor(profileDir));
+      return withNames(jobs, namesFor(profileDir), telegramNames(profileDir));
     },
     chat: async (value) => {
       const { threadId, backend } = runOf(value);
