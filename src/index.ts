@@ -6,15 +6,21 @@ import { errorMessage } from './lib/errors.ts';
 import { timestampedLogger } from './logging.ts';
 import { systemClock } from './clock.ts';
 import { createTelegramConnection } from './telegram/connection.ts';
+import { createDiscordConnection } from './discord/connection.ts';
 
 const config = loadConfig();
 const logger = timestampedLogger('info');
 
-// Telegram, when the owner connected a bot in Settings › Channels. Slack is always served.
-const telegram = config.telegram;
-const chats = telegram ? [createTelegramConnection({
-  token: () => telegram.token, profileDir: config.profileDir, bot: telegram.bot, ...(telegram.ownerId ? { ownerId: telegram.ownerId } : {}), logger, clock: systemClock,
-})] : [];
+// Telegram and Discord, when the owner connected a bot in Settings › Channels. Slack is always served.
+const { telegram, discord } = config;
+const chats = [
+  ...(telegram ? [createTelegramConnection({
+    token: () => telegram.token, profileDir: config.profileDir, bot: telegram.bot, ...(telegram.ownerId ? { ownerId: telegram.ownerId } : {}), logger, clock: systemClock,
+  })] : []),
+  ...(discord ? [createDiscordConnection({
+    token: () => discord.token, profileDir: config.profileDir, bot: discord.bot, ...(discord.ownerId ? { ownerId: discord.ownerId } : {}), logger, clock: systemClock,
+  })] : []),
+];
 
 const daemon = await startDaemon({ config, logger, knowledge: createKnowledge(config.knowledgeDir), chats }).catch((error: unknown) => {
   logger.error(errorMessage(error));

@@ -338,7 +338,7 @@ export interface SerraApi {
     /** Resolves the token and runs Slack's `auth.test`. */
     check(name: SecretName): SecretStatus;
   };
-  /** Channels (SB-5): chats the bot serves beside Slack. Telegram today. Tokens go through `secrets`' sources, never back to the window. */
+  /** Channels (SB-5): chats the bot serves beside Slack. Telegram and Discord. Tokens go through `secrets`' sources, never back to the window. */
   channels: {
     status(): ChannelsView;
     /**
@@ -348,6 +348,13 @@ export interface SerraApi {
     connectTelegram(tokenOrReference: string): ChannelsView;
     /** Forgets the Telegram bot and its owner. Applies when the bot restarts. */
     disconnectTelegram(): ChannelsView;
+    /**
+     * Checks a Discord bot token with Discord (and that its Message Content intent is on) and keeps it like Telegram's,
+     * then connects the bot. The owner adds it to a server and DMs it the pairing code.
+     */
+    connectDiscord(tokenOrReference: string): ChannelsView;
+    /** Forgets the Discord bot and its owner. Applies when the bot restarts. */
+    disconnectDiscord(): ChannelsView;
   };
   /** Tools (APP-23, SERRA-39), read-only: what the worker can use. MCP servers by name, never their config. */
   tools: {
@@ -526,7 +533,7 @@ export const bridgeMethods = {
   brief: methods<'brief'>()(['read', 'save', 'check', 'preview', 'listProposed', 'readProposed', 'applyProposed']),
   settings: methods<'settings'>()(['read', 'sections', 'saveSection', 'addPerson', 'removePerson', 'peopleNames', 't3Providers']),
   secrets: methods<'secrets'>()(['list', 'setSource', 'check']),
-  channels: methods<'channels'>()(['status', 'connectTelegram', 'disconnectTelegram']),
+  channels: methods<'channels'>()(['status', 'connectTelegram', 'disconnectTelegram', 'connectDiscord', 'disconnectDiscord']),
   tools: methods<'tools'>()(['overview', 'clis']),
   updates: methods<'updates'>()([
     'status', 'runningJobs', 'prepare', 'activate', 'rollback', 'syncBot', 'followApp',

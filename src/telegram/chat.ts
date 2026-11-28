@@ -1,7 +1,7 @@
 /**
  * Telegram as a chat: the `ChatPort` the core calls freely and the `WorkerWriter` only `deliver` holds. Everything that
  * knows Telegram's messages lives here: who can see a chat, the copy of Serra's notices, HTML and inline keyboards,
- * the 👀 reaction and "typing…", and the thread record Serra keeps because Telegram has none (`threads.ts`).
+ * the 👀 reaction and "typing…", and the thread record Serra keeps because Telegram has none (`src/chat/threads.ts`).
  *
  * Who can see a chat: the owner's private chat with the bot is theirs alone; any other chat (someone else's private
  * chat, a group) counts as outside, since Telegram can't say who is on the owner's team.
@@ -16,7 +16,7 @@ import type { QuestionCard } from '../questions.ts';
 import { TelegramError, type InlineKeyboard, type TelegramApi } from './api.ts';
 import { receiveTelegramFiles } from './files.ts';
 import { escapeHtml, link, markdownToHtml, messageHtml, plain } from './markup.ts';
-import type { ThreadStore } from './threads.ts';
+import type { ThreadStore } from '../chat/threads.ts';
 
 export const TELEGRAM = 'telegram';
 /** A Telegram ID (chat or user) as the core keeps it. */

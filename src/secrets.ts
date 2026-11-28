@@ -1,5 +1,5 @@
 /**
- * Where the Slack and Telegram tokens come from (APP-8). Each token has a source: a Keychain item (read through the `security`
+ * Where the Slack, Telegram and Discord tokens come from (APP-8). Each token has a source: a Keychain item (read through the `security`
  * CLI), a 1Password reference (read through `op`), or the profile's `.env`, the CLI fallback.
  *
  * Both tools run as child processes with a timeout, so a hang or crash can't take the daemon or the app down.
@@ -18,7 +18,7 @@ import { writeFileAtomic } from './lib/atomic.ts';
 import { readEnv } from './lib/env.ts';
 
 export const SECRETS_FILE = 'secrets.json';
-export const SECRET_NAMES: readonly SecretName[] = ['SLACK_BOT_TOKEN', 'SLACK_APP_TOKEN', 'TELEGRAM_BOT_TOKEN'];
+export const SECRET_NAMES: readonly SecretName[] = ['SLACK_BOT_TOKEN', 'SLACK_APP_TOKEN', 'TELEGRAM_BOT_TOKEN', 'DISCORD_BOT_TOKEN'];
 /** Slack's tokens, which every bot needs. A channel's token is listed once the channel is connected or has a source. */
 const SLACK_SECRET_NAMES: readonly SecretName[] = ['SLACK_BOT_TOKEN', 'SLACK_APP_TOKEN'];
 
@@ -140,9 +140,11 @@ export const slackWorkspace = (profileDir: string): SlackWorkspace | null => {
 // Running `security` and `op` without leaking values
 // ---------------------------------------------------------------------------------------------------------------
 
-const TOKEN_SHAPE = /\bx(?:ox[a-z]|app)-[A-Za-z0-9-]+|(?<!\d)\d{5,20}:[A-Za-z0-9_-]{30,}/g;
+/** A Discord bot token: the bot's ID in base64, a timestamp, and a secret part, joined by dots. */
+const DISCORD_TOKEN = /^[A-Za-z0-9_-]{23,30}\.[A-Za-z0-9_-]{6,7}\.[A-Za-z0-9_-]{27,40}$/;
+const TOKEN_SHAPE = /\bx(?:ox[a-z]|app)-[A-Za-z0-9-]+|(?<!\d)\d{5,20}:[A-Za-z0-9_-]{30,}|(?<![\w-])[A-Za-z0-9_-]{23,30}\.[A-Za-z0-9_-]{6,7}\.[A-Za-z0-9_-]{27,40}(?![\w-])/g;
 
-/** Removes every known value and anything shaped like a Slack or Telegram token. */
+/** Removes every known value and anything shaped like a Slack, Telegram or Discord token. */
 export const scrub = (text: string, values: (string | undefined)[] = []): string => {
   let out = text;
   for (const value of values) {
@@ -202,6 +204,7 @@ const SHAPE: Record<SecretName, { test: (value: string) => boolean; label: strin
   SLACK_APP_TOKEN: { test: (value) => value.startsWith('xapp-'), label: 'xapp- token' },
   // @BotFather's tokens: the bot's numeric ID, a colon, and a secret part.
   TELEGRAM_BOT_TOKEN: { test: (value) => /^\d{5,20}:[A-Za-z0-9_-]{30,}$/.test(value), label: 'Telegram bot token' },
+  DISCORD_BOT_TOKEN: { test: (value) => DISCORD_TOKEN.test(value), label: 'Discord bot token' },
 };
 
 /** Throws, without the value, when `value` can't be the named token. */
@@ -285,12 +288,14 @@ const statusOf = async (profileDir: string, name: SecretName, file: SecretsFile,
   return { name, source, set, verifiedAt: check.verifiedAt, error, ...(lookupFailed ? { lookupFailed: true as const } : {}) };
 };
 
-/** Slack's tokens, and Telegram's once a Telegram bot is connected or its token has a source. */
+/** Slack's tokens, and a channel's once that channel is connected or its token has a source. */
 const listedNames = (profileDir: string, file: SecretsFile): SecretName[] => {
-  let telegram = Boolean(file.sources.TELEGRAM_BOT_TOKEN);
-  try { telegram ||= Boolean((JSON.parse(readFileSync(join(resolve(profileDir), 'profile.json'), 'utf8')) as Partial<Profile>).channels?.telegram); }
-  catch { /* no profile yet: Slack's only */ }
-  return telegram ? [...SECRET_NAMES] : [...SLACK_SECRET_NAMES];
+  let channels: Partial<Profile>['channels'];
+  try { channels = (JSON.parse(readFileSync(join(resolve(profileDir), 'profile.json'), 'utf8')) as Partial<Profile>).channels; }
+  catch { /* no profile yet: Slack's only, unless a channel's token has a source */ }
+  const telegram = Boolean(file.sources.TELEGRAM_BOT_TOKEN || channels?.telegram);
+  const discord = Boolean(file.sources.DISCORD_BOT_TOKEN || channels?.discord);
+  return [...SLACK_SECRET_NAMES, ...(telegram ? ['TELEGRAM_BOT_TOKEN' as const] : []), ...(discord ? ['DISCORD_BOT_TOKEN' as const] : [])];
 };
 
 /** What the Secrets screen and `pnpm bot secrets` show for each token. Never the value. */
@@ -349,6 +354,51 @@ export const telegramGetMe = async (token: string, fetchApi: typeof fetch = fetc
   return { id: String(id), username, name: typeof name === 'string' ? name : username };
 };
 
+/** A Discord bot as Discord describes it, and the two settings Serra needs from its application. */
+export interface DiscordBot {
+  id: string;
+  username: string;
+  applicationId: string;
+  /** The Message Content intent is on (Bot › Privileged Gateway Intents): without it, follow-ups in a thread arrive empty. */
+  messageContent: boolean;
+  /** Anyone can add the bot to their server (Bot › Public Bot). */
+  publicBot: boolean;
+}
+
+/** The application flags for the Message Content intent: verified, and the toggle a bot below review has. */
+const MESSAGE_CONTENT_FLAGS = (1 << 18) | (1 << 19);
+
+/**
+ * Asks Discord whose a bot token is (`/users/@me`) and how its application is set (`/applications/@me`). Throws
+ * `{ data: { error } }` with Discord's status when it refuses the token, and a plain error when Discord can't be
+ * reached. The token goes only in the Authorization header, and no error carries it.
+ */
+export const discordWhoAmI = async (token: string, fetchApi: typeof fetch = fetch): Promise<DiscordBot> => {
+  const get = async (path: string): Promise<Record<string, unknown>> => {
+    let response: Response;
+    let body: unknown;
+    try {
+      response = await fetchApi(`https://discord.com/api/v10${path}`, { headers: { authorization: `Bot ${token}` }, signal: AbortSignal.timeout(15_000) });
+      body = await response.json().catch(() => null);
+    } catch { throw new Error('no answer from discord.com'); }
+    if (response.status === 401 || response.status === 403) {
+      const error = `${response.status}: ${response.status === 401 ? 'Unauthorized' : 'Forbidden'}`;
+      throw Object.assign(new Error(error), { data: { error } });
+    }
+    if (!response.ok || !record(body)) throw new Error(`discord.com answered HTTP ${response.status}`);
+    return body;
+  };
+  const user = await get('/users/@me');
+  const application = await get('/applications/@me');
+  const { id, username } = user;
+  if (typeof id !== 'string' || typeof username !== 'string' || user.bot !== true) throw new Error('That token isn\'t a bot\'s');
+  const flags = typeof application.flags === 'number' ? application.flags : 0;
+  return {
+    id, username, applicationId: typeof application.id === 'string' ? application.id : id,
+    messageContent: (flags & MESSAGE_CONTENT_FLAGS) !== 0, publicBot: application.bot_public === true,
+  };
+};
+
 /**
  * The bot token is checked with `auth.test`, which also names the workspace. An app-level token can't call
  * `auth.test`, so it is checked with `apps.connections.open`, which only hands out a Socket Mode URL that is never
@@ -356,6 +406,7 @@ export const telegramGetMe = async (token: string, fetchApi: typeof fetch = fetc
  */
 const slackVerify: SlackVerify = async (name, token) => {
   if (name === 'TELEGRAM_BOT_TOKEN') { await telegramGetMe(token); return {}; }
+  if (name === 'DISCORD_BOT_TOKEN') { await discordWhoAmI(token); return {}; }
   // Loaded here so `loadConfig`, which imports this file, doesn't pull in Bolt.
   const { webApi } = await import('@slack/bolt');
   const client = new webApi.WebClient(token, { retryConfig: { retries: 0 }, timeout: 15_000 });
@@ -386,7 +437,7 @@ export const checkSecret = async (profileDir: string, name: SecretName, options:
     catch (caught) {
       const code = (caught as { data?: { error?: unknown } }).data?.error;
       // Slack's own answer means it refused the token; anything else means the check never reached a verdict.
-      const chat = name === 'TELEGRAM_BOT_TOKEN' ? 'Telegram' : 'Slack';
+      const chat = name === 'TELEGRAM_BOT_TOKEN' ? 'Telegram' : name === 'DISCORD_BOT_TOKEN' ? 'Discord' : 'Slack';
       throw new Error(typeof code === 'string' ? `${chat} rejected ${name}: ${code}` : `Couldn't reach ${chat}: ${(caught as Error).message}`);
     }
   } catch (caught) {

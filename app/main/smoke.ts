@@ -864,7 +864,7 @@ const runCustomAcpAgentChecks = async (window: BrowserWindow): Promise<string[]>
   return failures;
 };
 
-interface ChannelsReport { slack: string | null; telegram: string | null; buttons: string[]; dialog: string | null; error: string | null }
+interface ChannelsReport { slack: string | null; telegram: string | null; discord: string | null; buttons: string[]; discordButtons: string[]; code: string | null; dialog: string | null; error: string | null }
 
 /** Settings › Channels as the owner sees it: each row's pill and buttons, and an open dialog's title and error. */
 const channelsScript = (action = ''): string => `(async () => {
@@ -876,17 +876,19 @@ const channelsScript = (action = ''): string => `(async () => {
   const pill = (name) => row(name)?.querySelector('span.rounded-md')?.textContent ?? null;
   const dialog = document.querySelector('dialog[open]');
   return {
-    slack: pill('Slack'), telegram: pill('Telegram'),
+    slack: pill('Slack'), telegram: pill('Telegram'), discord: pill('Discord'),
     buttons: [...(row('Telegram')?.querySelectorAll('button') ?? [])].map((b) => b.textContent.trim()),
+    discordButtons: [...(row('Discord')?.querySelectorAll('button') ?? [])].map((b) => b.textContent.trim()),
+    code: document.querySelector('[data-serra-main] button[aria-label^="Copy the code"]')?.textContent?.trim() ?? null,
     dialog: dialog?.querySelector('h2')?.textContent ?? null,
     error: dialog?.querySelector('[class*="text-down"]')?.textContent?.split(' · ')[0] ?? null,
   };
 })()`;
 
 /**
- * SB-5: Settings › Channels in every state, against a fake status socket (Slack and Telegram connected, no real chat):
+ * SB-5, SB-6: Settings › Channels in every state, against a fake status socket (Slack, Telegram and Discord, no real chat):
  * not connected, the Connect dialog refusing a bad token, waiting for the owner, connected, and Disconnect. No call
- * reaches Telegram. `SERRA_SMOKE_SHOTS` saves each state in light and dark.
+ * reaches Telegram or Discord. `SERRA_SMOKE_SHOTS` saves each state in light and dark.
  */
 const runChannelsChecks = async (window: BrowserWindow): Promise<string[]> => {
   const failures: string[] = [];
@@ -895,14 +897,22 @@ const runChannelsChecks = async (window: BrowserWindow): Promise<string[]> => {
   if (shots) mkdirSync(shots, { recursive: true });
   const run = async <T>(script: string): Promise<T> => await window.webContents.executeJavaScript(script) as T;
   const telegram = { bot: { id: '1111111', username: 'friday_serra_bot' } };
-  const setTelegram = (value: typeof telegram & { ownerId?: string } | null): void => {
-    const { channels: _channels, ...rest } = readProfileFile(directory);
-    writeProfileFile(directory, value ? { ...rest, channels: { telegram: value } } : rest);
+  const discord = { bot: { id: '1111111111111111111', username: 'friday-serra', applicationId: '1111111111111111111' } };
+  const setChannel = <K extends 'telegram' | 'discord'>(kind: K, value: NonNullable<ReturnType<typeof readProfileFile>['channels']>[K] | null): void => {
+    const { channels, ...rest } = readProfileFile(directory);
+    const others = { ...channels };
+    delete others[kind];
+    const merged = value ? { ...others, [kind]: value } : others;
+    writeProfileFile(directory, Object.keys(merged).length ? { ...rest, channels: merged } : rest);
   };
+  const setTelegram = (value: typeof telegram & { ownerId?: string } | null): void => setChannel('telegram', value);
+  const setDiscord = (value: typeof discord & { ownerId?: string } | null): void => setChannel('discord', value);
   let telegramUp = false;
+  let discordUp = false;
   const status = (): Extract<BotStatus, { state: 'up' }> => ({
     state: 'up', pid: process.pid, startedAt: new Date().toISOString(), slackConnected: true,
-    chats: [{ kind: 'slack', connected: true }, ...(telegramUp ? [{ kind: 'telegram', connected: true }] : [])], counts: { needsYou: 0, running: 0 },
+    chats: [{ kind: 'slack', connected: true }, ...(telegramUp ? [{ kind: 'telegram', connected: true }] : []), ...(discordUp ? [{ kind: 'discord', connected: true }] : [])],
+    counts: { needsYou: 0, running: 0 },
   });
   const server = await startStatusServer({ profileDir: directory, status });
   let serverOpen = true;
@@ -962,18 +972,58 @@ const runChannelsChecks = async (window: BrowserWindow): Promise<string[]> => {
       `)), { dialog: 'Disconnect Telegram?' });
       await shot(`${theme}-channels-disconnect`);
       await run(`(async () => { [...document.querySelectorAll('dialog[open] button')].find((b) => b.textContent.trim() === 'Cancel')?.click(); await new Promise((r) => setTimeout(r, 200)); })()`);
+      // SB-6, Discord: off, Connect refusing a Telegram token, waiting for the owner (invite and code), connected.
+      setDiscord(null);
+      discordUp = false;
+      server.refresh();
+      expect(`${theme} discord off`, await run(channelsScript(open)), { discord: 'Not connected', discordButtons: ['Connect'], code: null });
+      expect(`${theme} discord connect`, await run(channelsScript(`
+        [...(row('Discord')?.querySelectorAll('button') ?? [])].find((b) => b.textContent.trim() === 'Connect')?.click();
+        await wait(() => document.querySelector('dialog[open] input'));
+        const field = document.querySelector('dialog[open] input');
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(field, '123456:not-a-discord-token');
+        field.dispatchEvent(new Event('input', { bubbles: true }));
+        document.querySelector('dialog[open] button[type=submit]')?.click();
+        await wait(() => document.querySelector('dialog[open] [class*="text-down"]'));
+      `)), { dialog: 'Connect Discord', error: 'That doesn’t look like a Discord bot token. Copy it from Bot › Reset Token' });
+      await shot(`${theme}-channels-discord-connect`);
+      await run(`(async () => { [...document.querySelectorAll('dialog[open] button')].find((b) => b.textContent.trim() === 'Cancel')?.click(); await new Promise((r) => setTimeout(r, 200)); })()`);
+      setDiscord(discord);
+      const pairing = await run<ChannelsReport>(channelsScript(open));
+      expect(`${theme} discord pairing`, pairing, { discord: 'Waiting for you', discordButtons: ['Add to server'] });
+      if (!/^[A-Z2-9]{4} [A-Z2-9]{4}$/.test(pairing.code ?? '')) failures.push(`channels ${theme} discord pairing: the code shows as ${JSON.stringify(pairing.code)}`);
+      await shot(`${theme}-channels-discord-pairing`);
+      setDiscord({ ...discord, ownerId: '3333333333333333333' });
+      setTelegram({ ...telegram, ownerId: '2222222' });
+      telegramUp = true;
+      discordUp = true;
+      server.refresh();
+      expect(`${theme} all connected`, await run(channelsScript(open)), { slack: 'Connected', telegram: 'Connected', discord: 'Connected', buttons: ['Disconnect'], discordButtons: ['Disconnect'], code: null });
+      await shot(`${theme}-channels-all-connected`);
+      expect(`${theme} discord disconnect`, await run(channelsScript(`
+        [...(row('Discord')?.querySelectorAll('button') ?? [])].find((b) => b.textContent.trim() === 'Disconnect')?.click();
+        await wait(() => document.querySelector('dialog[open]'));
+      `)), { dialog: 'Disconnect Discord?' });
+      await run(`(async () => { [...document.querySelectorAll('dialog[open] button')].find((b) => b.textContent.trim() === 'Cancel')?.click(); await new Promise((r) => setTimeout(r, 200)); })()`);
+      setDiscord(null);
+      discordUp = false;
+      server.refresh();
     }
     // Disconnect for real, with the bot stopped (a running one would be restarted through launchd).
+    setDiscord({ ...discord, ownerId: '3333333333333333333' });
     await server.close();
     serverOpen = false;
-    expect('disconnected', await run(channelsScript(`
+    const disconnectFor = (name: string): string => `
       await new Promise((r) => setTimeout(r, 300));
-      [...document.querySelectorAll('[data-serra-main] li button')].find((b) => b.textContent.trim() === 'Disconnect')?.click();
+      [...(row('${name}')?.querySelectorAll('button') ?? [])].find((b) => b.textContent.trim() === 'Disconnect')?.click();
       await wait(() => document.querySelector('dialog[open]'));
       [...document.querySelectorAll('dialog[open] button')].find((b) => b.textContent.trim() === 'Disconnect')?.click();
-      await wait(() => [...document.querySelectorAll('[data-serra-main] li button')].some((b) => b.textContent.trim() === 'Connect'));
-    `)), { slack: 'Bot stopped', telegram: 'Not connected', buttons: ['Connect'] });
+      await wait(() => [...(row('${name}')?.querySelectorAll('button') ?? [])].some((b) => b.textContent.trim() === 'Connect'));
+    `;
+    expect('disconnected', await run(channelsScript(`location.hash = '#/settings/bot'; await new Promise((r) => setTimeout(r, 150)); location.hash = '#/settings/channels'; ${disconnectFor('Telegram')}`)), { slack: 'Bot stopped', telegram: 'Not connected', buttons: ['Connect'] });
+    expect('discord disconnected', await run(channelsScript(disconnectFor('Discord'))), { discord: 'Not connected', discordButtons: ['Connect'] });
     if (readProfileFile(directory).channels?.telegram) failures.push('channels: Disconnect left Telegram in the profile');
+    if (readProfileFile(directory).channels?.discord) failures.push('channels: Disconnect left Discord in the profile');
     await shot('dark-channels-disconnected');
   } finally {
     if (serverOpen) await server.close().catch(() => {});
