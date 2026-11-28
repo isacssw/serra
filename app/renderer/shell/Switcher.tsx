@@ -12,6 +12,7 @@ import { Avatar, cx, useToast } from '../ui/index.ts';
 import { ariaMod, isMac, mod } from './keys.ts';
 import { useProfiles } from './profiles.tsx';
 import { openAdd } from './AddSheet.tsx';
+import { serverPath } from '../servers.logic.ts';
 import downIcon from '../../../assets/brand/serra-status-down.png';
 import needsYouIcon from '../../../assets/brand/serra-status-needs-you.png';
 import upIcon from '../../../assets/brand/serra-status-up.png';
@@ -58,6 +59,8 @@ const Menu = ({ anchor, rows, many, icon, onClose }: {
 
   const pick = (row: ProfileRow): void => {
     onClose(true);
+    // A server's profile opens its server's page; opening it in the window comes with moves (phase 7).
+    if (row.server) { void navigate(serverPath(row.server.id)); return; }
     if (row.active) {
       if (!row.setupDone) void navigate('/setup');
       return;
@@ -152,14 +155,14 @@ const Menu = ({ anchor, rows, many, icon, onClose }: {
 
 export const TitleRow = ({ status }: { status: BotStatus | null }) => {
   const view = statusView(status);
-  const { view: profiles } = useProfiles();
+  const { view: profiles, servers } = useProfiles();
   // Hooks run on every render, in the same order: call them first, then decide.
   const fullScreen = useFullScreen();
   const button = useRef<HTMLButtonElement>(null);
   const [open, setOpen] = useState(false);
   const insetLights = isMac && !fullScreen;
-  const many = showsSwitcher(profiles);
-  const rows = profileRows(profiles, status);
+  const many = showsSwitcher(profiles, servers);
+  const rows = profileRows(profiles, status, '⌘', servers);
   const active = rows.find((row) => row.active);
   // Pinned (or before the list is read): the row as it always was, with nothing to open.
   const menu = profiles !== null && !profiles.pinned && active !== undefined;

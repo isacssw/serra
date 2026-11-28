@@ -441,6 +441,8 @@ const runThemeChecks = async (window: BrowserWindow): Promise<string[]> => {
     for (const [theme, label] of [['dark', 'Dark'], ['light', 'Light'], ['system', 'System']] as const) expect(theme, await run(themePaletteScript(theme, label)));
 
     const routes = await run<string[]>(routesScript);
+    // Nothing about servers before the first one is paired (UX rule D4, SB-33): the smoke run pairs with none.
+    if (routes.includes('settings-servers')) failures.push('Settings › Servers shows before any server is paired');
     // Visible words on each knowledge screen, all of it and the first screenful, so copy cuts can be measured.
     const words: Record<string, { total: number; firstScreen: number }> = {};
     const countWords = async (name: string): Promise<void> => { words[name] = await run<{ total: number; firstScreen: number }>(wordsScript); };

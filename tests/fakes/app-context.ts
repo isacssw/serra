@@ -17,6 +17,11 @@ const noServers: Handlers<'servers'> = {
   cancel: () => {},
   pairOverSsh: () => { throw new Error('No servers in this test.'); },
   list: () => [],
+  status: () => [],
+  retry: () => {},
+  devices: () => { throw new Error('No servers in this test.'); },
+  revoke: () => { throw new Error('No servers in this test.'); },
+  forget: () => { throw new Error('No servers in this test.'); },
 };
 
 /** Everything either half may need. */
