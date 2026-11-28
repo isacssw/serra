@@ -10,7 +10,7 @@ import type { GatewayDispatchPayload } from '@discordjs/core/http-only';
 import type { DiscordGateway } from '../../src/discord/gateway.ts';
 
 /** A token-shaped fixture, built from its parts so no secret scanner reads it as a real one. */
-export const fixtureToken = (id: string, n: string): string => [Buffer.from(id).toString('base64url'), 'Gfixtu', `fixturevalue-discord-${n.repeat(13)}`].join('.');
+const fixtureToken = (id: string, n: string): string => [Buffer.from(id).toString('base64url'), 'Gfixtu', `fixturevalue-discord-${n.repeat(13)}`].join('.');
 export const DISCORD_TOKEN = fixtureToken('11111111111111111', '0');
 /** Another bot's token: shaped right, but not the one the fake accepts. */
 export const OTHER_DISCORD_TOKEN = fixtureToken('22222222222222222', '1');
