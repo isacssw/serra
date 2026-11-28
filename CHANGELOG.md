@@ -20,6 +20,7 @@ Serra follows [Semantic Versioning](https://semver.org) once it reaches 1.0. Unt
 - Fixed: `serra server gateway --install` with `--root`, `--port` or `--listen` installed a service that ignored them and served `~/.local/share/serra` on the default port. The service now keeps them.
 - Fixed: **Update t480** on a server that had updated before could show the last update's result ("t480 is updated", or its old failure) before the new one began, and two quick presses could start two updates. The server now records the update as started before it answers.
 - Fixed: with two other chats connected, pressing **Allow** on an approval copy while the copy to the third chat was still being sent did nothing. Each copy now counts as soon as it is posted.
+- Fixed: on Telegram, a long question or approval (a long command with formatting) could fail to post or to close, because the card was cut in the middle of its formatting. The question text is now shortened to fit instead.
 
 ## 0.1.0-alpha.9 (2026-11-28)
 
