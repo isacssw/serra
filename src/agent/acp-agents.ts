@@ -12,6 +12,7 @@ import { delimiter, dirname, isAbsolute, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { writeFileAtomic } from '../config.ts';
 import { isRecord, parseJson } from '../json-guards.ts';
+import { EVE_AGENT_ID, eveCloudAgent, eveSentence, parseEveCloud, type EveCheck, type EveCloud, type EveSecret } from './eve-cloud.ts';
 
 /** An adapter Serra ships: the npm package, the CLI it drives, and the variable that tells it where that CLI is. */
 interface BundledAdapter {
@@ -37,6 +38,11 @@ export interface AcpAgent {
    */
   cwd?: string;
   bundled?: BundledAdapter;
+  /**
+   * An agent at a URL (eve on Vercel, src/agent/eve-cloud.ts): no worktree, a neutral session folder, and it starts only
+   * once the owner accepted what leaves the Mac for `host`. Its secret is where `bypass` says, never in `env` or `args`.
+   */
+  remote?: { host: string; consented: boolean; bypass: EveSecret | null; secretSavedAt: string | null };
 }
 
 export const AGENT_BACKEND_FILE = 'agent-backend.json';
@@ -62,6 +68,8 @@ export interface AgentBackendSettings {
   custom: AcpAgent[];
   /** The model the owner picked per agent id; the agent's own default when absent. */
   models: Record<string, string>;
+  /** The profile's agent on Vercel, when it has one (src/agent/eve-cloud.ts). Absent otherwise. */
+  eve?: EveCloud;
 }
 
 const DEFAULTS: AgentBackendSettings = { backend: 't3', agent: null, custom: [], models: {} };
@@ -98,10 +106,12 @@ export const readAgentBackend = (profileDir: string): AgentBackendSettings => {
   try { text = readFileSync(agentBackendPath(profileDir), 'utf8'); } catch { return DEFAULTS; }
   const value = parseJson(text);
   if (!isRecord(value)) return DEFAULTS;
-  const custom = Array.isArray(value.agents) ? value.agents.map(agentFrom).filter((agent): agent is AcpAgent => agent !== null) : [];
+  // The cloud agent's id is Serra's: an entry in `agents` can't take it.
+  const custom = Array.isArray(value.agents) ? value.agents.map(agentFrom).filter((agent): agent is AcpAgent => agent !== null && agent.id !== EVE_AGENT_ID) : [];
   const agent = typeof value.agent === 'string' ? value.agent : null;
   const models = isRecord(value.models) ? Object.fromEntries(Object.entries(value.models).filter((entry): entry is [string, string] => isModel(entry[1]))) : {};
-  return { backend: value.backend === 'acp' && agent ? 'acp' : 't3', agent, custom, models };
+  const eve = parseEveCloud(value.eve);
+  return { backend: value.backend === 'acp' && agent ? 'acp' : 't3', agent, custom, models, ...(eve ? { eve } : {}) };
 };
 
 const isNotFound = (error: unknown): boolean => isRecord(error) && error.code === 'ENOENT';
@@ -166,7 +176,7 @@ export const addCustomAcpAgent = (profileDir: string, input: CustomAcpAgentInput
   if (name.length > 40) throw new Error('Use at most 40 characters for the agent name.');
   const id = input.id?.trim() || slugifyId(name);
   if (!AGENT_ID.test(id)) throw new Error('Enter a name with letters or numbers.');
-  if (KNOWN_ACP_AGENTS.some((known) => known.id === id)) throw new Error(`"${id}" is already a built-in ACP agent.`);
+  if (KNOWN_ACP_AGENTS.some((known) => known.id === id) || id === EVE_AGENT_ID) throw new Error(`"${id}" is already a built-in ACP agent.`);
   const command = input.command.trim();
   const problem = commandProblem(command);
   if (problem) throw new Error(problem);
@@ -206,6 +216,7 @@ const hasLiveRun = (profileDir: string, id: string): boolean => {
  */
 export const removeCustomAcpAgent = (profileDir: string, id: string): AgentBackendSettings => {
   if (!AGENT_ID.test(id)) throw new Error('Agent ID is missing.');
+  if (id === EVE_AGENT_ID) throw new Error('Remove eve in Settings › Worker instead.');
   if (hasLiveRun(profileDir, id)) {
     const name = readAgentBackend(profileDir).custom.find((agent) => agent.id === id)?.name ?? id;
     throw new Error(`${name} has a run going. Remove it once the run ends.`);
@@ -239,7 +250,35 @@ export const ensureAgentBackendFile = (profileDir: string): string => {
 /** Every agent Serra can offer: the built-in ones, with the owner's own changes and additions. */
 export const acpAgents = (settings: AgentBackendSettings): AcpAgent[] => {
   const custom = new Map(settings.custom.map((agent) => [agent.id, agent]));
-  return [...KNOWN_ACP_AGENTS.map((agent) => custom.get(agent.id) ?? agent), ...settings.custom.filter((agent) => !KNOWN_ACP_AGENTS.some((known) => known.id === agent.id))];
+  return [
+    ...KNOWN_ACP_AGENTS.map((agent) => custom.get(agent.id) ?? agent),
+    ...settings.custom.filter((agent) => !KNOWN_ACP_AGENTS.some((known) => known.id === agent.id)),
+    ...(settings.eve ? [eveCloudAgent(settings.eve)] : []),
+  ];
+};
+
+/**
+ * Saves the profile's cloud agent, or removes it (null). Saving makes it the agent new work runs on; removing one
+ * that was in use goes back to T3. Refused while it has a run going. Keeps every other agent and choice.
+ */
+export const writeEveCloud = (profileDir: string, eve: EveCloud | null): AgentBackendSettings => {
+  if (eve === null && hasLiveRun(profileDir, EVE_AGENT_ID)) throw new Error('eve has a run going. Disconnect it once the run ends.');
+  const rest = { ...readRawConfig(profileDir) };
+  const inUse = rest.backend === 'acp' && rest.agent === EVE_AGENT_ID;
+  delete rest.eve;
+  const next = eve
+    ? { models: {}, agents: [], ...rest, eve, backend: 'acp', agent: EVE_AGENT_ID }
+    : { ...rest, ...(inUse ? { backend: 't3', agent: null } : {}) };
+  writeFileAtomic(agentBackendPath(profileDir), `${JSON.stringify(next, null, 2)}\n`, { mode: 0o600 });
+  return readAgentBackend(profileDir);
+};
+
+/** Records the last Check of the cloud agent, when it is still the one at `host`. */
+export const recordEveCheck = (profileDir: string, host: string, check: EveCheck): void => {
+  const raw = readRawConfig(profileDir);
+  const eve = parseEveCloud(raw.eve);
+  if (!eve || eve.host !== host) return;
+  writeFileAtomic(agentBackendPath(profileDir), `${JSON.stringify({ ...raw, eve: { ...eve, check } }, null, 2)}\n`, { mode: 0o600 });
 };
 
 /** The command's full path on `path`, or null. An absolute command is checked as is. */
@@ -268,6 +307,7 @@ export interface AcpLaunch { command: string; args: string[]; env: Record<string
 
 /** The agent's launch on `path`, or a plain sentence saying what's missing. */
 export const launchFor = (agent: AcpAgent, path: string): AcpLaunch | { missing: string } => {
+  if (agent.remote && !agent.remote.consented) return { missing: eveSentence('consent', agent.remote.host) };
   if (agent.cwd && !isFolder(agent.cwd)) return { missing: `Serra can't find ${agent.name}'s folder ${agent.cwd}.` };
   const cli = findCommand(agent.command, path);
   if (!agent.bundled) return cli ? { command: cli, args: agent.args, env: {} } : { missing: `Serra can't find \`${agent.command}\`. Install ${agent.name}, or pick another agent.` };
@@ -279,13 +319,18 @@ export const launchFor = (agent: AcpAgent, path: string): AcpLaunch | { missing:
 };
 
 /** One agent as the Settings picker shows it: whether it can start here, and whether the owner added it. Never its env. */
-export interface AcpAgentChoice { id: string; name: string; command: string; installed: boolean; custom: boolean }
+export interface AcpAgentChoice {
+  id: string; name: string; command: string; installed: boolean; custom: boolean;
+  /** The host of an agent at a URL (eve on Vercel); absent for an agent on this Mac. */
+  host?: string;
+}
 
 export const agentChoices = (settings: AgentBackendSettings, path: string): AcpAgentChoice[] => {
   const customIds = new Set(settings.custom.map((agent) => agent.id));
   return acpAgents(settings).map((agent) => ({
     id: agent.id, name: agent.name, command: [agent.command, ...agent.args].join(' '),
     installed: !('missing' in launchFor(agent, path)), custom: customIds.has(agent.id),
+    ...(agent.remote ? { host: agent.remote.host } : {}),
   }));
 };
 
@@ -297,4 +342,22 @@ export interface AgentBackendView {
   models: Record<string, string>;
   configPath: string;
   configError: string | null;
+  /** The profile's agent on Vercel, as Settings › Worker shows it: never a secret, only where it is kept. */
+  eve: EveView | null;
 }
+
+export interface EveView {
+  url: string;
+  host: string;
+  team: string | null;
+  /** Where the bypass secret is kept, or null for none. */
+  secret: 'keychain' | '1password' | null;
+  /** The last Check, and its fixed sentence. */
+  check: (EveCheck & { sentence: string }) | null;
+}
+
+/** The cloud agent for Settings: where things are, and the last Check as its sentence. */
+export const eveView = (eve: EveCloud | undefined): EveView | null => eve ? ({
+  url: eve.url, host: eve.host, team: eve.team, secret: eve.bypass?.kind ?? null,
+  check: eve.check ? { ...eve.check, sentence: eveSentence(eve.check.result, eve.host, eve.check.version) } : null,
+}) : null;

@@ -13,7 +13,7 @@ import { PROFILE_ID, type MoveHost } from '../../src/moves/host.ts';
 import {
   newJournal, readJournal, readJournals, runMove, saveJournal, settle, type MoveControl, type MoveJournal,
 } from '../../src/moves/run.ts';
-import { readProfilesFile, writeProfilesFile } from '../../src/profiles.ts';
+import { cloudHost, readProfilesFile, writeProfilesFile } from '../../src/profiles.ts';
 import { isBackupId, type BackupEntry } from '../../src/profile-backup.ts';
 import type { Handlers } from './bridge.ts';
 
@@ -102,6 +102,8 @@ export const movesRunner = (deps: MovesDeps): MovesRunner => {
     const blocks: MoveBlock[] = [];
     if (facts.waiting) blocks.push({ kind: 'waiting', text: `${plural(facts.waiting, 'job waits', 'jobs wait')} for you` });
     if (facts.links.length) blocks.push({ kind: 'target', text: `${plural(facts.links.length, 'linked file', 'linked files')} can’t move` });
+    // eve on Vercel stays on this Mac for now: its bypass secret is in this Mac's Keychain, and a server has no eve card.
+    if (from === 'local' && cloudHost(join(root, id))) blocks.push({ kind: 'target', text: 'Remove eve on Vercel first: a server can’t use it yet' });
     const check = await hostFor(to).check({ profile: id, bytes: facts.bytes, paths: facts.paths });
     for (const problem of check.problems) blocks.push({ kind: 'target', text: problem.replace(/\.$/, '') });
     return { ...base, name: facts.name, blocks, awayMinutes: awayMinutes(facts.bytes), running: facts.running, mapped: check.mapped };

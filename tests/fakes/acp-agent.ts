@@ -11,7 +11,11 @@
 // `OPTS:<kind>,<kind>` sets the permission choices `ASK` offers (default: allow_once and reject_once).
 // FAKE_ACP_NO_IMAGES: the agent says it takes no images. FAKE_ACP_MODES=none: it has no modes, like eve.
 // FAKE_ACP_NO_SET_MODE: it refuses every mode switch. FAKE_ACP_NO_LOAD: it can't reopen a session, like eve. `DROP`
-// with `ASK`: the turn fails as eve's does when it loses its server, while the request is still open. Run: node tests/fakes/acp-agent.ts
+// with `ASK`: the turn fails as eve's does when it loses its server, while the request is still open.
+// eve on Vercel: each start writes `start-<n>` (its arguments, whether a bypass secret and any EVE_ setting reached it).
+// FAKE_ACP_STDERR=<text>: prints it and exits at once, as eve does when it can't sign in or reach its URL.
+// FAKE_ACP_VERSION: the version `initialize` reports. `FAIL_EVE:<status>` fails a turn as eve does (-32002, httpStatus).
+// Run: node tests/fakes/acp-agent.ts
 import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { Readable, Writable } from 'node:stream';
@@ -28,6 +32,14 @@ const next = (name: string): number => {
   return value;
 };
 const cancelled = new Set<string>();
+put(join(dir, `start-${next('start')}`), JSON.stringify({
+  args: process.argv.slice(2), bypass: process.env.VERCEL_AUTOMATION_BYPASS_SECRET ?? null,
+  eve: Object.keys(process.env).filter((key) => key.startsWith('EVE_')).sort(),
+}));
+if (process.env.FAKE_ACP_STDERR) {
+  process.stderr.write(`${process.env.FAKE_ACP_STDERR}\n`);
+  process.exit(1);
+}
 /** FAKE_ACP_MODES as JSON, like Claude Code's (starting in `auto`); `none`, like eve; a default and a read-only mode otherwise. */
 const modes = (): acp.SessionModeState | undefined => {
   const raw = process.env.FAKE_ACP_MODES;
@@ -44,7 +56,7 @@ const waitFor = async (file: string, sessionId: string): Promise<string | null> 
 };
 
 const app = acp.agent({ name: 'fake-acp' })
-  .onRequest(acp.methods.agent.initialize, () => ({ protocolVersion: acp.PROTOCOL_VERSION, agentCapabilities: { loadSession: !process.env.FAKE_ACP_NO_LOAD, promptCapabilities: { image: !process.env.FAKE_ACP_NO_IMAGES } } }))
+  .onRequest(acp.methods.agent.initialize, () => ({ protocolVersion: acp.PROTOCOL_VERSION, ...(process.env.FAKE_ACP_VERSION ? { agentInfo: { name: 'eve', version: process.env.FAKE_ACP_VERSION } } : {}), agentCapabilities: { loadSession: !process.env.FAKE_ACP_NO_LOAD, promptCapabilities: { image: !process.env.FAKE_ACP_NO_IMAGES } } }))
   .onRequest(acp.methods.agent.session.new, ({ params }) => {
     const session = next('session');
     put(join(dir, `session-${session}`), params.cwd);
@@ -75,6 +87,8 @@ const app = acp.agent({ name: 'fake-acp' })
     // FAIL:<kind> fails the turn the way Claude Code's adapter does, with its error kind and raw text that quotes the brief.
     const fail = /FAIL:(\w+)/.exec(text)?.[1];
     if (fail) throw acp.RequestError.internalError({ errorKind: fail }, `SECRET-TRANSCRIPT ${text.slice(0, 40)}`);
+    const eveFail = /FAIL_EVE:(\d+)/.exec(text)?.[1];
+    if (eveFail) throw new acp.RequestError(-32002, `SECRET-TRANSCRIPT ${text.slice(0, 40)}`, { httpStatus: Number(eveFail) });
     const codexFail = /CODEX_ERROR=(\w+)/.exec(text)?.[1];
     if (codexFail) throw acp.RequestError.internalError({ message: `SECRET-TRANSCRIPT ${text.slice(0, 40)}`, codexErrorInfo: codexFail });
     const ask = /ASK:(\w+)/.exec(text)?.[1];

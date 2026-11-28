@@ -508,6 +508,82 @@ const runThemeChecks = async (window: BrowserWindow): Promise<string[]> => {
         for (const item of report.low) failures.push(`${theme}: "${item.text}" on ${name} reads at ${item.ratio}:1 (${item.color} on ${item.background})`);
         await run(`(async () => { document.querySelector('dialog[open] button[aria-label="Close"]')?.click(); await new Promise((r) => setTimeout(r, 200)); })()`);
       }
+      // eve on Vercel (SB-17): New profile with eve picked, the notice and Details open; Connect eve agent; the
+      // connected agent's row, Checked and with its login expired; and the switcher's cloud mark when it shows.
+      // `hash` is where the script leaves the window, so the contrast read stays there.
+      const evePass = async (name: string, hash: string, script: string, scope?: string): Promise<void> => {
+        const ready = await run<boolean>(script);
+        if (!ready) { failures.push(`${theme}: ${name} didn't open`); return; }
+        const report = await run<ContrastReport>(contrastScript(hash, scope));
+        reports.push({ ...report, route: name });
+        if (shots) writeFileSync(join(shots, `${theme}-${name}.png`), (await window.webContents.capturePage()).toPNG());
+        if (report.checked === 0) failures.push(`${theme}: no text found on ${name}`);
+        for (const item of report.low) failures.push(`${theme}: "${item.text}" on ${name} reads at ${item.ratio}:1 (${item.color} on ${item.background})`);
+      };
+      const type = `const type = (input, value) => { Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, value); input.dispatchEvent(new Event('input', { bubbles: true })); };
+        const wait = async (check) => { for (let i = 0; i < 80 && !check(); i++) await new Promise((r) => setTimeout(r, 50)); return check(); };
+        const click = (root, text) => [...root.querySelectorAll('button, label')].find((b) => b.textContent.trim() === text)?.click();`;
+      await evePass('new-profile-eve', '#/setup/new', `(async () => { ${type}
+        location.hash = '#/setup/new';
+        if (!await wait(() => document.querySelector('input[name="agent"]'))) return false;
+        type(document.getElementById('new-profile-name'), 'Researcher');
+        [...document.querySelectorAll('label')].find((l) => l.textContent.trim().startsWith('eve'))?.click();
+        if (!await wait(() => [...document.querySelectorAll('input')].find((i) => i.placeholder === 'https://researcher.vercel.app'))) return false;
+        type([...document.querySelectorAll('input')].find((i) => i.placeholder === 'https://researcher.vercel.app'), 'researcher.vercel.app');
+        await wait(() => [...document.querySelectorAll('button')].some((b) => b.textContent.trim() === 'More'));
+        click(document, 'More');
+        await wait(() => [...document.querySelectorAll('button')].some((b) => b.textContent.trim() === 'Details'));
+        click(document, 'Details');
+        await new Promise((r) => setTimeout(r, 200));
+        [...document.querySelectorAll('button[type="submit"]')].at(-1)?.scrollIntoView({ block: 'end' });
+        await new Promise((r) => setTimeout(r, 150));
+        return [...document.querySelectorAll('button')].some((b) => b.textContent.includes('Continue with researcher.vercel.app'));
+      })()`);
+      await evePass('connect-eve', '#/settings/worker', `(async () => { ${type}
+        location.hash = '#/settings/worker';
+        if (!await wait(() => [...document.querySelectorAll('button')].some((b) => b.textContent.trim() === 'Connect eve agent'))) return false;
+        click(document, 'Connect eve agent');
+        if (!await wait(() => document.querySelector('dialog[open] input'))) return false;
+        type(document.querySelector('dialog[open] input'), 'https://researcher.vercel.app');
+        await wait(() => [...document.querySelectorAll('dialog[open] button')].some((b) => b.textContent.trim() === 'Connect researcher.vercel.app'));
+        await new Promise((r) => setTimeout(r, 200));
+        return true;
+      })()`, 'dialog[open]');
+      await run(`(async () => { document.querySelector('dialog[open] button[aria-label="Close"]')?.click(); await new Promise((r) => setTimeout(r, 200)); })()`);
+      const eveConfig = (result: string): string => `${JSON.stringify({ backend: 'acp', agent: 'eve-cloud', models: {}, agents: [], eve: {
+        url: 'https://researcher.vercel.app', team: 'acme', bypass: null, secretSavedAt: null,
+        notice: { host: 'researcher.vercel.app', version: 1, acceptedAt: '2026-11-28T12:00:00.000Z' },
+        check: { at: '2026-11-28T12:00:00.000Z', result, version: result === 'ok' ? '1.5.0' : null },
+      } }, null, 2)}\n`;
+      for (const [result, name] of [['ok', 'worker-eve'], ['login', 'worker-eve-login']] as const) {
+        writeFileSync(join(directory, 'agent-backend.json'), eveConfig(result));
+        await evePass(name, '#/settings/worker', `(async () => { ${type}
+          location.hash = '#/jobs/needs-you';
+          await new Promise((r) => setTimeout(r, 200));
+          location.hash = '#/settings/worker';
+          if (!await wait(() => document.querySelector('[data-eve-status]'))) return false;
+          document.querySelector('[data-eve-status]').scrollIntoView({ block: 'center' });
+          await new Promise((r) => setTimeout(r, 200));
+          return true;
+        })()`);
+      }
+      // The switcher shows from the second profile: on a Mac with another profile its menu carries the cloud mark.
+      const switcher = await run<boolean>(`(async () => {
+        location.hash = '#/jobs/needs-you';
+        // The switcher rereads the profiles when the window gains focus.
+        window.dispatchEvent(new Event('focus'));
+        await new Promise((r) => setTimeout(r, 400));
+        const button = document.querySelector('[data-serra-sidebar] button[aria-haspopup="menu"]');
+        if (!button) return false;
+        button.click();
+        for (let i = 0; i < 40 && !document.querySelector('[role="menu"] [data-cloud]'); i++) await new Promise((r) => setTimeout(r, 50));
+        // Past the menu's fade-in, so the capture shows it settled.
+        await new Promise((r) => setTimeout(r, 500));
+        return Boolean(document.querySelector('[role="menu"] [data-cloud]'));
+      })()`);
+      if (switcher && shots) writeFileSync(join(shots, `${theme}-switcher-cloud.png`), (await window.webContents.capturePage()).toPNG());
+      await run(`(async () => { document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); document.querySelector('[role="menu"]')?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); await new Promise((r) => setTimeout(r, 200)); })()`);
+      rmSync(join(directory, 'agent-backend.json'), { force: true });
       await useProfile(null);
       await setupPass(withoutProfile, 'none-');
       await useProfile(directory);

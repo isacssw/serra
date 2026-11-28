@@ -7,6 +7,7 @@ import { backupLine } from '../../moves.logic.ts';
 import { openMove, useRunningMove } from '../../shell/MoveDialog.tsx';
 import { useNavigate } from 'react-router';
 import { serra } from '../../bridge.ts';
+import { CloudMark } from '../../shell/CloudMark.tsx';
 import { profileRows, takenColors, type ProfileRow } from '../../profiles.logic.ts';
 import { useBotStatus } from '../../shell/live.ts';
 import { mod } from '../../shell/keys.ts';
@@ -54,7 +55,7 @@ const List = ({ rows, onOpen }: { rows: ProfileRow[]; onOpen: (ref: string) => v
             key={row.ref}
             tabIndex={0}
             draggable={many && !view?.pinned && !row.server}
-            aria-label={`${row.name}, ${row.presence.phrase}${row.shortcut && many ? `, ${row.shortcut}` : ''}`}
+            aria-label={`${row.name}, ${row.presence.phrase}${row.cloud ? `, agent at ${row.cloud}` : ''}${row.shortcut && many ? `, ${row.shortcut}` : ''}`}
             aria-keyshortcuts={many && !row.server ? 'Alt+ArrowUp Alt+ArrowDown' : undefined}
             data-profile={row.ref}
             onClick={() => open(row)}
@@ -71,7 +72,10 @@ const List = ({ rows, onOpen }: { rows: ProfileRow[]; onOpen: (ref: string) => v
             {many && <GripVertical size={14} aria-hidden className={cx('shrink-0 cursor-grab text-faint', row.server && 'invisible')} />}
             <Avatar letters={row.letters} color={row.color} size={28} dot={row.presence.dot} pulse={row.presence.pulse} dashed={!row.setupDone} surface="panel" />
             <span className="flex min-w-24 flex-1 flex-col leading-tight">
-              <span className="truncate text-[13px] font-medium">{row.name}</span>
+              <span className="flex min-w-0 items-center gap-1.5">
+                <span className="truncate text-[13px] font-medium">{row.name}</span>
+                <CloudMark host={row.cloud} />
+              </span>
               <span className="truncate text-xs text-muted">{row.server ? row.presence.phrase.replace(` · ${row.server.name}`, '') : row.presence.phrase}</span>
             </span>
             {where && (

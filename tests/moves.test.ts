@@ -249,6 +249,13 @@ test('a move is blocked while a job waits for the owner, while the server is off
     project: { path: '/tmp', remote: 'origin', baseRef: 'origin/main', githubRepo: 'acme/project' }, allowedUsers: [],
   });
   assert.deepEqual((await runner.handlers.preflight('local/friday', 's_test01')).blocks.map((block) => block.text), ['t480 already has a profile called friday']);
+  rmSync(join(t480.root, 'friday'), { recursive: true });
+  // A profile on eve on Vercel stays on this Mac: its bypass secret is in this Mac's Keychain.
+  writeFileSync(join(dir, 'agent-backend.json'), JSON.stringify({ backend: 'acp', agent: 'eve-cloud', eve: {
+    url: 'https://researcher.vercel.app', notice: { host: 'researcher.vercel.app', version: 1, acceptedAt: '2026-11-28T10:00:00.000Z' },
+  } }));
+  assert.deepEqual((await runner.handlers.preflight('local/friday', 's_test01')).blocks.map((block) => block.text), ['Remove eve on Vercel first: a server can’t use it yet']);
+  rmSync(join(dir, 'agent-backend.json'));
   assert.ok(mac.service.loaded.has('dev.serra.friday'), 'a preflight changes nothing');
   assert.equal(existsSync(join(dir, 'intake-paused.json')), false);
 });

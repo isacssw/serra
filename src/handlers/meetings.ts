@@ -16,8 +16,9 @@ import { PROVIDER_IDS, type MeetingProvider } from '../meeting-sources.ts';
 import { readT3Providers } from '../t3-providers.ts';
 import {
   addCustomAcpAgent, agentBackendConfigError, agentBackendPath, agentChoices, ensureAgentBackendFile,
-  readAgentBackend, removeCustomAcpAgent, writeAgentBackend, type AgentBackendView,
+  eveView, readAgentBackend, removeCustomAcpAgent, writeAgentBackend, type AgentBackendView,
 } from '../agent/acp-agents.ts';
+import { checkEve, connectEve, disconnectEve, eveInput, type EveDeps } from '../agent/eve-connect.ts';
 import { acpRunner, chosenAcpAgent, chosenBackend } from '../agent/select.ts';
 import { toolSearchPath } from '../shell-path.ts';
 import type { Handlers } from '../api.ts';
@@ -46,6 +47,8 @@ export interface MeetingsHandlerOptions {
   runs?: typeof createMeetingRuns;
   readProviders?: typeof readT3Providers;
   searchPath?: () => Promise<string>;
+  /** The Keychain, secret reader and ACP backend eve's Check runs on (tests: fakes). */
+  eve?: EveDeps;
 }
 
 /** A command and its arguments as one line, each part quoted when it has anything but plain characters. */
@@ -66,6 +69,7 @@ export const meetingsHandlers = (context: CoreContext, options: MeetingsHandlerO
       backend: current.backend, agent: current.agent,
       agents: agentChoices(current, path ?? await searchPath()), models: current.models,
       configPath: agentBackendPath(profileDir), configError: agentBackendConfigError(profileDir),
+      eve: eveView(current.eve),
     };
   };
   return {
@@ -146,6 +150,18 @@ export const meetingsHandlers = (context: CoreContext, options: MeetingsHandlerO
     removeAcpAgent: async (agentId): Promise<AgentBackendView> => {
       const profileDir = context.profileDir();
       removeCustomAcpAgent(profileDir, id(agentId, 'ACP agent'));
+      return backendView(profileDir);
+    },
+    // eve on Vercel: no profile is needed to check one (Add… › Profile checks before the profile exists).
+    checkEve: async (input) => checkEve(context.profileDirOrNull(), eveInput(input), options.eve),
+    connectEve: async (input): Promise<AgentBackendView> => {
+      const profileDir = context.profileDir();
+      await connectEve(profileDir, eveInput(input), options.eve);
+      return backendView(profileDir);
+    },
+    disconnectEve: async (): Promise<AgentBackendView> => {
+      const profileDir = context.profileDir();
+      await disconnectEve(profileDir, options.eve);
       return backendView(profileDir);
     },
     openAgentBackendConfig: async () => {

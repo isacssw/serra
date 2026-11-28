@@ -3,7 +3,7 @@
 // `agent-backend.json`. The choice is a draft saved by the page's save bar. Reloads live when `agent-backend.json`
 // changes on disk or when the window regains focus.
 import { useCallback, useEffect, useId, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from 'react';
-import { Code2, FileCode2, Layers, MousePointer2, Plus, Rocket, Sparkle, SquareTerminal, Terminal, X } from 'lucide-react';
+import { Cloud, Code2, FileCode2, Layers, MousePointer2, Plus, Rocket, Sparkle, SquareTerminal, Terminal, X } from 'lucide-react';
 import type { AgentBackendView } from '../../../../src/agent/acp-agents.ts';
 import { serra } from '../../bridge.ts';
 import { BrandMark, Button, cx, Dialog, Input, useToast } from '../../ui/index.ts';
@@ -26,6 +26,7 @@ export const AgentGlyph = ({ mark, size = 16 }: { mark: AgentMark; size?: number
     gemini: <Sparkle {...props} />,
     cursor: <MousePointer2 {...props} />,
     antigravity: <Rocket {...props} />,
+    eve: <Cloud {...props} />,
     custom: <Terminal {...props} />,
   };
   return glyphs[mark];

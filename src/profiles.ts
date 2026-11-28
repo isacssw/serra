@@ -6,6 +6,7 @@ import { basename, dirname, join, resolve } from 'node:path';
 import type { BotStatus } from './contracts.ts';
 import { readProfileFile } from './config.ts';
 import { acpAgents, readAgentBackend } from './agent/acp-agents.ts';
+import { EVE_AGENT_ID } from './agent/eve-cloud.ts';
 import { setupProgress } from './setup.ts';
 import { statusSocketPath, subscribeStatus } from './status-socket.ts';
 import { arrange, emptyProfilesFile, localRef, parseProfilesFile, PROFILES_FILE, type ProfilesFile } from './profile-order.ts';
@@ -61,6 +62,12 @@ export const agentName = (dir: string): string => {
   const settings = readAgentBackend(dir);
   if (settings.backend === 't3') return 'T3';
   return acpAgents(settings).find((agent) => agent.id === settings.agent)?.name ?? settings.agent ?? 'T3';
+};
+
+/** The host of the profile's agent on Vercel when that is the agent new work uses, else null (src/agent/eve-cloud.ts). */
+export const cloudHost = (dir: string): string | null => {
+  const settings = readAgentBackend(dir);
+  return settings.backend === 'acp' && settings.agent === EVE_AGENT_ID && settings.eve ? settings.eve.host : null;
 };
 
 export const setupDone = (dir: string, launchAgentsDir?: string): boolean =>

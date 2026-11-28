@@ -35,7 +35,11 @@ export const NEW_PROFILE_PATH = '/setup/new';
 export const NEW_PROFILE_FORM_PATH = '/setup/new/you';
 
 /** What the new step picked, carried to the form. */
-export interface NewProfileChoice { name: string; color: string; agent: string | null }
+export interface NewProfileChoice {
+  name: string; color: string; agent: string | null;
+  /** eve on Vercel, Checked, with the host whose notice the owner accepted. Its secret is held apart (eve.logic.ts). */
+  eve?: { url: string; team: string; host: string } | null;
+}
 
 /** True on the two screens of Add… › Profile, where the rail is the new profile's (nothing done yet), not the one in use. */
 export const isNewProfilePath = (path: string): boolean => path === NEW_PROFILE_PATH || path === NEW_PROFILE_FORM_PATH;
