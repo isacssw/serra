@@ -71,6 +71,11 @@ const start = async (): Promise<void> => {
     const remember = profileToRemember(startupProfile({ argument, saved, discovered }), saved);
     if (remember) stored.set({ ...stored.get(), profileDir: remember });
   }
+  const push: NonNullable<HandlerContext['push']> = (channel, payload) => {
+    for (const target of BrowserWindow.getAllWindows()) {
+      if (!target.isDestroyed() && !target.webContents.isDestroyed()) target.webContents.send(pushChannel(channel), payload);
+    }
+  };
   const profileDirOrNull = (): string | null => argument ?? stored.get().profileDir;
   // Live status from the profile's status.sock; it follows the profile when Settings picks another one.
   const status = socketStatusSource(profileDirOrNull());
@@ -80,17 +85,12 @@ const start = async (): Promise<void> => {
       const before = profileDirOrNull();
       stored.set(next);
       // Switching profiles reports `stopped`; that isn't the daemon stopping.
-      if (profileDirOrNull() !== before) notifications?.reset();
+      if (profileDirOrNull() !== before) { notifications?.reset(); push('profiles', null); }
       status.follow(profileDirOrNull());
       proposals?.follow(profileDirOrNull());
       agentBackendWatch?.follow(profileDirOrNull());
       tray?.refresh();
     },
-  };
-  const push: NonNullable<HandlerContext['push']> = (channel, payload) => {
-    for (const target of BrowserWindow.getAllWindows()) {
-      if (!target.isDestroyed() && !target.webContents.isDestroyed()) target.webContents.send(pushChannel(channel), payload);
-    }
   };
   /** The running Serra.app: `.../Serra.app/Contents/MacOS/Serra`, three folders up. */
   const bundlePath = app.isPackaged ? join(app.getPath('exe'), '../../..') : null;
@@ -130,6 +130,9 @@ const start = async (): Promise<void> => {
     appUpdater,
     botFollowsApp: app.isPackaged,
     guardQuit: (pending) => { quitGuards.push(pending); },
+    // A bot update switching releases holds its profile's folder; the window waits for it before switching away.
+    switchBlocked: () => (quitGuards.some((guard) => guard() !== null) ? 'A bot update is switching versions. Try again when it finishes.' : null),
+    trashItem: (path) => shell.trashItem(path),
     every,
     expectStop: () => notifications?.expectStop(),
     profileDirOrNull,

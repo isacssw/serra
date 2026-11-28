@@ -28,7 +28,8 @@ export const botHandlers = (context: HandlerContext, service: BotService = launc
     finally { busy = false; }
   };
   return {
-    status: () => context.status.current(),
+    // Right after a profile switch the source says `stopped` until the new daemon answers; wait a moment for it.
+    status: async () => { await context.status.settled?.(1_500); return context.status.current(); },
     start: exclusive('start'),
     stop: exclusive('stop'),
     restart: exclusive('restart'),

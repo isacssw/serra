@@ -4,6 +4,8 @@ Serra follows [Semantic Versioning](https://semver.org) once it reaches 1.0. Unt
 
 ## Unreleased
 
+- **Profiles:** run more than one bot from one app. Click the name at the top of the sidebar (or ⌘⇧N) and pick **Add…** to set up another bot with its own Slack app, knowledge, agent and settings. From the second one the top row shows the bot in use, and its menu, ⌘1…⌘9 and ⌘K switch between them without mixing anything. **Settings › Profiles** orders them, picks each one's colour, and removes one after saving a checked backup (tokens left out) and moving its folder to the Trash. With one bot, the app looks as before, and nothing in your profile folder changes.
+
 ## 0.1.0-alpha.9 (2026-11-28)
 
 - Fixed: an ACP run whose agent stopped or lost its connection while an approval card waited (eve, which can't reopen a run) stayed **Working** forever. It now ends **Failed** with "… stopped while waiting for your approval", the card closes, and the tool never runs.

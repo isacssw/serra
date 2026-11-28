@@ -20,7 +20,8 @@ const pagePath = (value: unknown): string => {
   return value;
 };
 
-let reviewRun: Promise<KnowledgeReview> | null = null;
+/** The review under way, per profile: one at a time each, and never another profile's digest. */
+const reviewRuns = new Map<string, Promise<KnowledgeReview>>();
 
 export const pagesHandlers = (context: HandlerContext): Handlers<'pages'> => {
   // A new service per call: the profile folder can change while the app runs.
@@ -89,14 +90,17 @@ export const pagesHandlers = (context: HandlerContext): Handlers<'pages'> => {
       restorePair(context.profileDir(), id);
     },
     runReview: () => {
-      // One review at a time: a second click waits for the first.
-      reviewRun ??= (async () => {
-        const profileDir = context.profileDir();
+      // One review at a time per profile: a second click waits for the first.
+      const profileDir = context.profileDir();
+      const running = reviewRuns.get(profileDir);
+      if (running) return running;
+      const run = (async () => {
         const worker = readProfileFile(profileDir).worker;
         const runs = createMeetingRuns({ t3Bin: profileT3Bin(profileDir), ...(worker?.provider ? { provider: worker.provider } : {}), ...(worker?.model ? { model: worker.model } : {}), backend: () => chosenBackend(profileDir, { t3Bin: profileT3Bin(profileDir) }) });
         return runKnowledgeReview({ profileDir, knowledgeDir: join(profileDir, 'knowledge'), ask: runs.ask });
-      })().finally(() => { reviewRun = null; });
-      return reviewRun;
+      })().finally(() => { reviewRuns.delete(profileDir); });
+      reviewRuns.set(profileDir, run);
+      return run;
     },
     setReviewWeekly: (weekly) => {
       if (typeof weekly !== 'boolean') throw new Error('Turn the weekly review on or off.');

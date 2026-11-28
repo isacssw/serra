@@ -13,6 +13,11 @@ interface StatusListener {
 export interface StatusSource {
   current(): BotStatus;
   subscribe(listener: StatusListener): () => void;
+  /**
+   * Resolves once the profile followed now has reported (or after `timeoutMs`), so a window that just switched
+   * profiles asks for the new one's status, not the `stopped` reported while it connects. Absent: no wait.
+   */
+  settled?(timeoutMs: number): Promise<void>;
 }
 
 export const STOPPED: BotStatus = { state: 'stopped' };
@@ -46,6 +51,13 @@ export const socketStatusSource = (profileDir: string | null, subscribe: StatusS
   let subscription: { close(): void } | null = null;
   let closed = false;
   let generations = 0;
+  /** Whether the profile followed now has reported, and who waits for that. */
+  let heard = false;
+  let waiting: (() => void)[] = [];
+  const hear = (): void => {
+    heard = true;
+    for (const wake of waiting.splice(0)) wake();
+  };
 
   const each = (call: (listener: StatusListener) => void): void => {
     for (const listener of [...listeners]) {
@@ -64,12 +76,13 @@ export const socketStatusSource = (profileDir: string | null, subscribe: StatusS
     subscription = null;
     following = next;
     const generation = ++generations;
+    heard = false;
     setStatus(STOPPED);
-    if (next === null) return;
+    if (next === null) { hear(); return; }
     // Messages from an earlier profile's subscription may still be in flight; only the latest one counts.
     subscription = subscribe(next, (message) => {
       if (closed || generation !== generations) return;
-      if (message.type === 'status') setStatus(message.status);
+      if (message.type === 'status') { setStatus(message.status); hear(); }
       else each((listener) => listener.event(message.event));
     });
   };
@@ -81,9 +94,15 @@ export const socketStatusSource = (profileDir: string | null, subscribe: StatusS
       listeners.add(listener);
       return () => { listeners.delete(listener); };
     },
+    settled: (timeoutMs) => (heard || closed ? Promise.resolve() : new Promise<void>((done) => {
+      const wake = (): void => { clearTimeout(timer); done(); };
+      const timer = setTimeout(() => { waiting = waiting.filter((entry) => entry !== wake); done(); }, timeoutMs);
+      waiting.push(wake);
+    })),
     follow,
     close: () => {
       closed = true;
+      for (const wake of waiting.splice(0)) wake();
       subscription?.close();
       subscription = null;
       listeners.clear();

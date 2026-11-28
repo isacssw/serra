@@ -51,7 +51,7 @@ const DRAFT_FIELDS = [
 ] as const satisfies readonly (keyof ProfileDraft)[];
 
 /** Copies only the known text fields, so nothing else from the window reaches the service. */
-const parseDraft = (value: unknown): ProfileDraft => {
+export const parseDraft = (value: unknown): ProfileDraft => {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) throw new Error('The setup form must be an object.');
   const draft: Record<string, string> = {};
   for (const field of DRAFT_FIELDS) {

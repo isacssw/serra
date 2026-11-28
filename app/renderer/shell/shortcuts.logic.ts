@@ -18,3 +18,14 @@ export const shortcutPath = (press: KeyPress, mac: boolean): string | null => {
   if (press.key === ',') return SETTINGS_PATH;
   return null;
 };
+
+/** Where Add… goes: a new profile (SB-10). The only kind of thing to add for now, so there's no sheet to pick from. */
+export const ADD_PROFILE_PATH = '/setup/new';
+
+/** ⌘1…⌘9 switch to that profile (`index` from 0), ⌘⇧N opens Add…; null for any other keys. */
+export const profileShortcut = (press: KeyPress, mac: boolean): { kind: 'switch'; index: number } | { kind: 'add' } | null => {
+  const command = mac ? press.metaKey && !press.ctrlKey : press.ctrlKey && !press.metaKey;
+  if (!command || press.altKey) return null;
+  if (press.shiftKey) return press.key.toLowerCase() === 'n' ? { kind: 'add' } : null;
+  return /^[1-9]$/.test(press.key) ? { kind: 'switch', index: Number(press.key) - 1 } : null;
+};
