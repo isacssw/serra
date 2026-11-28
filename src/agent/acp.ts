@@ -503,13 +503,22 @@ export const createAcpBackend = ({
       return answers ? { action: 'accept', content: formContent(questions, custom, answers, request.requestedSchema) } as acp.CreateElicitationResponse : { action: 'cancel' };
     });
 
+  /** How many times close ran: a start that began before a close never spawns after it. */
+  let closes = 0;
   /** Starts the agent and says hello, once (again after it went away). */
   const connect = (): Promise<acp.ClientConnection> => (connection ??= (async () => {
     exited = null;
     let started: ChildProcess;
-    try { started = spawnAgent(agent, await env()); } catch (error) {
+    const generation = closes;
+    try {
+      const environment = await env();
+      // Closed while the environment was read: no process may start after close returned.
+      if (generation !== closes) throw new Error(`${agent.name} was closed before it started.`);
+      started = spawnAgent(agent, environment);
+    } catch (error) {
       exited = error instanceof Error ? error.message : String(error);
-      connection = null;
+      // After a close, `connection` may already be a newer start's.
+      if (generation === closes) connection = null;
       throw new Error(exited);
     }
     child = started;
@@ -774,6 +783,7 @@ export const createAcpBackend = ({
     busy: (threadId) => [...sessions.values()].some((current) => (threadId === undefined || current.sessionId === threadId)
       && (current.active !== null || current.waiting.size > 0 || current.queue.length > 0)),
     close: async () => {
+      closes += 1;
       for (const current of sessions.values()) for (const waiting of current.waiting.values()) waiting.cancel();
       sessions.clear();
       const running = child;

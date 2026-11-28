@@ -364,6 +364,17 @@ test('ACP: close ends an agent that never answers its start (eve stuck in npx), 
   assert.ok(await checking instanceof Error, 'the check that was waiting fails');
 });
 
+test('ACP: a close while the agent\'s environment is still being read starts no process afterwards', async (t) => {
+  const fake = fakeAcp(t);
+  let release: (env: NodeJS.ProcessEnv) => void = () => {};
+  const backend = fake.backend({ env: () => new Promise((resolve) => { release = resolve; }) });
+  const checking = backend.check!().catch((error: unknown) => error);
+  await backend.close();
+  release({ ...process.env });
+  assert.ok(await checking instanceof Error);
+  assert.equal(fake.children.length, 0, 'no agent was spawned after close');
+});
+
 test('ACP: a failed turn says why in a fixed sentence (usage limit, sign-in), never the agent\'s text, and a wait wakes as soon as a turn ends', async (t) => {
   const fake = fakeAcp(t);
   const workspace = join(fake.dir, 'meetings');
