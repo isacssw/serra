@@ -1,4 +1,4 @@
-// The eve on Vercel form (SB-17), the same in Add… › Profile and Settings › Agent: the URL, and behind More the
+// The eve on Vercel form (SB-17), the same in Add… › Profile and Settings › Worker: the URL, and behind More the
 // Vercel team and a bypass secret; then the one-line notice that names the host, with Details. The owner's yes is
 // the primary button next to it, which names the host too (`eveContinueLabel`).
 import { useId, useState } from 'react';

@@ -28,7 +28,7 @@ export const EVE_DETAILS: readonly string[] = [
   'Sent: the knowledge index, with every request. Pages and files on this Mac aren’t.',
   'Stays here: your files, Slack tokens, meeting transcripts and your Vercel login.',
   'A bypass secret stays in your Keychain and goes only to eve on this Mac.',
-  'To stop: disconnect eve in Settings › Agent, then run vercel logout or rotate the secret in Vercel. What was sent stays in that project.',
+  'To stop: remove it in Settings › Worker, then run vercel logout or rotate the secret in Vercel. What was sent stays in that project.',
 ];
 
 /** The primary button: pressing it is the owner's yes for this host. */

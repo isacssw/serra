@@ -8,6 +8,7 @@ import { Input, Select } from '../../ui/index.ts';
 import { agentMark } from './agent-backend.logic.ts';
 import { AddAgentCard, AgentGlyph, AgentPicker, ConfigFileButton, useAgentBackend, type AgentBackend } from './AgentBackend.tsx';
 import { ConnectEveCard, EveStatus } from './EveAgent.tsx';
+import { EVE_CLOUD_ID } from '../../setup/eve.logic.ts';
 import { BRANCH_TOKENS, branchPatternForm, branchPreview, t3BinForm, updatesForm, workerForm } from './settings.logic.ts';
 import { Advanced, FieldsCard, SaveError, SettingsPage, SettingsSection, useSectionForm, useSettings, type SettingsState } from './SettingsKit.tsx';
 
@@ -49,6 +50,8 @@ const ModelSection = ({ backend, profile, state }: { backend: AgentBackend; prof
   const providers = useT3Providers();
   const acp = backend.draft.choice !== 't3';
   const agentName = acp ? backend.view?.agents.find((agent) => `acp:${agent.id}` === backend.draft.choice)?.name : undefined;
+  // eve on Vercel has no model choice over ACP: its deployment picks the model.
+  if (backend.draft.choice === `acp:${EVE_CLOUD_ID}`) return null;
   return (
     <SettingsSection
       title="Model"

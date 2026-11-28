@@ -263,7 +263,7 @@ test('eve on Vercel: Settings connects only after a passing Check, disconnects w
   assert.equal(view.agent, EVE_AGENT_ID);
   assert.ok(!JSON.stringify(view).includes(BYPASS), 'the window never gets the secret');
   assert.equal(agentChoices(readAgentBackend(dir), process.env.PATH ?? '').find((choice) => choice.id === EVE_AGENT_ID)?.host, HOST);
-  assert.throws(() => removeCustomAcpAgent(dir, EVE_AGENT_ID), /Disconnect eve/);
+  assert.throws(() => removeCustomAcpAgent(dir, EVE_AGENT_ID), /Remove eve/);
 
   // A run going: refused, so its turn keeps the agent it needs.
   mkdirSync(join(dir, 'agent-runs'));

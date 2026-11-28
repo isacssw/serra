@@ -120,7 +120,7 @@ export const eveSentence = (outcome: 'ok' | EveProblem, host: string, version?: 
     case 'login': return 'Sign in to Vercel: run vercel login, then Check.';
     case 'protected': return 'This deployment is protected. Add a bypass secret or allow this Mac in Vercel.';
     case 'offline': return `Can’t reach ${host}.`;
-    case 'consent': return `Accept what leaves this Mac for ${host} first, in Settings › Agent.`;
+    case 'consent': return `Accept what leaves this Mac for ${host} first, in Settings › Worker.`;
     case 'error': return `eve at ${host} stopped with an error.`;
   }
 };
@@ -165,8 +165,8 @@ export const remoteAgentEnv = async (
   for (const key of Object.keys(env)) if (key === BYPASS_ENV || key.startsWith('EVE_')) delete env[key];
   if (remote.bypass) {
     let value: string;
-    try { value = await readSecret(remote.bypass); } catch { throw new Error(`Serra can’t read the bypass secret for ${remote.host}. Check it in Settings › Agent.`); }
-    if (!value) throw new Error(`The bypass secret for ${remote.host} is empty. Add it again in Settings › Agent.`);
+    try { value = await readSecret(remote.bypass); } catch { throw new Error(`Serra can’t read the bypass secret for ${remote.host}. Check it in Settings › Worker.`); }
+    if (!value) throw new Error(`The bypass secret for ${remote.host} is empty. Add it again in Settings › Worker.`);
     env[BYPASS_ENV] = value;
   }
   return env;

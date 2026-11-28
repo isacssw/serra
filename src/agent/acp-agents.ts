@@ -216,7 +216,7 @@ const hasLiveRun = (profileDir: string, id: string): boolean => {
  */
 export const removeCustomAcpAgent = (profileDir: string, id: string): AgentBackendSettings => {
   if (!AGENT_ID.test(id)) throw new Error('Agent ID is missing.');
-  if (id === EVE_AGENT_ID) throw new Error('Disconnect eve in Settings › Agent instead.');
+  if (id === EVE_AGENT_ID) throw new Error('Remove eve in Settings › Worker instead.');
   if (hasLiveRun(profileDir, id)) {
     const name = readAgentBackend(profileDir).custom.find((agent) => agent.id === id)?.name ?? id;
     throw new Error(`${name} has a run going. Remove it once the run ends.`);
@@ -342,7 +342,7 @@ export interface AgentBackendView {
   models: Record<string, string>;
   configPath: string;
   configError: string | null;
-  /** The profile's agent on Vercel, as Settings › Agent shows it: never a secret, only where it is kept. */
+  /** The profile's agent on Vercel, as Settings › Worker shows it: never a secret, only where it is kept. */
   eve: EveView | null;
 }
 

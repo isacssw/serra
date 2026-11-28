@@ -1,4 +1,4 @@
-// eve on Vercel in Settings › Agent (SB-17). Without one: a "Connect eve agent" card beside "Add ACP agent", opening
+// eve on Vercel in Settings › Worker (SB-17). Without one: a "Connect eve agent" card beside "Add ACP agent", opening
 // the same form as Add… › Profile; its button names the host and Checks before anything is saved. With one: a calm
 // row under the agent cards with its host, the last Check's one line, Check, and a Remove that names the host.
 import { useId, useState, type FormEvent } from 'react';
@@ -111,7 +111,7 @@ export const EveStatus = ({ backend }: { backend: AgentBackend }) => {
       <Cloud size={16} strokeWidth={1.75} aria-hidden className="shrink-0 text-faint" />
       <div className="flex min-w-0 flex-1 flex-col">
         <span className="truncate text-[13px] leading-5 font-medium">{eve.host}</span>
-        <span role="status" className={cx('truncate text-xs leading-4', !eve.check ? 'text-faint' : ok ? 'text-muted' : 'text-down')}>
+        <span role="status" className={cx('text-xs leading-4 text-pretty', !eve.check ? 'text-faint' : ok ? 'text-muted' : 'text-down')}>
           {checking ? 'Checking…' : eve.check ? eve.check.sentence : 'Not checked yet'}
         </span>
       </div>

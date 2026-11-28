@@ -1,4 +1,4 @@
-// Connecting a profile to its agent on Vercel (SB-17): Check, save, and disconnect, for Settings › Agent and Add… ›
+// Connecting a profile to its agent on Vercel (SB-17): Check, save, and disconnect, for Settings › Worker and Add… ›
 // Profile. Check goes through the agent layer like a job does (an ACP backend's `check`: start eve, open a session, no
 // prompt), so it costs no model call. Every step refuses before anything is sent unless the owner accepted the notice
 // for the URL's host. Secrets: a typed bypass secret goes to the Keychain (or stays a 1Password reference); only where
