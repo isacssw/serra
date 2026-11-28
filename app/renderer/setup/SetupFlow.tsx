@@ -45,7 +45,7 @@ const Rail = ({ pathname }: { pathname: string }) => {
                 aria-disabled={open ? undefined : true}
                 onClick={() => { if (open && !adding) void navigate(step.path); }}
                 data-setup-step={step.id}
-                title={open ? undefined : capitalize(lockedReason(progress, step.id))}
+                title={open ? undefined : capitalize(lockedReason(progress, step.id, adding ? 'slack' : chat))}
                 className={cx(
                   'flex h-7 items-center gap-1.5 rounded-full px-2 text-xs transition-colors duration-150',
                   'focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-focus',
@@ -63,7 +63,7 @@ const Rail = ({ pathname }: { pathname: string }) => {
                 </span>
                 {/* Narrow windows show the numbers only; the name stays for screen readers. */}
                 <span className="max-[700px]:sr-only">{step.short}</span>
-                {(done || !open) && <span className="sr-only">{done ? ', done' : `, ${lockedReason(progress, step.id)}`}</span>}
+                {(done || !open) && <span className="sr-only">{done ? ', done' : `, ${lockedReason(progress, step.id, adding ? 'slack' : chat)}`}</span>}
               </button>
             </li>
           );

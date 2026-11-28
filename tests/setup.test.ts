@@ -945,6 +945,8 @@ test('a bot on Telegram or Discord: the status names its own chat, screen reader
   assert.equal(statusChat(up([{ kind: 'slack', connected: true }, { kind: 'discord', connected: true }])), 'Slack');
   assert.equal(statusChat(up([])), 'Slack', 'a daemon from before chats');
   assert.equal(statusView(up([{ kind: 'discord', connected: false }], false)).label, 'Discord disconnected');
+  assert.equal(statusView(up([{ kind: 'telegram', connected: true }, { kind: 'discord', connected: false }], false)).label, 'Discord disconnected', 'the chat that dropped');
+  assert.equal(lockedReason(setupProgress(null), 'owner', 'telegram'), 'available after Install');
   assert.equal(announcement('/setup/service', 'telegram'), 'Step 3 of 4: Install and start');
   assert.equal(announcement('/setup/service', 'slack'), 'Step 4 of 4: Install and start');
   assert.equal(announcement('/setup/telegram/yours', 'telegram'), 'Step 4 of 4: Make it yours');

@@ -126,9 +126,9 @@ export const stepOpen = (progress: SetupProgress | null, id: SetupStepId): boole
 };
 
 /** Why a step can't be opened yet, mid-sentence for screen readers ("…, available after Slack"); `capitalize` for a tooltip. */
-export const lockedReason = (progress: SetupProgress | null, id: SetupStepId): string => {
-  const flow = flowFor(chatOf(progress));
-  return `available after ${flow[indexOf(id, chatOf(progress)) - 1]?.short ?? 'the step before'}`;
+export const lockedReason = (progress: SetupProgress | null, id: SetupStepId, chat: SetupChat | null = chatOf(progress)): string => {
+  const flow = flowFor(chat);
+  return `available after ${flow[indexOf(id, chat ?? 'slack') - 1]?.short ?? 'the step before'}`;
 };
 
 export const capitalize = (text: string): string => text.charAt(0).toUpperCase() + text.slice(1);

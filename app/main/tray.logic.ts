@@ -11,7 +11,8 @@ import type { BotStatus } from '../../src/contracts.ts';
 const statusChat = (status: Extract<BotStatus, { state: 'up' }>): string => {
   const kinds = status.chats?.map((chat) => chat.kind) ?? [];
   if (kinds.length === 0 || kinds.includes('slack')) return 'Slack';
-  const kind = kinds[0]!;
+  // Down: the chat that dropped; up: the first one.
+  const kind = (status.slackConnected ? undefined : status.chats?.find((chat) => !chat.connected)?.kind) ?? kinds[0]!;
   return kind === 'telegram' ? 'Telegram' : kind === 'discord' ? 'Discord' : kind;
 };
 

@@ -19,9 +19,12 @@ const SetupRequired = ({ route }: { route: Route }) => {
   const navigate = useNavigate();
   const { progress } = useSetup();
   const [detection, setDetection] = useState<SetupDetection | null>(null);
-  useEffect(() => { serra()?.setup.detect().then(setDetection, () => {}); }, []);
+  const [looked, setLooked] = useState(false);
+  useEffect(() => { serra()?.setup.detect().then(setDetection, () => {}).finally(() => setLooked(true)); }, []);
   const title = route.navLabel ?? route.label;
   const view = gateView(progress, detection);
+  // Until the profile folders are read, nothing: the screen never says "set up" and then changes to "pick".
+  if (!looked) return <Page title={title}><div data-setup-required className="pt-6" /></Page>;
   return (
     <Page title={title}>
       <div data-setup-required data-gate={view.kind} className="pt-6">

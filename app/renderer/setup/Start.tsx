@@ -154,7 +154,7 @@ export const Start = () => {
                     onClick={() => void pick(choice.id)}
                     className={cx(
                       'flex w-full flex-col items-center gap-2.5 rounded-xl border border-line-strong bg-panel px-4 py-5 shadow-field transition-colors duration-150',
-                      'hover:border-line-strong hover:bg-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus',
+                      'hover:border-faint hover:bg-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus',
                     )}
                   >
                     <span aria-hidden className="grid size-10 place-items-center rounded-[10px] border border-line bg-canvas text-ink"><BrandMark brand={choice.id} size={20} /></span>
