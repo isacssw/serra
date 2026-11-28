@@ -512,14 +512,15 @@ export const summarizeProfile = async (
   let present: Partial<Record<SecretName, boolean>> | undefined;
   if (profile) {
     try {
-      const statuses = await secretStatus(directory, secrets);
+      // Setup is about Slack: a connected channel's token is Settings › Channels' business.
+      const statuses = (await secretStatus(directory, secrets)).filter((status) => status.name.startsWith('SLACK_'));
       present = certainPresence(statuses);
       tokens = statuses.map((status) => ({
         name: status.name, state: tokenState(status), where: sourceLabel(status.source) as TokenSummary['where'], error: status.error,
       }));
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      tokens = SECRET_NAMES.map((name) => ({ name, state: 'rejected', where: '.env', error: message }));
+      tokens = SECRET_NAMES.filter((name) => name.startsWith('SLACK_')).map((name) => ({ name, state: 'rejected', where: '.env', error: message }));
     }
   }
   const progress = setupProgress(directory, { ...lookup, ...(present ? { present } : {}), ...(running === undefined ? {} : { running }) });

@@ -48,6 +48,7 @@ export const routes = [
   { id: 'proposals', path: '/knowledge/proposals', label: 'Proposals', section: 'knowledge', badge: 'proposals', needs: 'profile', ticket: 'APP-13' },
   { id: 'pages', path: '/knowledge/pages', label: 'Pages', section: 'knowledge', needs: 'profile', ticket: 'APP-20' },
   { id: 'settings-bot', path: '/settings/bot', label: 'Bot & Slack', section: 'settings', group: 'Bot', needs: 'profile', ticket: 'APP-14' },
+  { id: 'settings-channels', path: '/settings/channels', label: 'Channels', section: 'settings', group: 'Bot', needs: 'profile', ticket: 'SB-5' },
   { id: 'settings-people', path: '/settings/people', label: 'People', section: 'settings', group: 'Bot', needs: 'profile', ticket: 'APP-14' },
   { id: 'settings-repositories', path: '/settings/repositories', label: 'Repositories', section: 'settings', group: 'Bot', needs: 'profile', ticket: 'APP-14' },
   { id: 'settings-worker', path: '/settings/worker', label: 'Worker', section: 'settings', group: 'Bot', needs: 'profile', ticket: 'APP-14' },

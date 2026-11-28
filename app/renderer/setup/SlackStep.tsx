@@ -15,11 +15,12 @@ import { FLOW, nextPath, previousPath, slackAppCard, tokenRefused, tokensToPrech
 import { setupChanged, useSetup } from './SetupState.tsx';
 
 const step = FLOW[1]!;
-const LABELS: Record<SecretName, string> = { SLACK_BOT_TOKEN: 'Bot token', SLACK_APP_TOKEN: 'App token' };
+const LABELS: Record<SecretName, string> = { SLACK_BOT_TOKEN: 'Bot token', SLACK_APP_TOKEN: 'App token', TELEGRAM_BOT_TOKEN: 'Telegram token' };
 /** Where each token is in the Slack app's settings, said where it's pasted. */
 const WHERE: Record<SecretName, string> = {
   SLACK_BOT_TOKEN: 'Install App › Bot User OAuth Token',
   SLACK_APP_TOKEN: 'Basic Information › App-Level Tokens (connections:write)',
+  TELEGRAM_BOT_TOKEN: 'Settings › Channels',
 };
 
 const TokenRow = ({ status, checking, workspace, onChange }: { status: SecretStatus; checking: boolean; workspace: string | null; onChange: (next: SecretStatus) => void }) => {

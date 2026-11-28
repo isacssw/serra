@@ -38,6 +38,8 @@ export const PROFILE_SETTINGS = {
   branchPattern: { appliesWhen: 'after restart', required: false },
   // Read by Updates and Prepare each time they run; the daemon doesn't use it.
   updates: { appliesWhen: 'now', required: false },
+  // Connected and paired from Settings › Channels, which restarts the bot.
+  channels: { appliesWhen: 'after restart', required: false },
 } as const satisfies Record<ProfileSection, SectionSetting>;
 
 export const PROFILE_SECTIONS = Object.keys(PROFILE_SETTINGS) as ProfileSection[];

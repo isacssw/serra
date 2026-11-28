@@ -48,6 +48,7 @@ export const sectionTitles: Record<ProfileSection, string> = {
   t3Bin: 'T3 command',
   branchPattern: 'Task branches',
   updates: 'Developer: update from a checkout',
+  channels: 'Channels',
 };
 
 // ---------------------------------------------------------------------------------------------------------------

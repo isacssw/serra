@@ -111,7 +111,7 @@ export const startView = (detection: SetupDetection): StartView => {
 
 export interface SummaryRow { id: SetupStepId; label: string; value: string; done: boolean }
 
-const TOKEN_LABELS: Record<SecretName, string> = { SLACK_BOT_TOKEN: 'bot token', SLACK_APP_TOKEN: 'app token' };
+const TOKEN_LABELS: Record<SecretName, string> = { SLACK_BOT_TOKEN: 'bot token', SLACK_APP_TOKEN: 'app token', TELEGRAM_BOT_TOKEN: 'Telegram token' };
 
 /** Whether a summary's Slack row has a problem to show: a token Slack refused. */
 export const slackRefused = (tokens: readonly TokenSummary[]): boolean =>

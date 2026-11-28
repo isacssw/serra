@@ -179,8 +179,8 @@ export type BotEventName = BotEvent['event'];
 // Secrets (Slack tokens)
 // ---------------------------------------------------------------------------------------------------------------
 
-/** The tokens the daemon needs. */
-export type SecretName = 'SLACK_BOT_TOKEN' | 'SLACK_APP_TOKEN';
+/** The tokens the daemon needs: Slack's two, and a Telegram bot's when one is connected. */
+export type SecretName = 'SLACK_BOT_TOKEN' | 'SLACK_APP_TOKEN' | 'TELEGRAM_BOT_TOKEN';
 
 /** Where a token's value comes from. The value itself never appears in a contract. */
 export type SecretSource =
@@ -195,7 +195,7 @@ export interface SecretStatus {
   name: SecretName;
   source: SecretSource;
   set: boolean;
-  /** When `auth.test` last passed, or null. */
+  /** When the chat last accepted it (Slack's `auth.test`, Telegram's `getMe`), or null. */
   verifiedAt: string | null;
   /** Why the last resolve or check failed, without the value. */
   error: string | null;
@@ -205,6 +205,22 @@ export interface SecretStatus {
    */
   lookupFailed?: true;
 }
+
+// ---------------------------------------------------------------------------------------------------------------
+// Channels: chats the bot serves beside Slack (Settings › Channels)
+// ---------------------------------------------------------------------------------------------------------------
+
+/**
+ * Telegram as Settings › Channels shows it. `pairing`: the bot is connected, and waits for the owner to open it with
+ * `link` (`https://t.me/<bot>?start=<code>`), which makes them its owner. Whether the running bot is reaching
+ * Telegram now is in `BotStatus.chats`.
+ */
+export type TelegramView =
+  | { state: 'off' }
+  | { state: 'pairing'; username: string; link: string }
+  | { state: 'paired'; username: string };
+
+export interface ChannelsView { telegram: TelegramView }
 
 // ---------------------------------------------------------------------------------------------------------------
 // Releases (prepared.json, active.json)

@@ -8,10 +8,11 @@ export type SourceKind = SecretSource['kind'];
 export const SECRET_LABELS: Record<SecretName, string> = {
   SLACK_BOT_TOKEN: 'Slack bot token',
   SLACK_APP_TOKEN: 'Slack app token',
+  TELEGRAM_BOT_TOKEN: 'Telegram bot token',
 };
 
 /** The token prefix, for the value field's placeholder. */
-export const SECRET_PREFIXES: Record<SecretName, string> = { SLACK_BOT_TOKEN: 'xoxb-', SLACK_APP_TOKEN: 'xapp-' };
+export const SECRET_PREFIXES: Record<SecretName, string> = { SLACK_BOT_TOKEN: 'xoxb-', SLACK_APP_TOKEN: 'xapp-', TELEGRAM_BOT_TOKEN: '123456:' };
 
 /** The source picker, in the order it shows. `.env` is the CLI fallback and is listed last. */
 export const SOURCE_OPTIONS: { kind: SourceKind; label: string }[] = [

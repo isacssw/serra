@@ -258,7 +258,7 @@ const exceptionsNow = (): Set<string> => {
 // A reviewed change to the gates (any change but removing exceptions): the fingerprint the check below prints for it.
 // It covers main's version and this one, so it only ever matches the change it was made for.
 // Changing this line is how a PR says "this changes what the gates enforce, on purpose"; the reviewer sees both.
-const ACKNOWLEDGED_GATE_CHANGE = '8018bf5374d672a9';
+const ACKNOWLEDGED_GATE_CHANGE = '77b7807280bea224';
 
 check('gates: unchanged against main, except exceptions removed (lint, knip, tsconfigs, scripts, gitleaks, CI)', () => {
   const commit = base();
