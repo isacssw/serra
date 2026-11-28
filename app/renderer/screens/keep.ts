@@ -36,13 +36,13 @@ export const keepOne = async (bridge: Bridge, kept: Rule, drop: Rule): Promise<{
  * are put back and the refusal is thrown.
  */
 export const keepOver = async (bridge: Bridge, kept: Rule, drops: readonly Rule[]): Promise<{ undo: () => Promise<void> } | 'open'> => {
-  const date = replacedOn(kept.text, localDate(new Date()));
+  const today = localDate(new Date());
   const planned: { page: string; before: string; next: string }[] = [];
   for (const page of [...new Set(drops.map((drop) => drop.page))]) {
     const before = await bridge.pages.read(page);
     let next = before;
     for (const drop of drops.filter((one) => one.page === page)) {
-      const after = keepRule(next, drop.text, date);
+      const after = keepRule(next, drop.text, replacedOn(kept.text, today, drop.text));
       if (after === next) return 'open';
       next = after;
     }
