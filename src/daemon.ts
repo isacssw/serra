@@ -23,6 +23,7 @@ import { acknowledgePause, admit, dropHeld, holdRequest, markAttempt, readHeld, 
 import type { createKnowledge } from './knowledge.ts';
 import { errorMessage } from './lib/errors.ts';
 import { acquireLock } from './lock.ts';
+import { heldForMove } from './moves/hold.ts';
 import { eventLog, type Logger } from './logging.ts';
 import { watchProfile as watchProfileFile } from './profile-reload.ts';
 import { checkProjectAccess } from './project-access.ts';
@@ -106,6 +107,8 @@ export const startDaemon = async (deps: DaemonDeps): Promise<Daemon> => {
     lock = acquireLock, locksDir = join(defaultProfileRoot, 'locks'), statusSocket = true, watchProfile = true,
     pid = process.pid, pollMs = POLL_MS,
   } = deps;
+  // Held for a move or a restore (SB-34): the profile is on its way, so this computer must not serve it (E4).
+  if (heldForMove(config.profileDir, clock.now())) throw new Error('This profile is being moved or restored, so it doesn’t start here. Serra starts it when that is done.');
   const releases: (() => void)[] = [];
   mkdirSync(dirname(config.statePath), { recursive: true, mode: 0o700 });
   releases.push(lock(`${config.statePath}.lock`));

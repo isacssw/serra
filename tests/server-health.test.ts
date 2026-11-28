@@ -93,7 +93,7 @@ test('a paired server is checking, then up with its profiles; a status report ch
   assert.equal(one().via, 'address');
   assert.match(one().address, /^127\.0\.0\.1:\d+$/);
   assert.match(one().fingerprint, /^sha256 [0-9a-f]{4}…[0-9a-f]{2}$/);
-  assert.equal(one().protocol, 1);
+  assert.equal(one().protocol, 2);
   assert.equal(one().skew, null);
   assert.ok(changes > 0);
 

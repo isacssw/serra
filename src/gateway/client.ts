@@ -2,7 +2,10 @@
 // checks that the server presents exactly that certificate (its SHA-256), whatever name or address it is reached by,
 // so a machine in the middle, or another server at the same address, gets no request at all. The device token goes in
 // a header only, never a URL (ux-rules F7), and never into an error or a log.
+import type { IncomingMessage } from 'node:http';
 import { request as httpsRequest } from 'node:https';
+import type { Readable } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
 import { connect, type PeerCertificate } from 'node:tls';
 import { bridgeMethods } from '../api.ts';
 import type { EngineHandlers } from '../handlers/index.ts';
@@ -180,8 +183,20 @@ type StreamState = 'connecting' | 'live' | 'offline';
 export class NotPaired extends Error {}
 
 export interface GatewayClient {
-  /** The server's profiles and their state. */
-  profiles(): Promise<{ server: ServerIdentity; profiles: ServerProfile[] }>;
+  /** The server's profiles and their state, and the Serra version it runs (null from a server before SB-34). */
+  profiles(): Promise<{ server: ServerIdentity & { version: string | null }; profiles: ServerProfile[] }>;
+  /** One step of a move or restore on the server (SB-34). Throws the server's own words when it refuses. */
+  move(op: string, args: readonly unknown[], timeoutMs?: number): Promise<unknown>;
+  /** One file of a move's backup on the server. */
+  download(moveId: string, path: string): Promise<Readable>;
+  /** Sends one file of an arriving profile to the server. */
+  upload(moveId: string, path: string, data: Readable): Promise<void>;
+  /** The checked backups on the server. */
+  backups(): Promise<unknown>;
+  /** How the server's last update went, and its version. */
+  updateState(): Promise<unknown>;
+  /** Asks the server to update its Serra to `version`. */
+  update(version: string): Promise<void>;
   /** One engine call on one of the server's profiles. Throws the handler's message, as the app's IPC does. */
   call(profile: string, namespace: string, method: string, args: readonly unknown[]): Promise<unknown>;
   devices(): Promise<unknown>;
@@ -210,6 +225,32 @@ export const gatewayClient = ({ endpoint, pin, token, name }: {
     return reply;
   };
   const failed = (reply: Reply): Error => new Error(isRecord(reply.body) && isString(reply.body.error) ? reply.body.error : `${name} answered ${reply.status}.`);
+  /**
+   * A request whose body or answer is a file's bytes (a move's copy). Resolves with the answer once it is a 200;
+   * otherwise rejects with the server's words. A body is streamed in, never held whole.
+   */
+  const streamed = async (method: 'GET' | 'PUT', path: string, data?: Readable): Promise<IncomingMessage> => {
+    const target = await endpoint();
+    const headers: Record<string, string> = { authorization: `Bearer ${await token()}` };
+    if (data) headers['content-type'] = 'application/octet-stream';
+    return new Promise((done, fail) => {
+      const request = httpsRequest({ ...pinnedOptions(target, pin), method, path, headers, timeout: 120_000 }, (response) => {
+        if (response.statusCode === 200) { done(response); return; }
+        const chunks: Buffer[] = [];
+        response.on('data', (chunk: Buffer) => chunks.push(chunk));
+        response.on('end', () => {
+          let body: unknown = null;
+          try { body = JSON.parse(Buffer.concat(chunks).toString('utf8')); } catch { /* not JSON */ }
+          if (response.statusCode === 401) { fail(new NotPaired(`This Mac isn’t paired with ${name} any more.`)); return; }
+          fail(failed({ status: response.statusCode ?? 0, body }));
+        });
+      });
+      request.once('timeout', () => { request.destroy(Object.assign(new Error('timeout'), { code: 'TIMEOUT' })); });
+      request.once('error', (error) => fail(reachError(target, error)));
+      if (data) pipeline(data, request).catch((error: unknown) => { request.destroy(); fail(reachError(target, error)); });
+      else request.end();
+    });
+  };
   return {
     async profiles() {
       const reply = await authed('GET', '/profiles');
@@ -218,7 +259,35 @@ export const gatewayClient = ({ endpoint, pin, token, name }: {
       const { server } = body;
       if (!isString(server.id) || !isString(server.name) || !isNumber(server.protocol)) throw failed(reply);
       const profiles = body.profiles.map(cleanProfile).filter((profile): profile is ServerProfile => profile !== null);
-      return { server: { id: server.id, name: server.name, protocol: server.protocol }, profiles };
+      const version = isString(server.version) && /^[\w.+-]{1,40}$/.test(server.version) ? server.version : null;
+      return { server: { id: server.id, name: server.name, protocol: server.protocol, version }, profiles };
+    },
+    async move(op, args, timeoutMs = 120_000) {
+      const reply = await authed('POST', '/moves', { op, args }, timeoutMs);
+      const result = reply.body;
+      if (reply.status !== 200 || !isRecord(result) || result.ok !== true) throw failed(reply);
+      return result.value;
+    },
+    async download(moveId, path) {
+      const response = await streamed('GET', `/moves/${encodeURIComponent(moveId)}/file?path=${encodeURIComponent(path)}`);
+      return response;
+    },
+    async upload(moveId, path, data) {
+      await streamed('PUT', `/moves/${encodeURIComponent(moveId)}/file?path=${encodeURIComponent(path)}`, data).then((response) => { response.resume(); });
+    },
+    async backups() {
+      const reply = await authed('GET', '/backups');
+      if (reply.status !== 200 || !isRecord(reply.body)) throw failed(reply);
+      return reply.body.backups;
+    },
+    async updateState() {
+      const reply = await authed('GET', '/update');
+      if (reply.status !== 200 || !isRecord(reply.body)) throw failed(reply);
+      return reply.body;
+    },
+    async update(version) {
+      const reply = await authed('POST', '/update', { version }, 15_000);
+      if (reply.status !== 202) throw failed(reply);
     },
     async call(profile, namespace, method, args) {
       const reply = await authed('POST', '/rpc', { profile, namespace, method, args });
@@ -328,7 +397,7 @@ export const gatewayClient = ({ endpoint, pin, token, name }: {
 export const remoteEngine = (client: GatewayClient, profile: string): EngineHandlers => {
   const engine: Record<string, Record<string, (...args: unknown[]) => Promise<unknown>>> = {};
   for (const [namespace, methods] of Object.entries(bridgeMethods)) {
-    if (namespace === 'app' || namespace === 'servers') continue;
+    if (namespace === 'app' || namespace === 'servers' || namespace === 'moves') continue;
     engine[namespace] = Object.fromEntries(methods.map((method: string) => [method, (...args: unknown[]) => client.call(profile, namespace, method, args)]));
   }
   // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- built from bridgeMethods, which lists every engine method

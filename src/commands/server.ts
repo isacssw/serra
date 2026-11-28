@@ -1,8 +1,14 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { isAbsolute, join, resolve } from 'node:path';
+import { basename, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { defaultProfileRoot } from '../config.ts';
+import { codeRoot, defaultProfileRoot } from '../config.ts';
+import { pinnedRequest } from '../gateway/client.ts';
+import { runServerUpdate, updateProblem } from '../gateway/update.ts';
+import { localMoveHost, settleLapsed, type MoveHost } from '../moves/host.ts';
+import { secretPort } from '../moves/secret-port.ts';
+import { installService } from '../setup.ts';
+import { run } from '../t3.ts';
 import { serverEngines } from '../gateway/engines.ts';
 import { eventLog } from '../gateway/events.ts';
 import { listenAddresses } from '../gateway/listen.ts';
@@ -22,6 +28,7 @@ const USAGE = [
   'pnpm bot server gateway [--port 47820] [--listen 100.x.y.z] [--install]',
   'pnpm bot server pair',
   'pnpm bot server devices [revoke <id or name>]',
+  'pnpm bot server update --to <version>',
 ];
 
 const sleep = (ms: number): Promise<void> => new Promise((wake) => setTimeout(wake, ms));
@@ -46,6 +53,28 @@ const all = (args: readonly string[], flag: string): string[] =>
 
 const stamp = (line: string): string => `${new Date().toISOString()} ${line}`;
 
+/** This server's side of moves and restores (SB-34): bots run as systemd user services, tokens live in `.env`. */
+const serverMoves = (root: string, name: string, log: (line: string) => void): MoveHost => localMoveHost({
+  root,
+  name,
+  install: async (dir) => {
+    const outcome = await installService(dir, { node: process.execPath, log: (line) => log(stamp(`${basename(dir)}: ${line}`)) });
+    if (!outcome.ok) throw new Error(`It didn’t start on ${name}: ${outcome.error}`);
+  },
+  // A server has no Trash: what leaves it waits in backups/.trash (ux-rules E9).
+  trash: async (path) => {
+    const trash = join(root, 'backups', '.trash');
+    mkdirSync(trash, { recursive: true, mode: 0o700 });
+    renameSync(path, join(trash, `${basename(path)}@${new Date().toISOString().replace(/[:.]/g, '-')}`));
+  },
+  secrets: secretPort({ keychain: process.platform === 'darwin' }),
+});
+
+/** The gateway's own systemd unit is running: the only setup in which it can restart itself for an update. */
+const gatewayService = async (): Promise<boolean> => {
+  try { return (await run('systemctl', ['--user', 'is-active', GATEWAY_LABEL], { timeoutMs: 10_000 })).trim() === 'active'; } catch { return false; }
+};
+
 /** Runs the gateway until SIGINT or SIGTERM. Listens again when a Tailscale address comes or goes. */
 const runGateway = async (context: CommandContext, root: string): Promise<void> => {
   const { args, option, log } = context;
@@ -56,10 +85,20 @@ const runGateway = async (context: CommandContext, root: string): Promise<void> 
   const events = eventLog();
   const identity = serverIdentity(root);
   let gateway: Gateway | null = null;
+  const moves = serverMoves(root, identity.name, log);
+  const update = {
+    problem: (to: string) => updateProblem({ root, code: codeRoot, current: version(), version: to }),
+    launch: async (to: string) => {
+      if (!(await gatewayService())) throw new Error(`Update ${identity.name} from its terminal: serra server update --to ${to}`);
+      const entry = fileURLToPath(new URL('../manage.ts', import.meta.url));
+      // Its own unit: restarting the gateway must not stop the update that restarts it.
+      await run('systemd-run', ['--user', '--collect', `--unit=serra-update-${Date.now()}`, process.execPath, entry, 'server', 'update', '--to', to, '--root', root], { timeoutMs: 30_000 });
+    },
+  };
   const start = async (): Promise<void> => {
     const addresses = listenAddresses(only);
     const engines = serverEngines({ root, runtime: { version: version(), platform: process.platform }, events });
-    gateway = await startGateway({ root, addresses, port, engines, events, log: (line) => log(stamp(line)) });
+    gateway = await startGateway({ root, addresses, port, engines, events, version: version(), moves, update, log: (line) => log(stamp(line)) });
     writeGatewayRuntime(root, { pid: process.pid, port: gateway.port, addresses: [...addresses], startedAt: new Date().toISOString() });
   };
   await start();
@@ -70,8 +109,16 @@ const runGateway = async (context: CommandContext, root: string): Promise<void> 
     process.once('SIGINT', stop);
     process.once('SIGTERM', stop);
   });
+  // A Mac that went away mid-move: a lapsed hold starts its profile here again (E16), stale arrivals go.
+  const settleMoves = (): void => {
+    settleLapsed(moves, root).then((resumed) => {
+      for (const id of resumed) { log(stamp(`${id}: its move stopped, so it runs here again`)); events.publish(null, 'profiles', null); }
+    }, (error: unknown) => { log(stamp(`couldn’t settle moves: ${String(error)}`)); });
+  };
+  settleMoves();
   // Tailscale can come up after the gateway: look again every minute.
   const watch = setInterval(() => {
+    settleMoves();
     if (only.length || !gateway) return;
     const now = listenAddresses();
     if (now.join(',') === gateway.addresses.join(',')) return;
@@ -151,8 +198,37 @@ const pairOverSsh = (root: string, device: string | undefined, log: (text: strin
   log(JSON.stringify({ server: identity, cert, fingerprint, port: running.port, token: added.token, deviceId: added.device.id }));
 };
 
+/** `serra server update --to <version>`: this checkout to that release, checked, or back as it was. */
+const updateServer = async (root: string, to: string | undefined, log: (text: string) => void): Promise<void> => {
+  if (!to) throw new Error(`Use: serra server update --to <version>. This server runs ${version() || 'an unknown version'}.`);
+  const problem = updateProblem({ root, code: codeRoot, current: version(), version: to.replace(/^v/, '') });
+  if (problem) throw new Error(problem);
+  const identity = serverIdentity(root);
+  const { cert, fingerprint } = gatewayCert(root, identity.name);
+  const outcome = await runServerUpdate({
+    root, code: codeRoot, version: to.replace(/^v/, ''), log: (line) => log(stamp(line)),
+    exec: (cmd, args, options) => run(cmd, args, { timeoutMs: options?.timeoutMs ?? 120_000 }),
+    restart: async () => { await run('systemctl', ['--user', 'restart', GATEWAY_LABEL], { timeoutMs: 60_000 }); },
+    answers: async () => {
+      // The restarted gateway, on this computer, with its own certificate: what version does it say?
+      for (let tries = 0; tries < 30; tries += 1) {
+        await sleep(2000);
+        const running = runningGateway(root, processAlive);
+        if (!running) continue;
+        try {
+          const reply = await pinnedRequest({ host: '127.0.0.1', port: running.port }, { cert, fingerprint }, { path: '/.well-known/serra', timeoutMs: 5000 });
+          if (reply.status === 200 && isRecord(reply.body) && typeof reply.body.version === 'string') return reply.body.version;
+        } catch { /* not up yet */ }
+      }
+      return null;
+    },
+  });
+  if (outcome.state !== 'done') throw new Error(outcome.message ?? 'It wasn’t updated.');
+  log(`Updated to ${outcome.to}.`);
+};
+
 const command: Command = {
-  summary: 'This computer as a Serra server: check it, run the gateway, pair a Mac, list or revoke devices.',
+  summary: 'This computer as a Serra server: check it, run the gateway, pair a Mac, list or revoke devices, update it.',
   usage: USAGE,
   profile: false,
   async run(context) {
@@ -173,6 +249,9 @@ const command: Command = {
       case 'pair':
         if (flag('--ssh')) pairOverSsh(root, option('--device'), log);
         else await pairInteractive(root, log);
+        return;
+      case 'update':
+        await updateServer(root, option('--to'), log);
         return;
       case 'devices': {
         if (rest[0] === 'revoke') {

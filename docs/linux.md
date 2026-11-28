@@ -73,4 +73,31 @@ Once paired, the server's profiles show in the app's switcher, menubar and **Set
 with **Retry**), the Macs that can reach it (**Revoke** for the others), and **Forget**, which unpairs this Mac and
 revokes its key on the server when it can reach it, without deleting anything there. If it couldn't reach the
 server, run `serra server devices revoke <name>` there. To add a profile on the server, run `pnpm setup` in Serra's
-folder there. Opening a server's profile in the app, and moving profiles between computers, come next.
+folder there, or move one from the Mac. Opening a server's profile in the app comes next.
+
+## Move a profile, restore one, and update the server
+
+In the Mac app, a profile's page in **Settings › Profiles** has **Move to t480…**, and a server's profile has
+**Move back to this Mac…**. A move:
+
+1. lets running jobs finish (no new one starts; a job waiting for you blocks the move),
+2. pauses the bot where it is (its service stops and is set aside, so a reboot doesn't start it),
+3. makes a checked backup there,
+4. copies every file and checks its SHA-256 on the other side,
+5. starts it on the other computer, with its tokens sent over the paired link into that computer's own store,
+6. and only then moves the old copy to the Trash (on a server, `backups/.trash`). The backup stays in `backups/`.
+
+The folders the bot works in (its project and repositories) must be on the server too, at the same path or the same
+place under your home folder. Locks, the bot's code (`releases/`) and `.env` never travel; the server builds the bot
+again from its own checkout. If anything fails before step 5 the bot runs again where it was, unchanged. While a
+move is paused, `moves/hold-<profile>.json` beside the profiles keeps the bot from starting; if the Mac goes away
+for 10 minutes before step 5, the server starts it again by itself.
+
+The same page lists the profile's backups with **Restore…**: today's copy is backed up first, the backup is checked
+against its `manifest.sha256`, and the bot's code and tokens stay as they are.
+
+The server's page shows its Serra version in Diagnostics. When it is older than the app, **Update t480** runs
+`serra server update --to <the app's version>` there: it checks out that release's tag from origin (a checkout with
+local changes is left alone), installs, restarts the gateway, and goes back to the commit it was on if the new
+version doesn't answer. Bots keep running their own release meanwhile. It needs the gateway as a systemd service
+(`serra server gateway --install`); otherwise run the same command on the server yourself.

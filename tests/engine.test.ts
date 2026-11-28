@@ -33,7 +33,7 @@ const headless = (profileDir: string | null, host: Partial<HostPort> = {}) => {
 test('the engine answers every namespace of the API but the Mac’s own (app, servers), with no app around', async (t) => {
   const { root } = testProfile(t);
   const engine = createEngine(headless(root).context);
-  const own = (name: string): boolean => name === 'app' || name === 'servers';
+  const own = (name: string): boolean => name === 'app' || name === 'servers' || name === 'moves';
   const namespaces = Object.keys(bridgeMethods).filter((name) => !own(name));
   assert.deepEqual(Object.keys(engine).sort(), namespaces.sort());
   for (const [namespace, methods] of Object.entries(bridgeMethods)) {

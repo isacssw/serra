@@ -25,7 +25,7 @@ import { profileSlackNames } from './slack-names.ts';
 import { updatesHandlers } from './updates.ts';
 
 /** The namespaces the Mac app answers itself: its prefs and links, and the servers it is paired with. */
-type HostNamespace = 'app' | 'servers';
+type HostNamespace = 'app' | 'servers' | 'moves';
 
 /** The namespaces the engine answers: all but the app's own. */
 export type EngineHandlers = { [N in Exclude<Namespace, HostNamespace>]: Handlers<N> };

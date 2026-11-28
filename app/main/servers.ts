@@ -2,7 +2,7 @@
 // is paired with and how each is doing, their devices, and Forget. The work is in src/gateway (pairing.ts,
 // health.ts); this only parses the window's input. The code and the device token never come back to the window, and
 // never into a log.
-import type { ServerDevice } from '../../src/api.ts';
+import type { ServerDevice, ServerUpdateView } from '../../src/api.ts';
 import type { ServerHealthFollower } from '../../src/gateway/health.ts';
 import type { ServerPairing } from '../../src/gateway/pairing.ts';
 import { SERVER_ID } from '../../src/gateway/client.ts';
@@ -28,7 +28,17 @@ const isListed = (value: unknown): value is Listed =>
   isRecord(value) && isString(value.id) && DEVICE_ID.test(value.id) && isString(value.name) && isTime(value.addedAt)
   && (value.lastUsed === null || isTime(value.lastUsed));
 
-export const serverHandlers = (pairing: ServerPairing, health: ServerHealthFollower): Handlers<'servers'> => {
+/** How a server's update is going, from what its gateway says; anything else reads as no update. */
+const updateView = (answer: unknown): ServerUpdateView => {
+  const body = isRecord(answer) ? answer : {};
+  const update = isRecord(body.update) ? body.update : {};
+  const state = update.state === 'updating' || update.state === 'done' || update.state === 'rolled-back' || update.state === 'failed' ? update.state : null;
+  const short = (value: unknown, max: number): string | null => (isString(value) ? value.slice(0, max) : null);
+  return { state, version: short(body.version, 40), to: state ? short(update.to, 40) : null, message: state ? short(update.message, 300) : null };
+};
+
+/** `version`: this app's, which a server updates to so the two stay compatible (SB-34). */
+export const serverHandlers = (pairing: ServerPairing, health: ServerHealthFollower, version = ''): Handlers<'servers'> => {
   const paired = (id: unknown) => {
     const found = pairing.list().find((server) => server.id === serverId(id));
     if (!found) throw new Error('This Mac isn’t paired with that server any more.');
@@ -71,6 +81,13 @@ export const serverHandlers = (pairing: ServerPairing, health: ServerHealthFollo
       await pairing.client(server.id).revoke(deviceId);
       return devices(server.id);
     },
+    update: async (id) => {
+      const server = paired(id);
+      if (!version) throw new Error('This app doesn’t know its own version, so it can’t say which to install.');
+      await pairing.client(server.id).update(version);
+      return updateView(await pairing.client(server.id).updateState());
+    },
+    updateState: async (id) => updateView(await pairing.client(paired(id).id).updateState()),
     forget: async (id) => {
       const server = paired(id);
       const outcome = await pairing.forget(server.id);

@@ -7,6 +7,7 @@ import type { Route } from '../routes.ts';
 import { Button, EmptyState, Page } from '../ui/index.ts';
 import { resumePath, hasProfile } from './setup.logic.ts';
 import { useSetup } from './SetupState.tsx';
+import { useProfiles } from '../shell/profiles.tsx';
 
 /** The screen's own title, so the sidebar item still names what opened, and one calm step back to setup. */
 const SetupRequired = ({ route }: { route: Route }) => {
@@ -35,7 +36,8 @@ const SetupRequired = ({ route }: { route: Route }) => {
 /** Shows `children` once the route's need is met, the setup state until then. Before the first read, nothing. */
 export const SetupGate = ({ route, children }: { route: Route; children: ReactNode }) => {
   const { progress } = useSetup();
-  if (!route.needs) return <>{children}</>;
+  const { servers } = useProfiles();
+  if (!route.needs || (route.orServer && servers.length > 0)) return <>{children}</>;
   if (!progress) return null;
   return hasProfile(progress) ? <>{children}</> : <SetupRequired route={route} />;
 };

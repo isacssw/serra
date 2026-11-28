@@ -22,6 +22,21 @@ const noServers: Handlers<'servers'> = {
   devices: () => { throw new Error('No servers in this test.'); },
   revoke: () => { throw new Error('No servers in this test.'); },
   forget: () => { throw new Error('No servers in this test.'); },
+  update: () => { throw new Error('No servers in this test.'); },
+  updateState: () => { throw new Error('No servers in this test.'); },
+};
+
+/** No moves in tests that don't need them. */
+const noMoves: Handlers<'moves'> = {
+  preflight: () => { throw new Error('No moves in this test.'); },
+  start: () => { throw new Error('No moves in this test.'); },
+  restorePreflight: () => { throw new Error('No moves in this test.'); },
+  restore: () => { throw new Error('No moves in this test.'); },
+  stop: () => false,
+  resume: () => { throw new Error('No moves in this test.'); },
+  list: () => [],
+  dismiss: () => {},
+  backups: () => [],
 };
 
 /** Everything either half may need. */
@@ -65,5 +80,5 @@ export const engineContext = (app: AppContext): CoreContext => ({
 });
 
 /** Every namespace, routed as the app routes them. */
-export const createHandlers = (app: AppContext, names?: ProfileNames, servers: Handlers<'servers'> = noServers): AllHandlers =>
-  routeHandlers(appHandlers(hostContext(app)), servers, createEngine(engineContext(app), names));
+export const createHandlers = (app: AppContext, names?: ProfileNames, servers: Handlers<'servers'> = noServers, moves: Handlers<'moves'> = noMoves): AllHandlers =>
+  routeHandlers(appHandlers(hostContext(app)), servers, moves, createEngine(engineContext(app), names));

@@ -20,7 +20,9 @@ import { certFingerprint, certMatchesKey, selfSignedCert } from './cert.ts';
 import { pairingWords } from './words.ts';
 
 /** The gateway's protocol. A Mac and a server work together at N and N-1 (design §4.7). */
-export const GATEWAY_PROTOCOL = 1;
+export const GATEWAY_PROTOCOL = 2;
+/** The first protocol with moves, restores and updates (SB-34). A server below it is updated first. */
+export const MOVE_PROTOCOL = 2;
 export const DEFAULT_GATEWAY_PORT = 47_820;
 
 export const PAIRING_MINUTES = 10;
