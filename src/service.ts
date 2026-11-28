@@ -183,8 +183,9 @@ export const GATEWAY_LABEL = 'dev.serra.gateway';
 /**
  * The gateway's systemd user unit (SB-32): `serra server gateway` from this checkout, restarted after a crash, private
  * files only, logging to `gateway/gateway.log` in the profiles folder. It listens on loopback and Tailscale only.
+ * It serves the same profiles folder, and keeps the `--port` and `--listen` it was installed with (`flags`).
  */
-export const gatewayUnit = ({ node, entry, root }: { node: string; entry: string; root: string }, home = homedir()): string => {
+export const gatewayUnit = ({ node, entry, root, flags = [] }: { node: string; entry: string; root: string; flags?: readonly string[] }, home = homedir()): string => {
   const path = `${dirname(node)}:${process.env.PATH ?? '/usr/local/bin:/usr/bin:/bin'}`;
   const log = unitPath(join(root, 'gateway/gateway.log'));
   return `[Unit]
@@ -194,7 +195,7 @@ StartLimitIntervalSec=0
 
 [Service]
 Type=simple
-ExecStart=${[node, entry, 'server', 'gateway'].map(unitArg).join(' ')}
+ExecStart=${[node, entry, 'server', 'gateway', '--root', root, ...flags].map(unitArg).join(' ')}
 Environment=${unitEnv(`HOME=${home}`)} ${unitEnv(`PATH=${path}`)}
 Restart=always
 RestartSec=10
