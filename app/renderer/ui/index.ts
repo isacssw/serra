@@ -1,4 +1,5 @@
 // The shared primitives. Screens build from these and the colour tokens in styles.css instead of one-off styling.
+export { Avatar } from './Avatar.tsx';
 export { Badge,  } from './Badge.tsx';
 export { BrandMark } from './BrandMark.tsx';
 export { Button,   } from './Button.tsx';

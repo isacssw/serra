@@ -1,25 +1,24 @@
 // The sidebar: the title-bar row (traffic lights on macOS, then the bot's name and state), New task as the primary
 // action, search, Jobs and Knowledge, and Settings as one entry at the foot. Inside Settings the sidebar shows
 // Settings' own grouped sub-menu with a way back. Same colour as the content, set apart by one hairline (styles.css).
-import { useEffect, useState, type ComponentType, type KeyboardEvent, type ReactNode } from 'react';
+import { useEffect, type ComponentType, type KeyboardEvent, type ReactNode } from 'react';
 import { Link, NavLink, useLocation } from 'react-router';
 import {
   Gauge, Activity, AudioLines, Bell, BookOpen, Box, ChevronLeft, Cpu, Download, FileText, Inbox, KeyRound, Layers, ScrollText, Search,
-  Settings, SquarePen, SquareTerminal, SunMoon, UserRound, Users, Waypoints, type LucideProps,
+  Settings, SquarePen, SquareTerminal, SunMoon, UserRound, UserRoundPlus, Users, Waypoints, type LucideProps,
 } from 'lucide-react';
 import type { BotStatus } from '../../../src/contracts.ts';
 import { badgeText, type BadgeCounts } from '../badges.logic.ts';
 import { defaultPath, inSettings, routeForPath, routes, sections, settingsGroups, type BadgeKey, type Route, type RouteId } from '../routes.ts';
-import { statusView, type StatusTone } from '../status.logic.ts';
-import { cx } from '../ui/index.ts';
+import { profileRows, showsSwitcher } from '../profiles.logic.ts';
+import { Avatar, cx } from '../ui/index.ts';
+import { useProfiles } from './profiles.tsx';
 import { OPEN_COMMAND_PALETTE } from './events.ts';
-import { ariaMod, isMac, mod } from './keys.ts';
+import { ariaMod, mod } from './keys.ts';
 import { focusScreen } from './Shortcuts.tsx';
 import { SETTINGS_PATH } from './shortcuts.logic.ts';
 import { SetupRow } from '../setup/SetupRow.tsx';
-import downIcon from '../../../assets/brand/serra-status-down.png';
-import needsYouIcon from '../../../assets/brand/serra-status-needs-you.png';
-import upIcon from '../../../assets/brand/serra-status-up.png';
+import { TitleRow } from './Switcher.tsx';
 
 /** Each screen's icon, shared with the command palette's Go to rows. */
 export const routeIcons: Partial<Record<RouteId, ComponentType<LucideProps>>> = {
@@ -40,40 +39,8 @@ export const routeIcons: Partial<Record<RouteId, ComponentType<LucideProps>>> = 
   tools: Box,
   updates: Download,
   diagnostics: SquareTerminal,
+  'settings-profiles': UserRoundPlus,
   'settings-appearance': SunMoon,
-};
-
-// Before the first status report there is no honest colour, so the icon is shown greyed out.
-const statusIcons: Record<StatusTone, string> = { up: upIcon, 'needs-you': needsYouIcon, down: downIcon, unknown: downIcon };
-
-/** macOS draws the traffic lights over the sidebar's first row, except in full screen, where they're hidden. */
-const useFullScreen = (): boolean => {
-  const check = (): boolean => window.outerWidth === screen.width && window.outerHeight === screen.height;
-  const [full, setFull] = useState(check);
-  useEffect(() => {
-    const update = (): void => setFull(check());
-    window.addEventListener('resize', update);
-    return () => window.removeEventListener('resize', update);
-  }, []);
-  return full;
-};
-
-const TitleRow = ({ status }: { status: BotStatus | null }) => {
-  const view = statusView(status);
-  // Hooks run on every render, in the same order: call it first, then decide.
-  const fullScreen = useFullScreen();
-  const insetLights = isMac && !fullScreen;
-  return (
-    <div className={cx('drag flex h-[52px] shrink-0 items-center pr-3', insetLights ? 'pl-[84px]' : 'pl-4')}>
-      {/* The title row moves the window, which takes its mouse events; the name keeps its tooltip. */}
-      <div className="no-drag flex min-w-0 items-center gap-2" title={view.detail}>
-      <img src={statusIcons[view.tone]} alt="" className={cx('size-[18px] rounded-[5px]', view.tone === 'unknown' && 'opacity-40 grayscale')} />
-      <span className="min-w-0 truncate text-[13px]" role="status" aria-label={`Serra: ${view.detail}`} data-status-tone={view.tone}>
-        <span className="font-semibold text-ink">Serra</span><span className="text-muted"> · {view.label}</span>
-      </span>
-      </div>
-    </div>
-  );
 };
 
 /** What a count means, for screen readers: the number alone says nothing. */
@@ -191,6 +158,8 @@ export const Sidebar = ({ status, counts }: { status: BotStatus | null; counts: 
   // The Jobs item stands for every Jobs tab; New task has its own button.
   const inJobs = pathname.startsWith('/jobs/') && pathname !== '/jobs/new';
   const settingsRoutes: readonly Route[] = routes.filter((route) => route.section === 'settings');
+  const { view: profiles } = useProfiles();
+  const active = showsSwitcher(profiles) ? profileRows(profiles, status).find((row) => row.active) : undefined;
   return (
     <aside data-serra-sidebar className="flex w-60 shrink-0 flex-col border-r border-line bg-sidebar">
       <TitleRow status={status} />
@@ -251,6 +220,13 @@ export const Sidebar = ({ status, counts }: { status: BotStatus | null; counts: 
             <kbd className="font-sans text-[11px] text-faint" aria-hidden>Esc</kbd>
           </Link>
           <h2 className="px-2 pt-3 text-[15px] leading-5 font-semibold text-ink">Settings</h2>
+          {/* From the second profile, Bot, Knowledge and Access sit under the profile they change. */}
+          {active && (
+            <p className="flex items-center gap-2 px-2 pt-3 text-[13px] font-semibold text-ink" data-settings-profile>
+              <Avatar letters={active.letters} color={active.color} size={18} dashed={!active.setupDone} />
+              <span className="truncate">{active.name}</span>
+            </p>
+          )}
         </div>
         <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-2 pb-3">
           {settingsGroups.map((group) => (

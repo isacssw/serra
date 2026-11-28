@@ -25,3 +25,9 @@ export const announceTaskStart = <T,>(start: () => Promise<T>): Promise<T> => {
     window.dispatchEvent(new Event(REFRESH_COUNTS));
   });
 };
+
+/**
+ * The window switched to another profile (SB-10). State a screen keeps outside React (a restart banner's saves) is
+ * the old profile's, so it clears on this.
+ */
+export const PROFILE_SWITCHED = 'serra:profile-switched';

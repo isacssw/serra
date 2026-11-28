@@ -76,6 +76,41 @@ export interface SetupDetection {
   home: string;
 }
 
+/** One profile as the switcher and Settings › Profiles show it (SB-10). The window derives letters, colours and ⌘ numbers. */
+export interface ProfileEntry {
+  /** `local/<folder>` for a profile folder in the profiles folder; the folder path for one kept elsewhere. */
+  ref: string;
+  dir: string;
+  /** The bot's name from profile.json, or the folder's name when that can't be read. */
+  name: string;
+  /** Its avatar colour: the one kept in profiles.json, else the first one free. */
+  color: string;
+  /** The profile the window shows. */
+  active: boolean;
+  /** Every setup step is done. A profile left halfway shows "Finish setup". */
+  setupDone: boolean;
+  /** The daemon's report, read when the list was asked for. Null for the active profile (the window follows it live). */
+  status: BotStatus | null;
+  /** The agent new work uses: T3, or the ACP agent's name. */
+  agent: string;
+}
+
+export interface ProfilesView {
+  profiles: ProfileEntry[];
+  /** `--profile` names the profile: no switcher, no Add. */
+  pinned: boolean;
+  /** The avatar colours to pick from. */
+  palette: string[];
+}
+
+/** What Add… › Profile creates: the setup form, plus the colour and agent picked first. */
+export interface NewProfile {
+  draft: ProfileDraft;
+  color: string | null;
+  /** An ACP agent's id, or null for T3. */
+  agent: string | null;
+}
+
 /** The star request's memory (SERRA-53). The rules that read it are in app/renderer/star.logic.ts. */
 export interface StarPromptState {
   /** When the app first saw a working bot: the start of "a few days of use". Null until then. */
@@ -157,6 +192,22 @@ export interface SerraApi {
     confirmOwner(slackUserId: string): OwnerConfirmed;
     /** Prepares a release and activates it under launchd; `diagnose()` must pass first. Streams on `on.releaseLog`. */
     installService(): ActivationOutcome;
+  };
+  /** Profiles (SB-10): the list in ⌘ order, switching, order, colour, Add and a remove that keeps a backup. */
+  profiles: {
+    /** Every profile in the profiles folder (and the one in use, if it is kept elsewhere). Writes nothing. */
+    list(): ProfilesView;
+    /** Makes the profile the one the window shows. Refused while pinned, or while a bot update is switching. */
+    switch(ref: string): ProfilesView;
+    /** Moves a profile to `index` in the order, which is ⌘1…⌘9. */
+    move(ref: string, index: number): ProfilesView;
+    setColor(ref: string, color: string): ProfilesView;
+    /** Creates the profile, last in the order, and makes it the one in use. Setup goes on from its Slack step. */
+    create(input: NewProfile): SetupProgress;
+    /** Stops it, saves a checked backup, then moves the folder to the Trash. Its Slack app and Keychain tokens stay. */
+    remove(ref: string): { backup: string; view: ProfilesView };
+    /** Opens a backup folder `remove` made in Finder. */
+    showBackup(path: string): void;
   };
   /** The daemon (APP-11 for start/stop/restart; status from APP-6's socket). */
   bot: {
@@ -435,6 +486,8 @@ export interface SerraPushes {
   names: null;
   /** `agent-backend.json` changed on disk: Settings › Worker rereads its ACP agent list. */
   agentBackend: null;
+  /** The profiles changed: another one is in use, or one was added, moved, recoloured or removed. */
+  profiles: null;
 }
 
 export type Unsubscribe = () => void;
@@ -461,6 +514,7 @@ export const bridgeMethods = {
   setup: methods<'setup'>()([
     'progress', 'detect', 'useProfile', 'chooseFolder', 'defaults', 'detectProject', 'create', 'manifest', 'confirmOwner', 'installService',
   ]),
+  profiles: methods<'profiles'>()(['list', 'switch', 'move', 'setColor', 'create', 'remove', 'showBackup']),
   bot: methods<'bot'>()(['status', 'start', 'stop', 'restart']),
   jobs: methods<'jobs'>()(['list', 'cleanupWorktrees', 'chat', 'image', 'reply', 'answer']),
   proposals: methods<'proposals'>()(['list', 'diff', 'targets', 'promote', 'mergeInto', 'discard', 'undo', 'retire', 'similar', 'archived', 'restore', 'staleRewrite']),
@@ -479,7 +533,7 @@ export const bridgeMethods = {
   meetings: methods<'meetings'>()(['settings', 'setEnabled', 'sources', 'testSource', 'list', 'history', 'approve', 'discard', 'discardMeeting', 'forget', 'agentBackend', 'setAgentBackend', 'addAcpAgent', 'removeAcpAgent', 'openAgentBackendConfig']),
 } satisfies { [N in Namespace]: readonly (keyof SerraApi[N])[] };
 
-const pushChannels = ['status', 'event', 'releaseLog', 'appUpdate', 'navigate', 'proposals', 'jobs', 'names', 'agentBackend'] as const satisfies readonly (keyof SerraPushes)[];
+const pushChannels = ['status', 'event', 'releaseLog', 'appUpdate', 'navigate', 'proposals', 'jobs', 'names', 'agentBackend', 'profiles'] as const satisfies readonly (keyof SerraPushes)[];
 
 export const invokeChannel = (namespace: string, method: string): string => `serra:${namespace}.${method}`;
 export const pushChannel = (name: keyof SerraPushes): string => `serra:on.${name}`;

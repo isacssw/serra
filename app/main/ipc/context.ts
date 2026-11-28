@@ -39,4 +39,8 @@ export interface HandlerContext {
   botFollowsApp?: boolean;
   /** Registers what quitting must wait for: a promise while a bot switch is under way, else null. */
   guardQuit?(pending: () => Promise<unknown> | null): void;
+  /** Why the window can't switch profiles right now (a bot update is switching releases), or null. */
+  switchBlocked?(): string | null;
+  /** Moves a file or folder to the macOS Trash. Absent: nothing that needs it goes ahead. */
+  trashItem?(path: string): Promise<void>;
 }

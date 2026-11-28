@@ -30,6 +30,16 @@ export const FLOW: readonly FlowStep[] = [
   { id: 'service', path: '/setup/service', title: 'Install and start', short: 'Install', summary: 'Runs every check, then starts the bot.' },
 ];
 
+/** Add… › Profile (SB-10): the new step first, then the profile form for a new profile. */
+export const NEW_PROFILE_PATH = '/setup/new';
+export const NEW_PROFILE_FORM_PATH = '/setup/new/you';
+
+/** What the new step picked, carried to the form. */
+export interface NewProfileChoice { name: string; color: string; agent: string | null }
+
+/** True on the two screens of Add… › Profile, where the rail is the new profile's (nothing done yet), not the one in use. */
+export const isNewProfilePath = (path: string): boolean => path === NEW_PROFILE_PATH || path === NEW_PROFILE_FORM_PATH;
+
 export const isSetupPath = (path: string): boolean => path === SETUP_PATH || path.startsWith(`${SETUP_PATH}/`);
 
 export const pathForStep = (id: SetupStepId): string => FLOW.find((step) => step.id === id)?.path ?? SETUP_PATH;
@@ -68,6 +78,7 @@ export const doneCount = (progress: SetupProgress | null): number => progress?.s
 /** What a screen reader hears when a step opens. */
 export const announcement = (path: string): string => {
   if (path === DONE_PATH) return 'Setup complete';
+  if (isNewProfilePath(path)) return `Step 1 of ${FLOW.length}: New profile`;
   const index = FLOW.findIndex((step) => step.path === path);
   return index < 0 ? 'Serra setup' : `Step ${index + 1} of ${FLOW.length}: ${FLOW[index]!.title}`;
 };

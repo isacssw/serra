@@ -10,23 +10,29 @@ import { Button, cx } from '../ui/index.ts';
 import { DoneStep } from './DoneStep.tsx';
 import { OwnerStep } from './OwnerStep.tsx';
 import { ServiceStep } from './ServiceStep.tsx';
-import { announcement, capitalize, DONE_PATH, FLOW, hasProfile, lockedReason, resumePath, stepDone, stepOpen, SETUP_PATH } from './setup.logic.ts';
+import {
+  announcement, capitalize, DONE_PATH, FLOW, hasProfile, isNewProfilePath, lockedReason, resumePath, stepDone, stepOpen, SETUP_PATH,
+} from './setup.logic.ts';
+import { NewProfileStep } from './NewProfileStep.tsx';
 import type { SetupStepId } from '../../../src/setup.ts';
 import type { ReactElement } from 'react';
 import { useSetup } from './SetupState.tsx';
 import { SlackStep } from './SlackStep.tsx';
 import { Start } from './Start.tsx';
-import { YouStep } from './YouStep.tsx';
+import { NewProfileForm, YouStep } from './YouStep.tsx';
 
 /** The steps along the title bar. Done steps and the current one can be opened; the rest wait for the profile. */
 const Rail = ({ pathname }: { pathname: string }) => {
   const navigate = useNavigate();
-  const { progress } = useSetup();
+  // Adding a profile: the rail is the new one's, so nothing is done yet and only its first step is open.
+  const adding = isNewProfilePath(pathname);
+  const { progress: inUse } = useSetup();
+  const progress = adding ? null : inUse;
   return (
     <nav aria-label="Setup steps" className="no-drag">
       <ol className="flex items-center gap-1">
         {FLOW.map((step, index) => {
-          const current = step.path === pathname;
+          const current = step.path === pathname || (adding && step.id === 'profile');
           const done = stepDone(progress, step.id);
           const open = stepOpen(progress, step.id);
           return (
@@ -36,7 +42,7 @@ const Rail = ({ pathname }: { pathname: string }) => {
                 type="button"
                 aria-current={current ? 'step' : undefined}
                 aria-disabled={open ? undefined : true}
-                onClick={() => { if (open) void navigate(step.path); }}
+                onClick={() => { if (open && !adding) void navigate(step.path); }}
                 data-setup-step={step.id}
                 title={open ? undefined : capitalize(lockedReason(progress, step.id))}
                 className={cx(
@@ -101,7 +107,7 @@ export const SetupFlow = () => {
         {onStart ? <span /> : <Rail pathname={pathname} />}
         <div className="flex justify-end">
           {/* Hidden where the screen's own main button already opens Serra (the end, or a finished summary). */}
-          {profile && progress?.next && pathname !== DONE_PATH && (
+          {profile && progress?.next && pathname !== DONE_PATH && !isNewProfilePath(pathname) && (
             <Button variant="ghost" size="sm" className="no-drag text-muted" onClick={() => void navigate(defaultPath)}>
               Skip for now
             </Button>
@@ -114,6 +120,8 @@ export const SetupFlow = () => {
           <Routes>
             <Route index element={<Start />} />
             <Route path="you" element={<YouStep />} />
+            <Route path="new" element={<NewProfileStep />} />
+            <Route path="new/you" element={<NewProfileForm />} />
             <Route path="slack" element={guard('slack', <SlackStep />)} />
             <Route path="owner" element={guard('owner', <OwnerStep />)} />
             <Route path="service" element={guard('service', <ServiceStep />)} />

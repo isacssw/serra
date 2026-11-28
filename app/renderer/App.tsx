@@ -31,6 +31,9 @@ import { Worker } from './screens/settings/Worker.tsx';
 import { Meetings } from './screens/settings/Meetings.tsx';
 import { Tools } from './screens/Tools.tsx';
 import { Updates } from './screens/Updates.tsx';
+import { Profiles } from './screens/settings/Profiles.tsx';
+import { ProfilesProvider, useProfiles } from './shell/profiles.tsx';
+import { ProfileShortcuts } from './shell/ProfileShortcuts.tsx';
 import { useBadgeCounts, useBotStatus } from './shell/live.ts';
 import { FollowNavigation } from './shell/navigate.ts';
 import { focusScreen, Shortcuts } from './shell/Shortcuts.tsx';
@@ -60,6 +63,7 @@ const screens: Record<RouteId, ReactElement> = {
   tools: <Tools />,
   updates: <Updates />,
   diagnostics: <Diagnostics />,
+  'settings-profiles': <Profiles />,
   'settings-appearance': <Appearance />,
 };
 
@@ -116,10 +120,22 @@ const Shell = () => {
       <RememberScreen />
       <CommandPalette />
       <Shortcuts />
+      <ProfileShortcuts status={status} />
       <ScrollToTop />
       <StarPrompt status={status} jobs={currentJobs} />
     </div>
   );
+};
+
+/** The shell, mounted again for each profile: no screen keeps the last profile's lists, drafts or counts. */
+const ShellForProfile = () => {
+  const { generation } = useProfiles();
+  const { pathname } = useLocation();
+  const path = useRef(pathname);
+  path.current = pathname;
+  // The route stays (Jobs stays Jobs); focus goes to the new profile's screen heading once it is in.
+  useEffect(() => { if (generation > 0) focusScreen(path.current, null); }, [generation]);
+  return <Shell key={generation} />;
 };
 
 // A hash router: the built page loads from a file: URL, where path-based URLs don't resolve.
@@ -127,14 +143,16 @@ export const App = ({ setup }: { setup: SetupProgress | null }) => (
   <HashRouter>
     <ToastProvider>
       <SetupProvider initial={setup}>
+        <ProfilesProvider>
         <Routes>
           <Route path={`${SETUP_PATH}/*`} element={<SetupFlow />} />
           {/* The old first-run wizard's address (APP-27), from a saved link or an older notification. */}
           <Route path="/welcome" element={<Navigate to={SETUP_PATH} replace />} />
-          <Route path="*" element={<Shell />} />
+          <Route path="*" element={<ShellForProfile />} />
         </Routes>
         <FollowNavigation />
         <Rendered />
+        </ProfilesProvider>
       </SetupProvider>
     </ToastProvider>
   </HashRouter>

@@ -120,6 +120,16 @@ that folder and runs every job there instead of a worktree, and every approval w
 
 How ACP runs differ from T3 (restarts, steering, permissions, images): [docs/agent-backends.md](docs/agent-backends.md).
 
+## More than one bot
+
+Each bot is a **profile**: its own Slack app, knowledge, agent, settings and service. To add one, click the name at the
+top of the sidebar, or press ⌘⇧N, and pick **Add…**: a name, a colour and an agent, then the usual setup.
+
+With two or more, the top row shows the bot you're looking at. Its menu, ⌘1…⌘9 and ⌘K switch; every screen then
+shows only that bot. Each bot keeps running in the background whichever one you look at. **Settings › Profiles**
+sets the order (which is ⌘1…⌘9) and colours, and **Remove** stops a bot, saves a checked backup in
+`~/.local/share/serra/backups/` (tokens are left out) and moves its folder to the Trash. Its Slack app stays in Slack.
+
 ## Knowledge
 
 The bot keeps a small knowledge base in the profile's `knowledge/`. Every job's brief carries what its audience may
@@ -153,11 +163,12 @@ Most settings are in the app. Each bot has one private profile folder, `~/.local
 | Alerts | Channels whose messages it investigates without a mention (`messageTriggers`) |
 | Brief & policy, Meetings | Its instructions, and meeting capture (off by default) |
 | Secrets, Tools | Where the Slack tokens are, and the MCP servers and CLIs jobs will have |
-| Appearance, Updates, Diagnostics | The app itself |
+| Profiles, Appearance, Updates, Diagnostics | The app itself: your bots' order and colours, and more |
 
 Other places: Slack tokens in the Keychain (service `dev.serra.<bot-id>`), the service at
 `~/Library/LaunchAgents/dev.serra.<bot-id>.plist`, the app's preferences in
-`~/Library/Application Support/serra/prefs.json`. Every field and file: [docs/configuration.md](docs/configuration.md).
+`~/Library/Application Support/serra/prefs.json`, and the order and colours of your bots in
+`~/.local/share/serra/profiles.json` (written only once you change one). Every field and file: [docs/configuration.md](docs/configuration.md).
 Include the profile in your private backups.
 
 ## Updating

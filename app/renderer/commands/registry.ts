@@ -41,13 +41,14 @@ interface ActionArgument {
   choices?: (context: ActionContext) => Promise<Choice[]>;
 }
 
-type ActionGroup = 'Actions' | 'Go to';
+type ActionGroup = 'Actions' | 'Go to' | 'Profiles';
 
 /**
- * The order groups are listed in before the owner types anything. Screens come first, so ⌘K then ↩ only ever moves
- * the window; an action that changes something has to be picked on purpose.
+ * The order groups are listed in before the owner types anything. Profiles (from the second one) and screens come
+ * first, so ⌘K then ↩ only ever moves the window, to another profile or screen, which ⌘K undoes as fast; an action that
+ * changes something has to be picked on purpose.
  */
-const actionGroups: readonly ActionGroup[] = ['Go to', 'Actions'];
+const actionGroups: readonly ActionGroup[] = ['Profiles', 'Go to', 'Actions'];
 
 export interface Action {
   /** Unique across the registry, such as `bot:restart` or `go:settings-people`. */

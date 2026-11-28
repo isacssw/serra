@@ -34,6 +34,13 @@ Use one private profile per bot, outside the code checkout. `pnpm run setup` cre
 | logs/bot.log | Background-service output |
 | logs/knowledge-usage.jsonl | One line per posted reply: which knowledge pages it used, the start of the request and reply, and what it said was missing. Read only by the app's Overview and the weekly review |
 
+Beside the profile folders, in `~/.local/share/serra/`, the app keeps two things of its own, never inside a profile:
+
+| Path | Purpose |
+|---|---|
+| profiles.json | The order of your profiles (⌘1…⌘9) and each one's colour, by ref (`local/<folder>`). Written only when you reorder, recolour, add or remove one; without it, profiles are listed by folder name. Folders stay the source of truth: a folder it doesn't list is added at the end |
+| backups/`<folder>`@`<date>`/ | A removed profile's checked copy, with `manifest.sha256` and `removed.json`. `.env` and `releases/` are left out; Keychain and 1Password tokens stay where they were |
+
 Profile folders are created with mode 700 and .env with mode 600. Keep profiles out of shared code and include them in your private backups. Never copy a real profile as another engineer's starter.
 
 ## Profile format

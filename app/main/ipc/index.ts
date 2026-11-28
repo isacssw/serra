@@ -10,6 +10,7 @@ import { jobsHandlers } from './jobs.ts';
 import { meetingsHandlers } from './meetings.ts';
 import { pagesHandlers } from './pages.ts';
 import { peopleHandlers } from './people.ts';
+import { profilesHandlers } from './profiles.ts';
 import { proposalsHandlers } from './proposals.ts';
 import { secretsHandlers } from './secrets.ts';
 import { settingsHandlers } from './settings.ts';
@@ -25,6 +26,7 @@ export type AllHandlers = { [N in Namespace]: Handlers<N> };
 export const createHandlers = (context: HandlerContext, names = profileSlackNames(context)): AllHandlers => ({
   app: appHandlers(context),
   setup: setupHandlers(context),
+  profiles: profilesHandlers(context),
   bot: botHandlers(context),
   jobs: jobsHandlers(context, { names }),
   proposals: proposalsHandlers(context),

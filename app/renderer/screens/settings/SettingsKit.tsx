@@ -11,6 +11,7 @@ import { serra } from '../../bridge.ts';
 import { useBotStatus } from '../../shell/live.ts';
 import { Button, Input, Page, TextArea, cx, useToast } from '../../ui/index.ts';
 import { isMac } from '../../shell/keys.ts';
+import { PROFILE_SWITCHED } from '../../shell/events.ts';
 import {
   appliesLabel, formChanged, pendingRestart, sectionList, sectionTitles, type FormValues, type RestartSave,
   type SectionForm,
@@ -29,6 +30,11 @@ const recordRestartSave = (section: ProfileSection): void => {
   for (const listener of restartListeners) listener();
 };
 const subscribeRestartSaves = (listener: () => void) => { restartListeners.add(listener); return () => { restartListeners.delete(listener); }; };
+// Those saves were the profile in use's: another profile's daemon has nothing pending from them.
+window.addEventListener(PROFILE_SWITCHED, () => {
+  restartSaves = [];
+  for (const listener of restartListeners) listener();
+});
 
 // ---------------------------------------------------------------------------------------------------------------
 // Loading and saving
