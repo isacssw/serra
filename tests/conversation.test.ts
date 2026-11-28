@@ -11,7 +11,7 @@ const bot = { userId: 'UBOT', name: 'Friday' };
 /** A message as the Slack adapter reads it: who it mentions and its words, mentions as `@Name`. */
 const { chat } = slackChat(createFakeSlack({ botUserId: 'UBOT' }).client, { owner: 'UOWNER', botToken: 'xoxb-1111-2222-fixturevalue', profileDir: '/tmp' }, { botUserId: 'UBOT' });
 const names: Record<string, string> = { USAM: 'Sam' };
-const read = (text: string) => chat.read(text, async (person) => names[person] ?? person);
+const read = (text: string) => chat.read('C1', text, async (person) => names[person] ?? person);
 
 test('a message that names other people and not the bot is not for the bot', async () => {
   assert.equal(audienceOf(await read('can you open the pricing admin page <@USAM>? let me know'), bot), 'others');

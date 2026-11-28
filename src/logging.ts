@@ -1,7 +1,20 @@
 import { appendFileSync, closeSync, fstatSync, openSync, readdirSync, readSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
-import { LogLevel, type Logger } from '@slack/bolt';
 import type { BotEvents } from './bot.ts';
+
+/** How much a logger writes: Bolt's levels, by the same names, so a chat library can be handed this logger as is. */
+export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
+
+/** The daemon's logger. It has the shape Bolt asks for, so the Slack connection passes it to Bolt unchanged. */
+export interface Logger {
+  debug(...msg: unknown[]): void;
+  info(...msg: unknown[]): void;
+  warn(...msg: unknown[]): void;
+  error(...msg: unknown[]): void;
+  setLevel(level: LogLevel): void;
+  getLevel(): LogLevel;
+  setName(name: string): void;
+}
 
 /** One log argument as text. Errors keep their stack, and an object that can't be serialised never makes logging throw. */
 const show = (part: unknown): string => {
@@ -10,13 +23,13 @@ const show = (part: unknown): string => {
   try { return JSON.stringify(part) ?? String(part); } catch { return String(part); }
 };
 
-const ORDER = [LogLevel.DEBUG, LogLevel.INFO, LogLevel.WARN, LogLevel.ERROR];
+const ORDER: readonly LogLevel[] = ['debug', 'info', 'warn', 'error'];
 
 /**
- * Bolt's logger with a timestamp on every line, so bot.log can say when something happened:
+ * A logger with a timestamp on every line, so bot.log can say when something happened:
  * how long a reply took, or whether a Slack reconnect lined up with a lost message.
  */
-export const timestampedLogger = (level: LogLevel = LogLevel.INFO, now: () => Date = () => new Date(), write = console.log): Logger => {
+export const timestampedLogger = (level: LogLevel = 'info', now: () => Date = () => new Date(), write = console.log): Logger => {
   let current = level;
   let name = 'bolt-app';
   const at = (wanted: LogLevel) => (...msg: unknown[]): void => {
@@ -24,7 +37,7 @@ export const timestampedLogger = (level: LogLevel = LogLevel.INFO, now: () => Da
     write(`${now().toISOString()} [${wanted.toUpperCase()}] ${name} ${msg.map(show).join(' ')}`);
   };
   return {
-    debug: at(LogLevel.DEBUG), info: at(LogLevel.INFO), warn: at(LogLevel.WARN), error: at(LogLevel.ERROR),
+    debug: at('debug'), info: at('info'), warn: at('warn'), error: at('error'),
     setLevel: (next) => { current = next; },
     getLevel: () => current,
     setName: (next) => { name = next; },

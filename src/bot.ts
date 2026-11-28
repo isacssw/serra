@@ -17,7 +17,7 @@ import { localLinksToText } from './links.ts';
 import { createProfileReloader } from './profile-reload.ts';
 import { handleReviewRequest, type PostReview } from './review.ts';
 import { recordKnowledgeUse, takeKnowledgeUsed } from './knowledge-usage.ts';
-import { slackKey, type createStore } from './state.ts';
+import { jobKey, type createStore } from './state.ts';
 import { worktreeRun, type AgentBackend, type QuestionRequest } from './agent/backend.ts';
 import { singleBackend, type AgentBackends } from './agent/pool.ts';
 import { attachedImages } from './agent/images.ts';
@@ -187,17 +187,27 @@ export const createBot = ({
   /** A person's name as the chat shows it, safe to use as a speaker label. */
   const displayName = async (user: PersonId): Promise<string> => speakerName(await chat.displayName(user));
 
-  /** The label a message carries to the worker. Only the configured owner's ID gets the owner marker. */
+  /**
+   * Whether `person` is the owner, by the owner's ID in the chat that person is in: each chat knows the owner by its own
+   * ID, so the same number in another chat is someone else. A chat that isn't connected has no owner.
+   */
+  const isOwner = (person: PersonId): boolean => {
+    try { return person === chat.owner(person); } catch { return false; }
+  };
+  /** Who may ask the bot for work: the owner, and the people they added. */
+  const isAllowed = (person: PersonId): boolean => isOwner(person) || config.allowed.has(person);
+
+  /** The label a message carries to the worker. Only the owner's ID gets the owner marker. */
   const speaker = async (user: string): Promise<string> =>
-    user === config.owner ? `${config.ownerName} (your owner)` : displayName(user);
+    isOwner(user) ? `${config.ownerName} (your owner)` : displayName(user);
 
   /** The message with the bot's own mention removed and other mentions as names, so the worker sees who was addressed. */
-  const read = (text: string): Promise<InboundText> =>
-    chat.read(text, async (user) => (user === config.owner ? config.ownerName : displayName(user)));
-  const toReadable = async (text: string): Promise<string> => (await read(text)).text;
+  const read = (conversation: string, text: string): Promise<InboundText> =>
+    chat.read(conversation, text, async (user) => (isOwner(user) ? config.ownerName : displayName(user)));
+  const toReadable = async (conversation: string, text: string): Promise<string> => (await read(conversation, text)).text;
 
-  const messageContent = async (text: string, files: IncomingFile[] = [], limit = MAX_ATTACHMENTS): Promise<string> =>
-    [await toReadable(text), await chat.receiveFiles(files, limit)].filter(Boolean).join('\n\n');
+  const messageContent = async (conversation: string, text: string, files: IncomingFile[] = [], limit = MAX_ATTACHMENTS): Promise<string> =>
+    [await toReadable(conversation, text), await chat.receiveFiles(conversation, files, limit)].filter(Boolean).join('\n\n');
 
   /**
    * The messages before the mention when the bot is called into an existing thread, so a brainstorm or a review
@@ -224,7 +234,7 @@ export const createBot = ({
       if (withoutBot && (m.from.kind === 'self' || m.from.kind === 'bot')) continue;
       // A meeting sent in a thread (SERRA-62) was turned away, not read: its text and files never reach a worker.
       if (meetingRequest(m.text).trigger) continue;
-      const text = await toReadable(m.text);
+      const text = await toReadable(msg.channel, m.text);
       const files = m.files;
       if (!text && !files.length) continue;
       const speaker = await nameOf(m.from);
@@ -239,7 +249,7 @@ export const createBot = ({
     const lines: string[] = [];
     let remaining = MAX_ATTACHMENTS;
     for (const item of selected.toReversed()) {
-      const attachments = await chat.receiveFiles(item.files, remaining);
+      const attachments = await chat.receiveFiles(msg.channel, item.files, remaining);
       remaining = Math.max(0, remaining - item.files.length);
       lines.unshift([item.text, attachments].filter(Boolean).join('\n'));
     }
@@ -255,7 +265,7 @@ export const createBot = ({
   /** The chat's native "working on it" status is best effort: the acknowledgement still shows work if it's unavailable. */
   const loading = new Map<string, { on: boolean; at: number }>();
   const setLoading = async (channel: string, threadTs: string, on: boolean, force = false): Promise<void> => {
-    const key = slackKey(channel, threadTs);
+    const key = jobKey(channel, threadTs);
     const previous = loading.get(key);
     if (!on && previous?.on === false) return;
     if (!force && (on ? previous?.on && now() - previous.at < LOADING_REFRESH_MS : !previous?.on)) return;
@@ -292,12 +302,12 @@ export const createBot = ({
     logger.error(`Failed handling ${key}: ${message}`);
     events('failure', { key, error: message.slice(0, 500) });
     const post = async (): Promise<void> => {
-      if (user === config.owner) {
+      if (user !== undefined && isOwner(user)) {
         const detail = await deliver({ target: { conversation: channel, thread: threadTs }, requester: user, hearing: { kind: 'owner-only' } },
           { op: 'send', out: { kind: 'failure-detail', line: shortError(error) } });
         if (detail.ok) return;
       }
-      await notify(channel, threadTs, { kind: 'failed', owner: user === config.owner });
+      await notify(channel, threadTs, { kind: 'failed', owner: user !== undefined && isOwner(user) });
     };
     await post().catch((failure: unknown) => logger.error(`Could not report the failure in ${key}: ${errorMessage(failure)}`));
   };
@@ -346,7 +356,7 @@ export const createBot = ({
     const proposalsFolder = loadKnowledge ? threadProposalsFolder(msg.channel, msg.threadTs) : undefined;
     if (proposalsFolder) {
       try {
-        stampProposalsFolder(config.knowledgeDir, proposalsFolder, { who: requester, owner: !trigger && msg.user === config.owner, via: 'slack', ...(permalink ? { link: permalink } : {}) });
+        stampProposalsFolder(config.knowledgeDir, proposalsFolder, { who: requester, owner: !trigger && isOwner(msg.user), via: 'slack', ...(permalink ? { link: permalink } : {}) });
       } catch (error) { logger.warn(`Could not record where ${msg.channel}:${msg.threadTs}'s proposals come from: ${errorMessage(error)}`); }
     }
     const input = jobThreadInput(config, {
@@ -369,7 +379,7 @@ export const createBot = ({
     const threadId = earlier ?? await agent.start(worktreeRun(input));
     await warnImages(agent, msg.channel, msg.threadTs, request);
 
-    putJob(slackKey(msg.channel, msg.threadTs), {
+    putJob(jobKey(msg.channel, msg.threadTs), {
       threadId,
       ...(agent.key === 't3' ? {} : { backend: agent.key }),
       channel: msg.channel,
@@ -382,14 +392,14 @@ export const createBot = ({
       heard: [msg.messageTs],
       lastPostedRunId: null,
       phase: { state: 'following' },
-      ownerFollows: msg.user === config.owner,
+      ownerFollows: isOwner(msg.user),
       ...(knowledge ? { visibility, knowledgeRead: knowledge.read, knowledgeDir: knowledge.readDir, request: summary.replace(/\s+/g, ' ').trim().slice(0, 300) } : {}),
       branch: input.branch,
       createdAt: new Date(now()).toISOString(),
       lastActivityAt: new Date(now()).toISOString(),
     });
     logger.info(`Started ${agent.label} thread ${threadId} for ${msg.channel}:${msg.threadTs}`);
-    events('job_started', { key: slackKey(msg.channel, msg.threadTs), t3ThreadId: threadId, requester: msg.user });
+    events('job_started', { key: jobKey(msg.channel, msg.threadTs), t3ThreadId: threadId, requester: msg.user });
   };
 
   /** One job's chat-facing work runs one step at a time, so a poll and a follow-up can't both post the same run. */
@@ -469,7 +479,7 @@ export const createBot = ({
    */
   const postReview = (job: Job, channel: string, link: string): PostReview => async (markdown) => {
     const target: Target = { conversation: channel, thread: null };
-    const sent = await deliver({ target, requester: config.owner, hearing: { kind: 'elsewhere', heard: heardIn(job), source: { target: targetOf(job), requester: job.requester } } },
+    const sent = await deliver({ target, requester: chat.owner(target.conversation), hearing: { kind: 'elsewhere', heard: heardIn(job), source: { target: targetOf(job), requester: job.requester } } },
       { op: 'send', out: { kind: 'review', markdown, from: config.name, link } });
     if (!sent.ok) return sent.why === 'withheld' ? { ok: false, refused: true } : { ok: false, error: 'I couldn\'t confirm who can see the review channel or this thread just now' };
     return { ok: true, link: await chat.permalink({ conversation: channel, id: sent.value }) };
@@ -578,7 +588,7 @@ export const createBot = ({
     }
     // The owner is pinged for a new blocker, and cc'd once so they follow a thread someone else started. Not on every reply.
     const blocked = markdown !== null && needsOwner(markdown, config.ownerName);
-    const ownerFollows = job.ownerFollows ?? job.requester === config.owner;
+    const ownerFollows = job.ownerFollows ?? isOwner(job.requester);
     const notice = ownerNotice({ blocked, askOpen: job.ownerAskOpen ?? false, ownerFollows });
     /** How a notice standing in for the reply tells the owner: a notice is never a blocker. */
     const noticeNotify = ownerNotice({ blocked: false, askOpen: job.ownerAskOpen ?? false, ownerFollows });
@@ -695,7 +705,7 @@ export const createBot = ({
    */
   const isApproval = (card: Pick<QuestionCard, 'questions'> | undefined): boolean => card?.questions.some((item) => item.id === 'permission') === true;
   const mayAnswer = (job: Job, user: string, card?: QuestionCard): boolean =>
-    config.allowed.has(user) && (user === config.owner || (user === job.requester && !isApproval(card)));
+    isAllowed(user) && (isOwner(user) || (user === job.requester && !isApproval(card)));
 
   /**
    * Takes a question card down: it shows the answers chosen, through `deliver`, since the questions are the worker's
@@ -733,11 +743,11 @@ export const createBot = ({
       return;
     }
     const state: QuestionCard = { ...request, ts: '', index: 0, answers: {}, nonce: randomBytes(16).toString('hex'), runId: thread.activeRunId ?? thread.latestRunId };
-    const recipient = config.allowed.has(job.requester) && !isApproval(request) ? job.requester : config.owner;
+    const recipient = isAllowed(job.requester) && !isApproval(request) ? job.requester : chat.owner(job.channel);
     // Checked again by `deliver` right before the card goes out. Refused, the next poll decides again.
     const posted = await deliver(deliveryFor(job), { op: 'send', out: { kind: 'question', card: state, to: recipient } });
     if (!posted.ok) return;
-    updateJob(key, (latest) => ({ phase: waitFor(latest.phase, { ...state, ts: posted.value }), ownerFollows: latest.ownerFollows || recipient === config.owner }));
+    updateJob(key, (latest) => ({ phase: waitFor(latest.phase, { ...state, ts: posted.value }), ownerFollows: latest.ownerFollows || isOwner(recipient) }));
     events('question_shown', { key, requestId: request.requestId, count: request.questions.length });
   };
 
@@ -772,13 +782,13 @@ export const createBot = ({
     const typed = typeof answer === 'string' && !question.options.some((option) => (option.value ?? option.label) === answer);
     const note = `Answered a question from the earlier session${typed ? `: "${answered}"` : ''}. The question isn't repeated here because it used knowledge that's no longer available: ask again if you still need it.`;
     // On a restart, the old card is closed and the old session told to stop before anything else (see restartIfRevoked).
-    if (await restartIfRevoked(key, { ...job, phase: waitFor(job.phase, state) }, [{ speaker: user === config.owner ? `${config.ownerName} (your owner)` : await displayName(user), text: note, audience: 'bot', ts: messageTs ?? job.threadTs }])) {
+    if (await restartIfRevoked(key, { ...job, phase: waitFor(job.phase, state) }, [{ speaker: await speaker(user), text: note, audience: 'bot', ts: messageTs ?? job.threadTs }])) {
       updateJob(key, rememberReply);
       return;
     }
     if (state.index + 1 < state.questions.length) {
       const next = { ...state, answers, index: state.index + 1, nonce: randomBytes(16).toString('hex') };
-      const recipient = config.allowed.has(job.requester) && !isApproval(next) ? job.requester : config.owner;
+      const recipient = isAllowed(job.requester) && !isApproval(next) ? job.requester : chat.owner(job.channel);
       const out: WorkerOut = { kind: 'question', card: next, to: recipient };
       // Save only after the edit succeeds, so a failed edit leaves usable choices and can be retried. The next question
       // is the worker's words: `deliver` checks it first, and a card it refuses is closed with fixed copy.
@@ -818,7 +828,7 @@ export const createBot = ({
       const card = job ? cardOf(job) : undefined;
       if (!job || !card || card.nonce !== action.nonce) return;
       if (!mayAnswer(job, action.user, card)) {
-        if (isApproval(card) && config.allowed.has(action.user) && action.user === job.requester) await questionFeedback(job, 'owner-only');
+        if (isApproval(card) && isAllowed(action.user) && action.user === job.requester) await questionFeedback(job, 'owner-only');
         return;
       }
       const answer = choiceAnswer(card.questions[card.index]!, action.indices);
@@ -1011,19 +1021,19 @@ export const createBot = ({
 
   /** A message in a thread the bot already owns: a turn for the worker, or context it gets with its next turn. */
   const continueJob = async (key: string, msg: IncomingMessage, allowed: boolean): Promise<void> => {
-    const said: Audience = msg.direct ? 'bot' : audienceOf(chat.parse(msg.text), { userId: chat.self(), name: config.name });
+    const said: Audience = msg.direct ? 'bot' : audienceOf(chat.parse(msg.channel, msg.text), { userId: chat.self(msg.channel), name: config.name });
     if (!allowed && said === 'bot') return refuse(msg);
-    if (!(await toReadable(msg.text)) && !(allowed && msg.files?.length)) return;
+    if (!(await toReadable(msg.channel, msg.text)) && !(allowed && msg.files?.length)) return;
     const job = getJob(key);
     if (job?.answeredQuestionMessages?.includes(msg.messageTs)) return;
     const card = job ? cardOf(job) : undefined;
     // A requester's reply to the owner's approval card isn't an answer, nor a next message the agent would get after it.
-    if (job && card && isApproval(card) && said !== 'others' && msg.user === job.requester && msg.user !== config.owner && allowed) {
+    if (job && card && isApproval(card) && said !== 'others' && msg.user === job.requester && !isOwner(msg.user) && allowed) {
       await questionFeedback(job, 'owner-only');
       return;
     }
     if (job && card && mayAnswer(job, msg.user, card) && said !== 'others' && !msg.files?.length) {
-      const answer = typedAnswer(card.questions[card.index]!, await toReadable(msg.text));
+      const answer = typedAnswer(card.questions[card.index]!, await toReadable(msg.channel, msg.text));
       if (answer === null) await questionFeedback(job, 'invalid-answer');
       else await submitAnswer(key, job, answer, msg.user, msg.messageTs).catch(async (error: unknown) => {
         logger.error(`Answering question in ${key} failed: ${errorMessage(error)}`);
@@ -1038,11 +1048,11 @@ export const createBot = ({
       updateJob(key, () => ({ loadingRequested: true }));
       if (getJob(key)?.phase.state !== 'waiting') await setLoading(msg.channel, msg.threadTs, true);
     }
-    const text = await messageContent(msg.text, allowed ? msg.files : []);
+    const text = await messageContent(msg.channel, msg.text, allowed ? msg.files : []);
     const line: HeardLine = { speaker: await speaker(msg.user), text, audience, ts: msg.messageTs };
 
     // The owner writing in the thread answers any open ask, and means they see its replies.
-    const ownerWrote: Partial<Job> = msg.user === config.owner ? { ownerAskOpen: false, ownerFollows: true } : {};
+    const ownerWrote: Partial<Job> = isOwner(msg.user) ? { ownerAskOpen: false, ownerFollows: true } : {};
     if (audience === 'others') {
       // People talking to each other. The worker hears it with its next turn and isn't asked to answer.
       updateJob(key, (job) => ({ ...ownerWrote, ...heardNow(job, msg.messageTs) }));
@@ -1066,15 +1076,15 @@ export const createBot = ({
    * Automatic root-message retries never become follow-ups.
    */
   const handle = async (msg: IncomingMessage): Promise<void> => {
-    const key = slackKey(msg.channel, msg.threadTs);
+    const key = jobKey(msg.channel, msg.threadTs);
     await exclusive(key, async () => {
-      if (msg.user === chat.self()) return;
+      if (msg.user === chat.self(msg.channel)) return;
       const automatic = Boolean(msg.botId || msg.automaticTrigger);
       const trigger = automatic ? matchMessageTrigger(config.messageTriggers, msg.channel,
         msg.botId ? { botId: msg.botId } : { userId: msg.user }) : undefined;
       // Revalidate automatic sources; matching a rule never grants human allowlist membership.
       if (automatic && (!trigger || msg.threadTs !== msg.messageTs || (msg.botId && msg.user !== msg.botId))) return;
-      const allowed = config.allowed.has(msg.user);
+      const allowed = isAllowed(msg.user);
       const existing = getJob(key);
       if (existing) {
         // Slack delivered it again, or a held request is replayed after a crash: the job has it already.
@@ -1085,9 +1095,9 @@ export const createBot = ({
       const followsPing = !msg.direct && !trigger;
       if (followsPing) {
         // After "are you there?" / "I'm here", the pinger's next message is the request, with or without an @mention.
-        if (pingedBy(key) !== msg.user || audienceOf(chat.parse(msg.text), { userId: chat.self(), name: config.name }) === 'others') return;
+        if (pingedBy(key) !== msg.user || audienceOf(chat.parse(msg.channel, msg.text), { userId: chat.self(msg.channel), name: config.name }) === 'others') return;
       } else if (!trigger && !allowed) return refuse(msg);
-      const said = await toReadable(msg.text);
+      const said = await toReadable(msg.channel, msg.text);
       if (!said && !(trigger ? false : msg.files?.length)) return;
 
       // Only human pings receive the immediate acknowledgment instead of an investigation.
@@ -1104,7 +1114,7 @@ export const createBot = ({
 
       await setEyes(msg.channel, msg.messageTs, true);
       await setLoading(msg.channel, msg.threadTs, true);
-      const content = trigger ? Promise.resolve(said) : messageContent(msg.text, msg.files);
+      const content = trigger ? Promise.resolve(said) : messageContent(msg.channel, msg.text, msg.files);
       await content.then((request) => startJob(msg, request, said || 'files', trigger)).catch(async (error: unknown) => {
         await setEyes(msg.channel, msg.messageTs, false);
         await reportFailure(msg.channel, msg.threadTs, key, error, msg.user);
@@ -1197,7 +1207,7 @@ export const createBot = ({
 
   /** Whether a plain channel message belongs to a thread the bot owns. */
   const ownsThread = (channel: string, threadTs: string): boolean =>
-    getJob(slackKey(channel, threadTs)) !== undefined || pingedBy(slackKey(channel, threadTs)) !== undefined;
+    getJob(jobKey(channel, threadTs)) !== undefined || pingedBy(jobKey(channel, threadTs)) !== undefined;
 
   const reloader = createProfileReloader(config);
   /**
@@ -1221,7 +1231,7 @@ export const createBot = ({
   };
 
   /** A job in this thread is running now (its worker is being followed). Its messages still reach it while new work is paused. */
-  const runningIn = (channel: string, threadTs: string): boolean => { const job = getJob(slackKey(channel, threadTs)); return job !== undefined && followed(job.phase); };
+  const runningIn = (channel: string, threadTs: string): boolean => { const job = getJob(jobKey(channel, threadTs)); return job !== undefined && followed(job.phase); };
 
   /** Resolves once nothing the bot started is still running: no job step, no batch being checked or handed over. */
   const idle = async (): Promise<void> => {
@@ -1230,7 +1240,7 @@ export const createBot = ({
 
   /** Tells a request's thread that handling it failed, as a failed start would. For errors thrown past `handle`. */
   const reportUnhandled = (msg: IncomingMessage, error: unknown): Promise<void> =>
-    reportFailure(msg.channel, msg.threadTs, slackKey(msg.channel, msg.threadTs), error, msg.user);
+    reportFailure(msg.channel, msg.threadTs, jobKey(msg.channel, msg.threadTs), error, msg.user);
 
   return { handle, poll, reconcile, handleQuestionAction, ownsThread, runningIn, reloadProfile, drain: () => followUps.drain(), idle, reportUnhandled };
 };

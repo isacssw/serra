@@ -22,7 +22,7 @@ export interface T3ThreadDetail {
   messages: T3Message[];
 }
 
-/** One chat thread the bot owns, keyed `${channel}:${threadTs}` in state.json. */
+/** One chat thread the bot owns, keyed `${channel}:${threadTs}` in state.json (`jobKey`). */
 export interface Job {
   /** The agent thread the job follows: a T3 thread, or an ACP session. Saved as `t3ThreadId` before agent backends. */
   threadId: string;
@@ -110,10 +110,18 @@ export interface StartThreadInput {
 /** A thread that runs in the project's own folder, with no worktree: a meeting run, in Serra's empty meetings folder. */
 export type FolderThreadInput = Omit<StartThreadInput, 'baseRef' | 'branch'> & { baseRef?: undefined; branch?: undefined };
 
+/**
+ * A message a chat connection hands the core (`src/chat/connection.ts`). The field names are Slack's, from before other
+ * chats; each holds that chat's ID, named as `chatId` makes it (`telegram:42`; Slack's bare).
+ */
 export interface IncomingMessage {
+  /** The conversation. */
   channel: string;
+  /** The thread's root message. A message that starts a thread is its own root. */
   threadTs: string;
+  /** This message. */
   messageTs: string;
+  /** Who wrote it. */
   user: string;
   text: string;
   files?: IncomingFile[];
