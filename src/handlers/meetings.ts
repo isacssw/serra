@@ -63,6 +63,8 @@ export const meetingsHandlers = (context: CoreContext, options: MeetingsHandlerO
   // A new service per call: the profile folder can change while the app runs.
   const store = () => createMeetingStore({ knowledgeDir: join(context.profileDir(), 'knowledge') });
   const settings = () => ({ ...readMeetingSettings(context.profileDir()), notice: MEETING_NOTICE });
+  /** The profile's agent changed: the switcher, Settings › Profiles and the menubar show it (eve's cloud mark). */
+  const agentChanged = (): void => context.push?.('profiles', null);
   const backendView = async (profileDir: string, path?: string): Promise<AgentBackendView> => {
     const current = readAgentBackend(profileDir);
     return {
@@ -120,6 +122,7 @@ export const meetingsHandlers = (context: CoreContext, options: MeetingsHandlerO
       if (agent && !agentChoices(current, path).some((entry) => entry.id === agent && entry.installed)) throw new Error('That ACP agent isn’t installed on this Mac.');
       if (choice.model !== undefined && typeof choice.model !== 'string') throw new Error('That isn’t a model name.');
       writeAgentBackend(profileDir, { backend: choice.backend, agent, ...(typeof choice.model === 'string' ? { model: choice.model } : {}) });
+      agentChanged();
       return backendView(profileDir, path);
     },
     addAcpAgent: async (input): Promise<AgentBackendView> => {
@@ -157,11 +160,13 @@ export const meetingsHandlers = (context: CoreContext, options: MeetingsHandlerO
     connectEve: async (input): Promise<AgentBackendView> => {
       const profileDir = context.profileDir();
       await connectEve(profileDir, eveInput(input), options.eve);
+      agentChanged();
       return backendView(profileDir);
     },
     disconnectEve: async (): Promise<AgentBackendView> => {
       const profileDir = context.profileDir();
       await disconnectEve(profileDir, options.eve);
+      agentChanged();
       return backendView(profileDir);
     },
     openAgentBackendConfig: async () => {

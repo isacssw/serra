@@ -247,6 +247,19 @@ test('eve on Vercel: Check sends nothing until the notice for the URL’s host i
   assert.equal(eveProblemOf('', { code: -32002, data: { httpStatus: 403 } }), 'protected');
 });
 
+test('eve on Vercel: connecting or removing it tells the window the profiles changed, so the cloud mark follows', async (t) => {
+  const f = fixture(t);
+  const dir = f.profile('ada');
+  const keychain = fakeKeychain();
+  const pushed: string[] = [];
+  const context = { ...f.context(dir), push: (channel: string) => { pushed.push(channel); } } as ReturnType<typeof f.context>;
+  const handlers = meetingsHandlers(engineContext(context), { searchPath: async () => process.env.PATH ?? '', eve: { store: keychain.store, readSecret: keychain.readSecret, makeAcp: f.makeAcp({ FAKE_ACP_VERSION: '1.5.0' }), now: () => new Date('2026-11-28T12:00:00Z') } });
+  await handlers.connectEve({ url: URL_, accept: HOST });
+  assert.deepEqual(pushed, ['profiles']);
+  await handlers.disconnectEve();
+  assert.deepEqual(pushed, ['profiles', 'profiles']);
+});
+
 test('eve on Vercel: Settings connects only after a passing Check, disconnects with its Keychain item, and refuses while it has a run going; other agents are unchanged', async (t) => {
   const f = fixture(t);
   const dir = f.profile('ada');
