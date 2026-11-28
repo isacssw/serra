@@ -484,8 +484,26 @@ test('an update is refused for an older version, a branch, or a folder that isn�
   await assert.rejects(t480.client.update('main'), /isn’t a Serra version/);
   await t480.client.update('0.1.0-alpha.10');
   assert.equal(updateProblem({ root: folder(t, 'serra-x-'), code: folder(t, 'serra-y-'), current: '0.1.0-alpha.9', version: '0.1.0-alpha.10' }), 'Serra on this server isn’t a git checkout. Update it from its terminal.');
-  const state = await t480.client.updateState();
-  assert.deepEqual(state, { update: null, version: '0.1.0-alpha.9' });
+  // The answer already says this update is going, never the last one's ending; a second one waits for it.
+  const state = await t480.client.updateState() as { update: { state: string; to: string } | null };
+  assert.equal(state.update?.state, 'updating');
+  assert.equal(state.update?.to, '0.1.0-alpha.10');
+  await assert.rejects(t480.client.update('0.1.0-alpha.10'), /already running/);
+  // A gateway that can't launch it leaves the state as it was.
+  const away = await server(t, 'x220');
+  mkdirSync(join(away.root, '.git'));
+  await away.gateway.close();
+  const refusing = await startGateway({
+    root: away.root, addresses: ['127.0.0.1'], port: 0, version: '0.1.0-alpha.9',
+    engines: serverEngines({ root: away.root, runtime: { version: '0.1.0-alpha.9', platform: 'linux' }, events: eventLog(), subscribe: () => ({ close() {} }) }),
+    update: { problem: (to) => updateProblem({ root: away.root, code: away.root, current: '0.1.0-alpha.9', version: to }), launch: async () => { throw new Error('Update x220 from its terminal.'); } },
+  });
+  t.after(() => refusing.close());
+  const { cert, fingerprint } = gatewayCert(away.root, 'x220');
+  const token = addDevice(away.root, 'Test Mac 2').token;
+  const client = gatewayClient({ endpoint: async () => ({ host: '127.0.0.1', port: refusing.port }), pin: { cert, fingerprint }, token: async () => token, name: 'x220' });
+  await assert.rejects(client.update('0.1.0-alpha.10'), /from its terminal/);
+  assert.equal(readUpdateState(away.root), null);
 });
 
 test('the window says it in a few words: titles, steps, the stop button, the away line and the update button', () => {
