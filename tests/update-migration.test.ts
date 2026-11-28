@@ -5,15 +5,15 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSyn
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test, { type TestContext } from 'node:test';
-import { botSyncDecision, type BotSyncInput } from '../app/main/bot-sync.ts';
-import type { HandlerContext } from '../app/main/ipc/context.ts';
-import { updatesHandlers, updatesService } from '../app/main/ipc/updates.ts';
+import { botSyncDecision, type BotSyncInput } from '../src/bot-sync.ts';
+import { updatesHandlers, updatesService } from '../src/handlers/updates.ts';
 import { memoryPrefs } from '../app/main/prefs.ts';
-import { stoppedStatusSource } from '../app/main/status.ts';
+import { stoppedStatusSource } from '../src/status-source.ts';
 import { botLine, clearedLine, followDialog, noteLines, UPGRADE_NOTE_START } from '../app/renderer/screens/updates.logic.ts';
 import { releaseNotes, UPGRADE_NOTE } from '../scripts/release.ts';
 import { createProfile } from '../src/setup.ts';
 import { classifySource, clearUpdateSource, migrateStaleUpdateSource } from '../src/update-migration.ts';
+import { engineContext, type AppContext } from './fakes/app-context.ts';
 
 const fixture = (t: TestContext) => {
   const root = mkdtempSync(join(tmpdir(), 'serra-update-migration-'));
@@ -141,7 +141,7 @@ test('a profile that does not validate is left exactly as it is, and the failure
   assert.ok(!existsSync(join(f.directory, 'backups')) || readdirSync(join(f.directory, 'backups')).length === 0, 'no backup without a change');
 });
 
-const contextFor = (profileDir: string, packaged: boolean): HandlerContext => ({
+const contextFor = (profileDir: string, packaged: boolean): AppContext => ({
   profileDir: () => profileDir,
   profileDirOrNull: () => profileDir,
   prefs: memoryPrefs(),
@@ -156,7 +156,7 @@ test('the Updates screen: a stale source is cleared once per launch and said in 
   const f = fixture(t);
   f.setSource(join(f.root, 'deleted-clone'));
   let clock = Date.parse('2026-11-22T10:00:00.000Z');
-  const handlers = updatesHandlers(contextFor(f.directory, true), { echo: () => {}, now: () => clock });
+  const handlers = updatesHandlers(engineContext(contextFor(f.directory, true)), { echo: () => {}, now: () => clock });
   // A missing folder may only be being moved: the first look keeps it, a look a minute later clears it.
   assert.equal((await handlers.status()).releases?.mode, 'developer');
   clock += 30_000;
@@ -169,14 +169,14 @@ test('the Updates screen: a stale source is cleared once per launch and said in 
   assert.equal(clearedLine(status.sourceCleared!, f.root), 'Cleared the old update source ~/deleted-clone (the folder is gone), so the bot follows app updates again. profile.json was backed up first.');
 
   // The notice outlives a restart, for a week.
-  const restarted = updatesHandlers(contextFor(f.directory, true), { echo: () => {}, now: () => clock + 6 * 24 * 60 * 60_000 });
+  const restarted = updatesHandlers(engineContext(contextFor(f.directory, true)), { echo: () => {}, now: () => clock + 6 * 24 * 60 * 60_000 });
   assert.equal((await restarted.status()).sourceCleared?.source, join(f.root, 'deleted-clone'));
-  const later = updatesHandlers(contextFor(f.directory, true), { echo: () => {}, now: () => clock + 8 * 24 * 60 * 60_000 });
+  const later = updatesHandlers(engineContext(contextFor(f.directory, true)), { echo: () => {}, now: () => clock + 8 * 24 * 60 * 60_000 });
   assert.equal((await later.status()).sourceCleared, null);
 
   // A checkout the owner set on purpose stays until they choose otherwise.
   f.setSource(f.checkout);
-  const developer = updatesHandlers(contextFor(f.directory, true), { echo: () => {}, now: () => clock + 60 * 60_000 });
+  const developer = updatesHandlers(engineContext(contextFor(f.directory, true)), { echo: () => {}, now: () => clock + 60 * 60_000 });
   const before = await developer.status();
   assert.equal(before.releases?.mode, 'developer');
   assert.equal(before.sourceCleared, null, 'no notice in developer mode');
@@ -194,7 +194,7 @@ test('the Updates screen: a stale source is cleared once per launch and said in 
 
   // A copy run from source never clears anything.
   f.setSource(join(f.root, 'deleted-clone'));
-  const source = await updatesHandlers(contextFor(f.directory, false), { echo: () => {} }).status();
+  const source = await updatesHandlers(engineContext(contextFor(f.directory, false)), { echo: () => {} }).status();
   assert.equal(source.releases?.mode, 'developer');
   assert.equal(source.followsApp, false);
   assert.equal(source.sourceCleared, null);
@@ -242,7 +242,7 @@ test('with a bot from before alpha.3 running a job, Updates and its log make no 
   }));
   const log: string[] = [];
   const driver = { loaded: async () => true, stop: async () => {}, start: async () => {}, ready: async () => {} };
-  const { handlers, tick } = updatesService({ ...contextFor(f.directory, true), every: () => {} }, { echo: (line) => log.push(line), deploy: { driver } });
+  const { handlers, tick } = updatesService(engineContext({ ...contextFor(f.directory, true), every: () => {} }), { echo: (line) => log.push(line), deploy: { driver } });
   const before = await handlers.status();
   assert.deepEqual(before.bot, { state: 'waiting', from: null, to: '0.1.0-alpha.4', jobs: 1, paused: false });
   assert.doesNotMatch(botLine(before.bot)!.detail, /New requests wait/);
@@ -255,7 +255,7 @@ test('with a bot from before alpha.3 running a job, Updates and its log make no 
   mkdirSync(join(release, 'src'), { recursive: true });
   writeFileSync(join(release, 'src/intake.ts'), '');
   writeFileSync(join(f.directory, 'active.json'), JSON.stringify({ ...record, release, appVersion: '0.1.0-alpha.2', fromApp: true }));
-  const holding = await updatesService({ ...contextFor(f.directory, true), every: () => {} }, { echo: () => {}, deploy: { driver } }).handlers.status();
+  const holding = await updatesService(engineContext({ ...contextFor(f.directory, true), every: () => {} }), { echo: () => {}, deploy: { driver } }).handlers.status();
   assert.equal(holding.bot.state === 'waiting' && holding.bot.paused, true);
   assert.match(botLine(holding.bot)!.detail, /New requests wait until then/);
 });
@@ -267,7 +267,7 @@ test('a folder that is not Serra’s code is cleared only if it still is a minut
   writeFileSync(join(copying, 'README.md'), '# Serra\n');
   f.setSource(copying);
   let clock = Date.parse('2026-11-22T10:00:00.000Z');
-  const handlers = updatesHandlers(contextFor(f.directory, true), { echo: () => {}, now: () => clock });
+  const handlers = updatesHandlers(engineContext(contextFor(f.directory, true)), { echo: () => {}, now: () => clock });
   assert.equal((await handlers.status()).releases?.mode, 'developer');
   writeFileSync(join(copying, 'package.json'), '{"name":"serra"}');
   clock += 61_000;

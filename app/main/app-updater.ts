@@ -7,38 +7,10 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import {
   compareVersions, download, downloadText, fetchReleases, includePrereleases, isAppRelease, parseVersion, pickUpdate, verifyChecksum,
-  type AppRelease, type Fetch,
+  type AppRelease, type AppUpdatePhase, type AppUpdateView, type Fetch, type InstallPlan,
 } from '../../src/app-updates.ts';
 import { isOptional, isRecord, isString, readJsonFile, readJsonOrNull } from '../../src/lib/guards.ts';
 import { run } from '../../src/t3.ts';
-
-/** How a downloaded update gets installed: Serra swaps itself, or the owner drags it from the opened disk image. */
-export type InstallPlan = { kind: 'replace' } | { kind: 'installer'; reason: string; folder: string };
-
-export type AppUpdatePhase =
-  /** Updates can't run here (a copy run from source). */
-  | { state: 'unavailable'; reason: string }
-  | { state: 'idle' }
-  | { state: 'checking' }
-  | { state: 'up-to-date'; checkedAt: string }
-  | { state: 'available'; release: AppRelease; checkedAt: string }
-  /** A newer release has no build for this Mac. */
-  | { state: 'no-build'; version: string; url: string; reason: 'arch' | 'checksum'; checkedAt: string }
-  | { state: 'downloading'; release: AppRelease; received: number; total: number | null }
-  | { state: 'verifying'; release: AppRelease }
-  | { state: 'ready'; release: AppRelease; install: InstallPlan }
-  | { state: 'installing'; release: AppRelease }
-  | { state: 'error'; stage: 'check' | 'download' | 'verify' | 'install'; message: string; release?: AppRelease };
-
-/** What the Updates screen shows about the app. */
-export type AppUpdateView = AppUpdatePhase & {
-  /** The installed version, `app.getVersion()`. */
-  current: string;
-  /** Whether prereleases are offered now, the owner's choice (null: the default) and the default (on while on a prerelease). */
-  prereleases: { on: boolean; choice: boolean | null; byDefault: boolean };
-  /** Set on the first launch after an update: the version it came from. */
-  updatedFrom: string | null;
-};
 
 export interface AppUpdaterDeps {
   current: string;

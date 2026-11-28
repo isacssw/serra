@@ -2,17 +2,18 @@
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { latestReview } from '../../../src/knowledge-review-store.ts';
-import { createProposals, type Reviewed } from '../../../src/proposals.ts';
-import { similarPages } from '../../../src/knowledge-health.ts';
-import { listKnowledgeFiles } from '../../../src/knowledge-overview.ts';
-import type { Audience } from '../../../src/owner-model.ts';
-import type { Handlers } from '../bridge.ts';
-import type { HandlerContext } from './context.ts';
+import { latestReview } from '../knowledge-review-store.ts';
+import { createProposals, type Reviewed } from '../proposals.ts';
+import { similarPages } from '../knowledge-health.ts';
+import { listKnowledgeFiles } from '../knowledge-overview.ts';
+import type { Audience } from '../owner-model.ts';
+import { isRecord } from '../lib/guards.ts';
+import type { Handlers } from '../api.ts';
+import type { CoreContext } from './context.ts';
 
 /** What the screen showed the owner: the proposal's text and the page it changes, as strings (null for a new page). */
 const reviewedInput = (value: unknown): Reviewed => {
-  const shown = value as Partial<Reviewed> | null;
+  const shown = isRecord(value) ? value : null;
   if (!shown || typeof shown.proposal !== 'string' || (shown.page !== null && typeof shown.page !== 'string') || (shown.path !== null && typeof shown.path !== 'string')) {
     throw new Error('Review the proposal in the app before approving it.');
   }
@@ -31,7 +32,7 @@ const text = (value: unknown, what: string): string => {
   return value;
 };
 
-export const proposalsHandlers = (context: HandlerContext): Handlers<'proposals'> => {
+export const proposalsHandlers = (context: CoreContext): Handlers<'proposals'> => {
   // A new service per call: the profile folder can change while the app runs.
   const service = () => createProposals({ knowledgeDir: join(context.profileDir(), 'knowledge') });
   return {

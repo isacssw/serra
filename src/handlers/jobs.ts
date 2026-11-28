@@ -1,16 +1,16 @@
 // Jobs screen (APP-12), on APP-7's read service and worktree cleanup. Only parses input and calls `src/`.
-import { applyWorktreeCleanup, planWorktreeCleanup, profileT3Bin, runCommand, type Runner } from '../../../src/cleanup.ts';
-import { listJobs, t3ThreadLookup, type ThreadInfo, type ThreadLookup } from '../../../src/jobs.ts';
-import { slackWorkspace } from '../../../src/secrets.ts';
-import { slackMentions, slackPlainText, type SlackNames } from '../../../src/slack-names.ts';
-import { t3TaskState } from '../../../src/tasks.ts';
-import { acpChat, chatImage, t3Chat } from '../../../src/agent/runs-view.ts';
-import { createT3Backend } from '../../../src/agent/t3.ts';
-import { showThread } from '../../../src/t3.ts';
-import { isRecord } from '../../../src/json-guards.ts';
-import { requestRun } from '../../../src/status-socket.ts';
-import type { Handlers } from '../bridge.ts';
-import type { HandlerContext } from './context.ts';
+import { applyWorktreeCleanup, planWorktreeCleanup, profileT3Bin, runCommand, type Runner } from '../cleanup.ts';
+import { listJobs, t3ThreadLookup, type ThreadInfo, type ThreadLookup } from '../jobs.ts';
+import { slackWorkspace } from '../secrets.ts';
+import { slackMentions, slackPlainText, type SlackNames } from '../slack-names.ts';
+import { t3TaskState } from '../tasks.ts';
+import { acpChat, chatImage, t3Chat } from '../agent/runs-view.ts';
+import { createT3Backend } from '../agent/t3.ts';
+import { showThread } from '../t3.ts';
+import { isRecord } from '../json-guards.ts';
+import { requestRun } from '../status-socket.ts';
+import type { Handlers } from '../api.ts';
+import type { CoreContext } from './context.ts';
 import { profileSlackNames, type ProfileNames, type SlackNamesDeps } from './slack-names.ts';
 
 export interface JobsDeps {
@@ -96,7 +96,7 @@ const withNames = (rows: Row[], names: SlackNames): Row[] => {
   });
 };
 
-export const jobsHandlers = (context: HandlerContext, { run = runCommand, now = () => new Date(), worktreesRoot, names, slackNames = {}, daemon = requestRun }: JobsDeps = {}): Handlers<'jobs'> => {
+export const jobsHandlers = (context: CoreContext, { run = runCommand, now = () => new Date(), worktreesRoot, names, slackNames = {}, daemon = requestRun }: JobsDeps = {}): Handlers<'jobs'> => {
   /** The ACP backend a run is on, from its record. */
   const backendOf = (threadId: string): string => {
     const found = acpChat(context.profileDir(), threadId);

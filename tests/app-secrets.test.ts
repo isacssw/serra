@@ -4,11 +4,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test, { type TestContext } from 'node:test';
 import { createBridge, type InvokeResult } from '../app/main/bridge.ts';
-import { createHandlers, registerHandlers, type IpcRegistrar } from '../app/main/ipc/index.ts';
-import type { HandlerContext } from '../app/main/ipc/context.ts';
-import { secretsHandlers } from '../app/main/ipc/secrets.ts';
+import { registerHandlers, type IpcRegistrar } from '../app/main/router.ts';
+import { secretsHandlers } from '../src/handlers/secrets.ts';
 import { memoryPrefs } from '../app/main/prefs.ts';
-import { stoppedStatusSource } from '../app/main/status.ts';
+import { stoppedStatusSource } from '../src/status-source.ts';
 import {
   ago, draftFor, isDirty, saveRequest, sourceDetail, statusLine, statusPill,
 } from '../app/renderer/screens/secrets.logic.ts';
@@ -16,6 +15,7 @@ import type { Profile } from '../src/config.ts';
 import type { SecretStatus } from '../src/contracts.ts';
 import type { SecretTools, SlackVerify } from '../src/secrets.ts';
 import { createProfile } from '../src/setup.ts';
+import { createHandlers, engineContext, type AppContext } from './fakes/app-context.ts';
 
 const BOT = 'xoxb-1111-2222-fixturevalue';
 const APP = 'xapp-1-A111-2222-fixturevalue';
@@ -69,7 +69,7 @@ process.stdout.write(${JSON.stringify(BOT)});
   return { dir, tools, keychain: () => JSON.parse(readFileSync(keychain, 'utf8')) as Record<string, string> };
 };
 
-const context = (dir: string): HandlerContext => ({
+const context = (dir: string): AppContext => ({
   profileDir: () => dir,
   profileDirOrNull: () => dir,
   prefs: memoryPrefs(),
@@ -91,7 +91,7 @@ const verify: SlackVerify = async (_name, token) => {
  */
 const wire = (dir: string, tools: Partial<SecretTools>) => {
   const ctx = context(dir);
-  const handlers = { ...createHandlers(ctx), secrets: secretsHandlers(ctx, { tools, verify }) };
+  const handlers = { ...createHandlers(ctx), secrets: secretsHandlers(engineContext(ctx), { tools, verify }) };
   const channels = new Map<string, Parameters<IpcRegistrar['handle']>[1]>();
   registerHandlers({ handle: (channel, listener) => { channels.set(channel, listener); } }, handlers, (url) => url === APP_PAGE);
   const seen: string[] = [];

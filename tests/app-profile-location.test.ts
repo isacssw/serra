@@ -3,7 +3,8 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import test from 'node:test';
-import { profilesUnder, profileToRemember, startupProfile } from '../app/main/profile-location.ts';
+import { profileToRemember, startupProfile } from '../app/main/profile-location.ts';
+import { profilesUnder } from '../src/profiles.ts';
 
 test('--profile or BOT_PROFILE wins over the saved folder and discovery', () => {
   assert.equal(startupProfile({ argument: '/p/arg', saved: '/p/saved', discovered: ['/p/one'] }), '/p/arg');

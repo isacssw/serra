@@ -1,11 +1,11 @@
 // Brief and policy (APP-21), on the services in src/brief.ts. Handlers check the shape of what the window sent and
 // call them. The preview goes through `fillBrief`/`fillBriefText` with the profile's config and knowledge index,
 // the same call the daemon makes for a job. Tokens are read lazily by the config and are never touched here.
-import { briefProblems, createBriefService, fillBrief, fillBriefText, isBriefDocument, sampleBriefInput, type BriefDocumentName } from '../../../src/brief.ts';
-import { loadConfig } from '../../../src/config.ts';
-import { createKnowledge } from '../../../src/knowledge.ts';
-import type { Handlers } from '../bridge.ts';
-import type { HandlerContext } from './context.ts';
+import { briefProblems, createBriefService, fillBrief, fillBriefText, isBriefDocument, sampleBriefInput, type BriefDocumentName } from '../brief.ts';
+import { loadConfig } from '../config.ts';
+import { createKnowledge } from '../knowledge.ts';
+import type { Handlers } from '../api.ts';
+import type { CoreContext } from './context.ts';
 
 const documentName = (value: unknown): BriefDocumentName => {
   if (!isBriefDocument(value)) throw new Error(`Unknown document: ${String(value)}. Use brief or policy.`);
@@ -23,7 +23,7 @@ const nonEmpty = (value: unknown, what: string): string => {
   return result;
 };
 
-export const briefHandlers = (context: HandlerContext): Handlers<'brief'> => {
+export const briefHandlers = (context: CoreContext): Handlers<'brief'> => {
   // A new service per call: the profile folder can change while the app runs.
   const service = () => createBriefService({ profileDir: context.profileDir() });
   return {

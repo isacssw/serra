@@ -15,10 +15,14 @@ Rules a tool checks are left out here; `pnpm check` and CI tell you. Humans: [CO
 
 - `src/` runs in plain Node and never imports `app/`, Electron or React. `src/index.ts` starts the daemon,
   `src/manage.ts` is `pnpm bot`, `src/contracts.ts` holds the types the app shares.
-- `app/main/` is the Electron main process: IPC handlers that call `src/`. It never imports renderer code.
+- The engine is `src/handlers/`: one file per namespace of `SerraApi` (`src/api.ts`), built by `createEngine` over a
+  `CoreContext` (`src/handlers/context.ts`), so it runs in the app or headless. Handlers only parse input and call a
+  service. What only the person's computer can do (dialogs, Finder, Trash) goes through `context.host` (`HostPort`).
+- `app/main/` is the Electron main process: the host. `host.ts` answers the `app` namespace and implements `HostPort`;
+  `router.ts` sends every other call to the engine (in this process for now). It never imports renderer code.
 - `app/renderer/` is browser code: no Node or Electron values, `app/main` only through `import type`, and values from
-  `src/` only from the pure modules listed in `.oxlintrc.json`. Everything else goes through `window.serra`, typed by
-  `SerraApi` in `app/main/bridge.ts`.
+  `src/` only from the pure modules listed in `.oxlintrc.json`. Everything else goes through `window.serra`
+  (`app/main/bridge.ts`), typed by `SerraApi`.
 - `*.logic.ts` is the pure, tested half of a screen or service: no React, Electron or `node:` values. Put logic there.
 - The core reaches a chat only through `ChatPort` (`src/chat/port.ts`). Each chat is a `ChatConnection`
   (`src/chat/connection.ts`: sign-in, inbound messages and card answers, the ⏳ hold, meeting capture's seam), made

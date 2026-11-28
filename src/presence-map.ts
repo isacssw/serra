@@ -2,9 +2,9 @@
 // `status.sock`, kept open while the profile is listed, so the switcher, the menubar and notifications see each bot as
 // it is now. A profile reports null (`checking`) until its daemon first answers; never a guessed or cached state.
 // Reading only: following a profile never writes into its folder.
-import type { BotEvent, BotStatus } from '../../src/contracts.ts';
-import { subscribeStatus } from '../../src/status-socket.ts';
-import type { StatusSubscriber } from './status.ts';
+import type { BotEvent, BotStatus } from './contracts.ts';
+import { subscribeStatus } from './status-socket.ts';
+import type { StatusSubscriber } from './status-source.ts';
 
 /** A profile the map follows: its folder and the name its notifications and menubar row use. */
 export interface FollowedProfile { dir: string; name: string }

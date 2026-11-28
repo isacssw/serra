@@ -5,15 +5,15 @@
 // anything shaped like a Slack token before it reaches the window.
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import { loadConfig, type Config } from '../../../src/config.ts';
-import type { Diagnostic } from '../../../src/contracts.ts';
-import { diagnose, type DiagnoseOptions } from '../../../src/doctor.ts';
-import { tailLog } from '../../../src/logging.ts';
-import { findNode } from '../../../src/releases.ts';
-import { scrub } from '../../../src/secrets.ts';
-import { tildePaths } from '../../../src/lib/tilde.ts';
-import type { Handlers } from '../bridge.ts';
-import type { HandlerContext } from './context.ts';
+import { loadConfig, type Config } from '../config.ts';
+import type { Diagnostic } from '../contracts.ts';
+import { diagnose, type DiagnoseOptions } from '../doctor.ts';
+import { tailLog } from '../logging.ts';
+import { findNode } from '../releases.ts';
+import { scrub } from '../secrets.ts';
+import { tildePaths } from '../lib/tilde.ts';
+import type { Handlers } from '../api.ts';
+import type { CoreContext } from './context.ts';
 
 /** The most log lines one call returns. */
 export const MAX_LOG_LINES = 2000;
@@ -42,7 +42,7 @@ const tokenValues = (config: Config): (string | undefined)[] => [
 /** The daemon's log, where launchd sends its stdout and stderr (`deploy.ts`). */
 const daemonLogPath = (profileDir: string): string => join(profileDir, 'logs', 'bot.log');
 
-export const diagnosticsHandlers = (context: HandlerContext, options: DiagnosticsHandlerOptions = {}): Handlers<'diagnostics'> => {
+export const diagnosticsHandlers = (context: CoreContext, options: DiagnosticsHandlerOptions = {}): Handlers<'diagnostics'> => {
   const load = options.loadConfig ?? ((profileDir: string) => loadConfig({ profileDir, env: {} }));
   const check = options.diagnose ?? diagnose;
   const locateNode = options.findNode ?? findNode;

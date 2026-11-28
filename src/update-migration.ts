@@ -191,7 +191,7 @@ export const staleSource = (profileDir: string, packaged: boolean): { source: st
 /**
  * In a packaged app, clears an update source that can never work, so an owner who set one under alpha.2 isn't left
  * in developer mode. A real Serra checkout is kept: that is a choice only the owner can undo. Never throws; returns
- * what it cleared, or null, and passes a failure to `log`. One look: the app itself (app/main/ipc/updates.ts) uses
+ * what it cleared, or null, and passes a failure to `log`. One look: the engine (src/handlers/updates.ts) uses
  * `staleSource` and `clearUpdateSource` directly, looking twice before clearing a `missing` one in case it was moving.
  */
 export const migrateStaleUpdateSource = (profileDir: string, { packaged, now = new Date(), log }: { packaged: boolean; now?: Date; log?: (line: string) => void }): ClearedSource | null => {

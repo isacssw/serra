@@ -4,18 +4,17 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSyn
 import { tmpdir } from 'node:os';
 import { delimiter, join } from 'node:path';
 import test, { type TestContext } from 'node:test';
-import type { HandlerContext } from '../app/main/ipc/context.ts';
-import { secretsHandlers } from '../app/main/ipc/secrets.ts';
-import { setupHandlers } from '../app/main/ipc/setup.ts';
+import { secretsHandlers } from '../src/handlers/secrets.ts';
+import { setupHandlers } from '../src/handlers/setup.ts';
 import type { MenuItemConstructorOptions } from 'electron';
 import { createBridge, type InvokeResult } from '../app/main/bridge.ts';
-import { createHandlers, registerHandlers } from '../app/main/ipc/index.ts';
+import { registerHandlers } from '../app/main/router.ts';
 import { menuTemplate } from '../app/main/menu.ts';
 import { defaultPrefs, memoryPrefs, mergePrefs, readPrefs } from '../app/main/prefs.ts';
 import { routes } from '../app/renderer/routes.ts';
 import { isSetupIncomplete, SETUP_INCOMPLETE, SETUP_INCOMPLETE_MESSAGE, SetupIncomplete } from '../src/setup-incomplete.ts';
 import { isTokenVerdict } from '../src/token-errors.ts';
-import { stoppedStatusSource } from '../app/main/status.ts';
+import { stoppedStatusSource } from '../src/status-source.ts';
 import {
   announcement, DONE_PATH, draftErrors, lockedReason, draftRequest, draftToSave, emptyDraft, foundLine, nextPath, outcomeText, pickable, previousPath,
   plainError, restoreDraft, slackAppCard, resumePath, ringDash, shortPath, tokenRefused, tokenText, setupRowLabel, slackLine, startView, stepOpen, suggestId, summaryRows, tokensToPrecheck, toToken,
@@ -30,6 +29,7 @@ import {
   certainPresence, confirmOwner, createProfile, createSetupProfile, detectProject, installService, profileFromDraft, setupProgress,
   slackManifest, suggestBotId, summarizeProfile, type MemberLookup, type ProfileDraft, type ProfileSummary, type SetupProgress,
 } from '../src/setup.ts';
+import { createHandlers, engineContext, type AppContext } from './fakes/app-context.ts';
 
 const BOT = 'xoxb-1111-2222-fixturevalue';
 const APP = 'xapp-1-A111-2222-fixturevalue';
@@ -97,7 +97,7 @@ process.exit(0);
   return { root, project, bin, t3, keychain: () => JSON.parse(readFileSync(keychain, 'utf8')) as Record<string, string> };
 };
 
-const context = (prefsDir: string | null = null): HandlerContext & { pushed: string[] } => {
+const context = (prefsDir: string | null = null): AppContext & { pushed: string[] } => {
   const prefs = memoryPrefs({ ...defaultPrefs, profileDir: prefsDir });
   const pushed: string[] = [];
   return {
@@ -158,7 +158,7 @@ test('the wizard takes an empty profile folder to a valid profile, an installed 
   const { calls, driver } = fakeLaunchd();
   const agents = join(f.root, 'LaunchAgents');
   const logged: string[] = [];
-  const setup = setupHandlers(ctx, {
+  const setup = setupHandlers(engineContext(ctx), {
     root: join(f.root, 'profiles'),
     findNode: async () => process.execPath,
     lookup,
@@ -167,7 +167,7 @@ test('the wizard takes an empty profile folder to a valid profile, an installed 
     echo: (line) => logged.push(line),
     install: { deploy: { driver, launchAgentsDir: agents }, diagnose: { slack }, prepareRelease: prepareWithoutInstall },
   });
-  const secrets = secretsHandlers(ctx, { verify });
+  const secrets = secretsHandlers(engineContext(ctx), { verify });
   const responses: unknown[] = [];
   const call = async <T>(promise: T | Promise<T>): Promise<T> => { const value = await promise; responses.push(value); return value; };
 
@@ -296,7 +296,7 @@ test('create through IPC remembers the profile, and says so when --profile pins 
   const f = fixture(t);
   const pinned = context();
   pinned.profileDirOrNull = () => '/Users/you/pinned';
-  const handlers = setupHandlers(pinned, { root: f.root });
+  const handlers = setupHandlers(engineContext(pinned), { root: f.root });
   await assert.rejects(async () => handlers.create(draft(f, join(f.root, 'new'))), /started with --profile \/Users\/you\/pinned/);
   assert.ok(existsSync(join(f.root, 'new', 'profile.json')));
   await assert.rejects(async () => handlers.create({ ...draft(f, join(f.root, 'x')), botName: 42 } as unknown as ProfileDraft), /botName must be text/);
@@ -352,10 +352,10 @@ test('installing is macOS only, and one install runs at a time', async (t) => {
   const f = fixture(t);
   const ctx = context(join(f.root, 'friday'));
   await createSetupProfile(draft(f, join(f.root, 'friday')));
-  const linux = setupHandlers({ ...ctx, runtime: { ...ctx.runtime, platform: 'linux' } });
+  const linux = setupHandlers(engineContext({ ...ctx, runtime: { ...ctx.runtime, platform: 'linux' } }));
   await assert.rejects(async () => linux.installService(), /macOS only/);
   let release!: () => void;
-  const handlers = setupHandlers(ctx, { findNode: () => new Promise((_, fail) => { release = () => fail(new Error('No supported Node')); }), echo: () => {} });
+  const handlers = setupHandlers(engineContext(ctx), { findNode: () => new Promise((_, fail) => { release = () => fail(new Error('No supported Node')); }), echo: () => {} });
   const first = handlers.installService();
   await assert.rejects(async () => handlers.installService(), /already being installed/);
   release();
@@ -600,7 +600,7 @@ test('detect lists every profile found, and useProfile switches to one, unless -
   cliProfile(f, join(root, 'jarvis'), 'jarvis');
   const ctx = context();
   const deps = { root, launchAgentsDir: join(f.root, 'agents') };
-  const setup = setupHandlers(ctx, deps);
+  const setup = setupHandlers(engineContext(ctx), deps);
 
   const none = await setup.detect();
   assert.equal(none.selected, null);
@@ -617,14 +617,14 @@ test('detect lists every profile found, and useProfile switches to one, unless -
   assert.equal(ctx.prefs.get().profileDir, join(root, 'jarvis'));
 
   const pinnedCtx = { ...context(join(root, 'friday')), profilePinned: true };
-  const pinned = setupHandlers(pinnedCtx, deps);
+  const pinned = setupHandlers(engineContext(pinnedCtx), deps);
   assert.equal((await pinned.detect()).pinned, true);
   await assert.rejects(async () => pinned.useProfile(join(root, 'jarvis')), /command line/);
 
   // The folder dialog is main's; without one (tests, smoke) nothing is chosen.
   assert.equal(await setup.chooseFolder('repository'), null);
   const asked: string[] = [];
-  const withDialog = setupHandlers({ ...ctx, chooseFolder: async ({ title }) => { asked.push(title); return '/Users/you/project'; } }, deps);
+  const withDialog = setupHandlers(engineContext({ ...ctx, chooseFolder: async ({ title }) => { asked.push(title); return '/Users/you/project'; } }), deps);
   assert.equal(await withDialog.chooseFolder('repository'), '/Users/you/project');
   assert.deepEqual(asked, ['Choose the repository']);
   await assert.rejects(async () => withDialog.chooseFolder('elsewhere' as 'profile'), /Unknown folder purpose/);
@@ -640,7 +640,7 @@ test('creating the profile clears the saved draft; prefs keep only known draft f
   assert.throws(() => mergePrefs(ctx.prefs.get(), { setupDraft: 'Friday' }), /object or null/);
   assert.deepEqual(readPrefs({ setupDraft: { botName: 42 } }).setupDraft, null);
 
-  await setupHandlers(ctx, { root: f.root }).create(draft(f, join(f.root, 'friday')));
+  await setupHandlers(engineContext(ctx), { root: f.root }).create(draft(f, join(f.root, 'friday')));
   assert.equal(ctx.prefs.get().setupDraft, null);
 });
 
@@ -710,7 +710,7 @@ test('a passing check counts only while the token is still there, and a stopped 
   const up = { state: 'up', pid: 1, startedAt: at, slackConnected: true, counts: { needsYou: 0, running: 0 } } as const;
   let current: { state: 'stopped' } | typeof up = { state: 'stopped' };
   ctx.status = { current: () => current, subscribe: (l) => { listener = l.status as never; return () => { listener = null; }; } };
-  const handlers = setupHandlers(ctx, { launchAgentsDir: agents, answerWaitMs: 2_000 });
+  const handlers = setupHandlers(engineContext(ctx), { launchAgentsDir: agents, answerWaitMs: 2_000 });
   const pending = handlers.progress();
   setTimeout(() => { current = up; listener?.(up); }, 20);
   assert.equal((await pending).next, null);
@@ -718,14 +718,14 @@ test('a passing check counts only while the token is still there, and a stopped 
   // Once it has answered, that is recorded: a bot stopped later is a status to fix, not setup to redo.
   assert.match(readFileSync(join(dir, 'setup.json'), 'utf8'), /serviceAnsweredAt/);
   current = { state: 'stopped' };
-  assert.equal((await setupHandlers(ctx, { launchAgentsDir: agents, answerWaitMs: 10 }).progress()).next, null);
+  assert.equal((await setupHandlers(engineContext(ctx), { launchAgentsDir: agents, answerWaitMs: 10 }).progress()).next, null);
   writeFileSync(join(dir, 'setup.json'), JSON.stringify({ version: 1, owner: { slackUserId: OWNER, slackName: 'Alex', checkedAt: at } }));
   // Answering but not connected to Slack isn't running yet.
   current = { ...up, slackConnected: false } as never;
-  assert.equal((await setupHandlers(ctx, { launchAgentsDir: agents, answerWaitMs: 10 }).progress()).next, 'service');
+  assert.equal((await setupHandlers(engineContext(ctx), { launchAgentsDir: agents, answerWaitMs: 10 }).progress()).next, 'service');
   // With no answer in time, the bot counts as stopped.
   current = { state: 'stopped' };
-  assert.equal((await setupHandlers(ctx, { launchAgentsDir: agents, answerWaitMs: 10 }).progress()).next, 'service');
+  assert.equal((await setupHandlers(engineContext(ctx), { launchAgentsDir: agents, answerWaitMs: 10 }).progress()).next, 'service');
 });
 
 test('a deleted Keychain item isn\'t connected, even with a passing check on record', async (t) => {
@@ -739,7 +739,7 @@ test('a deleted Keychain item isn\'t connected, even with a passing check on rec
     checks: { SLACK_BOT_TOKEN: { verifiedAt: at, error: null }, SLACK_APP_TOKEN: { verifiedAt: at, error: null } },
   }));
   writeFileSync(join(f.root, 'keychain.json'), JSON.stringify({ 'dev.serra.friday/SLACK_BOT_TOKEN': BOT, 'dev.serra.friday/SLACK_APP_TOKEN': APP }));
-  const handlers = setupHandlers(context(dir), { launchAgentsDir: join(f.root, 'agents'), answerWaitMs: 0, presenceCacheMs: 0 });
+  const handlers = setupHandlers(engineContext(context(dir)), { launchAgentsDir: join(f.root, 'agents'), answerWaitMs: 0, presenceCacheMs: 0 });
   assert.equal((await handlers.progress()).steps.find((step) => step.id === 'slack')!.done, true);
   // The app token's item was deleted from the Keychain.
   writeFileSync(join(f.root, 'keychain.json'), JSON.stringify({ 'dev.serra.friday/SLACK_BOT_TOKEN': BOT }));
@@ -827,7 +827,7 @@ test('a Keychain item gone for sure is missing even after an offline recheck; re
   writeFileSync(join(dir, 'setup.json'), JSON.stringify({ version: 1, owner: { slackUserId: OWNER, slackName: 'Alex', checkedAt: at } }));
   writeFileSync(join(dir, 'active.json'), '{}');
   writeFileSync(join(dir, 'ready.json'), '{}');
-  const handlers = setupHandlers(context(dir), { launchAgentsDir: agents, answerWaitMs: 0, presenceCacheMs: 0 });
+  const handlers = setupHandlers(engineContext(context(dir)), { launchAgentsDir: agents, answerWaitMs: 0, presenceCacheMs: 0 });
   assert.equal((await handlers.progress()).next, null);
 
   // ready.json alone made the service step done; it is recorded, so a restart that clears it doesn't reopen setup.

@@ -7,10 +7,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test, { type TestContext } from 'node:test';
 import { CHAT_FIXTURE, writeChatFixture } from '../app/main/chat-fixture.ts';
-import type { HandlerContext } from '../app/main/ipc/context.ts';
-import { jobsHandlers } from '../app/main/ipc/jobs.ts';
+import { jobsHandlers } from '../src/handlers/jobs.ts';
 import { memoryPrefs } from '../app/main/prefs.ts';
-import { stoppedStatusSource } from '../app/main/status.ts';
+import { stoppedStatusSource } from '../src/status-source.ts';
 import {
   agentParts, atBottom, BOTTOM_SLACK, blocks, chatItems, composer, contentSize, follow, inline, sentMessage, statusLabel, toolBrand, toolSummary, toolTitle, userMessage,
   type ChatItem,
@@ -20,6 +19,7 @@ import type { TranscriptEntry } from '../src/agent/acp.ts';
 import { acpChat, chatImage, t3Chat, T3_CHAT_MESSAGES, type RunChat } from '../src/agent/runs-view.ts';
 import { shareImages } from '../src/images.ts';
 import { listJobs } from '../src/jobs.ts';
+import { engineContext, type AppContext } from './fakes/app-context.ts';
 
 const line = (role: TranscriptEntry['role'], text: string, extra: Partial<TranscriptEntry> = {}): TranscriptEntry => ({ role, runId: 'run-1', text, at: '', ...extra });
 const chat = (over: Partial<RunChat> = {}): RunChat => ({
@@ -250,7 +250,7 @@ test('the chat shows an image a worker shares from its worktree or temp files, a
 
 // Jobs and IPC -------------------------------------------------------------------------------------------------------
 
-const context = (profileDir: string): HandlerContext => ({
+const context = (profileDir: string): AppContext => ({
   profileDirOrNull: () => profileDir,
   profileDir: () => profileDir,
   prefs: memoryPrefs(),
@@ -290,7 +290,7 @@ test('jobs.chat, image and reply: ACP from its record, T3 through `t3 thread sho
   writeFileSync(join(dir, 'profile.json'), JSON.stringify({ ...example, t3Bin }));
   const ran: string[][] = [];
   const sent: unknown[] = [];
-  const handlers = jobsHandlers(context(dir), {
+  const handlers = jobsHandlers(engineContext(context(dir)), {
     run: async (cmd, args) => {
       ran.push([cmd, ...args]);
       return JSON.stringify({ thread: { threadId: 't-1', link: 'https://t3.test/t-1', status: 'idle', latestRunId: 'run-1', activeRunId: null }, messages: [{ role: 'assistant', runId: 'run-1', text: 'Hi' }] });

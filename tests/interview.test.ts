@@ -5,18 +5,18 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test, { type TestContext } from 'node:test';
-import type { HandlerContext } from '../app/main/ipc/context.ts';
-import { proposalsHandlers } from '../app/main/ipc/proposals.ts';
-import { tasksHandlers } from '../app/main/ipc/tasks.ts';
+import { proposalsHandlers } from '../src/handlers/proposals.ts';
+import { tasksHandlers } from '../src/handlers/tasks.ts';
 import { memoryPrefs } from '../app/main/prefs.ts';
 import { followProposals } from '../app/main/proposals-watch.ts';
-import { stoppedStatusSource } from '../app/main/status.ts';
+import { stoppedStatusSource } from '../src/status-source.ts';
 import { defaultFolder, folderChoices } from '../app/renderer/screens/proposals.logic.ts';
 import { codeRoot, loadConfig } from '../src/config.ts';
 import { createProfile } from '../src/setup.ts';
 import {
   INTERVIEW_PROGRESS, INTERVIEW_TEMPLATE, INTERVIEW_TITLE, interviewBrief, previewInterview, readTasks, startInterview,
 } from '../src/tasks.ts';
+import { engineContext, type AppContext } from './fakes/app-context.ts';
 
 const NOW = new Date(2026, 10, 19, 10, 0, 0);
 const TODAY = '2026-11-19';
@@ -52,7 +52,7 @@ process.stdin.on('end', () => {
 
 const noFetch = async (): Promise<void> => {};
 
-const context = (profileDir: string): HandlerContext => ({
+const context = (profileDir: string): AppContext => ({
   profileDirOrNull: () => profileDir,
   profileDir: () => profileDir,
   prefs: memoryPrefs(),
@@ -130,7 +130,7 @@ test('IPC: previewInterview and startInterview never return a token, and share t
   const { profileDir } = fixture(t);
   let release: () => void = () => {};
   const gate = new Promise<void>((resolve) => { release = resolve; });
-  const handlers = tasksHandlers(context(profileDir), { fetchBase: () => gate, now: () => NOW });
+  const handlers = tasksHandlers(engineContext(context(profileDir)), { fetchBase: () => gate, now: () => NOW });
 
   const preview = await handlers.previewInterview();
   assert.equal(preview.resumes, false);
@@ -153,7 +153,7 @@ test('a proposal the interview writes reaches the queue without a restart, and p
   const watcher = followProposals(() => { pushes += 1; }, { debounceMs: 20, log: (message) => assert.fail(message) });
   t.after(() => watcher.close());
   watcher.follow(profileDir);
-  const proposals = proposalsHandlers(context(profileDir));
+  const proposals = proposalsHandlers(engineContext(context(profileDir)));
   assert.deepEqual(await proposals.list(), []);
 
   // A page elsewhere in knowledge/ is not a proposal: no push.

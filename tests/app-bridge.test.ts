@@ -1,17 +1,18 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createBridge, pushChannel, type InvokeResult } from '../app/main/bridge.ts';
-import { createHandlers, registerHandlers, type IpcRegistrar } from '../app/main/ipc/index.ts';
-import type { HandlerContext } from '../app/main/ipc/context.ts';
+import { registerHandlers, type IpcRegistrar } from '../app/main/router.ts';
 import { defaultPrefs, memoryPrefs, mergePrefs, readPrefs } from '../app/main/prefs.ts';
-import { forwardStatus, stoppedStatusSource, type StatusSource } from '../app/main/status.ts';
+import { forwardStatus } from '../app/main/status.ts';
+import { stoppedStatusSource, type StatusSource } from '../src/status-source.ts';
 import { allowsPermission, isAppUrl, isExternalUrl } from '../app/main/window-options.ts';
 import type { BotEvent, BotStatus } from '../src/contracts.ts';
+import { createHandlers, type AppContext } from './fakes/app-context.ts';
 
 const APP_PAGE = 'file:///Users/you/serra/app/out/renderer/index.html';
 const trusted = (url: string): boolean => isAppUrl(url, { fileRoot: '/Users/you/serra/app' });
 
-const fakeContext = (overrides: Partial<HandlerContext> = {}): HandlerContext & { opened: string[] } => {
+const fakeContext = (overrides: Partial<AppContext> = {}): AppContext & { opened: string[] } => {
   const opened: string[] = [];
   return {
     opened,

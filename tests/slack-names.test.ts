@@ -4,13 +4,11 @@ import { mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from '
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test, { type TestContext } from 'node:test';
-import type { HandlerContext } from '../app/main/ipc/context.ts';
-import { createHandlers } from '../app/main/ipc/index.ts';
-import { jobsHandlers } from '../app/main/ipc/jobs.ts';
-import { profileSlackNames } from '../app/main/ipc/slack-names.ts';
+import { jobsHandlers } from '../src/handlers/jobs.ts';
+import { profileSlackNames } from '../src/handlers/slack-names.ts';
 import { notificationText } from '../app/main/notifications.logic.ts';
 import { memoryPrefs } from '../app/main/prefs.ts';
-import { stoppedStatusSource } from '../app/main/status.ts';
+import { stoppedStatusSource } from '../src/status-source.ts';
 import { APP_TASK_CHANNEL_LABEL, channelChoices, rowParts, type JobRow } from '../app/renderer/screens/jobs.logic.ts';
 import { fillBriefText, NO_THREAD, renderBrief } from '../src/brief.ts';
 import { codeRoot, loadConfig } from '../src/config.ts';
@@ -20,6 +18,7 @@ import {
 } from '../src/slack-names.ts';
 import type { NamesAsk } from '../src/slack-names-store.ts';
 import { taskBriefInput } from '../src/tasks.ts';
+import { createHandlers, engineContext, type AppContext } from './fakes/app-context.ts';
 
 const TOKEN = 'xoxb-fixture-names-123';
 const USERS: Record<string, string> = { U0EXAMPLE01: 'Sam Rivera', U0OTHER0001: 'Ada' };
@@ -170,7 +169,7 @@ const jobsProfile = (t: TestContext): string => {
   return dir;
 };
 
-const context = (profileDir: string, pushes: string[]): HandlerContext => ({
+const context = (profileDir: string, pushes: string[]): AppContext => ({
   profileDirOrNull: () => profileDir,
   profileDir: () => profileDir,
   prefs: memoryPrefs(),
@@ -192,7 +191,7 @@ test('jobs.list never waits for Slack: raw IDs first, then a push, then names', 
   const slack = fakeSlack();
   const pushes: string[] = [];
   const askedDirs: string[] = [];
-  const handlers = jobsHandlers(context(dir, pushes), {
+  const handlers = jobsHandlers(engineContext(context(dir, pushes)), {
     run: async () => { throw new Error('no t3'); }, now: () => NOW,
     slackNames: { ask: daemon(slack, askedDirs), log: () => {} },
   });
@@ -220,7 +219,7 @@ test('jobs.list with Slack refusing still lists every job, with raw IDs', async 
   const slack = fakeSlack();
   slack.fail('invalid_auth');
   const pushes: string[] = [];
-  const handlers = jobsHandlers(context(dir, pushes), {
+  const handlers = jobsHandlers(engineContext(context(dir, pushes)), {
     run: async () => { throw new Error('no t3'); }, now: () => NOW,
     slackNames: { ask: daemon(slack), log: () => {} },
   });
@@ -237,7 +236,7 @@ test('settings.peopleNames never waits: known names now, a push when the bot fin
   const pushes: string[] = [];
   const asked: string[] = [];
   const ctx = context(dir, pushes);
-  const { settings } = createHandlers(ctx, profileSlackNames(ctx, { ask: daemon(slack, asked), log: () => {} }));
+  const { settings } = createHandlers(ctx, profileSlackNames(engineContext(ctx), { ask: daemon(slack, asked), log: () => {} }));
   const release = slack.hold();
   assert.deepEqual(await settings.peopleNames(['U0EXAMPLE01', 'U0OTHER0001', 'U0EXAMPLE01', 'not an id', 'C0EXAMPLE01']), {}, 'nothing known yet');
   release();
@@ -253,7 +252,7 @@ test('Jobs and People share one names cache: a name Jobs found shows in People w
   const slack = fakeSlack();
   const asked: string[] = [];
   const ctx = context(dir, []);
-  const handlers = createHandlers(ctx, profileSlackNames(ctx, { ask: daemon(slack, asked), log: () => {} }));
+  const handlers = createHandlers(ctx, profileSlackNames(engineContext(ctx), { ask: daemon(slack, asked), log: () => {} }));
   const rows = await handlers.jobs.list();
   assert.ok(rows.some((row) => row.requester === 'U0EXAMPLE01'));
   await new Promise((resolve) => setTimeout(resolve, 10));
@@ -396,7 +395,7 @@ test('jobs.list shows an alert as the bot\'s name with a readable title, and lin
     linkedPullRequest: null,
     pullRequests: [{ host: 'github.com', repository: 'acme/billing', number: 1, url: 'https://github.com/acme/billing/pull/1', source: 'created', state: 'open' }],
   } });
-  const handlers = jobsHandlers(context(dir, pushes), { run: t3, now: () => NOW, slackNames: { ask: daemon(slack), log: () => {} } });
+  const handlers = jobsHandlers(engineContext(context(dir, pushes)), { run: t3, now: () => NOW, slackNames: { ask: daemon(slack), log: () => {} } });
   await handlers.list();
   await new Promise((resolve) => setTimeout(resolve, 10));
   const [hero] = await handlers.list();

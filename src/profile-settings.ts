@@ -135,7 +135,10 @@ export const readProfileSettings = (profileDir: string): SectionView[] => {
  */
 export const updateProfileSection = <S extends ProfileSection>(
   profileDir: string, section: S, value: Profile[S] | undefined, options: WriteOptions = {},
-): SettingChange => {
+): SettingChange => updateProfileSectionInput(profileDir, section, value, options);
+
+/** `updateProfileSection` for a value from outside (the window): any JSON, checked with the whole profile before the write. */
+export const updateProfileSectionInput = (profileDir: string, section: ProfileSection, value: unknown, options: WriteOptions = {}): SettingChange => {
   if (!isProfileSection(section)) throw new Error(`Unknown profile section: ${String(section)}. Sections: ${PROFILE_SECTIONS.join(', ')}`);
   const setting: SectionSetting = PROFILE_SETTINGS[section];
   if (value === undefined && setting.required) throw new Error(`${section} is required and cannot be removed`);

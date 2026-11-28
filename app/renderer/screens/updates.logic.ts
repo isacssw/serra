@@ -3,8 +3,8 @@
 // to tell the owner after an action. Pure data and functions: imported by `node --test` as well as the renderer.
 import type { Prepared } from '../../../src/deploy.ts';
 import type { ActivationOutcome, ReleaseOverview, RollbackOutcome } from '../../../src/releases.ts';
-import type { AppUpdateView } from '../../main/app-updater.ts';
-import type { BotSync } from '../../main/bot-sync.ts';
+import type { AppUpdateView } from '../../../src/app-updates.ts';
+import type { BotSync } from '../../../src/bot-sync.ts';
 import type { SerraApi } from '../../main/bridge.ts';
 import type { ClearedSource } from '../../../src/update-migration.ts';
 

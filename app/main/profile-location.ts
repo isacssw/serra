@@ -1,15 +1,7 @@
 // Where the app finds the bot profile (APP-17). A packaged app opened from Finder gets no `--profile` and no
 // `BOT_PROFILE`, so it falls back to the folder it was given before, then to the only profile `pnpm run setup` made.
-import { existsSync, readdirSync } from 'node:fs';
-import { isAbsolute, join, resolve } from 'node:path';
-
-/** Profile folders directly under `root` (`~/.local/share/serra/<bot-id>`, where `pnpm run setup` puts them). */
-export const profilesUnder = (root: string): string[] => {
-  let names: string[];
-  try { names = readdirSync(root, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name).sort(); }
-  catch { return []; }
-  return names.map((name) => join(root, name)).filter((dir) => existsSync(join(dir, 'profile.json')));
-};
+// The profile folders themselves are found by the core (`profilesUnder` in src/profiles.ts).
+import { isAbsolute, resolve } from 'node:path';
 
 export interface ProfileSources {
   /** `--profile` or `BOT_PROFILE`, when given. */

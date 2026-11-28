@@ -4,10 +4,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test, { type TestContext } from 'node:test';
 import { createBridge, type InvokeResult } from '../app/main/bridge.ts';
-import type { HandlerContext } from '../app/main/ipc/context.ts';
-import { createHandlers, registerHandlers, type IpcRegistrar } from '../app/main/ipc/index.ts';
+import { registerHandlers, type IpcRegistrar } from '../app/main/router.ts';
 import { memoryPrefs } from '../app/main/prefs.ts';
-import { stoppedStatusSource } from '../app/main/status.ts';
+import { stoppedStatusSource } from '../src/status-source.ts';
 import {
   addPersonFieldMessage, addPersonProblem, appliesLabel, botForm, branchPatternForm, branchPreview, channelIdProblem, emptyTriggerRow,
   triggerSummary,
@@ -18,6 +17,7 @@ import { loadConfig } from '../src/config.ts';
 import { validateProfile, type BotStatus, type Profile, type ProfileSection } from '../src/contracts.ts';
 import { createProfileReloader } from '../src/profile-reload.ts';
 import { PROFILE_SECTIONS } from '../src/profile-settings.ts';
+import { createHandlers, type AppContext } from './fakes/app-context.ts';
 
 const OWNER = 'U0123456789';
 const MEMBER = 'U0000000001';
@@ -207,7 +207,7 @@ const tempProfile = (t: TestContext, profile: unknown = baseProfile()): string =
 
 /** The window's `window.serra` over a fake ipcMain, with structured clone like Electron's IPC. */
 const bridgeFor = (profileDir: string) => {
-  const context: HandlerContext = {
+  const context: AppContext = {
     profileDir: () => profileDir, profileDirOrNull: () => profileDir, prefs: memoryPrefs(), status: stoppedStatusSource(),
     runtime: { version: '0.0.0', electron: '45.4.1', node: '24.0.0', platform: 'darwin' },
     openExternal: async () => {}, openPath: async () => {},

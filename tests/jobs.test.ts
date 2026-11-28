@@ -8,7 +8,7 @@ import { ageLabel, formatJobs, listJobs, slackThreadLink, t3ThreadLookup } from 
 import { runCli } from '../src/manage.ts';
 import { threadPullRequest } from '../src/t3.ts';
 import { t3TaskState } from '../src/tasks.ts';
-import { cachedLookup, THREAD_RECHECK_MS } from '../app/main/ipc/jobs.ts';
+import { cachedLookup, THREAD_RECHECK_MS } from '../src/handlers/jobs.ts';
 
 /** Local time, so "today" doesn't depend on the machine's time zone. */
 const NOW = new Date(2026, 10, 18, 15, 0, 0);

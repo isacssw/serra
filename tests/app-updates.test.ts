@@ -5,21 +5,22 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test, { type TestContext } from 'node:test';
 import { createBridge, type InvokeResult, type SerraPushes } from '../app/main/bridge.ts';
-import type { HandlerContext } from '../app/main/ipc/context.ts';
-import { createHandlers, registerHandlers, type IpcRegistrar } from '../app/main/ipc/index.ts';
-import { updatesHandlers } from '../app/main/ipc/updates.ts';
+import { registerHandlers, type IpcRegistrar } from '../app/main/router.ts';
+import { updatesHandlers } from '../src/handlers/updates.ts';
 import { memoryPrefs } from '../app/main/prefs.ts';
-import { stoppedStatusSource } from '../app/main/status.ts';
+import { stoppedStatusSource } from '../src/status-source.ts';
 import {
   actionStates, activateDialog, activationNotice, appCard, botLine, canCheck, commitsHeading, homeOf, noteLines, preparedLabel, progressPercent,
   releaseLabel, rollbackDialog, rollbackNotice, sourceLabel, syncDialog, tildePath,
 } from '../app/renderer/screens/updates.logic.ts';
-import { createAppUpdater, type AppUpdateView } from '../app/main/app-updater.ts';
-import { botSyncDecision, type BotSyncInput } from '../app/main/bot-sync.ts';
-import { updatesService } from '../app/main/ipc/updates.ts';
+import { createAppUpdater } from '../app/main/app-updater.ts';
+import type { AppUpdateView } from '../src/app-updates.ts';
+import { botSyncDecision, type BotSyncInput } from '../src/bot-sync.ts';
+import { updatesService } from '../src/handlers/updates.ts';
 import { serviceHost, type ServiceDriver } from '../src/service.ts';
 import { createProfile } from '../src/setup.ts';
 import { acknowledgePause, pauseIntake, readPause } from '../src/intake.ts';
+import { createHandlers, engineContext, type AppContext } from './fakes/app-context.ts';
 
 // ---------------------------------------------------------------------------------------------------------------
 // Developer-mode logic
@@ -254,7 +255,7 @@ const profileFixture = async (t: TestContext) => {
   return { root, directory, agents, driver, events };
 };
 
-const contextFor = (profileDir: string, pushes: string[]): HandlerContext => ({
+const contextFor = (profileDir: string, pushes: string[]): AppContext => ({
   profileDir: () => profileDir,
   profileDirOrNull: () => profileDir,
   prefs: memoryPrefs(),
@@ -270,7 +271,7 @@ test('prepare uses the Node findNode resolves, never process.execPath, and strea
   const pushes: string[] = [];
   const fakeNode = '/Users/you/.volta/bin/node';
   const asked: string[] = [];
-  const handlers = updatesHandlers(contextFor(f.directory, pushes), {
+  const handlers = updatesHandlers(engineContext(contextFor(f.directory, pushes)), {
     findNode: async (dir) => { asked.push(dir); return fakeNode; },
     prepare: { install: false },
     status: { root: f.root },
@@ -298,7 +299,7 @@ test('prepare uses the Node findNode resolves, never process.execPath, and strea
 test('a prepare that cannot find Node fails before anything is written, with the reason in the log', async (t) => {
   const f = await profileFixture(t);
   const pushes: string[] = [];
-  const handlers = updatesHandlers(contextFor(f.directory, pushes), {
+  const handlers = updatesHandlers(engineContext(contextFor(f.directory, pushes)), {
     findNode: async () => { throw new Error('No supported Node (22.18+ or 24+) found. Install Node or pass its path.'); },
     prepare: { install: false }, echo: () => {},
   });
@@ -310,7 +311,7 @@ test('a prepare that cannot find Node fails before anything is written, with the
 test('activate and rollback run with the daemon stopped, one at a time, and report their outcome', async (t) => {
   const f = await profileFixture(t);
   const pushes: string[] = [];
-  const handlers = updatesHandlers(contextFor(f.directory, pushes), {
+  const handlers = updatesHandlers(engineContext(contextFor(f.directory, pushes)), {
     findNode: async () => '/opt/homebrew/bin/node',
     prepare: { install: false },
     deploy: { driver: f.driver, launchAgentsDir: f.agents, preflight: async () => {} },
@@ -366,7 +367,7 @@ const followJob = (directory: string): void => writeFileSync(join(directory, 'st
 
 test('developer mode needs an update source: without one, status compares nothing with git and the bot follows the app', async (t) => {
   const f = await profileFixture(t);
-  const handlers = updatesHandlers({ ...contextFor(f.directory, []), botFollowsApp: true }, { echo: () => {} });
+  const handlers = updatesHandlers(engineContext({ ...contextFor(f.directory, []), botFollowsApp: true }), { echo: () => {} });
   const release = await handlers.status();
   assert.equal(release.releases?.mode, 'release');
   assert.equal(release.releases?.commitsProblem, null, 'no git error about the packaged app');
@@ -385,7 +386,7 @@ test('after an app update the bot moves to the new version, but waits while a jo
   const f = await profileFixture(t);
   const pushes: string[] = [];
   const scheduled: (() => void)[] = [];
-  const context: HandlerContext = {
+  const context: AppContext = {
     ...contextFor(f.directory, pushes),
     runtime: { version: '0.1.0-alpha.3', electron: '45.0.0', node: '22.20.0', platform: 'darwin' },
     every: (_first, _every, task) => { scheduled.push(task); },
@@ -399,7 +400,7 @@ test('after an app update the bot moves to the new version, but waits while a jo
     deploy: { driver: f.driver, launchAgentsDir: f.agents, preflight: async (): Promise<void> => {} },
     echo: () => {},
   };
-  const { handlers, tick } = updatesService(context, deps);
+  const { handlers, tick } = updatesService(engineContext(context), deps);
   assert.equal(scheduled.length, 1, 'the version check is scheduled');
 
   // The bot runs a build from the previous app version.
@@ -469,9 +470,9 @@ test('once the window shows its first screen after an update, the swap script is
 test('a pause the update no longer needs is lifted, and one that lapsed with jobs still running is not renewed for a while', async (t) => {
   const f = await profileFixture(t);
   let clock = Date.parse('2026-11-21T22:00:00Z');
-  const context: HandlerContext = { ...contextFor(f.directory, []), runtime: { version: '0.1.0-alpha.3', electron: '45.0.0', node: '22.20.0', platform: 'darwin' }, botFollowsApp: true };
+  const context: AppContext = { ...contextFor(f.directory, []), runtime: { version: '0.1.0-alpha.3', electron: '45.0.0', node: '22.20.0', platform: 'darwin' }, botFollowsApp: true };
   const deps = { findNode: async () => '/opt/homebrew/bin/node', prepare: { install: false }, deploy: { driver: f.driver, launchAgentsDir: f.agents, preflight: async () => {} }, echo: () => {}, now: () => clock };
-  const { handlers, tick } = updatesService(context, deps);
+  const { handlers, tick } = updatesService(engineContext(context), deps);
   // The bot is already on the app's version (the app update was called off and the old app came back).
   const plan = await handlers.prepare();
   mkdirSync(join(plan.release, 'node_modules/@slack/bolt'), { recursive: true });
@@ -503,27 +504,27 @@ test('Restart to update pauses new requests first, so the bot can move to the ne
   const installing = { state: 'installing' } as unknown as AppUpdateView;
   // The pause is on disk before Serra is told to quit.
   let pausedAtInstall: unknown = 'not called';
-  const appUpdater = { install: () => { pausedAtInstall = readPause(f.directory)?.reason ?? null; return installing; } } as unknown as NonNullable<HandlerContext['appUpdater']>;
-  const quiet = updatesHandlers({ ...contextFor(f.directory, []), appUpdater, botFollowsApp: false }, { echo: () => {} });
+  const appUpdater = { install: () => { pausedAtInstall = readPause(f.directory)?.reason ?? null; return installing; } } as unknown as NonNullable<AppContext['appUpdater']>;
+  const quiet = updatesHandlers(engineContext({ ...contextFor(f.directory, []), appUpdater, botFollowsApp: false }), { echo: () => {} });
   await quiet.install();
   assert.equal(readPause(f.directory), null, 'a copy run from source leads no bot: nothing paused');
-  const handlers = updatesHandlers({ ...contextFor(f.directory, []), appUpdater, botFollowsApp: true }, { echo: () => {} });
+  const handlers = updatesHandlers(engineContext({ ...contextFor(f.directory, []), appUpdater, botFollowsApp: true }), { echo: () => {} });
   assert.equal((await handlers.install()).state, 'installing');
   assert.equal(pausedAtInstall, 'app-update');
   assert.equal(readPause(f.directory)?.reason, 'app-update');
 
   // Nothing to install after all: the pause this call started is lifted.
   rmSync(join(f.directory, 'intake-paused.json'));
-  const idle = { install: () => ({ state: 'ready' }) } as unknown as NonNullable<HandlerContext['appUpdater']>;
-  await updatesHandlers({ ...contextFor(f.directory, []), appUpdater: idle, botFollowsApp: true }, { echo: () => {} }).install();
+  const idle = { install: () => ({ state: 'ready' }) } as unknown as NonNullable<AppContext['appUpdater']>;
+  await updatesHandlers(engineContext({ ...contextFor(f.directory, []), appUpdater: idle, botFollowsApp: true }), { echo: () => {} }).install();
   assert.equal(readPause(f.directory), null);
 });
 
 test('a request the paused daemon is still starting holds the restart, like a running job', async (t) => {
   const f = await profileFixture(t);
-  const context: HandlerContext = { ...contextFor(f.directory, []), runtime: { version: '0.1.0-alpha.3', electron: '45.0.0', node: '22.20.0', platform: 'darwin' }, botFollowsApp: true };
+  const context: AppContext = { ...contextFor(f.directory, []), runtime: { version: '0.1.0-alpha.3', electron: '45.0.0', node: '22.20.0', platform: 'darwin' }, botFollowsApp: true };
   const deps = { findNode: async () => '/opt/homebrew/bin/node', prepare: { install: false }, deploy: { driver: f.driver, launchAgentsDir: f.agents, preflight: async (): Promise<void> => {} }, echo: () => {} };
-  const { handlers, tick } = updatesService(context, deps);
+  const { handlers, tick } = updatesService(engineContext(context), deps);
   const old = await handlers.prepare();
   mkdirSync(join(old.release, 'node_modules/@slack/bolt'), { recursive: true });
   writeFileSync(join(f.directory, 'prepared.json'), JSON.stringify({ ...old, appVersion: '0.1.0-alpha.2', fromApp: true }));
@@ -546,9 +547,9 @@ test('a request the paused daemon is still starting holds the restart, like a ru
 test('a pause left by the app before a restart that lapsed with jobs running is not renewed by the new app at once', async (t) => {
   const f = await profileFixture(t);
   const clock = Date.parse('2026-11-21T23:00:00Z');
-  const context: HandlerContext = { ...contextFor(f.directory, []), runtime: { version: '0.1.0-alpha.3', electron: '45.0.0', node: '22.20.0', platform: 'darwin' }, botFollowsApp: true };
+  const context: AppContext = { ...contextFor(f.directory, []), runtime: { version: '0.1.0-alpha.3', electron: '45.0.0', node: '22.20.0', platform: 'darwin' }, botFollowsApp: true };
   const deps = { findNode: async () => '/opt/homebrew/bin/node', prepare: { install: false }, deploy: { driver: f.driver, launchAgentsDir: f.agents, preflight: async () => {} }, echo: () => {}, now: () => clock };
-  const { handlers, tick } = updatesService(context, deps);
+  const { handlers, tick } = updatesService(engineContext(context), deps);
   const old = await handlers.prepare();
   mkdirSync(join(old.release, 'node_modules/@slack/bolt'), { recursive: true });
   writeFileSync(join(f.directory, 'prepared.json'), JSON.stringify({ ...old, appVersion: '0.1.0-alpha.2', fromApp: true }));

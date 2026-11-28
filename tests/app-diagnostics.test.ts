@@ -3,16 +3,16 @@ import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:f
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test, { type TestContext } from 'node:test';
-import { diagnosticsHandlers, MAX_LOG_LINES } from '../app/main/ipc/diagnostics.ts';
-import type { HandlerContext } from '../app/main/ipc/context.ts';
+import { diagnosticsHandlers, MAX_LOG_LINES } from '../src/handlers/diagnostics.ts';
 import { memoryPrefs } from '../app/main/prefs.ts';
-import { stoppedStatusSource } from '../app/main/status.ts';
+import { stoppedStatusSource } from '../src/status-source.ts';
 import { explainFailure, orderChecks, passValue, sharedCauses, reportText, runtimeLine, statusKey, summarize } from '../app/renderer/screens/diagnostics.logic.ts';
 import { tildePaths } from '../src/lib/tilde.ts';
 import { loadConfig, type Config, type Profile } from '../src/config.ts';
 import type { Diagnostic } from '../src/contracts.ts';
 import { diagnose, type DiagnoseOptions } from '../src/doctor.ts';
 import { createProfile } from '../src/setup.ts';
+import { engineContext, type AppContext } from './fakes/app-context.ts';
 
 const BOT = 'xoxb-1111-2222-fixturevalue';
 const APP = 'xapp-1-A111-2222-fixturevalue';
@@ -31,7 +31,7 @@ const tempProfile = (t: TestContext): string => {
   return dir;
 };
 
-const context = (dir: string | null): HandlerContext => ({
+const context = (dir: string | null): AppContext => ({
   profileDir: () => { if (!dir) throw new Error('No bot profile selected.'); return dir; },
   profileDirOrNull: () => dir,
   prefs: memoryPrefs(),
@@ -84,7 +84,7 @@ test('with a Node binary, the Node check runs it and reports its version, not th
 test('run passes the release Node finder for the profile and returns only scrubbed contract fields', async (t) => {
   const dir = tempProfile(t);
   const seen: { profileDir?: string; options?: DiagnoseOptions } = {};
-  const handlers = diagnosticsHandlers(context(dir), {
+  const handlers = diagnosticsHandlers(engineContext(context(dir)), {
     findNode: async (profileDir) => { seen.profileDir = profileDir; return '/opt/homebrew/bin/node'; },
     diagnose: async (config: Config, options: DiagnoseOptions) => {
       seen.options = options;
@@ -108,7 +108,7 @@ test('run passes the release Node finder for the profile and returns only scrubb
 test('a profile that cannot load is the only check, failing with the reason', async (t) => {
   const dir = tempProfile(t);
   writeFileSync(join(dir, 'profile.json'), '{ not json');
-  const handlers = diagnosticsHandlers(context(dir), { diagnose: async () => assert.fail('must not run') });
+  const handlers = diagnosticsHandlers(engineContext(context(dir)), { diagnose: async () => assert.fail('must not run') });
   const results = await handlers.run();
   assert.equal(results.length, 1);
   assert.equal(results[0]!.name, 'Profile');
@@ -119,7 +119,7 @@ test('a profile that cannot load is the only check, failing with the reason', as
 test('a missing token fails the Tokens check, and the other token value stays hidden', async (t) => {
   const dir = tempProfile(t);
   writeFileSync(join(dir, '.env'), `SLACK_BOT_TOKEN=${BOT}\n`);
-  const results = await diagnosticsHandlers(context(dir), {
+  const results = await diagnosticsHandlers(engineContext(context(dir)), {
     findNode: async () => { throw new Error('no node in this test'); },
     diagnose: (config, options) => diagnose(config, { ...options, offline: true }),
   }).run();
@@ -130,12 +130,12 @@ test('a missing token fails the Tokens check, and the other token value stays hi
 });
 
 test('a diagnose() crash rejects with a scrubbed message', async (t) => {
-  const handlers = diagnosticsHandlers(context(tempProfile(t)), { diagnose: async () => { throw new Error(`boom ${BOT}`); } });
+  const handlers = diagnosticsHandlers(engineContext(context(tempProfile(t))), { diagnose: async () => { throw new Error(`boom ${BOT}`); } });
   await assert.rejects(async () => handlers.run(), { message: 'boom [hidden]' });
 });
 
 test('with no profile selected, run and logTail reject with the context message', async () => {
-  const handlers = diagnosticsHandlers(context(null));
+  const handlers = diagnosticsHandlers(engineContext(context(null)));
   await assert.rejects(async () => handlers.run(), /No bot profile selected/);
   await assert.rejects(async () => handlers.logTail(10), /No bot profile selected/);
 });
@@ -144,7 +144,7 @@ test('logTail reads logs/bot.log, hides token-shaped text and cuts very long lin
   const dir = tempProfile(t);
   mkdirSync(join(dir, 'logs'), { recursive: true });
   writeFileSync(join(dir, 'logs/bot.log'), `first\nconnecting with ${APP}\n${'x'.repeat(5000)}\nlast\n`);
-  const lines = await diagnosticsHandlers(context(dir)).logTail(3);
+  const lines = await diagnosticsHandlers(engineContext(context(dir))).logTail(3);
   assert.equal(lines.length, 3);
   assert.equal(lines[0], 'connecting with [hidden]');
   assert.equal(lines[1]!.length, 4001);
@@ -153,7 +153,7 @@ test('logTail reads logs/bot.log, hides token-shaped text and cuts very long lin
 });
 
 test('logTail of a profile without a log is empty, and a bad line count is refused', async (t) => {
-  const handlers = diagnosticsHandlers(context(tempProfile(t)));
+  const handlers = diagnosticsHandlers(engineContext(context(tempProfile(t))));
   assert.deepEqual(await handlers.logTail(50), []);
   for (const bad of [0, -1, 1.5, MAX_LOG_LINES + 1, Number.NaN, '10' as unknown as number]) {
     await assert.rejects(async () => handlers.logTail(bad), { message: `Ask for 1 to ${MAX_LOG_LINES} log lines.` });
@@ -235,7 +235,7 @@ test('main shows the home folder as ~ in every check and log line, so the window
   const dir = tempProfile(t);
   mkdirSync(join(dir, 'logs'), { recursive: true });
   writeFileSync(join(dir, 'logs', 'bot.log'), 'started in /Users/you/project\n');
-  const handlers = diagnosticsHandlers(context(dir), {
+  const handlers = diagnosticsHandlers(engineContext(context(dir)), {
     home: '/Users/you',
     findNode: async () => '/Users/you/.nvm/bin/node',
     diagnose: async (_config: Config, options: DiagnoseOptions) => [{ name: 'Node', ok: true, detail: `24.1.0 (${await options.nodeBinary!()})` }],

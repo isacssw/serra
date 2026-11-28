@@ -5,11 +5,10 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'no
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test, { type TestContext } from 'node:test';
-import type { HandlerContext } from '../app/main/ipc/context.ts';
-import { jobsHandlers } from '../app/main/ipc/jobs.ts';
-import { tasksHandlers } from '../app/main/ipc/tasks.ts';
+import { jobsHandlers } from '../src/handlers/jobs.ts';
+import { tasksHandlers } from '../src/handlers/tasks.ts';
 import { memoryPrefs } from '../app/main/prefs.ts';
-import { stoppedStatusSource } from '../app/main/status.ts';
+import { stoppedStatusSource } from '../src/status-source.ts';
 import { linkButtons, rowIcon } from '../app/renderer/screens/jobs.logic.ts';
 import { canStart, MAX_REQUEST, requestProblem, startedText } from '../app/renderer/screens/newTask.logic.ts';
 import { slackChat } from './fakes/chat.ts';
@@ -26,6 +25,7 @@ import {
 import type { StartThreadInput } from '../src/types.ts';
 import { fakeClock } from './fakes/clock.ts';
 import { createFakeSlack } from './fakes/slack.ts';
+import { engineContext, type AppContext } from './fakes/app-context.ts';
 
 const OWNER = 'U0123456789';
 const NOW = new Date('2026-11-18T10:00:00Z');
@@ -201,7 +201,7 @@ test("cleanup weighs a task's worktree like a job's", async (t) => {
   assert.equal(verdicts[0]!.removable, false, 'a task from an hour ago is kept');
 });
 
-const context = (profileDir: string): HandlerContext => ({
+const context = (profileDir: string): AppContext => ({
   profileDirOrNull: () => profileDir,
   profileDir: () => profileDir,
   prefs: memoryPrefs(),
@@ -215,7 +215,7 @@ test('IPC: start returns the task without any token, refuses a double start, and
   const { profileDir } = fixture(t);
   let release: () => void = () => {};
   const gate = new Promise<void>((resolve) => { release = resolve; });
-  const handlers = tasksHandlers(context(profileDir), { fetchBase: () => gate, now: () => NOW });
+  const handlers = tasksHandlers(engineContext(context(profileDir)), { fetchBase: () => gate, now: () => NOW });
 
   const first = handlers.start(REQUEST);
   await assert.rejects(Promise.resolve(handlers.start('another')), /already starting/);
@@ -232,7 +232,7 @@ test('IPC: start returns the task without any token, refuses a double start, and
 
 test('the New task screen enables Start for exactly the requests the app then starts, and refuses the rest with the same limit', async (t) => {
   const { profileDir, recorded } = fixture(t);
-  const handlers = tasksHandlers(context(profileDir), { fetchBase: noFetch, now: () => NOW });
+  const handlers = tasksHandlers(engineContext(context(profileDir)), { fetchBase: noFetch, now: () => NOW });
   const cases: [label: string, request: string, starts: boolean][] = [
     ['empty', '', false],
     ['only spaces', '   \n ', false],
@@ -269,7 +269,7 @@ test('with the bot stopped, Jobs shows a task started in the app as running, sin
     },
   }));
   const ctx = context(profileDir);
-  const rows = await jobsHandlers(ctx, { now: () => NOW }).list();
+  const rows = await jobsHandlers(engineContext(ctx), { now: () => NOW }).list();
   const icon = (channel: string) => rowIcon(rows.find((row) => row.channel === channel)!, ctx.status.current());
   assert.equal(ctx.status.current().state, 'stopped');
   assert.equal(icon(APP_TASK_CHANNEL), 'running');

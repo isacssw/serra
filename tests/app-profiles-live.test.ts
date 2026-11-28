@@ -8,14 +8,13 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test, { type TestContext } from 'node:test';
 import type { SerraPushes } from '../app/main/bridge.ts';
-import type { HandlerContext } from '../app/main/ipc/context.ts';
-import { profilesHandlers } from '../app/main/ipc/profiles.ts';
-import { updatesService } from '../app/main/ipc/updates.ts';
+import { profilesHandlers } from '../src/handlers/profiles.ts';
+import { updatesService } from '../src/handlers/updates.ts';
 import type { AppUpdater } from '../app/main/app-updater.ts';
 import { burstGate, notificationPlanner, notificationTarget, notificationText } from '../app/main/notifications.logic.ts';
 import { defaultPrefs, memoryPrefs } from '../app/main/prefs.ts';
-import { presenceMap } from '../app/main/presence-map.ts';
-import { stoppedStatusSource, type StatusSubscriber } from '../app/main/status.ts';
+import { presenceMap } from '../src/presence-map.ts';
+import { stoppedStatusSource, type StatusSubscriber } from '../src/status-source.ts';
 import { avatarLetters, multiTrayView, rowPresence, trayView, worstIcon, type TrayProfile } from '../app/main/tray.logic.ts';
 import { presence } from '../app/renderer/presence.logic.ts';
 import { lettersFor, othersNeedingYou, profileRows, withPresence } from '../app/renderer/profiles.logic.ts';
@@ -24,6 +23,7 @@ import type { ServiceDriver } from '../src/service.ts';
 import { readPause } from '../src/intake.ts';
 import { createProfile } from '../src/setup.ts';
 import { startStatusServer, type UpStatus } from '../src/status-socket.ts';
+import { engineContext, type AppContext } from './fakes/app-context.ts';
 
 const OWNER = 'U0123456789';
 const up = (counts: { needsYou: number; running: number }, slackConnected = true, pid = 4242): UpStatus =>
@@ -288,7 +288,7 @@ test('the quiet line in Jobs lists other profiles that need you, at most three, 
 // Main: the list follows every profile; bot updates look after each one, without mixing logs or pauses
 // ---------------------------------------------------------------------------------------------------------------
 
-const baseContext = (active: string | null, extra: Partial<HandlerContext> = {}): HandlerContext => {
+const baseContext = (active: string | null, extra: Partial<AppContext> = {}): AppContext => {
   const prefs = memoryPrefs({ ...defaultPrefs, profileDir: active });
   return {
     profileDir: () => { const dir = prefs.get().profileDir; if (!dir) throw new Error('No bot profile selected.'); return dir; },
@@ -319,7 +319,7 @@ test('listing profiles follows each one live and shows their reports, without pr
   const sockets = fakeSockets();
   const map = presenceMap(sockets.subscribe);
   const context = baseContext(saitama, { presence: map });
-  const handlers = profilesHandlers(context, { root, launchAgentsDir: join(root, 'agents'), probeMs: 1 });
+  const handlers = profilesHandlers(engineContext(context), { root, launchAgentsDir: join(root, 'agents'), probeMs: 1 });
   const first = await handlers.list();
   assert.deepEqual(map.profiles().map((followed) => followed.name), ['Saitama', 'Scout'], 'both are followed, the one in use too');
   assert.equal(first.profiles[1]!.status, null, 'Scout is checking until its daemon answers');
@@ -344,7 +344,7 @@ test('pinned to one profile with --profile, only that bot is followed', async (t
   const sockets = fakeSockets();
   const map = presenceMap(sockets.subscribe);
   t.after(() => map.close());
-  await profilesHandlers(baseContext(saitama, { presence: map, profilePinned: true }), { root, launchAgentsDir: join(root, 'agents') }).list();
+  await profilesHandlers(engineContext(baseContext(saitama, { presence: map, profilePinned: true })), { root, launchAgentsDir: join(root, 'agents') }).list();
   assert.deepEqual(map.profiles().map((followed) => followed.dir), [saitama]);
   assert.deepEqual(sockets.connects, [saitama]);
 });
@@ -374,7 +374,7 @@ const botOnOldVersion = async (t: TestContext, root: string, id: string) => {
     echo: () => {},
   };
   // Prepared and activated on its own, as an earlier app version left it.
-  const { handlers } = updatesService(baseContext(dir, { runtime: { version: '0.1.0-alpha.9', electron: '45.4.1', node: '24.22.3', platform: 'darwin' } }), deps);
+  const { handlers } = updatesService(engineContext(baseContext(dir, { runtime: { version: '0.1.0-alpha.9', electron: '45.4.1', node: '24.22.3', platform: 'darwin' } })), deps);
   const old = await handlers.prepare();
   mkdirSync(join(old.release, 'node_modules/@slack/bolt'), { recursive: true });
   writeFileSync(join(dir, 'prepared.json'), JSON.stringify({ ...old, appVersion: '0.1.0-alpha.9', fromApp: true }));
@@ -404,7 +404,7 @@ test('the bot update looks after a profile in the background too, and its log st
     push: <P extends keyof SerraPushes>(channel: P, payload: SerraPushes[P]) => { if (channel === 'releaseLog') pushed.push(String(payload)); },
   });
   // Both profiles share one launchd fake here only through their own folders; each driver records its own bot.
-  const { handlers, tick } = updatesService(context, { ...back.deps, echo: (line) => { if (process.env.DEBUG_LIVE) console.log(line); }, deploy: { ...back.deps.deploy, driver: {
+  const { handlers, tick } = updatesService(engineContext(context), { ...back.deps, echo: (line) => { if (process.env.DEBUG_LIVE) console.log(line); }, deploy: { ...back.deps.deploy, driver: {
     loaded: async () => true,
     stop: async (label) => { (label.endsWith('atlas') ? front : back).events.push('stop'); },
     start: async (plist) => { (plist.includes('atlas') ? front : back).events.push('start'); },
@@ -440,7 +440,7 @@ test('installing an app update holds new requests in every profile that follows 
   let state: 'installing' | 'idle' = 'installing';
   const appUpdater = { view: () => ({ state }), install: () => ({ state }) } as unknown as AppUpdater;
   const context = baseContext(a, { botFollowsApp: true, appUpdater, profileDirs: () => [a, b, c] });
-  const { handlers } = updatesService(context, { echo: () => {} });
+  const { handlers } = updatesService(engineContext(context), { echo: () => {} });
   await handlers.install();
   assert.equal(readPause(a)?.reason, 'app-update');
   assert.equal(readPause(b)?.reason, 'app-update', 'the background bot holds requests too');

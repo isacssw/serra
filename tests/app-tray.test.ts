@@ -3,13 +3,13 @@ import { mkdtempSync, realpathSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
-import { botHandlers, type BotService } from '../app/main/ipc/bot.ts';
-import type { HandlerContext } from '../app/main/ipc/context.ts';
+import { botHandlers, type BotService } from '../src/handlers/bot.ts';
 import { memoryPrefs } from '../app/main/prefs.ts';
-import { socketStatusSource, STOPPED, type StatusSubscriber } from '../app/main/status.ts';
+import { socketStatusSource, STOPPED, type StatusSubscriber } from '../src/status-source.ts';
 import { trayController, trayView, type TrayView } from '../app/main/tray.logic.ts';
 import type { BotEvent, BotStatus, StatusMessage } from '../src/contracts.ts';
 import { startStatusServer, type UpStatus } from '../src/status-socket.ts';
+import { engineContext, type AppContext } from './fakes/app-context.ts';
 
 const up = (counts = { needsYou: 0, running: 0 }, slackConnected = true): BotStatus => (
   { state: 'up', pid: 4242, startedAt: '2026-11-19T09:00:00.000Z', slackConnected, counts }
@@ -163,7 +163,7 @@ test('the status source reports the real daemon over status.sock, then stopped w
   assert.deepEqual(await next('stopped'), STOPPED);
 });
 
-const context = (overrides: Partial<HandlerContext> = {}): HandlerContext => ({
+const context = (overrides: Partial<AppContext> = {}): AppContext => ({
   profileDirOrNull: () => '/Users/you/profile',
   profileDir: () => '/Users/you/profile',
   prefs: memoryPrefs(),
@@ -182,7 +182,7 @@ test('bot handlers call the service for the selected profile, one at a time', as
     stop: async (dir) => { calls.push(`stop ${dir}`); },
     restart: (dir) => { calls.push(`restart ${dir}`); return new Promise((resolve) => { release = resolve; }); },
   };
-  const handlers = botHandlers(context(), service);
+  const handlers = botHandlers(engineContext(context()), service);
   assert.deepEqual(await handlers.status(), STOPPED);
   const restarting = handlers.restart();
   await assert.rejects(Promise.resolve(handlers.stop()), /already starting, stopping or restarting/);
@@ -194,8 +194,8 @@ test('bot handlers call the service for the selected profile, one at a time', as
 
 test('bot handlers refuse without a profile or off macOS, before touching the service', async () => {
   const service: BotService = { start: async () => assert.fail(), stop: async () => assert.fail(), restart: async () => assert.fail() };
-  const noProfile = botHandlers(context({ profileDir: () => { throw new Error('No bot profile selected.'); } }), service);
+  const noProfile = botHandlers(engineContext(context({ profileDir: () => { throw new Error('No bot profile selected.'); } })), service);
   await assert.rejects(Promise.resolve(noProfile.restart()), /No bot profile selected/);
-  const linux = botHandlers(context({ runtime: { version: '0.0.0', electron: '45.4.1', node: '24.0.0', platform: 'linux' } }), service);
+  const linux = botHandlers(engineContext(context({ runtime: { version: '0.0.0', electron: '45.4.1', node: '24.0.0', platform: 'linux' } })), service);
   await assert.rejects(Promise.resolve(linux.restart()), /macOS only/);
 });

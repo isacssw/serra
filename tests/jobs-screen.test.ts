@@ -4,10 +4,9 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync,
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test, { type TestContext } from 'node:test';
-import type { HandlerContext } from '../app/main/ipc/context.ts';
-import { jobsHandlers } from '../app/main/ipc/jobs.ts';
+import { jobsHandlers } from '../src/handlers/jobs.ts';
 import { memoryPrefs } from '../app/main/prefs.ts';
-import { stoppedStatusSource } from '../app/main/status.ts';
+import { stoppedStatusSource } from '../src/status-source.ts';
 import {
   ageLabel, channelOptions, channelTag, cleanupView, filterJobs, groupJobs, linkButtons, rowDetail, rowIcon, rowNote, rowParts, rowPill,
   verdictLabel,
@@ -15,6 +14,7 @@ import {
 } from '../app/renderer/screens/jobs.logic.ts';
 import type { Runner } from '../src/cleanup.ts';
 import type { BotStatus, CleanupVerdict } from '../src/contracts.ts';
+import { engineContext, type AppContext } from './fakes/app-context.ts';
 
 const NOW = new Date(2026, 10, 18, 15, 0, 0);
 const minutesAgo = (minutes: number): string => new Date(NOW.getTime() - minutes * 60_000).toISOString();
@@ -124,7 +124,7 @@ test('cleanup dialog: dry run splits remove and keep; apply reports removed and 
 // app/main/ipc/jobs.ts
 // ---------------------------------------------------------------------------------------------------------------
 
-const context = (profileDir: string): HandlerContext => ({
+const context = (profileDir: string): AppContext => ({
   profileDirOrNull: () => profileDir,
   profileDir: () => profileDir,
   prefs: memoryPrefs(),
@@ -163,7 +163,7 @@ test('jobs.list reads the files with the daemon stopped, with Slack links from t
     assert.equal(cmd, t3Bin, 'the t3 binary comes from profile.json');
     return JSON.stringify({ thread: { title: 'Serra: Fix the export', link: 'https://t3.example/threads/thread-a' } });
   };
-  const handlers = jobsHandlers(context(dir), { run, now: () => NOW });
+  const handlers = jobsHandlers(engineContext(context(dir)), { run, now: () => NOW });
   const before = readFileSync(join(dir, 'state.json'), 'utf8');
   const rows = await handlers.list();
   assert.equal(rows.length, 1);
@@ -182,7 +182,7 @@ test('jobs.list reads the files with the daemon stopped, with Slack links from t
 
 test('jobs.list without a saved workspace or a working t3 still lists the job, with no links', async (t) => {
   const { dir } = profile(t);
-  const handlers = jobsHandlers(context(dir), { run: async () => { throw new Error('t3 not found'); }, now: () => NOW });
+  const handlers = jobsHandlers(engineContext(context(dir)), { run: async () => { throw new Error('t3 not found'); }, now: () => NOW });
   const rows = await handlers.list();
   assert.deepEqual(rows.map((r) => [r.group, r.title, r.links]), [['needs you', '', {}]]);
 });
@@ -202,7 +202,7 @@ test('jobs.cleanupWorktrees: dry run removes nothing, apply removes, bad input i
     if (cmd === 'git' && args[2] === 'symbolic-ref') return 'task\n';
     return '';
   };
-  const handlers = jobsHandlers(context(dir), { run, now: () => NOW, worktreesRoot });
+  const handlers = jobsHandlers(engineContext(context(dir)), { run, now: () => NOW, worktreesRoot });
 
   const dry = await handlers.cleanupWorktrees({ apply: false });
   assert.deepEqual(dry.map((v) => [v.path, v.removable, v.removed]), [[path, true, undefined]]);

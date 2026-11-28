@@ -1,15 +1,22 @@
-// The app's profiles on disk (SB-10): `profiles.json` beside the profile folders, each folder's name, setup state and
+// The profiles on disk (SB-10): `profiles.json` beside the profile folders, each folder's name, setup state and
 // agent, and a one-off read of each daemon's status. Listing reads only: it never writes into a profile folder, and
 // it writes `profiles.json` only when the owner changes the order or a colour, or adds or removes a profile.
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join, resolve } from 'node:path';
-import type { BotStatus } from '../../src/contracts.ts';
-import { readProfileFile } from '../../src/config.ts';
-import { acpAgents, readAgentBackend } from '../../src/agent/acp-agents.ts';
-import { setupProgress } from '../../src/setup.ts';
-import { statusSocketPath, subscribeStatus } from '../../src/status-socket.ts';
-import { profilesUnder } from './profile-location.ts';
-import { arrange, emptyProfilesFile, localRef, parseProfilesFile, PROFILES_FILE, type ProfilesFile } from './profiles.logic.ts';
+import type { BotStatus } from './contracts.ts';
+import { readProfileFile } from './config.ts';
+import { acpAgents, readAgentBackend } from './agent/acp-agents.ts';
+import { setupProgress } from './setup.ts';
+import { statusSocketPath, subscribeStatus } from './status-socket.ts';
+import { arrange, emptyProfilesFile, localRef, parseProfilesFile, PROFILES_FILE, type ProfilesFile } from './profile-order.ts';
+
+/** Profile folders directly under `root` (`~/.local/share/serra/<bot-id>`, where `pnpm run setup` puts them). */
+export const profilesUnder = (root: string): string[] => {
+  let names: string[];
+  try { names = readdirSync(root, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name).sort(); }
+  catch { return []; }
+  return names.map((name) => join(root, name)).filter((dir) => existsSync(join(dir, 'profile.json')));
+};
 
 export const readProfilesFile = (root: string): ProfilesFile => {
   try { return parseProfilesFile(JSON.parse(readFileSync(join(root, PROFILES_FILE), 'utf8'))); }

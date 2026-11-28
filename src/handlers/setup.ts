@@ -5,21 +5,21 @@
 import { existsSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { delimiter, dirname, isAbsolute, join, resolve } from 'node:path';
-import { defaultProfileRoot } from '../../../src/config.ts';
-import { findNode } from '../../../src/releases.ts';
-import { scrub } from '../../../src/secrets.ts';
-import { readProfileFile } from '../../../src/config.ts';
-import type { SecretName } from '../../../src/contracts.ts';
-import { secretStatus, type SecretOptions } from '../../../src/secrets.ts';
+import { defaultProfileRoot } from '../config.ts';
+import { findNode } from '../releases.ts';
+import { scrub } from '../secrets.ts';
+import { readProfileFile } from '../config.ts';
+import type { SecretName } from '../contracts.ts';
+import { secretStatus, type SecretOptions } from '../secrets.ts';
 import {
   certainPresence, confirmOwner, createSetupProfile, detectGithubLogin, detectProject, installService, recordServiceAnswered, setupProgress, slackManifest,
   summarizeProfile, type InstallOptions, type MemberLookup, type ProfileDraft, type SetupProgress,
-} from '../../../src/setup.ts';
-import { run } from '../../../src/t3.ts';
-import type { Handlers, SetupDetection } from '../bridge.ts';
-import { profilesUnder } from '../profile-location.ts';
-import { mergePrefs } from '../prefs.ts';
-import type { HandlerContext } from './context.ts';
+} from '../setup.ts';
+import { run } from '../t3.ts';
+import type { Handlers, SetupDetection } from '../api.ts';
+import { profilesUnder } from '../profiles.ts';
+import { isRecord } from '../lib/guards.ts';
+import type { CoreContext } from './context.ts';
 
 export interface SetupDeps {
   /** Where new profiles go by default (tests: a temp folder). */
@@ -52,15 +52,24 @@ const DRAFT_FIELDS = [
 
 /** Copies only the known text fields, so nothing else from the window reaches the service. */
 export const parseDraft = (value: unknown): ProfileDraft => {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) throw new Error('The setup form must be an object.');
-  const draft: Record<string, string> = {};
+  if (!isRecord(value)) throw new Error('The setup form must be an object.');
+  const given = new Map<(typeof DRAFT_FIELDS)[number], string>();
   for (const field of DRAFT_FIELDS) {
-    const item = (value as Record<string, unknown>)[field];
+    const item = value[field];
     if (item === undefined || item === null) continue;
     if (typeof item !== 'string') throw new Error(`${field} must be text.`);
-    draft[field] = item;
+    given.set(field, item);
   }
-  return draft as unknown as ProfileDraft;
+  // A required field left out reads as empty: the service says what is missing.
+  const draft: ProfileDraft = {
+    botName: given.get('botName') ?? '', ownerName: given.get('ownerName') ?? '', ownerSlackUserId: given.get('ownerSlackUserId') ?? '',
+    githubLogin: given.get('githubLogin') ?? '', projectPath: given.get('projectPath') ?? '',
+  };
+  for (const field of ['botId', 'remote', 'baseRef', 'githubRepo', 't3Bin', 'directory'] as const) {
+    const item = given.get(field);
+    if (item !== undefined) draft[field] = item;
+  }
+  return draft;
 };
 
 /** Puts the Node binary's folder first on PATH, as the service plist does, so `pnpm` beside it is found from Finder. */
@@ -70,7 +79,7 @@ const nodeOnPath = (node: string): void => {
   if (!path.split(delimiter).includes(folder)) process.env.PATH = path ? `${folder}${delimiter}${path}` : folder;
 };
 
-export const setupHandlers = (context: HandlerContext, deps: SetupDeps = {}): Handlers<'setup'> => {
+export const setupHandlers = (context: CoreContext, deps: SetupDeps = {}): Handlers<'setup'> => {
   const root = deps.root ?? defaultProfileRoot;
   const find = deps.findNode ?? ((profileDir: string) => findNode(profileDir));
   const echo = deps.echo ?? ((line: string) => console.log(`[serra] ${line}`));
@@ -177,14 +186,14 @@ export const setupHandlers = (context: HandlerContext, deps: SetupDeps = {}): Ha
       if (context.profilePinned && current && resolve(current) !== target) {
         throw new Error('Serra was started with a profile given on the command line, so it can’t switch here. Quit and open it without --profile.');
       }
-      context.prefs.set(mergePrefs(context.prefs.get(), { profileDir: target }));
+      context.selectProfile(target);
       return detect();
     },
 
     chooseFolder: async (purpose) => {
       if (purpose !== 'repository' && purpose !== 'profile') throw new Error('Unknown folder purpose.');
-      if (!context.chooseFolder) return null;
-      return context.chooseFolder(purpose === 'repository'
+      if (!context.host.chooseFolder) return null;
+      return context.host.chooseFolder(purpose === 'repository'
         ? { title: 'Choose the repository', buttonLabel: 'Use this repository', defaultPath: homedir() }
         : { title: 'Choose a Serra profile folder', buttonLabel: 'Use this profile', defaultPath: root });
     },
@@ -206,7 +215,7 @@ export const setupHandlers = (context: HandlerContext, deps: SetupDeps = {}): Ha
     create: async (value) => {
       const directory = await createSetupProfile(parseDraft(value), { root });
       // Remember the new profile so the app (and its next launch from Finder) manages it.
-      context.prefs.set(mergePrefs(context.prefs.get(), { profileDir: directory, setupDraft: null }));
+      context.selectProfile(directory, { setupFinished: true });
       const current = context.profileDirOrNull();
       if (!current || resolve(current) !== directory) {
         throw new Error(`Profile created at ${directory}, but the app was started with --profile ${current}. Quit and open Serra without --profile to finish setting it up.`);

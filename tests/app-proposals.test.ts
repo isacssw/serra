@@ -3,15 +3,15 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import test, { type TestContext } from 'node:test';
-import { proposalsHandlers } from '../app/main/ipc/proposals.ts';
-import type { HandlerContext } from '../app/main/ipc/context.ts';
+import { proposalsHandlers } from '../src/handlers/proposals.ts';
 import { memoryPrefs } from '../app/main/prefs.ts';
-import { stoppedStatusSource } from '../app/main/status.ts';
+import { stoppedStatusSource } from '../src/status-source.ts';
 import {
   changeSummary, dateLabel, defaultFolder, diffRows, diffStats, folderLabel, folderOf, groupByDate, nextSelection, pendingLabel, proposalBody, proposalTitle,
   withoutTarget,
 } from '../app/renderer/screens/proposals.logic.ts';
 import type { Proposal } from '../src/contracts.ts';
+import { engineContext, type AppContext } from './fakes/app-context.ts';
 
 const proposal = (path: string, date: string | null, target: string | null = null): Proposal => ({ path, date, target });
 
@@ -141,7 +141,7 @@ const profile = (t: TestContext) => {
     const absolute = join(knowledge, path);
     return [path, existsSync(absolute) ? readFileSync(absolute, 'utf8') : null];
   }));
-  const context: HandlerContext = {
+  const context: AppContext = {
     profileDir: () => dir,
     profileDirOrNull: () => dir,
     prefs: memoryPrefs(),
@@ -150,7 +150,7 @@ const profile = (t: TestContext) => {
     openExternal: async () => {},
     openPath: async () => {},
   };
-  return { knowledge, snapshot, handlers: proposalsHandlers(context) };
+  return { knowledge, snapshot, handlers: proposalsHandlers(engineContext(context)) };
 };
 
 test('handlers: list, diff and the folder and page pickers come from the profile', async (t) => {

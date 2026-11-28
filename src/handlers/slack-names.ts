@@ -1,10 +1,10 @@
 // The app's Slack names (APP-29), one cache per profile, shared by Jobs and Settings › People. The running bot names
 // the IDs over the status socket, so the app never reads the bot token (SERRA-55); names are kept in the profile's
 // `slack-names.json`.
-import type { SlackNames } from '../../../src/slack-names.ts';
-import { createStoredSlackNames, type NamesAsk } from '../../../src/slack-names-store.ts';
-import { requestNames } from '../../../src/status-socket.ts';
-import type { HandlerContext } from './context.ts';
+import type { SlackNames } from '../slack-names.ts';
+import { createStoredSlackNames, type NamesAsk } from '../slack-names-store.ts';
+import { requestNames } from '../status-socket.ts';
+import type { CoreContext } from './context.ts';
 
 /** Tests pass a fake `ask` or a timeout. */
 export interface SlackNamesDeps {
@@ -15,7 +15,7 @@ export interface SlackNamesDeps {
 /** The names cache of a profile, made on first use. */
 export type ProfileNames = (profileDir: string) => SlackNames;
 
-export const profileSlackNames = (context: HandlerContext, deps: SlackNamesDeps = {}): ProfileNames => {
+export const profileSlackNames = (context: CoreContext, deps: SlackNamesDeps = {}): ProfileNames => {
   // One cache per profile: another profile may be another Slack workspace.
   const byProfile = new Map<string, SlackNames>();
   return (profileDir) => {

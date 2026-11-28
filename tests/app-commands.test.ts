@@ -4,10 +4,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test, { type TestContext } from 'node:test';
 import type { SerraBridge } from '../app/main/bridge.ts';
-import type { HandlerContext } from '../app/main/ipc/context.ts';
-import { createHandlers } from '../app/main/ipc/index.ts';
 import { memoryPrefs } from '../app/main/prefs.ts';
-import { stoppedStatusSource } from '../app/main/status.ts';
+import { stoppedStatusSource } from '../src/status-source.ts';
 import { addAllowedUser, builtinActions, navigationActions, navigationButton, openProfileFolder, restartBot } from '../app/renderer/commands/builtin.ts';
 import { fuzzyMatch } from '../app/renderer/commands/fuzzy.logic.ts';
 import { isPaletteShortcut, moveSelection } from '../app/renderer/commands/palette.logic.ts';
@@ -16,6 +14,7 @@ import { routeForPath, routes, sections } from '../app/renderer/routes.ts';
 import { CLEANUP_PARAM, cleanupWorktreesAction } from '../app/renderer/screens/jobs.logic.ts';
 import { PROPOSAL_PARAM, promoteProposalAction } from '../app/renderer/screens/proposals.logic.ts';
 import type { Profile } from '../src/contracts.ts';
+import { createHandlers, type AppContext } from './fakes/app-context.ts';
 
 const action = (id: string, title: string, extra: Partial<Action> = {}): Action =>
   ({ id, title, group: 'Actions', button: `Somewhere › ${title}`, run: () => {}, ...extra });
@@ -211,7 +210,7 @@ const tempProfile = (t: TestContext): string => {
   return directory;
 };
 
-const handlerContext = (profileDir: string): HandlerContext => ({
+const handlerContext = (profileDir: string): AppContext => ({
   profileDir: () => profileDir,
   profileDirOrNull: () => profileDir,
   prefs: memoryPrefs(),

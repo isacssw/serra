@@ -7,16 +7,16 @@ import { createConnection, type Socket } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test, { type TestContext } from 'node:test';
-import type { HandlerContext } from '../app/main/ipc/context.ts';
-import { jobsHandlers } from '../app/main/ipc/jobs.ts';
+import { jobsHandlers } from '../src/handlers/jobs.ts';
 import { memoryPrefs } from '../app/main/prefs.ts';
-import { stoppedStatusSource } from '../app/main/status.ts';
+import { stoppedStatusSource } from '../src/status-source.ts';
 import { answerNameRequests, createSlackNames, DM_LABEL, type SlackNameLookup } from '../src/slack-names.ts';
 import { createStoredSlackNames, MAX_STORED_NAMES, readStoredNames, SLACK_NAMES_FILE } from '../src/slack-names-store.ts';
 import {
   MAX_NAME_IDS, MAX_REQUEST_BYTES, requestNames, startStatusServer, subscribeStatus,
   type NamesResolver, type StatusMessage, type UpStatus,
 } from '../src/status-socket.ts';
+import { engineContext, type AppContext } from './fakes/app-context.ts';
 
 const TOKEN = 'xoxb-1111-2222-fixturevalue';
 const REF = 'op://Vault/serra/bot-token';
@@ -295,7 +295,7 @@ const launchFixture = (t: TestContext, source: 'onepassword' | 'keychain' | 'env
   return { dir, recorded };
 };
 
-const launchContext = (profileDir: string, pushes: string[]): HandlerContext => ({
+const launchContext = (profileDir: string, pushes: string[]): AppContext => ({
   profileDirOrNull: () => profileDir,
   profileDir: () => profileDir,
   prefs: memoryPrefs(),
@@ -307,7 +307,7 @@ const launchContext = (profileDir: string, pushes: string[]): HandlerContext => 
 });
 
 /** Opens the app on the profile: a fresh Jobs handler, as at launch, that asks the real socket. */
-const openApp = (dir: string, pushes: string[] = []) => jobsHandlers(launchContext(dir, pushes), {
+const openApp = (dir: string, pushes: string[] = []) => jobsHandlers(engineContext(launchContext(dir, pushes)), {
   run: async () => { throw new Error('no t3'); }, now: () => NOW, slackNames: { timeoutMs: 300, log: () => {} },
 });
 

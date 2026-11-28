@@ -4,10 +4,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test, { type TestContext } from 'node:test';
 import { createBridge, type InvokeResult } from '../app/main/bridge.ts';
-import type { HandlerContext } from '../app/main/ipc/context.ts';
-import { createHandlers, registerHandlers, type IpcRegistrar } from '../app/main/ipc/index.ts';
+import { registerHandlers, type IpcRegistrar } from '../app/main/router.ts';
 import { memoryPrefs } from '../app/main/prefs.ts';
-import { stoppedStatusSource } from '../app/main/status.ts';
+import { stoppedStatusSource } from '../src/status-source.ts';
 import {
   BRIEF_PLACEHOLDERS, briefProblems, createBriefService, fillBrief, fillBriefText, NO_THREAD, REQUIRED_PLACEHOLDERS,
   sampleBriefInput,
@@ -15,6 +14,7 @@ import {
 import { DOCUMENTS, emptyDraft, isDirty, loadedDraft, proposedLabel, replacesLine } from '../app/renderer/screens/brief.logic.ts';
 import { codeRoot, loadConfig } from '../src/config.ts';
 import { createKnowledge } from '../src/knowledge.ts';
+import { createHandlers, type AppContext } from './fakes/app-context.ts';
 
 const TEMPLATE = readFileSync(join(codeRoot, 'templates/brief.md'), 'utf8');
 const POLICY = '# Owner policy\n\nOpen draft PRs.\n';
@@ -42,7 +42,7 @@ const propose = (directory: string, name: string, files: Record<string, string>)
 };
 
 const bridgeFor = (profileDir: string) => {
-  const context: HandlerContext = {
+  const context: AppContext = {
     profileDir: () => profileDir, profileDirOrNull: () => profileDir, prefs: memoryPrefs(), status: stoppedStatusSource(),
     runtime: { version: '0.0.0', electron: '45.4.1', node: '24.0.0', platform: 'darwin' },
     openExternal: async () => {}, openPath: async () => {},
