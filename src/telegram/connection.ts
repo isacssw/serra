@@ -187,7 +187,8 @@ export const createTelegramConnection = (options: TelegramConnectionOptions): Ch
       report('disconnected');
     },
 
-    watch(listener) { listeners.push(listener); },
+    // A state known already (a failed sign-in in identify) is told at once, so the daemon doesn't miss it.
+    watch(listener) { listeners.push(listener); if (state !== null) listener(state); },
 
     async hold(ref, on) {
       await api.setReaction(ref.conversation.slice(TELEGRAM.length + 1), Number(ref.id), on ? HELD : null).catch(() => {});
