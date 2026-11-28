@@ -29,6 +29,9 @@ void requiredComplete;
 /** Keys that would change an object's prototype if copied onto it. */
 const UNSAFE_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
 
+/** A message in a conversation, as a copy of an approval card is saved (`src/chat/mirrors.ts`). */
+const isRef = (x: unknown): x is Record<string, unknown> & { conversation: string; id: string } => isRecord(x) && isString(x.conversation) && isString(x.id);
+
 /**
  * Each optional field and the shape it must have. A field of the wrong shape is dropped, not the job. The type makes
  * this list complete: a field added to `Job` without a guard here is a compile error, not a field lost on restart.
@@ -43,10 +46,11 @@ const OPTIONAL: { [K in OptionalKeys<Job>]: (value: unknown) => boolean } = {
   visibility: isAudience,
   knowledgeRead: (x) => isRecord(x) && Object.values(x).every(isAudience),
   knowledgeDir: isString, branch: isString, request: isString, backend: isString,
+  staleCopies: (x) => Array.isArray(x) && x.every((copy) => isRef(copy) && ['answered', 'over', 'closed'].includes(String(copy.shows)) && typeof copy.since === 'number'),
 };
 
 const isCard = (x: unknown): x is QuestionCard => isRecord(x) && isString(x.ts) && isString(x.requestId) && isString(x.nonce) && Array.isArray(x.questions)
-  && Number.isSafeInteger(x.index) && isRecord(x.answers);
+  && Number.isSafeInteger(x.index) && isRecord(x.answers) && (x.mirrors === undefined || (Array.isArray(x.mirrors) && x.mirrors.every(isRef)));
 const isProgress = (x: unknown): x is { ts: string; text: string } => isRecord(x) && isString(x.ts) && isString(x.text);
 const isSeenRun = (x: unknown): x is SeenRun => isRecord(x) && isString(x.id) && isString(x.at) && (x.waits === undefined || isBoolean(x.waits))
   && (x.progress === undefined || isProgress(x.progress));

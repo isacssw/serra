@@ -22,9 +22,11 @@ export interface SecondChatOptions {
   owner?: string;
   /** Who can see each conversation (raw IDs). Team unless listed; `null`: the chat won't say. */
   audiences?: Record<string, Audience | null>;
+  /** The owner's own conversation (raw ID), for copies of approvals. Absent: the chat takes no copies. */
+  ownerSpace?: string;
 }
 
-export const createSecondChat = ({ owner = '1', audiences = {} }: SecondChatOptions = {}) => {
+export const createSecondChat = ({ owner = '1', audiences = {}, ownerSpace }: SecondChatOptions = {}) => {
   const self = fake('bot');
   let next = 0;
   const id = (): string => `${++next}`;
@@ -39,6 +41,9 @@ export const createSecondChat = ({ owner = '1', audiences = {} }: SecondChatOpti
   const seen: string[] = [];
   const working: { target: Target; on: boolean }[] = [];
   let stopped = false;
+  /** While true, every write and edit fails, as when the chat is unreachable. */
+  let offline = false;
+  const reachable = (): void => { if (offline) throw new Error('the fake chat is unreachable'); };
 
   const audienceOf = (target: Target): Result<Audience> => {
     const found = audiences[rawId(FAKE, target.conversation)];
@@ -48,8 +53,8 @@ export const createSecondChat = ({ owner = '1', audiences = {} }: SecondChatOpti
 
   const writer: WorkerWriter = {
     clear: async (target) => { const looked = audienceOf(target); return looked.ok ? { ok: true, value: clearedFor(target, looked.value, Date.now()) } : looked; },
-    send: async (proof, out) => { const message = id(); sent.push({ target: proof.target, out, id: message }); return message; },
-    revise: async (_proof, ref, out) => { revised.push({ ref, out }); },
+    send: async (proof, out) => { reachable(); const message = id(); sent.push({ target: proof.target, out, id: message }); return message; },
+    revise: async (_proof, ref, out) => { reachable(); revised.push({ ref, out }); },
     upload: async (proof, file) => { uploads.push({ target: proof.target, file }); return null; },
   };
 
@@ -75,7 +80,7 @@ export const createSecondChat = ({ owner = '1', audiences = {} }: SecondChatOpti
         findReply: async () => null,
         audience: async (target) => audienceOf(target),
         notice: async (target, notice, inPlaceOf) => { const message = id(); notices.push({ target, notice, ...(inPlaceOf ? { inPlaceOf } : {}), id: message }); return message; },
-        replaceWithNotice: async (ref, notice) => { replaced.push({ ref, notice }); return true; },
+        replaceWithNotice: async (ref, notice) => { if (offline) return false; replaced.push({ ref, notice }); return true; },
         remove: async () => {},
         acknowledge: async (ref, on) => { acknowledged.push({ ref, on }); },
         setWorking: async (target, on) => { working.push({ target, on }); },
@@ -86,6 +91,7 @@ export const createSecondChat = ({ owner = '1', audiences = {} }: SecondChatOpti
       watch: () => {},
       hold: async (ref, on) => { held.push({ ref, on }); },
       saw: (msg) => { seen.push(msg.user); },
+      ...(ownerSpace === undefined ? {} : { ownerSpace: async () => fake(ownerSpace) }),
     },
   };
 
@@ -116,5 +122,7 @@ export const createSecondChat = ({ owner = '1', audiences = {} }: SecondChatOpti
       return listening().answer({ ...rest, channel: fake(conversation), user: fake(from) });
     },
     stopped: (): boolean => stopped,
+    /** The chat becomes unreachable (`true`) or comes back. */
+    setOffline: (value: boolean): void => { offline = value; },
   };
 };

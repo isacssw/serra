@@ -1,3 +1,4 @@
+import type { StaleCopy } from './chat/mirrors.ts';
 import type { Phase } from './lifecycle.ts';
 
 /** The fields of `t3 thread show --json` that the bot reads. */
@@ -47,6 +48,11 @@ export interface Job {
   createdAt: string;
   /** Last time a request came in or a reply went out. Absent on jobs saved before it existed. */
   lastActivityAt?: string;
+  /**
+   * Copies of a closed approval card, in another chat, that couldn't be changed to show they're done when it closed
+   * (the chat was down): tried again on later polls (`src/chat/mirrors.ts`).
+   */
+  staleCopies?: StaleCopy[];
   /** Recent thread replies consumed as question answers, so Slack retries cannot answer the next question. */
   answeredQuestionMessages?: string[];
   /** PRs whose review request the bot already posted, so a resumed worker can't post twice. */

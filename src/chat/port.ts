@@ -129,10 +129,17 @@ export type WorkerOut =
   | { kind: 'status'; markdown: string; link: string; runId: string; updatedAt: number }
   /** What a long run is doing now, in one line. */
   | { kind: 'progress'; text: string }
-  /** A question card for `to`. */
-  | { kind: 'question'; card: QuestionCard; to: PersonId }
-  /** A question card once answered or no longer waiting: it repeats the questions and the answers chosen. */
-  | { kind: 'answered'; card: QuestionCard; by?: PersonId }
+  /**
+   * A question card for `to`. `copyOf`: this is a copy of an approval card shown in another chat, posted in the owner's
+   * own conversation here (`src/chat/mirrors.ts`): `chat` is where the original is (its kind), `link` its permalink.
+   * A copy is answered by its buttons only.
+   */
+  | { kind: 'question'; card: QuestionCard; to: PersonId; copyOf?: { chat: string; link: string | null } }
+  /**
+   * A question card once answered or no longer waiting: it repeats the questions and the answers chosen. `via`: the
+   * chat it was answered in (its kind), when that is another chat than this card's.
+   */
+  | { kind: 'answered'; card: QuestionCard; by?: PersonId; via?: string }
   /** A review request in the code-review channel, prepared by `from` for the owner, linking back to `link`. */
   | { kind: 'review'; markdown: string; from: string; link: string }
   /** The first line of an error, which can be raw `t3` or `git` output. */

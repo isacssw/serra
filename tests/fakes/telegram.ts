@@ -34,6 +34,8 @@ export const createFakeTelegram = ({ token = TELEGRAM_TOKEN }: { token?: string 
   const uploads: { chat: string; kind: 'photo' | 'document'; name: string; caption?: string }[] = [];
   /** While set, every poll fails as if Telegram were unreachable. */
   let down = false;
+  /** Every call fails, not only polling: Telegram can't be reached at all. */
+  let unreachable = false;
   let polls = 0;
   /** Every URL the bot fetched, to check none went anywhere else. */
   const urls: string[] = [];
@@ -64,6 +66,7 @@ export const createFakeTelegram = ({ token = TELEGRAM_TOKEN }: { token?: string 
       ? Object.fromEntries([...init.body.entries()].map(([key, value]) => [key, typeof value === 'string' ? value : (value as File).name]))
       : init?.body ? JSON.parse(String(init.body)) as Json : {};
     calls.push({ method, body });
+    if (unreachable && method !== 'getUpdates') throw new TypeError('fetch failed');
     const chat = String(body.chat_id ?? '');
     const id = Number(body.message_id ?? 0);
     switch (method) {
@@ -120,6 +123,8 @@ export const createFakeTelegram = ({ token = TELEGRAM_TOKEN }: { token?: string 
     calls, sent, edits, reactions, deleted, answered, typing, uploads, urls,
     polls: () => polls,
     setDown: (value: boolean) => { down = value; },
+    /** Telegram can't be reached at all (`true`): polling and every other call fail; or it is back. */
+    setUnreachable: (value: boolean) => { down = value; unreachable = value; },
     /**
      * Someone writes to the bot: in their private chat with it (`chat` defaults to their own ID, as Telegram does), or
      * in a group (`chat` negative). Returns the message's ID once the bot has it.

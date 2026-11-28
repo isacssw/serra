@@ -25,6 +25,8 @@
   same knowledge, approval buttons included ([docs/telegram.md](docs/telegram.md)).
 - **And from Discord.** Connect a Discord bot there too: mention it in a server and it works in a thread, or DM it
   ([docs/discord.md](docs/discord.md)).
+- **Approvals follow you.** With more than one chat connected, a tool approval for your own request also reaches your
+  private chat with the bot on the others. Answer wherever you are; every copy then says it's done.
 - **A fresh worktree per job.** The agent works in a new Git worktree of your repository, as you, with your GitHub
   login and your agent's own sign-in. No server, no provider keys.
 - **Careful by default.** The default brief asks for **draft** PRs and never to merge, force-push or touch production.
@@ -165,6 +167,7 @@ Most settings are in the app. Each bot has one private profile folder, `~/.local
 | `attachments/` | Images and files sent to the bot in Slack |
 | `state.json`, `logs/` | Job state and logs (`logs/bot.log`) |
 | `telegram/`, `discord/` | Telegram's and Discord's threads as Serra saw them, and a pairing code while one waits |
+| `slack-owner-dm.json` | Which Slack DM is yours, learned from a message you wrote to the bot there, so approvals can follow you |
 
 | Settings screen | What it changes |
 |---|---|

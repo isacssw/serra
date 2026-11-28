@@ -79,6 +79,8 @@ export interface DiscordApi {
   /** Starts a public thread from a message in a server channel. The thread's ID is the message's. */
   startThread(channel: string, message: string, name: string): Promise<{ id: string }>;
   channel(id: string): Promise<DiscordChannelInfo>;
+  /** The bot's DM channel with a person, opened if need be (a bot may always open one; it needs no permission). */
+  openDm(user: string): Promise<{ id: string }>;
   /** Up to `limit` messages before `before`, newest first, as Discord gives them. */
   messages(channel: string, before: string, limit: number): Promise<DiscordMessage[]>;
   /** Answers a button press without changing the message, so Discord stops waiting. */
@@ -157,6 +159,7 @@ export const createDiscordApi = (rest: REST): DiscordApi => {
         recipient: recipients[0]?.id ?? null,
       };
     }),
+    openDm: (user) => call('open a DM', async () => ({ id: (await api.users.createDM(user)).id })),
     messages: (channel, before, limit) => call('history', async () => (await api.channels.getMessages(channel, { before, limit })).map(messageOf)),
     acknowledge: (interaction, token) => call('answer a click', () => api.interactions.deferMessageUpdate(interaction, token)),
     upload: (channel, path, { caption, replyTo }) => call('upload', async () => {

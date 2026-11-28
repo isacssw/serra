@@ -218,7 +218,7 @@ test('jobs.cleanupWorktrees: dry run removes nothing, apply removes, bad input i
 });
 
 test('row pill and note: a Needs-you row says why in 1-3 words, and its question or failure in the meta line', () => {
-  assert.deepEqual(rowPill(row('q', 'needs you', { needsYouReason: 'question', ownerQuestion: 'Which timer?' })), { label: 'Asked in Slack', tone: 'warn' });
+  assert.deepEqual(rowPill(row('q', 'needs you', { needsYouReason: 'question', ownerQuestion: 'Which timer?' })), { label: 'Asked in chat', tone: 'warn' });
   assert.deepEqual(rowPill(row('t', 'needs you', { needsYouReason: 'waiting in T3' })), { label: 'Waiting in T3', tone: 'warn' });
   assert.deepEqual(rowPill(row('p', 'needs you', { needsYouReason: 'owner pinged' })), { label: 'Blocked in Slack', tone: 'warn' });
   assert.deepEqual(rowPill(row('f', 'needs you', { needsYouReason: 'failed', error: 'boom' })), { label: 'Failed', tone: 'down' });

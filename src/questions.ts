@@ -9,6 +9,11 @@ export interface QuestionCard extends T3QuestionRequest {
   index: number;
   answers: Record<string, QuestionAnswer>;
   runId: string | null;
+  /**
+   * Copies of an approval card in the owner's own conversations in other chats (`src/chat/mirrors.ts`), as each chat
+   * named its message. A press counts only on the card itself or on one of these.
+   */
+  mirrors?: { conversation: string; id: string }[];
 }
 
 const optionValue = (question: T3Question, index: number): string => question.options[index]!.value ?? question.options[index]!.label;

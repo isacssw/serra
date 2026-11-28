@@ -64,6 +64,8 @@ export const createDiscordConnection = (options: DiscordConnectionOptions): Chat
   let owner: string | null = options.ownerId ?? null;
   const names = new Map<string, string>();
   const channels = { dms: new Map<string, string>(), guilds: new Map<string, string>() };
+  /** The paired owner's DM channel, once opened for a copy of an approval. */
+  let ownerDm: { owner: string; channel: string } | null = null;
   const { chat, writer } = createDiscordChat({
     api, store, botId: () => botId, owner: () => owner, names, channels, profileDir, logger, clock, ...(options.fetch ? { fetch: options.fetch } : {}),
   });
@@ -229,6 +231,17 @@ export const createDiscordConnection = (options: DiscordConnectionOptions): Chat
     },
 
     saw() {},
+
+    /** The owner's DM with the bot, opened once (Discord gives the same one each time) and known as theirs from then on. */
+    async ownerSpace() {
+      if (owner === null) return null;
+      if (ownerDm?.owner !== owner) {
+        const opened = await api.openDm(owner);
+        ownerDm = { owner, channel: opened.id };
+      }
+      channels.dms.set(ownerDm.channel, owner);
+      return discordId(ownerDm.channel);
+    },
   };
   return { connection, writer };
 };
