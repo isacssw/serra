@@ -277,6 +277,29 @@ test('a tool approval in a group shows buttons; only the owner\'s press answers 
   assert.equal(h.slack.callsTo('chat.postMessage').length, 0);
 });
 
+test('a very long approval fits Telegram whole: the question is cut, never a tag, and the answered card too', async (t) => {
+  const { h, tg } = await withTelegram(t);
+  await tg.say({ from: ME, text: 'clean the build folder' });
+  await h.clock.settle();
+  // Under the 2,500 characters a card may show, but longer than Telegram takes once it is HTML.
+  const long = `Run this? ${'**rm** `build/x` and *more* '.repeat(87)}`;
+  h.t3.ask({ requestId: 'req-long', questions: [{ ...approval.questions[0]!, question: long }] });
+  await h.advance(15_000);
+  const card = tg.sent.find((message) => message.keyboard);
+  assert.ok(card?.keyboard, 'the card went out');
+  const balanced = (html: string): void => {
+    assert.ok(html.length <= 4000, `fits (${html.length})`);
+    for (const tag of ['b', 'i', 'code', 'a']) assert.equal((html.match(new RegExp(`<${tag}[ >]`, 'g')) ?? []).length, (html.match(new RegExp(`</${tag}>`, 'g')) ?? []).length, `<${tag}> closed`);
+  };
+  balanced(card.text);
+  assert.match(card.text, /Only the bot owner can answer\.<\/i>$/, 'the end of the card is kept');
+  await tg.click({ from: ME, message: card, data: card.keyboard[0]?.[0]?.callback_data ?? '' });
+  await h.clock.settle();
+  const answered = tg.edits.find((edit) => edit.id === card.id && /Answer sent/.test(edit.text));
+  assert.ok(answered);
+  balanced(answered.text);
+});
+
 test('a photo sent to the bot reaches the worker as a local file, without the token in the brief', async (t) => {
   const { h, tg } = await withTelegram(t);
   await tg.say({ from: ME, text: 'what is on this screen?', photo: true });
