@@ -20,6 +20,8 @@ export interface Hold {
   serviceFile: string | null;
   /** This move's backup folder, once made. */
   backup: string | null;
+  /** A restore's own start, under the committed hold: the restored copy may start, nothing else changes. */
+  starting?: boolean;
 }
 
 export const isHold: Guard<Hold> = (value): value is Hold =>
@@ -29,5 +31,5 @@ export const isHold: Guard<Hold> = (value): value is Hold =>
 /** True while the profile in `profileDir` is held for a move or a restore: its daemon must not start. */
 export const heldForMove = (profileDir: string, now = Date.now()): boolean => {
   const hold = readJsonOrNull(holdPath(dirname(resolve(profileDir)), basename(profileDir)), isHold);
-  return hold !== null && (hold.step === 'committed' || Date.parse(hold.until) > now);
+  return hold !== null && hold.starting !== true && (hold.step === 'committed' || Date.parse(hold.until) > now);
 };

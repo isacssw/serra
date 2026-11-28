@@ -61,6 +61,14 @@ test('preparation changes no service: nothing is installed or started', async (t
   assert.equal(f.label, 'dev.serra.friday');
 });
 
+test('a profile with no .env (its tokens in the Keychain, as after a move to this Mac) activates', async (t) => {
+  const f = await fixture(t);
+  rmSync(join(f.directory, '.env'));
+  await activate(f.directory, f.opts);
+  assert.ok(existsSync(join(f.directory, 'active.json')));
+  assert.ok(f.events.includes('start-new'));
+});
+
 test('a fresh install never takes over an existing service with the same label', async (t) => {
   const f = await fixture(t);
   writeFileSync(join(f.agents, host.fileName(f.label)), 'someone else');
