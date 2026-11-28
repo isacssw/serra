@@ -442,6 +442,7 @@ test('a restore puts a backup back in place, saves today’s copy first, and ref
   assert.ok(existsSync(join(dir, 'active.json')));
   assert.ok(mac.service.loaded.has('dev.serra.friday'));
   assert.equal(heldForMove(dir), false);
+  assert.equal(existsSync(join(dir, 'intake-paused.json')), false, 'the restored bot takes new requests');
   const listed = listBackups(join(mac.root, 'backups'));
   const before = listed.find((entry) => entry.kind === 'restore')!;
   assert.equal(before.detail, basename(backup.path));

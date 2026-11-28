@@ -458,10 +458,13 @@ export const localMoveHost = (deps: LocalMoveDeps): MoveHost => {
         renameSync(dir, join(staging, 'old'));
         renameSync(data, dir);
       }
+      // The pause the drain left came over with the host's files: the restored bot takes new requests again.
+      resumeIntake(dir);
       const hold = readHold(meta.profile);
       const file = hold?.serviceFile ?? null;
       if (file && existsSync(`${file}.held`)) renameSync(`${file}.held`, file);
-      if (hold && file && existsSync(file)) {
+      // Started only if it ran before the restore, as `resume` does.
+      if (hold?.wasLoaded && file && existsSync(file)) {
         // The committed hold stays (archive ends it), but the restored copy itself may start.
         writeHold(meta.profile, { ...hold, starting: true });
         await startService(dir, file);
