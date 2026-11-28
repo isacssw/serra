@@ -63,6 +63,9 @@ export interface AppPrefs {
 }
 
 /** What setup found on this Mac: the profile in use and any others, each summarised (SERRA-51). */
+/** A coding agent setup can pick: T3 (`id: 't3'`) or a known ACP agent found on this Mac. */
+export interface SetupAgent { id: string; name: string }
+
 export interface SetupDetection {
   /** The profile the app uses now, or null. */
   selected: ProfileSummary | null;
@@ -321,8 +324,11 @@ export interface SerraApi {
     useProfile(directory: string): SetupDetection;
     /** A folder picked in the system's dialog (a repository, or a profile kept elsewhere), or null when cancelled. */
     chooseFolder(purpose: 'repository' | 'profile'): string | null;
-    /** Suggestions for the form: the `gh` login, the Git name, and where new profiles go. */
-    defaults(): { githubLogin: string; ownerName: string; profileRoot: string };
+    /**
+     * Suggestions for the form: the `gh` login, the Git name, where new profiles go, and the coding agents found on this
+     * Mac (T3 first when it's there, then each ACP agent whose command is installed; only those can be picked).
+     */
+    defaults(): { githubLogin: string; ownerName: string; profileRoot: string; agents: SetupAgent[] };
     /** The repository's base branch and GitHub name, as the form's suggestions. */
     detectProject(path: string, remote?: string): DetectedProject;
     /** Creates the profile folder and makes it the app's profile. Refuses a folder that has one. */

@@ -1,6 +1,6 @@
 // `--smoke` checks, run against the real window: no Node in the page, the bridge is there, and with no daemon the
 // window gets `stopped` and a failing call rejects with its message instead of crashing anything.
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -1224,7 +1224,7 @@ const runFirstRunChecks = async (window: BrowserWindow): Promise<string[]> => {
     servers.push(await startStatusServer({ profileDir: directory, status: () => ({ state: 'up', pid: process.pid, startedAt: now, slackConnected: true, chats: [{ kind: chat, connected: true }], counts: { needsYou: 0, running: 0 } }) }));
   };
   /** From a clean slate to the welcome, then the chat picked and the form filled; the profile's folder, or null. */
-  const start = async (chat: 'slack' | 'telegram' | 'discord', bot: string, welcome: boolean): Promise<string | null> => {
+  const start = async (chat: 'slack' | 'telegram' | 'discord', bot: string, welcome: boolean, agent?: string): Promise<string | null> => {
     await run(`(async () => { ${helpers}
       await window.serra.app.setPrefs({ profileDir: null, setupDraft: null });
       window.dispatchEvent(new Event('serra:setup-changed'));
@@ -1241,7 +1241,20 @@ const runFirstRunChecks = async (window: BrowserWindow): Promise<string[]> => {
       await wait(() => document.querySelector('[data-serra-setup] form'));
       await settle();
     })()`);
-    await capture(`${chat}-you`, { primary: 1, maxWords: 50 });
+    await capture(`${chat}-you`, { primary: 1, maxWords: 55 });
+    // The coding agent: T3 leads when it's found (preselected); an ACP agent is one pick away.
+    const picked = await run<{ value: string; options: string[] }>(`(async () => { ${helpers}
+      const box = [...document.querySelectorAll('[role="combobox"]')].find((b) => b.closest('div')?.parentElement?.textContent?.includes('Coding agent'));
+      if (!box) return { value: '', options: [] };
+      box.click();
+      await wait(() => document.querySelector('[role="listbox"] [role="option"]'));
+      const options = [...document.querySelectorAll('[role="listbox"] [role="option"]')].map((o) => o.dataset.value);
+      ${agent ? `document.querySelector('[role="listbox"] [role="option"][data-value="${agent}"]')?.click();` : `document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); box.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));`}
+      await settle();
+      return { value: box.textContent.trim(), options };
+    })()`);
+    if (JSON.stringify(picked.options) !== JSON.stringify(['t3', 'codex'])) failures.push(`first run ${chat}: the agent choice offers ${JSON.stringify(picked.options)}, not T3 Code and Codex`);
+    if (picked.value !== (agent === 'codex' ? 'Codex' : 'T3 Code')) failures.push(`first run ${chat}: the agent shows ${picked.value}`);
     const askedForId = await run<boolean>(`Boolean([...document.querySelectorAll('label')].find((l) => l.textContent.trim() === 'Slack member ID'))`);
     if (askedForId !== (chat === 'slack')) failures.push(`first run ${chat}: the form ${askedForId ? 'asks' : 'doesn’t ask'} for a Slack member ID`);
     const path = `#/setup/${chat}`;
@@ -1266,6 +1279,12 @@ const runFirstRunChecks = async (window: BrowserWindow): Promise<string[]> => {
     await capture(`${chat}-home`, { primary: null, maxWords: 90 });
     if (!screens[`${chat}-home`]?.hash.startsWith('#/jobs')) failures.push(`first run ${chat}: Open Serra opened ${screens[`${chat}-home`]?.hash}, not Jobs`);
   };
+  // Fake `t3` and `codex` commands are the coding agents this Mac has (SERRA_TOOLS_PATH is the tool search path).
+  const tools = join(root, 'tools');
+  mkdirSync(tools, { recursive: true });
+  for (const name of ['t3', 'codex']) writeFileSync(join(tools, name), '#!/bin/sh\nexit 0\n', { mode: 0o755 });
+  const toolsPath = process.env.SERRA_TOOLS_PATH;
+  process.env.SERRA_TOOLS_PATH = tools;
   const [width, height] = window.getSize();
   window.setSize(1100, 720);
   try {
@@ -1303,9 +1322,12 @@ const runFirstRunChecks = async (window: BrowserWindow): Promise<string[]> => {
     await home('slack');
 
     // Telegram and Discord: the bot's token, the install, then you make it yours in the chat (tap Start; send the code).
-    const other = async (chat: 'telegram' | 'discord', name: string, bot: Record<string, string>, ownerId: string, open: string): Promise<boolean> => {
-      const directory = await start(chat, name, false);
+    const other = async (chat: 'telegram' | 'discord', name: string, bot: Record<string, string>, ownerId: string, open: string, agent?: string): Promise<boolean> => {
+      const directory = await start(chat, name, false, agent);
       if (!directory) { failures.push(`first run ${chat}: the form did not go on to ${chat}`); return false; }
+      // An ACP pick is saved as the profile's agent; T3 needs no file.
+      const backend = existsSync(join(directory, 'agent-backend.json')) ? JSON.parse(readFileSync(join(directory, 'agent-backend.json'), 'utf8')) as { backend?: string; agent?: string } : null;
+      if (agent ? backend?.backend !== 'acp' || backend.agent !== agent : backend !== null) failures.push(`first run ${chat}: the agent saved is ${JSON.stringify(backend)}`);
       await capture(`${chat}-connect`, { primary: 1, maxWords: 45 });
       // A fixture bot, as Connect leaves it once the chat accepted the token.
       const profile = JSON.parse(readFileSync(join(directory, 'profile.json'), 'utf8')) as Record<string, unknown>;
@@ -1340,7 +1362,7 @@ const runFirstRunChecks = async (window: BrowserWindow): Promise<string[]> => {
       await home(chat);
       return true;
     };
-    if (!await other('telegram', 'Scout', { id: '1111111', username: 'scout_serra_bot' }, '2222222', 'Open in Telegram')) return failures;
+    if (!await other('telegram', 'Scout', { id: '1111111', username: 'scout_serra_bot' }, '2222222', 'Open in Telegram', 'codex')) return failures;
     if (!await other('discord', 'Atlas', { id: '1111111111111111111', username: 'atlas-serra', applicationId: '1111111111111111111' }, '3333333333333333333', 'Add to Discord')) return failures;
     console.log('[serra] smoke first run:', JSON.stringify(Object.fromEntries(Object.entries(screens).map(([step, s]) => [step, { words: s.words, primary: s.primary }]))));
   } finally {
@@ -1348,6 +1370,7 @@ const runFirstRunChecks = async (window: BrowserWindow): Promise<string[]> => {
     await run(themeControlScript('system')).catch(() => null);
     await run(`(async () => { await window.serra.app.setPrefs({ profileDir: null, setupDraft: null }); window.dispatchEvent(new Event('serra:setup-changed')); })()`).catch(() => null);
     window.setSize(width ?? 1100, height ?? 720);
+    if (toolsPath === undefined) delete process.env.SERRA_TOOLS_PATH; else process.env.SERRA_TOOLS_PATH = toolsPath;
     rmSync(root, { recursive: true, force: true });
   }
   return failures;

@@ -96,9 +96,10 @@ any existing profile (from `pnpm run setup`, an older app, or a setup left halfw
 | Step | Slack | Telegram or Discord |
 |---|---|---|
 | **You & repo** | Your name, Slack member ID (Slack › your picture › **Profile** › **⋮** › **Copy member ID**), the repository folder and the bot's name. | Your name, the repository folder and the bot's name. |
+| **Coding agent** (same step) | Shown when there's a choice: T3 Code (picked when found), or an ACP agent installed here (Claude Code, Codex, Gemini CLI, OpenCode). | The same. |
 | **Connect** | **Create in Slack** opens Slack's "create from manifest" page with your manifest filled in. Install it, then paste the bot token (`xoxb-…`) and the app-level token (`xapp-…`, scope `connections:write`). | Paste the bot's token: from @BotFather, or from the Discord Developer Portal with Message Content Intent on. |
 | **Confirm you / Make it yours** | Nothing to type: Slack checks your member ID. | After the install: open the bot in Telegram and tap **Start**, or add it to your Discord and DM it the code shown. |
-| **Install and start** | Runs every check, installs the bot as a launchd service, and waits until it answers. If a check fails, nothing is installed. | The same. |
+| **Install and start** | Runs every check for the agent you picked (T3's for T3, the agent's own for an ACP agent), installs the bot as a launchd service, and waits until it answers. If a check fails, nothing is installed. | The same. |
 
 Tokens go to the Keychain (1Password or `.env` if you choose). Your GitHub login comes from `gh`. The end of setup
 says what to try first, such as `@friday what does this repository do?` in a Slack channel you invited it to.

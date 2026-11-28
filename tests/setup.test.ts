@@ -166,6 +166,9 @@ test('the wizard takes an empty profile folder to a valid profile, an installed 
     lookup,
     githubLogin: async () => 'alex',
     gitName: async () => 'Alex',
+    // No coding agent on the search path but T3 in its own folder: T3 is the one found.
+    searchPath: async () => '',
+    home: join(f.root, 'home'),
     echo: (line) => logged.push(line),
     install: { deploy: { driver, launchAgentsDir: agents }, diagnose: { slack }, prepareRelease: prepareWithoutInstall },
   });
@@ -177,7 +180,7 @@ test('the wizard takes an empty profile folder to a valid profile, an installed 
   const start = await call(setup.progress());
   assert.equal(start.next, 'profile');
   assert.equal(start.profileDir, null);
-  assert.deepEqual(await call(setup.defaults()), { githubLogin: 'alex', ownerName: 'Alex', profileRoot: join(f.root, 'profiles') });
+  assert.deepEqual(await call(setup.defaults()), { githubLogin: 'alex', ownerName: 'Alex', profileRoot: join(f.root, 'profiles'), agents: [] });
   const detected = await call(setup.detectProject(f.project, 'origin'));
   assert.deepEqual(detected, { baseRef: 'origin/main', githubRepo: 'acme/project', problem: null });
 
@@ -952,4 +955,30 @@ test('a bot on Telegram or Discord: the status names its own chat, screen reader
   assert.equal(announcement('/setup/telegram/yours', 'telegram'), 'Step 4 of 4: Make it yours');
   assert.deepEqual(ownerForm.parse({ name: 'Alex', slackUserId: '', githubLogin: 'alex' }).errors, {});
   assert.ok(ownerForm.parse({ name: 'Alex', slackUserId: 'nope', githubLogin: 'alex' }).errors.slackUserId);
+});
+
+test('setup picks the coding agent: T3 first when found, ACP agents only when installed, and the checks follow the pick', async (t) => {
+  const f = fixture(t);
+  const tools = join(f.root, 'tools');
+  mkdirSync(tools);
+  script(join(tools, 't3'), 'process.exit(0)');
+  script(join(tools, 'codex'), 'process.exit(0)');
+  const setup = setupHandlers(engineContext(context()), {
+    root: join(f.root, 'profiles'), githubLogin: async () => 'alex', gitName: async () => 'Alex',
+    searchPath: async () => tools, home: join(f.root, 'home'),
+  });
+  // T3 (found on the search path) leads; Codex is offered because its command is there; Claude, Gemini and OpenCode aren't.
+  assert.deepEqual((await setup.defaults()).agents, [{ id: 't3', name: 'T3 Code' }, { id: 'codex', name: 'Codex' }]);
+  const { ownerSlackUserId: _unused, ...rest } = draft(f, join(f.root, 'profiles', 'friday'));
+  await assert.rejects(async () => setup.create({ ...rest, chat: 'telegram', agent: 'gemini' }), /isn’t installed/);
+  await setup.create({ ...rest, chat: 'telegram', agent: 'codex' });
+  const dir = join(f.root, 'profiles', 'friday');
+  assert.deepEqual(JSON.parse(readFileSync(join(dir, 'agent-backend.json'), 'utf8')), { backend: 'acp', agent: 'codex', models: {} });
+  // Diagnostics checks Codex, not T3, for a bot that runs on Codex.
+  const previous = process.env.SERRA_TOOLS_PATH;
+  process.env.SERRA_TOOLS_PATH = tools;
+  t.after(() => { if (previous === undefined) delete process.env.SERRA_TOOLS_PATH; else process.env.SERRA_TOOLS_PATH = previous; });
+  const checks = await diagnose(loadConfig({ profileDir: dir, env: {} }), { offline: true });
+  assert.equal(checks.some((check) => check.name.startsWith('T3')), false);
+  assert.deepEqual(checks.find((check) => check.name === 'Coding agent'), { name: 'Coding agent', ok: true, detail: 'Codex (ACP)' });
 });

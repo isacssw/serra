@@ -118,6 +118,8 @@ export const isSetupChat = (value: unknown): value is SetupChat => typeof value 
 export interface ProfileDraft {
   /** The chat picked first. Defaults to Slack (the CLI and older apps). Only Slack needs `ownerSlackUserId`. */
   chat?: SetupChat;
+  /** The coding agent picked: `t3` (the default) or a known ACP agent's id, saved in `agent-backend.json`. */
+  agent?: string;
   botName: string;
   /** Defaults to `suggestBotId(botName)`. */
   botId?: string;

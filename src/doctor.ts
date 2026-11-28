@@ -7,6 +7,8 @@ import { fillBrief } from './brief.ts';
 import { createKnowledge } from './knowledge.ts';
 import { createStore } from './state.ts';
 import { run } from './t3.ts';
+import { readAgentBackend } from './agent/acp-agents.ts';
+import { acpRunner, chosenAcpAgent } from './agent/select.ts';
 import { secretSource, sourceLabel } from './secrets.ts';
 import type { SecretName } from './contracts.ts';
 
@@ -101,10 +103,21 @@ export const diagnose = async (config: Config, { offline = false, nodeBinary, sl
     if (!name) throw new Error('Set git user.name and user.email in the project');
     return 'An author identity is configured';
   });
-  await check('T3 executable', async () => { await run(config.t3Bin, ['thread', 'start', '--help']); return config.t3Bin; });
+  // The agent the owner picked is the one checked: T3, or an ACP agent (Claude Code, Codex…), never T3 for an ACP pick.
+  const onT3 = readAgentBackend(config.profileDir).backend === 't3';
+  if (onT3) await check('T3 executable', async () => { await run(config.t3Bin, ['thread', 'start', '--help']); return config.t3Bin; });
+  else {
+    await check('Coding agent', async () => {
+      const agent = chosenAcpAgent(config.profileDir);
+      if (!agent) return 'eve on Vercel (checked in Settings › Worker)';
+      const runner = await acpRunner(agent);
+      if (!runner.ready) throw new Error(runner.detail);
+      return runner.label;
+    });
+  }
   await check('GitHub CLI', async () => { await run('gh', ['--version']); return 'Installed'; });
   if (!offline) {
-    await check('T3 connection and project', async () => {
+    if (onT3) await check('T3 connection and project', async () => {
       await run(config.t3Bin, ['thread', 'list', '--project', config.project, '--json'], { timeoutMs: 15_000 });
       return 'Server reachable; project registered';
     });

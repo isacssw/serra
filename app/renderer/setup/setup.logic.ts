@@ -297,8 +297,10 @@ export const setupRowLabel = (progress: SetupProgress): { text: string; detail: 
 // ---------------------------------------------------------------------------------------------------------------
 
 /** The form as typed. Every field is text so the inputs stay controlled. */
-export type DraftForm = Required<Omit<ProfileDraft, 't3Bin' | 'directory' | 'chat' | 'ownerSlackUserId'>> & {
+export type DraftForm = Required<Omit<ProfileDraft, 't3Bin' | 'directory' | 'chat' | 'ownerSlackUserId' | 'agent'>> & {
   t3Bin: string; directory: string; ownerSlackUserId: string;
+  /** The coding agent picked: 't3', an ACP agent's id, or '' before the agents on this Mac are known. */
+  agent: string;
   /** The chat picked on the first screen, or '' before. */
   chat: string;
 };
@@ -308,7 +310,7 @@ export const draftChat = (draft: { chat?: string } | null | undefined): SetupCha
   CHAT_CHOICES.find((choice) => choice.id === draft?.chat)?.id ?? null;
 
 export const emptyDraft = (): DraftForm => ({
-  chat: '', botName: '', botId: '', ownerName: '', ownerSlackUserId: '', githubLogin: '',
+  chat: '', agent: '', botName: '', botId: '', ownerName: '', ownerSlackUserId: '', githubLogin: '',
   projectPath: '', remote: 'origin', baseRef: '', githubRepo: '', t3Bin: '', directory: '',
 });
 

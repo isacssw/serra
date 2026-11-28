@@ -5,7 +5,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { ChevronRight, FolderOpen, UserRound } from 'lucide-react';
 import { Navigate, useLocation, useNavigate } from 'react-router';
 import { serra } from '../bridge.ts';
-import { Button, Input } from '../ui/index.ts';
+import { Button, Input, Select } from '../ui/index.ts';
+import type { SetupAgent } from '../../../src/api.ts';
 import { Alert, Card, errorText, StepFooter, StepHeader } from './parts.tsx';
 import { holdEveSecret, takeEveSecret } from './eve.logic.ts';
 import {
@@ -69,6 +70,8 @@ const ProfileForm = ({ adding }: { adding?: NewProfileChoice }) => {
   const more = useRef<HTMLDetailsElement>(null);
   /** Whether `gh` found the GitHub login. When it didn't, the field is required and stays in view. */
   const [loginFound, setLoginFound] = useState(true);
+  /** The coding agents found on this Mac, T3 first when it's there; null until they're known. */
+  const [agents, setAgents] = useState<SetupAgent[] | null>(null);
 
   // The saved draft first, then what Serra can find for the fields still empty. Adding a profile starts from its name,
   // with you as the profile in use has you: the same person sets up every bot.
@@ -95,8 +98,11 @@ const ProfileForm = ({ adding }: { adding?: NewProfileChoice }) => {
       if (!live || !defaults) return;
       setRoot(defaults.profileRoot);
       setLoginFound(Boolean(defaults.githubLogin));
+      setAgents(defaults.agents);
       setDraft((current) => current && ({
         ...current,
+        // T3 when it's here, else the first agent found; a pick that's no longer installed falls back the same way.
+        agent: defaults.agents.some((entry) => entry.id === current.agent) ? current.agent : defaults.agents[0]?.id ?? '',
         githubLogin: current.githubLogin || defaults.githubLogin,
         ownerName: current.ownerName || defaults.ownerName,
       }));
@@ -202,10 +208,18 @@ const ProfileForm = ({ adding }: { adding?: NewProfileChoice }) => {
       <div className="flex items-start gap-2">
         <Input label="Repository" placeholder="/Users/you/project" inputClassName="font-mono" className="min-w-0 flex-1" value={draft.projectPath}
           onChange={set('projectPath')} onBlur={() => void detect()} error={errors.projectPath}
-          hint={repoNote ?? 'The folder you open in T3 Code'} spellCheck={false} />
+          hint={repoNote ?? 'The folder your agent works in'} spellCheck={false} />
         {/* Level with the field: its label (16px) and the gap under it (6px). */}
         <Button className="mt-[22px]" icon={<FolderOpen size={14} aria-hidden />} onClick={() => void choose()}>Choose…</Button>
       </div>
+      {/* Only a real choice is shown: two or more agents found. With one there is nothing to pick; with none, why. */}
+      {!adding && agents && agents.length > 1 && (
+        <Select label="Coding agent" value={draft.agent} onChange={(agent) => setDraft({ ...draft, agent })} className="sm:max-w-[calc(50%-10px)]"
+          options={agents.map((entry) => ({ value: entry.id, label: entry.name }))} />
+      )}
+      {!adding && agents && agents.length === 0 && (
+        <p className="text-[13px] text-muted" data-no-agent>No coding agent found on this Mac. Install T3 Code, Claude Code or Codex, then come back.</p>
+      )}
       {(chat === 'slack' || !loginFound) && (
         <div className="grid gap-5 sm:grid-cols-2">
           {chat === 'slack' && botNameInput}
@@ -222,7 +236,10 @@ const ProfileForm = ({ adding }: { adding?: NewProfileChoice }) => {
           <Input label="Git remote" inputClassName="font-mono" value={draft.remote} onChange={set('remote')} onBlur={() => void detect()} error={errors.remote} spellCheck={false} />
           <Input label="Bot ID" placeholder={suggestId(draft.botName)} inputClassName="font-mono" value={draft.botId} onChange={set('botId')}
             error={errors.botId} hint="Names the service and job branches" spellCheck={false} />
-          <Input label="T3 CLI" inputClassName="font-mono" placeholder="~/.t3/bin/t3" value={draft.t3Bin} onChange={set('t3Bin')} error={errors.t3Bin} spellCheck={false} />
+          {/* Only for T3: an ACP agent has no T3 CLI to point at. */}
+          {(draft.agent === 't3' || draft.agent === '') && (
+            <Input label="T3 CLI" inputClassName="font-mono" placeholder="~/.t3/bin/t3" value={draft.t3Bin} onChange={set('t3Bin')} error={errors.t3Bin} spellCheck={false} />
+          )}
           <Input label="Profile folder" inputClassName="font-mono" className="sm:col-span-2" placeholder={root ? profileFolder(draft, root) : ''} value={draft.directory}
             onChange={set('directory')} error={errors.directory} spellCheck={false} />
         </div>

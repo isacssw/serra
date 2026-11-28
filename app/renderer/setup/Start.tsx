@@ -168,7 +168,7 @@ export const Start = () => {
             </ul>
           </section>
           <div className="flex flex-col items-center gap-2">
-            <p className="max-w-sm text-center text-xs text-faint">Needs a repository in T3 Code and a signed-in coding agent.</p>
+            <p className="max-w-sm text-center text-xs text-faint">Needs a repository and a signed-in coding agent.</p>
             <Button variant="ghost" size="sm" className="text-muted" icon={<FolderOpen size={14} aria-hidden />} onClick={() => void openFolder()} disabled={busy}>
               Open an existing profile…
             </Button>

@@ -117,6 +117,12 @@ Slack's). A bot set up on Telegram or Discord has no Slack member ID and runs wi
 connection and Diagnostics skips Slack's checks. Another chat, another profile (where an eve agent is picked) or a
 server is added later from **Settings › Add…**, the last row of Settings, or ⌘⇧N.
 
+Step 1 also picks the coding agent when there's a choice: T3 Code when it's found (in `~/.t3/bin` or on the search
+path), or any ACP agent whose command is installed (Claude Code, Codex, Gemini CLI, OpenCode). Only agents found on this
+Mac are offered, and with one there is nothing to pick. An ACP pick is saved in `agent-backend.json`, and the install's
+checks then check that agent instead of T3. Custom ACP agents (such as Antigravity) and eve are added later in
+**Settings › Worker**.
+
 On Slack the steps are:
 
 1. **You & repo**: your name, Slack member ID, the repository folder and the bot's name. Your GitHub login (from `gh`), the base branch and GitHub name (from Git), the bot ID, remote, profile folder and T3 CLI are under **More options**, which opens on its own when one of them needs fixing; the GitHub login stays in view when `gh` doesn't know it. The folder defaults to `~/.local/share/serra/<bot-id>`, and the app remembers it.
