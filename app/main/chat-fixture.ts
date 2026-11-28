@@ -60,6 +60,8 @@ const coverageCard = (): Buffer => png(360, 200, (x, y) => {
   return [252, 252, 253];
 });
 
+/** How long ago the fixture's oldest moment is: the finished run's brief. */
+const OLDEST_MINUTES = 52;
 const ago = (now: Date, minutes: number): string => new Date(now.getTime() - minutes * 60_000).toISOString();
 
 /** A brief as Serra writes one: the bot's rules around the request. */
@@ -93,7 +95,10 @@ export const writeChatFixture = (profileDir: string, now = new Date(), imagesDir
   writeFileSync(imageIn, ciChart());
   writeFileSync(imageOut, coverageCard());
 
-  const at = (minutes: number): string => ago(now, minutes);
+  // Jobs lists done runs from today only (local day), so just after midnight the times close up to stay in it.
+  const sinceMidnight = now.getTime() - new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const scale = Math.min(1, sinceMidnight / (OLDEST_MINUTES * 60_000));
+  const at = (minutes: number): string => ago(now, minutes * scale);
   const line = (role: TranscriptEntry['role'], runId: string, minutes: number, text: string, extra: Partial<TranscriptEntry> = {}): TranscriptEntry =>
     ({ role, runId, text, at: at(minutes), ...extra });
 
