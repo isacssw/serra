@@ -25,6 +25,7 @@ import { Secrets } from './screens/Secrets.tsx';
 import { Alerts } from './screens/settings/Alerts.tsx';
 import { Appearance } from './screens/settings/Appearance.tsx';
 import { BotSlack } from './screens/settings/BotSlack.tsx';
+import { Channels } from './screens/settings/Channels.tsx';
 import { People } from './screens/settings/People.tsx';
 import { Repositories } from './screens/settings/Repositories.tsx';
 import { Worker } from './screens/settings/Worker.tsx';
@@ -54,6 +55,7 @@ const screens: Record<RouteId, ReactElement> = {
   pages: <Pages />,
   brief: <BriefPolicy />,
   'settings-bot': <BotSlack />,
+  'settings-channels': <Channels />,
   'settings-people': <People />,
   'settings-repositories': <Repositories />,
   'settings-alerts': <Alerts />,

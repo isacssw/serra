@@ -7,6 +7,7 @@ import { isRecord } from '../lib/guards.ts';
 import { SETUP_INCOMPLETE } from '../setup-incomplete.ts';
 import { botHandlers } from './bot.ts';
 import { briefHandlers } from './brief.ts';
+import { channelsHandlers } from './channels.ts';
 import type { CoreContext } from './context.ts';
 import { diagnosticsHandlers } from './diagnostics.ts';
 import { jobsHandlers } from './jobs.ts';
@@ -37,6 +38,7 @@ export const createEngine = (context: CoreContext, names = profileSlackNames(con
   brief: briefHandlers(context),
   settings: settingsHandlers(context, { names }),
   secrets: secretsHandlers(context),
+  channels: channelsHandlers(context),
   tools: toolsHandlers(context),
   updates: updatesHandlers(context),
   diagnostics: diagnosticsHandlers(context),
