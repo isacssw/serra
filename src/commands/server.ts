@@ -108,8 +108,8 @@ const needGateway = (root: string) => {
 const pairInteractive = async (root: string, log: (text: string) => void): Promise<void> => {
   const running = needGateway(root);
   const identity = serverIdentity(root);
-  const words = serverWords(root);
   const code = openPairing(root);
+  const words = serverWords(root, code);
   const tailnet = running.addresses.filter((address) => address !== '127.0.0.1');
   const port = running.port === DEFAULT_GATEWAY_PORT ? '' : `:${running.port}`;
   log([

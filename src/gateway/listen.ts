@@ -18,8 +18,7 @@ export const mayListenOn = (address: string): boolean =>
   isIP(address) !== 0 && (isLoopback(address) || isTailscaleV4(address) || isTailscaleV6(address));
 
 /**
- * The addresses to listen on: 127.0.0.1, then each Tailscale address this computer has (on `tailscale0`, or a
- * `utun` on macOS). `only`: the addresses the owner asked for, each refused unless `mayListenOn` allows it.
+ * The addresses to listen on: 127.0.0.1, then each Tailscale address on `tailscale0`. `only`: the addresses the owner asked for, each refused unless `mayListenOn` allows it.
  */
 export const listenAddresses = (only: readonly string[] = [], interfaces: NodeJS.Dict<NetworkInterfaceInfo[]> = networkInterfaces()): string[] => {
   if (only.length) {
@@ -28,8 +27,12 @@ export const listenAddresses = (only: readonly string[] = [], interfaces: NodeJS
     }
     return [...new Set(only)];
   }
-  const tailscale = Object.values(interfaces).flat()
-    .filter((info): info is NetworkInterfaceInfo => Boolean(info) && !info!.internal)
+  // Tailscale's own interface only: 100.64.0.0/10 is also carrier-grade NAT (a phone hotspot, Starlink) and other
+  // mesh VPNs, so the range alone isn't proof. Elsewhere (a Mac's utun), name the address with --listen.
+  const tailscale = Object.entries(interfaces)
+    .filter(([name]) => /^tailscale\d*$/.test(name))
+    .flatMap(([, infos]) => infos ?? [])
+    .filter((info) => !info.internal)
     .map((info) => info.address)
     .filter((address) => isTailscaleV4(address) || isTailscaleV6(address));
   return ['127.0.0.1', ...new Set(tailscale)];

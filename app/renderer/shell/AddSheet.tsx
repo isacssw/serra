@@ -45,7 +45,7 @@ const Choice = ({ icon, title, line, onClick, autoFocus }: { icon: ReactNode; ti
   </button>
 );
 
-const CodeField = ({ value, onChange, error }: { value: string; onChange: (value: string) => void; error: string | null }) => (
+const CodeField = ({ value, onChange, error, focus }: { value: string; onChange: (value: string) => void; error: string | null; focus?: boolean }) => (
   <div className="flex flex-col gap-1.5">
     <label htmlFor="pair-code" className={labelClass}>Code</label>
     <input
@@ -53,6 +53,8 @@ const CodeField = ({ value, onChange, error }: { value: string; onChange: (value
       value={value}
       onChange={(event) => onChange(codeInput(event.target.value))}
       autoComplete="one-time-code"
+      autoFocus={focus}
+      data-autofocus={focus ? '' : undefined}
       spellCheck={false}
       inputMode="text"
       placeholder="K7Q-4MX"
@@ -111,10 +113,10 @@ export const AddSheet = () => {
     const { address, code } = step;
     void run(async () => {
       try {
-        const found = await serra()!.servers.probe(address);
+        const found = await serra()!.servers.probe(address, code);
         probe.current = found.probeId;
         setStep({ step: 'words', address, code, probeId: found.probeId, name: found.name, words: found.words });
-      } catch (error) { setStep({ step: 'address', address, code, error: message(error) }); }
+      } catch (error) { setStep({ step: 'address', address, code, error: message(error), ...(step.name ? { name: step.name } : {}) }); }
     });
   };
 
@@ -124,10 +126,9 @@ export const AddSheet = () => {
     void run(async () => {
       try {
         const outcome = await serra()!.servers.pair(current.probeId, current.code);
-        const next = afterCode(current, outcome);
-        if (next.step !== 'code') probe.current = null;
-        setStep(next);
-      } catch (error) { setStep({ ...current, step: 'code', error: message(error) }); }
+        probe.current = null;
+        setStep(afterCode(current, outcome));
+      } catch (error) { probe.current = null; setStep({ step: 'address', address: current.address, code: '', error: null, codeError: message(error), name: current.name }); }
     });
   };
 
@@ -159,9 +160,9 @@ export const AddSheet = () => {
       case 'address':
         return (
           <form onSubmit={continueAddress} className="flex flex-col gap-4">
-            <Input label="Address" value={step.address} autoFocus data-autofocus="" spellCheck={false} autoCapitalize="off" placeholder="t480"
+            <Input label="Address" value={step.address} autoFocus={!step.codeError} data-autofocus={step.codeError ? undefined : ''} spellCheck={false} autoCapitalize="off" placeholder="t480"
               error={step.error} onChange={(event) => setStep({ ...step, address: event.target.value, error: null })} />
-            <CodeField value={step.code} error={null} onChange={(code) => setStep({ ...step, code })} />
+            <CodeField value={step.code} error={step.codeError ?? null} focus={Boolean(step.codeError)} onChange={(code) => setStep({ ...step, code, codeError: null })} />
             <Footer left={<Button variant="ghost" size="sm" flush icon={<SquareTerminal size={14} aria-hidden />} onClick={() => setStep({ step: 'ssh', target: step.address, error: null })}>Pair over SSH instead</Button>}>
               <Button onClick={() => setStep({ step: 'add' })}>Back</Button>
               <Button type="submit" variant="primary" disabled={busy || !step.address.trim() || !codeComplete(step.code)} aria-busy={busy || undefined}>Continue</Button>
@@ -179,15 +180,6 @@ export const AddSheet = () => {
               <Button variant="primary" data-autofocus="" disabled={busy} aria-busy={busy || undefined} onClick={() => sendCode(step)}>They match</Button>
             </Footer>
           </div>
-        );
-      case 'code':
-        return (
-          <form onSubmit={(event) => { event.preventDefault(); if (codeComplete(step.code) && !busy) sendCode(step); }} className="flex flex-col gap-4">
-            <CodeField value={step.code} error={step.error} onChange={(code) => setStep({ ...step, code, error: null })} />
-            <Footer>
-              <Button type="submit" variant="primary" disabled={busy || !codeComplete(step.code)} aria-busy={busy || undefined}>Continue</Button>
-            </Footer>
-          </form>
         );
       case 'mismatch':
         return <Footer><Button variant="primary" data-autofocus="" onClick={close}>Close</Button></Footer>;

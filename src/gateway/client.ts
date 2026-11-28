@@ -122,13 +122,18 @@ const serverHello = async (endpoint: Endpoint, pin: Pin): Promise<ServerHello> =
   return { id: reply.body.id, name: reply.body.name, protocol: reply.body.protocol, minProtocol: reply.body.minProtocol };
 };
 
-/** A server first contacted: its certificate, its three words, and who it says it is. */
+/** A server first contacted: its certificate, the three words for it and the typed code, and who it says it is. */
 export interface Probe { endpoint: Endpoint; pin: Pin; words: [string, string, string]; hello: ServerHello }
 
-export const probeServer = async (endpoint: Endpoint): Promise<Probe> => {
+/** Server ids as servers make them (`state.ts`). Anything else is refused before it is kept. */
+export const SERVER_ID = /^s_[a-z0-9]{6,16}$/;
+
+/** Reads the server's certificate and says who it is. The code stays here: it only goes into the words. */
+export const probeServer = async (endpoint: Endpoint, code: string): Promise<Probe> => {
   const pin = await probeCertificate(endpoint);
   const hello = await serverHello(endpoint, pin);
-  return { endpoint, pin, words: pairingWords(pin.fingerprint), hello };
+  if (!SERVER_ID.test(hello.id)) throw new GatewayUnreachable(`${endpoint.host} isn’t a Serra server.`);
+  return { endpoint, pin, words: pairingWords(pin.fingerprint, code), hello };
 };
 
 export type CodeOutcome =
@@ -141,7 +146,7 @@ export const sendCode = async (probe: Probe, code: string, device: string): Prom
   const reply = await pinnedRequest(probe.endpoint, probe.pin, { method: 'POST', path: '/pair', body: { code, device }, timeoutMs: 15_000 });
   const body = isRecord(reply.body) ? reply.body : {};
   if (reply.status === 200 && isString(body.token) && isRecord(body.device) && isString(body.device.id) && isRecord(body.server)
-    && isString(body.server.id) && isString(body.server.name) && isNumber(body.server.protocol)) {
+    && isString(body.server.id) && body.server.id === probe.hello.id && isString(body.server.name) && isNumber(body.server.protocol)) {
     return { ok: true, token: body.token, deviceId: body.device.id, server: { id: body.server.id, name: body.server.name, protocol: body.server.protocol } };
   }
   if (reply.status === 401 && isNumber(body.triesLeft)) return { ok: false, reason: 'wrong', triesLeft: body.triesLeft };

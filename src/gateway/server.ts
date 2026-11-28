@@ -25,6 +25,13 @@ import {
 /** The oldest protocol this gateway still serves: N and N-1 work together. */
 const MIN_PROTOCOL = Math.max(1, GATEWAY_PROTOCOL - 1);
 const MAX_BODY = 8 * 1024 * 1024;
+/** Paired devices and pairings together never need more; the rest wait. */
+const MAX_CONNECTIONS = 64;
+/**
+ * Namespaces a paired Mac can't call yet: creating and choosing profiles, setup's folder probes and the bot's
+ * releases act on the server as a whole, outside one profile's folder. Server UX (phase 6) opens what it needs.
+ */
+const NOT_OVER_GATEWAY = new Set(['setup', 'profiles', 'updates']);
 
 export interface GatewayOptions {
   /** The profiles folder: `~/.local/share/serra`. */
@@ -59,12 +66,13 @@ const send = (response: ServerResponse, status: number, body: unknown): void => 
   response.end(text);
 };
 
-const readBody = (request: IncomingMessage): Promise<unknown> => new Promise((done, fail) => {
+const readBody = (request: IncomingMessage, max = MAX_BODY): Promise<unknown> => new Promise((done, fail) => {
   const chunks: Buffer[] = [];
   let size = 0;
   request.on('data', (chunk: Buffer) => {
     size += chunk.length;
-    if (size > MAX_BODY) { fail(new HttpError(413, { error: 'Too large.' })); request.destroy(); return; }
+    // Stop reading: the answer goes out with Connection: close, which drops the rest.
+    if (size > max) { request.removeAllListeners('data'); request.pause(); fail(new HttpError(413, { error: 'Too large.' })); return; }
     chunks.push(chunk);
   });
   request.on('end', () => {
@@ -137,7 +145,8 @@ export const startGateway = async (options: GatewayOptions): Promise<Gateway> =>
       return;
     }
     if (method === 'POST' && path === '/pair') {
-      const body = await readBody(request);
+      // Before any authentication: a code and a name are a few bytes.
+      const body = await readBody(request, 4096);
       if (!isRecord(body) || !isString(body.code)) throw new HttpError(400, { error: 'A code is needed.' });
       const device = isString(body.device) ? body.device : '';
       const check = useCode(root, body.code, device);
@@ -161,6 +170,7 @@ export const startGateway = async (options: GatewayOptions): Promise<Gateway> =>
       if (!isRecord(body) || !isString(body.profile) || !isString(body.namespace) || !isString(body.method) || !Array.isArray(body.args)) {
         throw new HttpError(400, { error: 'A call needs profile, namespace, method and args.' });
       }
+      if (NOT_OVER_GATEWAY.has(body.namespace)) throw new HttpError(403, { error: `${body.namespace} isn’t available over the gateway yet.` });
       const engine = engines.engine(body.profile);
       if (!engine) throw new HttpError(404, { error: `No profile ${body.profile} on ${identity.name}.` });
       send(response, 200, await invokeHandler(engine, body.namespace, body.method, body.args));
@@ -182,7 +192,10 @@ export const startGateway = async (options: GatewayOptions): Promise<Gateway> =>
   const handler = (request: IncomingMessage, response: ServerResponse): void => {
     route(request, response).catch((error: unknown) => {
       if (response.headersSent) { response.end(); return; }
-      if (error instanceof HttpError) send(response, error.status, error.body);
+      if (error instanceof HttpError) {
+        if (error.status === 413) response.setHeader('connection', 'close');
+        send(response, error.status, error.body);
+      }
       else { log(`error: ${error instanceof Error ? error.message : String(error)}`); send(response, 500, { error: 'The server failed.' }); }
     });
   };
@@ -193,6 +206,7 @@ export const startGateway = async (options: GatewayOptions): Promise<Gateway> =>
     for (const address of options.addresses) {
       const server = createServer({ cert, key, minVersion: 'TLSv1.2' }, handler);
       server.headersTimeout = 15_000;
+      server.maxConnections = MAX_CONNECTIONS;
       server.requestTimeout = 120_000;
       await new Promise<void>((done, fail) => {
         server.once('error', fail);

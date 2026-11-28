@@ -117,12 +117,14 @@ test('five wrong codes lock the pairing, and ten minutes end it', (t) => {
   assert.deepEqual(useCode(root, fresh, 'Mac', start), { ok: false, reason: 'expired' });
 });
 
-test('the three words follow the certificate: the same on both sides, different for another server', () => {
+test('the three words follow the certificate and the code: another server, or another code, gives other words', () => {
   const one = certFingerprint(selfSignedCert('t480').cert);
   const other = certFingerprint(selfSignedCert('t480').cert);
-  assert.deepEqual(pairingWords(one), pairingWords(one));
-  assert.equal(pairingWords(one).length, 3);
-  assert.notDeepEqual(pairingWords(one), pairingWords(other));
+  assert.deepEqual(pairingWords(one, 'K7Q-4MX'), pairingWords(one, 'k7q4mx'));
+  assert.equal(pairingWords(one, 'K7Q4MX').length, 3);
+  assert.notDeepEqual(pairingWords(one, 'K7Q4MX'), pairingWords(other, 'K7Q4MX'));
+  // The certificate is public; the code isn't. Without the code there are no words to grind a certificate towards.
+  assert.notDeepEqual(pairingWords(one, 'K7Q4MX'), pairingWords(one, 'K7Q4MY'));
 });
 
 test('the gateway listens only on loopback and Tailscale, never on every address or a LAN', () => {
@@ -133,6 +135,9 @@ test('the gateway listens only on loopback and Tailscale, never on every address
     lo0: [{ address: '127.0.0.1', family: 'IPv4', internal: true, netmask: '255.0.0.0', mac: '', cidr: null }],
     en0: [{ address: '192.168.1.20', family: 'IPv4', internal: false, netmask: '255.255.255.0', mac: '', cidr: null }],
     tailscale0: [{ address: '100.101.102.103', family: 'IPv4', internal: false, netmask: '255.255.255.255', mac: '', cidr: null }],
+    // Carrier-grade NAT and other mesh VPNs use the same range: not Tailscale's interface, not listened on.
+    wwan0: [{ address: '100.70.1.2', family: 'IPv4', internal: false, netmask: '255.192.0.0', mac: '', cidr: null }],
+    utun4: [{ address: '100.88.0.9', family: 'IPv4', internal: false, netmask: '255.255.255.255', mac: '', cidr: null }],
   });
   assert.deepEqual(found, ['127.0.0.1', '100.101.102.103']);
 });
@@ -156,16 +161,24 @@ test('pairing with a code: words first, a wrong code says tries left, the right 
   const { root: macRoot, secrets, pairing } = macSide(t);
   const code = openPairing(root);
 
-  const probe = await pairing.probe(`127.0.0.1:${gateway.port}`);
+  // A mistyped code gives words that don't match the server's; sent anyway, it costs a try and pairs nothing.
+  const wrong = code === 'AAAAAA' ? 'BBBBBB' : 'AAAAAA';
+  const typo = await pairing.probe(`127.0.0.1:${gateway.port}`, wrong);
+  assert.notDeepEqual(typo.words, serverWords(root, code));
+  assert.deepEqual(await pairing.pair(typo.probeId, wrong), { ok: false, reason: 'wrong', triesLeft: 4 });
+  // A probe is used once.
+  assert.deepEqual(await pairing.pair(typo.probeId, wrong), { ok: false, reason: 'expired' });
+
+  const probe = await pairing.probe(`127.0.0.1:${gateway.port}`, formatCode(code));
   assert.equal(probe.name, serverIdentity(root).name);
   // The Mac's words are the server's words.
-  assert.deepEqual(probe.words, serverWords(root));
+  assert.deepEqual(probe.words, serverWords(root, code));
   // Nothing was paired by probing.
   assert.deepEqual(listDevices(root), []);
-
-  const wrong = code === 'AAAAAA' ? 'BBBBBB' : 'AAAAAA';
-  assert.deepEqual(await pairing.pair(probe.probeId, wrong), { ok: false, reason: 'wrong', triesLeft: 4 });
-  const done = await pairing.pair(probe.probeId, formatCode(code));
+  // Only the code the words came from can be sent.
+  await assert.rejects(pairing.pair(probe.probeId, wrong), /code changed/);
+  const again0 = await pairing.probe(`127.0.0.1:${gateway.port}`, code);
+  const done = await pairing.pair(again0.probeId, formatCode(code));
   assert.equal(done.ok, true);
   assert.ok(done.ok);
   assert.deepEqual(done.server.profiles.map((profile) => [profile.id, profile.name]), [['friday', 'Friday']]);
@@ -180,11 +193,12 @@ test('pairing with a code: words first, a wrong code says tries left, the right 
   assert.equal(readFileSync(join(root, 'devices.json'), 'utf8').includes(token!), false);
   assert.deepEqual(listDevices(root).map((device) => device.name), ['MacBook Air']);
   // The probe is spent: a second pair with it is refused.
-  assert.deepEqual(await pairing.pair(probe.probeId, code), { ok: false, reason: 'expired' });
+  assert.deepEqual(await pairing.pair(again0.probeId, code), { ok: false, reason: 'expired' });
 
   // Pairing the same Mac again replaces its entry and revokes the old device, so no stale key is left on the server.
-  const again = await pairing.probe(`127.0.0.1:${gateway.port}`);
-  assert.equal((await pairing.pair(again.probeId, openPairing(root))).ok, true);
+  const fresh = openPairing(root);
+  const again = await pairing.probe(`127.0.0.1:${gateway.port}`, fresh);
+  assert.equal((await pairing.pair(again.probeId, fresh)).ok, true);
   assert.equal(readServers(macRoot).length, 1);
   assert.equal(listDevices(root).length, 1);
   assert.notEqual(listDevices(root)[0]?.id, server!.deviceId);
@@ -195,7 +209,7 @@ test('the Mac reaches a paired server’s engine: the same answers as the engine
   const gateway = await gatewayOn(t, root);
   const { pairing } = macSide(t);
   const code = openPairing(root);
-  const probe = await pairing.probe(`127.0.0.1:${gateway.port}`);
+  const probe = await pairing.probe(`127.0.0.1:${gateway.port}`, code);
   const paired = await pairing.pair(probe.probeId, code);
   assert.ok(paired.ok);
 
@@ -209,7 +223,9 @@ test('the Mac reaches a paired server’s engine: the same answers as the engine
   // A handler's error comes back as its message, as over the app's IPC.
   await assert.rejects(Promise.resolve(remote.pages.read('../../etc/passwd')), (error: Error) => !/at .*\.ts/.test(error.message));
   // What needs the Mac's own screen can't run on a server.
-  await assert.rejects(Promise.resolve(remote.profiles.showBackup(join(root, 'friday'))), /needs the Mac|outside|backup/i);
+  await assert.rejects(Promise.resolve(remote.meetings.openAgentBackendConfig()), /needs the Mac/);
+  // And what acts on the server as a whole isn't open over the gateway yet.
+  await assert.rejects(Promise.resolve(remote.profiles.list()), /isn’t available over the gateway yet/);
 });
 
 test('no way in without a paired token: missing, made-up, revoked, or a path outside the profiles', async (t) => {
@@ -237,6 +253,14 @@ test('no way in without a paired token: missing, made-up, revoked, or a path out
     assert.equal((await call('/rpc', token, { profile, namespace: 'settings', method: 'read', args: [] })).status, 404, profile);
   }
 
+  // What acts on the server as a whole, outside one profile, isn't open to a paired Mac yet.
+  for (const namespace of ['setup', 'profiles', 'updates']) {
+    const refused = await call('/rpc', token, { profile: 'friday', namespace, method: 'detect', args: [] });
+    assert.equal(refused.status, 403, namespace);
+  }
+  // Before any authentication a pairing request is a few bytes, never megabytes.
+  assert.equal((await call('/pair', undefined, { code: 'K7Q4MX', device: 'x'.repeat(8000) })).status, 413);
+
   // Revoked over the gateway: refused on the very next call.
   assert.equal((await call(`/devices/${device.id}`, token, undefined, 'DELETE')).status, 200);
   assert.equal((await call('/profiles', token)).status, 401);
@@ -248,6 +272,22 @@ test('no way in without a paired token: missing, made-up, revoked, or a path out
   assert.equal(await runCli(['server', 'devices', 'revoke', 'Mac mini', '--root', root], { log: (line) => lines.push(line), error: (line) => lines.push(line) }), 0);
   assert.match(lines.join('\n'), /Revoked Mac mini/);
   assert.equal((await call('/profiles', second.token)).status, 401);
+});
+
+test('a server can’t take over the entry of another server this Mac already knows', async (t) => {
+  const root = serverRoot(t);
+  const gateway = await gatewayOn(t, root);
+  const { root: macRoot, pairing } = macSide(t);
+  const code = openPairing(root);
+  const first = await pairing.probe(`127.0.0.1:${gateway.port}`, code);
+  assert.equal((await pairing.pair(first.probeId, code)).ok, true);
+  // Another gateway claiming the same id, with its own certificate, at another address.
+  const impostorRoot = folder(t, 'serra-impostor-');
+  writeFileSync(join(impostorRoot, 'server.json'), readFileSync(join(root, 'server.json')));
+  const impostor = await startGateway({ root: impostorRoot, addresses: ['127.0.0.1'], port: 0, engines: serverEngines({ root: impostorRoot, runtime: { version: '0', platform: 'linux' }, events: eventLog(), subscribe: silent }) });
+  t.after(() => impostor.close());
+  await assert.rejects(pairing.probe(`localhost:${impostor.port}`, openPairing(impostorRoot)), /reaches elsewhere\. Nothing was paired/);
+  assert.equal(readServers(macRoot)[0]?.route.kind === 'https' && readServers(macRoot)[0]?.route.port, gateway.port);
 });
 
 test('a client pinned to one certificate sends nothing to a server showing another', async (t) => {
@@ -269,8 +309,9 @@ test('a revoked Mac is told it is no longer paired, and its open event stream en
   const root = serverRoot(t);
   const gateway = await gatewayOn(t, root);
   const { pairing } = macSide(t);
-  const probe = await pairing.probe(`127.0.0.1:${gateway.port}`);
-  const paired = await pairing.pair(probe.probeId, openPairing(root));
+  const code = openPairing(root);
+  const probe = await pairing.probe(`127.0.0.1:${gateway.port}`, code);
+  const paired = await pairing.pair(probe.probeId, code);
   assert.ok(paired.ok);
   const client = pairing.client(paired.server.id);
   const states: string[] = [];

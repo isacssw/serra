@@ -71,8 +71,8 @@ export const gatewayCert = (root: string, name: string): { cert: string; key: st
   return { ...made, fingerprint: certFingerprint(made.cert) };
 };
 
-/** The three words for this server's certificate, as `serra server pair` shows them. */
-export const serverWords = (root: string): [string, string, string] => pairingWords(gatewayCert(root, serverIdentity(root).name).fingerprint);
+/** The three words for this server's certificate and a pairing's code, as `serra server pair` shows them. */
+export const serverWords = (root: string, code: string): [string, string, string] => pairingWords(gatewayCert(root, serverIdentity(root).name).fingerprint, code);
 
 // ---------------------------------------------------------------------------------------------------------------
 // A short exclusive lock, so the gateway and the CLI never lose each other's change to the same file
@@ -80,9 +80,14 @@ export const serverWords = (root: string): [string, string, string] => pairingWo
 
 const withLock = <T>(path: string, work: () => T, timeoutMs = 3000): T => {
   const lock = `${path}.lock`;
+  const mine = `${process.pid}:${randomBytes(8).toString('hex')}`;
   const until = Date.now() + timeoutMs;
   for (;;) {
-    try { closeSync(openSync(lock, 'wx', 0o600)); break; }
+    try {
+      const fd = openSync(lock, 'wx', 0o600);
+      try { writeFileSync(fd, mine); } finally { closeSync(fd); }
+      break;
+    }
     catch (error) {
       if (!isRecord(error) || error.code !== 'EEXIST') throw error;
       // A lock older than 10 seconds belongs to a process that died holding it.
@@ -91,7 +96,10 @@ const withLock = <T>(path: string, work: () => T, timeoutMs = 3000): T => {
       Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 20);
     }
   }
-  try { return work(); } finally { rmSync(lock, { force: true }); }
+  try { return work(); } finally {
+    // Only our own lock: one taken over as stale by someone else stays theirs.
+    try { if (readFileSync(lock, 'utf8') === mine) rmSync(lock, { force: true }); } catch { /* gone already */ }
+  }
 };
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -125,7 +133,7 @@ export const openPairing = (root: string, now = new Date()): string => {
 };
 
 /** Ends the open pairing, if any (Ctrl-C in `serra server pair`). */
-export const closePairing = (root: string): void => { rmSync(pairingPath(root), { force: true }); };
+export const closePairing = (root: string): void => { withLock(pairingPath(root), () => rmSync(pairingPath(root), { force: true })); };
 
 export type PairingState =
   | { state: 'open'; expiresAt: string; triesLeft: number }
@@ -156,7 +164,7 @@ export const useCode = (root: string, typed: string, device: string, now = new D
   const expected = Buffer.from(file.hash, 'hex');
   const given = Buffer.from(codeHash(file.salt, normalizeCode(typed).slice(0, 32)), 'hex');
   if (expected.length === given.length && timingSafeEqual(expected, given)) {
-    writeFileAtomic(pairingPath(root), JSON.stringify({ ...file, triesLeft: 0, pairedDevice: device }), { mode: 0o600 });
+    writeFileAtomic(pairingPath(root), JSON.stringify({ ...file, triesLeft: 0, pairedDevice: cleanDeviceName(device) }), { mode: 0o600 });
     return { ok: true };
   }
   const triesLeft = file.triesLeft - 1;

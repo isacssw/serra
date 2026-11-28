@@ -1,6 +1,9 @@
-// The three words a pairing shows on both sides (ux-rules F5). They come from the server certificate's fingerprint,
-// so the Mac and `serra server pair` show the same three only when the Mac reached the real server: a machine in the
-// middle has another certificate, and other words. The Mac sends nothing secret until the owner says they match.
+// The three words a pairing shows on both sides (ux-rules F5). They come from the server certificate's fingerprint
+// and the pairing's code, so the Mac and `serra server pair` show the same three only when the Mac reached the real
+// server: a machine in the middle has another certificate, and other words. The code is in them because the
+// certificate alone is public: anyone who can reach the gateway could grind a certificate with the same three words
+// (24 bits). Mixed with a code they never see, there is nothing to grind towards, and a forged certificate matches
+// one time in 16 million. The Mac sends nothing secret, the code included, until the owner says they match.
 import { createHash } from 'node:crypto';
 
 /** 256 short, common, easy-to-say words that don't look or sound alike, so one byte picks one. */
@@ -23,8 +26,8 @@ const WORDS: readonly string[] = [
   'turnip', 'turtle', 'umbrella', 'valley', 'velvet', 'violin', 'walnut', 'walrus', 'wander', 'whistle', 'willow', 'window', 'winter', 'yogurt', 'zebra', 'zephyr',
 ];
 
-/** The three words for a certificate fingerprint (`sha256:…`). */
-export const pairingWords = (fingerprint: string): [string, string, string] => {
-  const digest = createHash('sha256').update(`serra-pair-words\0${fingerprint}`).digest();
+/** The three words for a certificate fingerprint (`sha256:…`) and a code as typed (`K7Q-4MX` or `k7q4mx`). */
+export const pairingWords = (fingerprint: string, code: string): [string, string, string] => {
+  const digest = createHash('sha256').update(`serra-pair-words\0${fingerprint}\0${code.toUpperCase().replace(/[\s-]/g, '')}`).digest();
   return [WORDS[digest[0]!]!, WORDS[digest[1]!]!, WORDS[digest[2]!]!];
 };

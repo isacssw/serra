@@ -39,13 +39,15 @@ test('each step has one title and at most one short line, in the rulebook’s wo
   }
 });
 
-test('after the code: ready, the code step again with tries left (from the words step too), or locked', () => {
-  const sent = { address: 't480', probeId: 'p1', name: 't480' };
+test('after the code: ready, the code again with tries left (from the words step too), or locked', () => {
+  const sent = { address: 't480', name: 't480' };
   const server = { id: 's_abc123', name: 't480', via: 'address' as const, profiles: [] };
   assert.deepEqual(afterCode(sent, { ok: true, server }), { step: 'ready', server });
-  // Sent from the words step, a wrong code goes to the code step, with the field emptied.
-  const wordsStep = { step: 'words' as const, code: 'K7Q-4MX', words: ['maple', 'orbit', 'lantern'], ...sent };
-  assert.deepEqual(afterCode(wordsStep, { ok: false, reason: 'wrong', triesLeft: 4 }), { step: 'code', address: 't480', code: '', probeId: 'p1', name: 't480', error: 'Wrong or expired code. 4 tries left.' });
+  // Sent from the words step, a wrong code goes back to the code field, emptied: a new code means new words.
+  const wordsStep = { step: 'words' as const, code: 'K7Q-4MX', probeId: 'p1', words: ['maple', 'orbit', 'lantern'], ...sent };
+  const back = afterCode(wordsStep, { ok: false, reason: 'wrong', triesLeft: 4 });
+  assert.deepEqual(back, { step: 'address', address: 't480', code: '', error: null, codeError: 'Wrong or expired code. 4 tries left.', name: 't480' });
+  assert.equal(pairTitle(back), 'Pair with t480');
   assert.deepEqual(afterCode(sent, { ok: false, reason: 'locked' }), { step: 'locked', name: 't480', address: 't480', expired: false });
   assert.deepEqual(afterCode(sent, { ok: false, reason: 'expired' }), { step: 'locked', name: 't480', address: 't480', expired: true });
 });
@@ -60,7 +62,7 @@ test('a failed SSH pairing says what happened and that nothing changed, naming t
 test('the app’s servers handlers check the window’s input and turn SSH failures into a few words', async () => {
   const calls: string[] = [];
   const pairing: ServerPairing = {
-    probe: (address) => { calls.push(`probe ${address}`); return Promise.resolve({ probeId: 'p1', name: 't480', words: ['maple', 'orbit', 'lantern'] }); },
+    probe: (address, code) => { calls.push(`probe ${address} ${code}`); return Promise.resolve({ probeId: 'p1', name: 't480', words: ['maple', 'orbit', 'lantern'] }); },
     pair: (probeId, code) => { calls.push(`pair ${probeId} ${code}`); return Promise.resolve({ ok: false, reason: 'wrong', triesLeft: 4 }); },
     cancel: (probeId) => { calls.push(`cancel ${probeId}`); },
     pairOverSsh: () => Promise.reject(new SshFailed('key refused', 'The server refused this Mac’s SSH key.')),
@@ -70,11 +72,11 @@ test('the app’s servers handlers check the window’s input and turn SSH failu
     close: () => {},
   };
   const handlers = serverHandlers(pairing);
-  assert.deepEqual(await handlers.probe(' t480 '), { probeId: 'p1', name: 't480', words: ['maple', 'orbit', 'lantern'] });
+  assert.deepEqual(await handlers.probe(' t480 ', 'K7Q-4MX'), { probeId: 'p1', name: 't480', words: ['maple', 'orbit', 'lantern'] });
   assert.deepEqual(await handlers.pair('p1', 'K7Q-4MX'), { ok: false, reason: 'wrong', triesLeft: 4 });
-  await assert.rejects(Promise.resolve().then(() => handlers.probe('')), /An address is needed/);
+  await assert.rejects(Promise.resolve().then(() => handlers.probe('', 'K7Q-4MX')), /An address is needed/);
   await assert.rejects(Promise.resolve().then(() => handlers.pair('p1', 'x'.repeat(100))), /The code is needed/);
   assert.deepEqual(await handlers.pairOverSsh('you@t480'), { ok: false, detail: 'key refused', message: 'The server refused this Mac’s SSH key.' });
   await handlers.cancel('p1');
-  assert.deepEqual(calls, ['probe t480', 'pair p1 K7Q-4MX', 'cancel p1']);
+  assert.deepEqual(calls, ['probe t480 K7Q-4MX', 'pair p1 K7Q-4MX', 'cancel p1']);
 });

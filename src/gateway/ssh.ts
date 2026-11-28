@@ -6,6 +6,7 @@ import { spawn } from 'node:child_process';
 import { createConnection, createServer } from 'node:net';
 import { isNumber, isRecord, isString } from '../lib/guards.ts';
 import { certFingerprint } from './cert.ts';
+import { SERVER_ID } from './client.ts';
 
 /** `you@t480`, `t480`, or an alias from `~/.ssh/config`. Never starts with `-`, so it can't be read as an option. */
 const SSH_TARGET = /^(?:[a-z_][a-z0-9_.-]{0,31}@)?[a-z0-9](?:[a-z0-9.-]{0,252})$/i;
@@ -49,7 +50,7 @@ const parseSshPairing = (stdout: string): SshPairing => {
   const line = stdout.trim().split('\n').at(-1) ?? '';
   let value: unknown;
   try { value = JSON.parse(line); } catch { throw new SshFailed('failed', 'The server’s answer wasn’t readable.'); }
-  if (!isRecord(value) || !isRecord(value.server) || !isString(value.server.id) || !isString(value.server.name) || !isNumber(value.server.protocol)
+  if (!isRecord(value) || !isRecord(value.server) || !isString(value.server.id) || !SERVER_ID.test(value.server.id) || !isString(value.server.name) || !isNumber(value.server.protocol)
     || !isString(value.cert) || !isString(value.fingerprint) || !isNumber(value.port) || !isString(value.token) || !isString(value.deviceId)) {
     throw new SshFailed('failed', 'The server’s answer wasn’t readable.');
   }

@@ -176,8 +176,8 @@ export interface SerraApi {
    * are this Mac's. Pair with a code (probe, compare the words, then the code) or over SSH with the owner's keys.
    */
   servers: {
-    /** Reaches the address and reads its certificate: the server's name and the three words. Sends no secret. */
-    probe(address: string): PairProbe;
+    /** Reaches the address and reads its certificate: the server's name, and the three words for it and the code. Sends no secret. */
+    probe(address: string, code: string): PairProbe;
     /** Sends the code to the probed server, once the owner said the words match. */
     pair(probeId: string, code: string): PairOutcome;
     /** Drops a probe: the words didn't match, or the dialog closed. */

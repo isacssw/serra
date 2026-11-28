@@ -19,7 +19,7 @@ import {
 } from './client.ts';
 import type { ServerProfile } from './engines.ts';
 import { openTunnel, pairOverSsh, sshHostName, type SshOptions, type Tunnel } from './ssh.ts';
-import { PAIRING_MINUTES } from './state.ts';
+import { normalizeCode, PAIRING_MINUTES } from './state.ts';
 
 export type ServerRoute = { kind: 'https'; host: string; port: number } | { kind: 'ssh'; target: string; port: number };
 
@@ -69,8 +69,8 @@ export type PairOutcome =
   | { ok: false; reason: 'locked' | 'expired' };
 
 export interface ServerPairing {
-  /** Reaches the address and reads its certificate. Sends no secret. */
-  probe(address: string): Promise<PairProbe>;
+  /** Reaches the address and reads its certificate; the words come from it and the typed code. Sends no secret. */
+  probe(address: string, code: string): Promise<PairProbe>;
   /** Sends the code to the probed server. The window calls this only after the owner says the words match. */
   pair(probeId: string, code: string): Promise<PairOutcome>;
   /** Forgets a probe: the words didn't match, or the owner closed the dialog. */
@@ -94,11 +94,23 @@ export const serverPairing = ({ root, secrets, device, ssh = {}, now = () => new
   ssh?: SshOptions;
   now?: () => Date;
 }): ServerPairing => {
-  const probes = new Map<string, { probe: Probe; until: number }>();
+  const probes = new Map<string, { probe: Probe; code: string; until: number }>();
   const tunnels = new Map<string, Promise<Tunnel>>();
 
   const save = (server: PairedServer): void => {
     writeServers(root, [...readServers(root).filter((known) => known.id !== server.id), server]);
+  };
+
+  /**
+   * A server may claim the id of one this Mac already knows only from the same address, where pairing again is how
+   * a server that made a new certificate is trusted again. From anywhere else it would take over that server's
+   * entry, so it is refused.
+   */
+  const refuseTakeover = (serverId: string, fingerprint: string, where: string): void => {
+    const known = readServers(root).find((server) => server.id === serverId);
+    if (!known || known.fingerprint === fingerprint) return;
+    const was = known.route.kind === 'https' ? `https:${known.route.host}` : `ssh:${known.route.target}`;
+    if (was !== where) throw new GatewayUnreachable(`This server says it is ${known.name}, which this Mac reaches elsewhere. Nothing was paired.`);
   };
 
   /**
@@ -147,25 +159,26 @@ export const serverPairing = ({ root, secrets, device, ssh = {}, now = () => new
   };
 
   return {
-    async probe(address) {
+    async probe(address, code) {
       const endpoint = parseAddress(address);
       if (!endpoint) throw new GatewayUnreachable('That isn’t an address. Try t480 or t480:47820.');
-      const probe = await probeServer(endpoint);
+      const probe = await probeServer(endpoint, code);
+      refuseTakeover(probe.hello.id, probe.pin.fingerprint, `https:${endpoint.host}`);
       sweep();
       const probeId = randomBytes(12).toString('hex');
-      probes.set(probeId, { probe, until: now().getTime() + PAIRING_MINUTES * 60_000 });
+      probes.set(probeId, { probe, code: normalizeCode(code), until: now().getTime() + PAIRING_MINUTES * 60_000 });
       return { probeId, name: probe.hello.name, words: probe.words };
     },
     async pair(probeId, code) {
       sweep();
       const entry = probes.get(probeId);
       if (!entry) return { ok: false, reason: 'expired' };
-      const outcome = await sendCode(entry.probe, code, device);
-      if (!outcome.ok) {
-        if (outcome.reason !== 'wrong') probes.delete(probeId);
-        return outcome;
-      }
+      // The words the owner compared came from this code: another one would go out unchecked.
+      if (normalizeCode(code) !== entry.code) throw new Error('The code changed since the words were shown. Continue again.');
+      // A probe is used once: whatever the server says, a new code means new words.
       probes.delete(probeId);
+      const outcome = await sendCode(entry.probe, entry.code, device);
+      if (!outcome.ok) return outcome;
       await retireOld(outcome.server.id, outcome.deviceId);
       await secrets.set(tokenService(outcome.server.id), ACCOUNT, outcome.token);
       const server: PairedServer = {
@@ -184,6 +197,7 @@ export const serverPairing = ({ root, secrets, device, ssh = {}, now = () => new
     cancel(probeId) { probes.delete(probeId); },
     async pairOverSsh(target) {
       const paired = await pairOverSsh(target, device, ssh);
+      refuseTakeover(paired.server.id, paired.fingerprint, `ssh:${target.trim()}`);
       await retireOld(paired.server.id, paired.deviceId);
       await secrets.set(tokenService(paired.server.id), ACCOUNT, paired.token);
       const server: PairedServer = {

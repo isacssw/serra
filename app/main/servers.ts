@@ -11,7 +11,7 @@ const text = (value: unknown, what: string, max = 300): string => {
 };
 
 export const serverHandlers = (pairing: ServerPairing): Handlers<'servers'> => ({
-  probe: (address) => pairing.probe(text(address, 'An address')),
+  probe: (address, code) => pairing.probe(text(address, 'An address'), text(code, 'The code', 32)),
   pair: (probeId, code) => pairing.pair(text(probeId, 'A pairing', 64), text(code, 'The code', 32)),
   cancel: (probeId) => { if (typeof probeId === 'string') pairing.cancel(probeId); },
   pairOverSsh: async (target) => {
