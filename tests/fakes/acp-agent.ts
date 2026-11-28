@@ -10,7 +10,8 @@
 // `STREAM` sends part of the reply and starts a tool before the turn's text is known; the tool fails when it ends.
 // `OPTS:<kind>,<kind>` sets the permission choices `ASK` offers (default: allow_once and reject_once).
 // FAKE_ACP_NO_IMAGES: the agent says it takes no images. FAKE_ACP_MODES=none: it has no modes, like eve.
-// FAKE_ACP_NO_SET_MODE: it refuses every mode switch. Run: node tests/fakes/acp-agent.ts
+// FAKE_ACP_NO_SET_MODE: it refuses every mode switch. FAKE_ACP_NO_LOAD: it can't reopen a session, like eve. `DROP`
+// with `ASK`: the turn fails as eve's does when it loses its server, while the request is still open. Run: node tests/fakes/acp-agent.ts
 import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { Readable, Writable } from 'node:stream';
@@ -43,7 +44,7 @@ const waitFor = async (file: string, sessionId: string): Promise<string | null> 
 };
 
 const app = acp.agent({ name: 'fake-acp' })
-  .onRequest(acp.methods.agent.initialize, () => ({ protocolVersion: acp.PROTOCOL_VERSION, agentCapabilities: { loadSession: true, promptCapabilities: { image: !process.env.FAKE_ACP_NO_IMAGES } } }))
+  .onRequest(acp.methods.agent.initialize, () => ({ protocolVersion: acp.PROTOCOL_VERSION, agentCapabilities: { loadSession: !process.env.FAKE_ACP_NO_LOAD, promptCapabilities: { image: !process.env.FAKE_ACP_NO_IMAGES } } }))
   .onRequest(acp.methods.agent.session.new, ({ params }) => {
     const session = next('session');
     put(join(dir, `session-${session}`), params.cwd);
@@ -81,11 +82,17 @@ const app = acp.agent({ name: 'fake-acp' })
       // Option ids: `yes`/`no` for the once kinds, `always-yes`/`always-no` for the always ones.
       const ids: Record<string, string> = { allow_once: 'yes', reject_once: 'no', allow_always: 'always-yes', reject_always: 'always-no' };
       const kinds = (/OPTS:([\w,]+)/.exec(text)?.[1] ?? 'allow_once,reject_once').split(',') as acp.PermissionOptionKind[];
-      const answer = await client.request(acp.methods.client.session.requestPermission, {
+      const asking = client.request(acp.methods.client.session.requestPermission, {
         sessionId: params.sessionId,
         toolCall: { toolCallId: `ask-${turn}`, title: ask === 'restart' ? 'restart_service' : `a ${ask} tool`, kind: (ask === 'restart' ? 'other' : ask) as acp.ToolKind },
         options: kinds.map((kind): acp.PermissionOption => ({ optionId: ids[kind] ?? kind, name: kind, kind })),
       });
+      if (text.includes('DROP')) {
+        asking.then((late) => put(join(dir, `permission-${turn}`), late.outcome.outcome === 'selected' ? late.outcome.optionId : 'cancelled'), () => {});
+        await new Promise((resolve) => { setTimeout(resolve, 200); });
+        throw acp.RequestError.internalError({ errorKind: 'transport_lost' }, 'lost the server');
+      }
+      const answer = await asking;
       put(join(dir, `permission-${turn}`), answer.outcome.outcome === 'selected' ? answer.outcome.optionId : 'cancelled');
     }
     if (/\bELICIT\b/.test(text)) {
