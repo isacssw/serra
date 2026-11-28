@@ -220,7 +220,8 @@ export const setupHandlers = (context: CoreContext, deps: SetupDeps = {}): Handl
     },
 
     defaults: async () => {
-      // The agents are looked for alongside the login and name, so a slow `gh` never holds up the agent choice.
+      // The agents are looked for alongside the login and name, not after them. A slow `gh` still delays the answer, but
+      // a form sent before it arrives is safe: create picks T3 when it's here, else the agent it finds.
       const [githubLogin, ownerName, { agents }] = await Promise.all([
         (deps.githubLogin ?? detectGithubLogin)(),
         (deps.gitName ?? (() => run('git', ['config', '--global', 'user.name'], { timeoutMs: 5_000 }).then((v) => v.trim())))().catch(() => ''),
