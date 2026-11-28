@@ -11,7 +11,7 @@ import type { QuestionInteraction } from '../questions.ts';
 import type { IncomingFile, IncomingMessage } from '../types.ts';
 import type { TelegramMessage, TelegramUpdate } from './api.ts';
 import { QUESTION_DATA, telegramId } from './chat.ts';
-import type { ThreadStore } from './threads.ts';
+import type { ThreadStore } from '../chat/threads.ts';
 
 /** How long a private chat's last thread takes new messages without a reply. */
 export const CONTINUE_MS = 30 * 60 * 1000;

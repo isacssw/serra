@@ -1,6 +1,6 @@
 # Bot profiles
 
-A profile connects one bot to Slack, and optionally to Telegram. The Slack-specific fields below (member IDs, channel IDs, tokens) are Slack's settings. Telegram's are under `channels.telegram` (the bot's ID and username, and your Telegram user ID once you paired), set from **Settings › Channels**; its token is `TELEGRAM_BOT_TOKEN` in `secrets.json`'s sources like the Slack ones. See [telegram.md](telegram.md).
+A profile connects one bot to Slack, and optionally to Telegram and Discord. The Slack-specific fields below (member IDs, channel IDs, tokens) are Slack's settings. Telegram's are under `channels.telegram` (the bot's ID and username, and your Telegram user ID once you paired), set from **Settings › Channels**; its token is `TELEGRAM_BOT_TOKEN` in `secrets.json`'s sources like the Slack ones. See [telegram.md](telegram.md). Discord's are under `channels.discord` (the bot's ID, name and application ID, and your Discord user ID once you paired), with its token as `DISCORD_BOT_TOKEN`; see [discord.md](discord.md).
 
 Use one private profile per bot, outside the code checkout. `pnpm run setup` creates it. Select it with `--profile /absolute/folder` or `BOT_PROFILE=/absolute/folder`. The bot and doctor refuse to start without one; there are no built-in owner defaults.
 

@@ -17,7 +17,7 @@ import { createTelegramConnection } from '../src/telegram/connection.ts';
 import { CONTINUE_MS, translateUpdate } from '../src/telegram/incoming.ts';
 import { markdownToHtml, messageHtml } from '../src/telegram/markup.ts';
 import { pairingCode, takePairingCode } from '../src/telegram/pairing.ts';
-import { createThreadStore } from '../src/telegram/threads.ts';
+import { createThreadStore } from '../src/chat/threads.ts';
 import type { T3QuestionRequest } from '../src/t3-questions.ts';
 import { channelsView } from '../src/handlers/channels.ts';
 import { slackRow, telegramRow, tokenProblem } from '../app/renderer/screens/settings/channels.logic.ts';
@@ -69,7 +69,7 @@ test('a Telegram token never survives scrubbing, and the API never puts it in an
 const store = (t: TestContext) => {
   const dir = mkdtempSync(join(tmpdir(), 'serra-telegram-'));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
-  return { dir, threads: createThreadStore(dir) };
+  return { dir, threads: createThreadStore(dir, 'telegram') };
 };
 const dm = (id: number, text: string, extra: Record<string, unknown> = {}) =>
   ({ update_id: id, message: { message_id: id, date: 0, from: { id: ME, first_name: 'Alex' }, chat: { id: ME, type: 'private' as const }, text, ...extra } });
@@ -328,13 +328,13 @@ test('connecting Telegram checks the token, keeps it out of the profile and the 
     // No `security` or `op` here unless a test makes one.
     tools: { security: join(root, 'no-security'), op: join(root, 'no-op'), timeoutMs: 1_000 },
   });
-  assert.deepEqual(await handlers.status(), { telegram: { state: 'off' } });
+  assert.deepEqual(await handlers.status(), { telegram: { state: 'off' }, discord: { state: 'off' } });
   await assert.rejects(async () => handlers.connectTelegram('not a token'), (error: Error) => /isn't a real Telegram bot token/.test(error.message));
   const wrong = '2222222:fixturevalue-telegram-1111111111111';
   await assert.rejects(async () => handlers.connectTelegram(wrong), (error: Error) => /didn’t accept that token/.test(error.message) && !error.message.includes(wrong));
   // No Keychain here (a fake path): the error says so, without the value, and nothing is connected.
   await assert.rejects(async () => handlers.connectTelegram(TELEGRAM_TOKEN), (error: Error) => !error.message.includes(TELEGRAM_TOKEN));
-  assert.deepEqual(await handlers.status(), { telegram: { state: 'off' } });
+  assert.deepEqual(await handlers.status(), { telegram: { state: 'off' }, discord: { state: 'off' } });
 
   // A 1Password reference: Serra points at it and reads it once to ask Telegram.
   const opBin = join(root, 'op');
@@ -354,7 +354,7 @@ test('connecting Telegram checks the token, keeps it out of the profile and the 
   assert.ok(readSecretsFile(dir).checks.TELEGRAM_BOT_TOKEN?.verifiedAt, 'recorded as checked');
   assert.deepEqual(channelsView(dir), view, 'the same link until it is used');
 
-  assert.deepEqual(await viaOp.disconnectTelegram(), { telegram: { state: 'off' } });
+  assert.deepEqual(await viaOp.disconnectTelegram(), { telegram: { state: 'off' }, discord: { state: 'off' } });
   assert.equal(readSecretsFile(dir).sources.TELEGRAM_BOT_TOKEN, undefined);
   assert.ok(!readFileSync(join(dir, 'profile.json'), 'utf8').includes('telegram'));
 });

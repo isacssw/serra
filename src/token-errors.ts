@@ -3,10 +3,10 @@
 // setup's progress in main and by the setup screens.
 
 /** Slack refusing the token, or the token not being the right kind: a new token is needed. These win over the rest. */
-const VERDICT = /isn't a real (?:x(?:oxb|app)- token|Telegram bot token)|Unauthorized|is empty|isn't an item|no item|item not found|not found in vault|contains whitespace|missing_scope|invalid_auth|not_authed|token_revoked|token_expired|account_inactive|not_allowed_token_type|invalid_token/;
+const VERDICT = /isn't a real (?:x(?:oxb|app)- token|Telegram bot token|Discord bot token)|Unauthorized|is empty|isn't an item|no item|item not found|not found in vault|contains whitespace|missing_scope|invalid_auth|not_authed|token_revoked|token_expired|account_inactive|not_allowed_token_type|invalid_token/;
 
 /** Failures a retry can fix: the network, Slack itself, or a source that couldn't be read just now. */
-const RETRYABLE = /Couldn't reach (?:Slack|Telegram)|ECONN|ENOTFOUND|EAI_AGAIN|ETIMEDOUT|timed? ?out|fetch failed|socket hang up|network|rate.?limit|ratelimited|fatal_error|internal_error|service_unavailable|request_timeout|Keychain|security|User interaction is not allowed|1Password|\bop\b/i;
+const RETRYABLE = /Couldn't reach (?:Slack|Telegram|Discord)|ECONN|ENOTFOUND|EAI_AGAIN|ETIMEDOUT|timed? ?out|fetch failed|socket hang up|network|rate.?limit|ratelimited|fatal_error|internal_error|service_unavailable|request_timeout|Keychain|security|User interaction is not allowed|1Password|\bop\b/i;
 
 /**
  * True when the error is a verdict on the token itself and a new value is needed. Unknown failures count as verdicts,
