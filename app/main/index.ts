@@ -66,6 +66,8 @@ if (app.isPackaged) process.env.PATH = toolPath(process.env.PATH, homedir());
 const smoke = process.argv.includes('--smoke');
 const smokeUserData = smoke ? mkdtempSync(join(tmpdir(), 'serra-app-smoke-')) : null;
 if (smokeUserData) app.setPath('userData', smokeUserData);
+/** Where profiles are made and found. The smoke test's are its own, so this Mac's profiles never show in its checks. */
+const profileRoot = smokeUserData ? join(smokeUserData, 'profiles') : defaultProfileRoot;
 
 /** The menubar item. While it exists, closing the window leaves the app (and the daemon) running. */
 let tray: SerraTray | null = null;
@@ -197,6 +199,7 @@ const start = async (): Promise<void> => {
     profileDirOrNull,
     profileDir,
     profilePinned: argument !== undefined,
+    profileRoot,
     selectProfile: selectProfileIn(prefs),
     status,
     runtime: { version: runtime.version, platform: runtime.platform },
@@ -230,11 +233,11 @@ const start = async (): Promise<void> => {
   powerMonitor.on('resume', () => health.retry());
   // Moves and restores (SB-34): this Mac's side, and the runner that spans it and the servers.
   const moves = movesRunner({
-    root: defaultProfileRoot,
+    root: profileRoot,
     pairing,
     health,
     local: localMoveHost({
-      root: defaultProfileRoot,
+      root: profileRoot,
       name: 'this Mac',
       install: async (dir) => {
         const node = await findNode(dir);
