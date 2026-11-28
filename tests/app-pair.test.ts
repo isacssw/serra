@@ -68,10 +68,11 @@ test('the app’s servers handlers check the window’s input and turn SSH failu
     pairOverSsh: () => Promise.reject(new SshFailed('key refused', 'The server refused this Mac’s SSH key.')),
     list: () => [],
     client: () => { throw new Error('unused'); },
-    forget: () => Promise.resolve(),
+    forget: () => Promise.resolve({ revoked: true }),
     close: () => {},
   };
-  const handlers = serverHandlers(pairing);
+  const health = { snapshot: () => [], sync: () => {}, retry: () => {}, subscribe: () => () => {}, close: () => {} };
+  const handlers = serverHandlers(pairing, health);
   assert.deepEqual(await handlers.probe(' t480 ', 'K7Q-4MX'), { probeId: 'p1', name: 't480', words: ['maple', 'orbit', 'lantern'] });
   assert.deepEqual(await handlers.pair('p1', 'K7Q-4MX'), { ok: false, reason: 'wrong', triesLeft: 4 });
   await assert.rejects(Promise.resolve().then(() => handlers.probe('', 'K7Q-4MX')), /An address is needed/);

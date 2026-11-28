@@ -161,6 +161,16 @@ export const sendCode = async (probe: Probe, code: string, device: string): Prom
 const isServerProfile = (value: unknown): value is ServerProfile =>
   isRecord(value) && isString(value.id) && isString(value.name) && (value.status === null || isRecord(value.status));
 
+/** A profile id as a server names its folders (`engines.ts`). Anything else a server sends is dropped, never used as a key. */
+const SERVER_PROFILE_ID = /^[\w][\w.-]{0,63}$/;
+
+/** A server's profile as the Mac keeps it: a valid id, and a name that is one printable line of at most 60 characters. */
+const cleanProfile = (profile: ServerProfile): ServerProfile | null => {
+  if (!SERVER_PROFILE_ID.test(profile.id)) return null;
+  const name = profile.name.replace(/[\p{Cc}\p{Cf}]/gu, '').replace(/\s+/g, ' ').trim().slice(0, 60) || profile.id;
+  return { id: profile.id, name, status: profile.status };
+};
+
 /** A gateway event as the Mac receives it. */
 export interface RemoteEvent { seq: number; profile: string | null; channel: string; payload: unknown }
 
@@ -175,12 +185,16 @@ export interface GatewayClient {
   /** One engine call on one of the server's profiles. Throws the handler's message, as the app's IPC does. */
   call(profile: string, namespace: string, method: string, args: readonly unknown[]): Promise<unknown>;
   devices(): Promise<unknown>;
-  revoke(deviceId: string): Promise<void>;
+  revoke(deviceId: string, options?: { timeoutMs?: number }): Promise<void>;
   /**
    * Follows the event log. Reconnects by itself with `Last-Event-ID` (1 s, then up to 30 s apart), so events missed
    * while away arrive in order; `reset` says the log no longer had them, so reload. Returns a stop function.
    */
-  follow(listener: { event(event: RemoteEvent): void; reset?(): void; state?(state: StreamState): void }, options?: { retryMs?: number }): () => void;
+  follow(listener: {
+    event(event: RemoteEvent): void; reset?(): void; state?(state: StreamState): void;
+    /** The token was refused (revoked, or the server forgot this Mac): the stream stops for good. */
+    notPaired?(): void;
+  }, options?: { retryMs?: number }): () => void;
 }
 
 /**
@@ -190,8 +204,8 @@ export interface GatewayClient {
 export const gatewayClient = ({ endpoint, pin, token, name }: {
   endpoint: () => Promise<Endpoint>; pin: Pin; token: () => Promise<string>; name: string;
 }): GatewayClient => {
-  const authed = async (method: string, path: string, body?: unknown): Promise<Reply> => {
-    const reply = await pinnedRequest(await endpoint(), pin, { method, path, body, token: await token() });
+  const authed = async (method: string, path: string, body?: unknown, timeoutMs?: number): Promise<Reply> => {
+    const reply = await pinnedRequest(await endpoint(), pin, { method, path, body, token: await token(), ...(timeoutMs ? { timeoutMs } : {}) });
     if (reply.status === 401) throw new NotPaired(`This Mac isn’t paired with ${name} any more.`);
     return reply;
   };
@@ -203,7 +217,8 @@ export const gatewayClient = ({ endpoint, pin, token, name }: {
       if (reply.status !== 200 || !isRecord(body) || !isArrayOf(isServerProfile)(body.profiles) || !isRecord(body.server)) throw failed(reply);
       const { server } = body;
       if (!isString(server.id) || !isString(server.name) || !isNumber(server.protocol)) throw failed(reply);
-      return { server: { id: server.id, name: server.name, protocol: server.protocol }, profiles: body.profiles };
+      const profiles = body.profiles.map(cleanProfile).filter((profile): profile is ServerProfile => profile !== null);
+      return { server: { id: server.id, name: server.name, protocol: server.protocol }, profiles };
     },
     async call(profile, namespace, method, args) {
       const reply = await authed('POST', '/rpc', { profile, namespace, method, args });
@@ -217,8 +232,8 @@ export const gatewayClient = ({ endpoint, pin, token, name }: {
       if (reply.status !== 200 || !isRecord(reply.body)) throw failed(reply);
       return reply.body.devices;
     },
-    async revoke(deviceId) {
-      const reply = await authed('DELETE', `/devices/${encodeURIComponent(deviceId)}`);
+    async revoke(deviceId, { timeoutMs } = {}) {
+      const reply = await authed('DELETE', `/devices/${encodeURIComponent(deviceId)}`, undefined, timeoutMs);
       if (reply.status !== 200) throw failed(reply);
     },
     follow(listener, { retryMs = 1000 } = {}) {
@@ -247,6 +262,14 @@ export const gatewayClient = ({ endpoint, pin, token, name }: {
         let finished = false;
         const drop = (): void => { if (finished) return; finished = true; again(); };
         const request = httpsRequest({ ...pinnedOptions(target, pin), method: 'GET', path: '/events', headers }, (response) => {
+          if (response.statusCode === 401) {
+            // Revoked, or forgotten by the server: retrying would only knock on a closed door every 30 s.
+            finished = true;
+            stopped = true;
+            response.resume();
+            listener.notPaired?.();
+            return;
+          }
           response.on('close', drop);
           if (response.statusCode !== 200) { response.resume(); return; }
           wait = retryMs;
@@ -273,7 +296,10 @@ export const gatewayClient = ({ endpoint, pin, token, name }: {
                 try {
                   const parsed: unknown = JSON.parse(data);
                   if (isRecord(parsed) && isString(parsed.channel)) {
-                    listener.event({ seq: id, profile: isString(parsed.profile) ? parsed.profile : null, channel: parsed.channel, payload: parsed.payload });
+                    // A profile id that isn't one is dropped with its event: it never becomes a key here.
+                    const profile = isString(parsed.profile) ? parsed.profile : null;
+                    if (profile !== null && !SERVER_PROFILE_ID.test(profile)) continue;
+                    listener.event({ seq: id, profile, channel: parsed.channel, payload: parsed.payload });
                   }
                 } catch { /* a broken line is skipped */ }
               }

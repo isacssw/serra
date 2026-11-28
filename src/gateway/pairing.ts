@@ -7,7 +7,7 @@
 //         this Mac's loopback to the server's gateway carries every later call.
 //
 // `servers.json` holds no secret: names, routes, the certificate (public) and when it was added. Server management
-// (forget, revoke, the server's own screen) is phase 6; this module leaves its seams (`client`, `forget`).
+// (forget, revoke, the server's own screen) is in the app's Settings › Servers (SB-33), over `client` and `forget`.
 import { randomBytes } from 'node:crypto';
 import { join } from 'node:path';
 import { writeFileAtomic } from '../lib/atomic.ts';
@@ -15,7 +15,7 @@ import { isArrayOf, isNumber, isOneOf, isRecord, isString, isTime, readJsonOrNul
 import type { SecretStore } from '../secrets.ts';
 import { certFingerprint } from './cert.ts';
 import {
-  gatewayClient, GatewayUnreachable, parseAddress, probeServer, sendCode, type Endpoint, type GatewayClient, type Probe,
+  gatewayClient, GatewayUnreachable, NotPaired, parseAddress, probeServer, sendCode, type Endpoint, type GatewayClient, type Probe,
 } from './client.ts';
 import type { ServerProfile } from './engines.ts';
 import { openTunnel, pairOverSsh, sshHostName, type SshOptions, type Tunnel } from './ssh.ts';
@@ -80,8 +80,12 @@ export interface ServerPairing {
   list(): PairedServer[];
   /** A client for a paired server, opening its tunnel first when it is reached over SSH. */
   client(serverId: string): GatewayClient;
-  /** Removes a server from this Mac: its entry and its token. Deletes nothing on the server. */
-  forget(serverId: string): Promise<void>;
+  /**
+   * Removes a server from this Mac: first this Mac's device on the server (best effort, a few seconds), so no key is
+   * left there that nobody holds, then its entry and its token here. Deletes no data on the server. `revoked` is false
+   * when the server couldn't be reached: it still lists this Mac until `serra server devices revoke` there.
+   */
+  forget(serverId: string): Promise<{ revoked: boolean }>;
   close(): void;
 }
 
@@ -223,10 +227,18 @@ export const serverPairing = ({ root, secrets, device, ssh = {}, now = () => new
       return clientFor(server);
     },
     async forget(serverId) {
+      const known = readServers(root).find((server) => server.id === serverId);
+      let revoked = false;
+      if (known) {
+        try { await clientFor(known).revoke(known.deviceId, { timeoutMs: 5000 }); revoked = true; }
+        // Already revoked there counts as done; unreachable leaves it listed, and the owner is told.
+        catch (error) { revoked = error instanceof NotPaired; }
+      }
       void tunnels.get(serverId)?.then((tunnel) => tunnel.close(), () => {});
       tunnels.delete(serverId);
       writeServers(root, readServers(root).filter((server) => server.id !== serverId));
       await secrets.remove(tokenService(serverId), ACCOUNT);
+      return { revoked };
     },
     close() {
       for (const open of tunnels.values()) void open.then((tunnel) => tunnel.close(), () => {});

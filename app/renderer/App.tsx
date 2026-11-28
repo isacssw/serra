@@ -33,6 +33,7 @@ import { Meetings } from './screens/settings/Meetings.tsx';
 import { Tools } from './screens/Tools.tsx';
 import { Updates } from './screens/Updates.tsx';
 import { Profiles } from './screens/settings/Profiles.tsx';
+import { Servers } from './screens/settings/Servers.tsx';
 import { ProfilesProvider, useProfiles } from './shell/profiles.tsx';
 import { ProfileShortcuts } from './shell/ProfileShortcuts.tsx';
 import { AddSheet } from './shell/AddSheet.tsx';
@@ -67,6 +68,7 @@ const screens: Record<RouteId, ReactElement> = {
   updates: <Updates />,
   diagnostics: <Diagnostics />,
   'settings-profiles': <Profiles />,
+  'settings-servers': <Servers />,
   'settings-appearance': <Appearance />,
 };
 

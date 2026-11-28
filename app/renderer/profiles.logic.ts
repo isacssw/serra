@@ -2,11 +2,18 @@
 // gets an avatar (a unique letter, or two when the first is taken, and a unique colour), a ⌘ number by its place in
 // the order, and the window title names the one in use. Pure: imported by `node --test` as well as the renderer.
 import type { BotStatus } from '../../src/contracts.ts';
-import type { ProfileEntry, ProfilesView } from '../main/bridge.ts';
+import type { ProfileEntry, ProfilesView, ServerHealth } from '../main/bridge.ts';
 import { presence, type Presence } from './presence.logic.ts';
 
-/** One profile, or a pinned one: the window looks as it always did. Two or more: the switcher. */
-export const showsSwitcher = (view: ProfilesView | null): boolean => view !== null && !view.pinned && view.profiles.length > 1;
+/** How many profiles the paired servers have (SB-33). */
+const remoteCount = (servers: readonly ServerHealth[]): number => servers.reduce((sum, server) => sum + server.profiles.length, 0);
+
+/**
+ * One profile, or a pinned one: the window looks as it always did. Two or more, counting a paired server's: the
+ * switcher. A server with no profiles adds nothing (UX rule D5).
+ */
+export const showsSwitcher = (view: ProfilesView | null, servers: readonly ServerHealth[] = []): boolean =>
+  view !== null && !view.pinned && view.profiles.length + remoteCount(servers) > 1;
 
 /** An avatar's letters for `name`, given letters already taken: the first letter, else the first two ("Sc"). */
 export const lettersFor = (name: string, taken: ReadonlySet<string>): string => {
@@ -56,16 +63,26 @@ export interface ProfileRow extends ProfileLook {
   active: boolean;
   setupDone: boolean;
   presence: Presence;
-  /** `⌘1`…`⌘9` by place in the order; null from the tenth. */
+  /** `⌘1`…`⌘9` by place in the order; null from the tenth, and for a server's profile until moves keep them (phase 7). */
   shortcut: string | null;
   agent: string;
+  /** The server it lives on; null on this Mac. A server's profile opens that server's page, not the window. */
+  server: { id: string; name: string } | null;
 }
 
-/** What the switcher, ⌘K and Settings › Profiles list. The profile in use shows the live status the window follows. */
-export const profileRows = (view: ProfilesView | null, live: BotStatus | null, mod = '⌘'): ProfileRow[] => {
+/**
+ * What the switcher, ⌘K and Settings › Profiles list: this Mac's profiles in ⌘ order, then each paired server's in
+ * the order it lists them. The profile in use shows the live status the window follows. A server's profile takes the
+ * first colour no one shows, and its phrase ends with its server's name (UX rule B3); a local one never says where.
+ */
+export const profileRows = (view: ProfilesView | null, live: BotStatus | null, mod = '⌘', servers: readonly ServerHealth[] = []): ProfileRow[] => {
   if (!view) return [];
-  const looks = profileLooks(view.profiles);
-  return view.profiles.map((profile, index) => ({
+  const remote = servers.flatMap((server) => server.profiles.map((profile) => ({ server, profile })));
+  const taken = new Set(view.profiles.map((profile) => profile.color));
+  const free = view.palette.filter((color) => !taken.has(color));
+  const colours = remote.map((_, index) => free[index % Math.max(1, free.length)] ?? view.palette[0] ?? '#2b2b30');
+  const looks = profileLooks([...view.profiles, ...remote.map(({ profile }, index) => ({ name: profile.name, color: colours[index]! }))]);
+  const local = view.profiles.map((profile, index): ProfileRow => ({
     ...looks[index]!,
     ref: profile.ref,
     name: profile.name,
@@ -74,7 +91,23 @@ export const profileRows = (view: ProfilesView | null, live: BotStatus | null, m
     presence: presence(profile.active ? live : profile.status, { setupDone: profile.setupDone }),
     shortcut: index < 9 ? `${mod}${index + 1}` : null,
     agent: profile.agent,
+    server: null,
   }));
+  const away = remote.map(({ server, profile }, index): ProfileRow => {
+    const own = presence(profile.status, { server });
+    return {
+      ...looks[view.profiles.length + index]!,
+      ref: `${server.id}/${profile.id}`,
+      name: profile.name,
+      active: false,
+      setupDone: true,
+      presence: { ...own, phrase: `${own.phrase} · ${server.name}` },
+      shortcut: null,
+      agent: '',
+      server: { id: server.id, name: server.name },
+    };
+  });
+  return [...local, ...away];
 };
 
 /**
@@ -96,20 +129,22 @@ export const withPresence = (view: ProfilesView | null, statuses: Readonly<Recor
 
 /** Other profiles that need you, for the quiet line at the top of Jobs (UX rule C5): at most `max`, then how many more. */
 export const othersNeedingYou = (rows: readonly ProfileRow[], max = 3): { shown: ProfileRow[]; more: number } => {
-  const waiting = rows.filter((row) => !row.active && row.setupDone && row.presence.dot === 'warn');
+  // `update needed` is amber too, but it is the server's, not a job waiting (word `outdated`).
+  const waiting = rows.filter((row) => !row.active && row.setupDone && row.presence.dot === 'warn' && row.presence.word === 'up');
   return { shown: waiting.slice(0, max), more: Math.max(0, waiting.length - max) };
 };
 
 /** The name the window uses for the profile in use: "Serra" while there is one, the profile's name from two. */
-const activeName = (view: ProfilesView | null): string =>
-  (showsSwitcher(view) ? view?.profiles.find((profile) => profile.active)?.name : null) ?? 'Serra';
+const activeName = (view: ProfilesView | null, servers: readonly ServerHealth[]): string =>
+  (showsSwitcher(view, servers) ? view?.profiles.find((profile) => profile.active)?.name : null) ?? 'Serra';
 
 /** The window's title: `Scout — Serra` with two or more profiles, else `Serra`. */
-export const windowTitle = (view: ProfilesView | null): string => {
-  const name = activeName(view);
+export const windowTitle = (view: ProfilesView | null, servers: readonly ServerHealth[] = []): string => {
+  const name = activeName(view, servers);
   return name === 'Serra' ? 'Serra' : `${name} — Serra`;
 };
 
 /** How a screen reader hears a switcher row: "Scout, 2 running, command 2". */
 export const rowLabel = (row: ProfileRow): string =>
-  [row.name, row.presence.phrase, row.shortcut ? `command ${row.shortcut.slice(-1)}` : null].filter(Boolean).join(', ');
+  [row.name, row.server ? row.presence.phrase.replace(` · ${row.server.name}`, `, on ${row.server.name}`) : row.presence.phrase,
+    row.shortcut ? `command ${row.shortcut.slice(-1)}` : null].filter(Boolean).join(', ');

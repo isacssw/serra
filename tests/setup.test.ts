@@ -672,9 +672,9 @@ test('Set Up Serra… is in the app menu on macOS, and in File elsewhere', () =>
   assert.ok((other[0]!.submenu as MenuItemConstructorOptions[]).some((entry) => entry.label === 'Set Up Serra…'));
 });
 
-test('every screen that reads the profile is gated; Updates and Appearance work without one', () => {
+test('every screen that reads the profile is gated; Servers, Appearance and Updates work without one', () => {
   const open = routes.filter((route) => !('needs' in route)).map((route) => route.id);
-  assert.deepEqual(open, ['settings-appearance', 'updates']);
+  assert.deepEqual(open, ['settings-servers', 'settings-appearance', 'updates']);
   for (const route of routes) if ('needs' in route) assert.equal(route.needs, 'profile', route.id);
 });
 

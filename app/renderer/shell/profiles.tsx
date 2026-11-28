@@ -4,7 +4,7 @@
 // Each switch bumps `generation`, which the shell uses as its key: every screen mounts again on the new profile, so
 // no list, draft or cache from the old one is shown under the new name.
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import type { ProfilesView } from '../../main/bridge.ts';
+import type { ProfilesView, ServerHealth } from '../../main/bridge.ts';
 import { serra } from '../bridge.ts';
 import { withPresence, windowTitle } from '../profiles.logic.ts';
 import { setupChanged } from '../setup/SetupState.tsx';
@@ -13,6 +13,8 @@ import { PROFILE_SWITCHED } from './events.ts';
 interface ProfilesState {
   /** Null until the first read (or outside the app). */
   view: ProfilesView | null;
+  /** The paired servers, live (SB-33). Empty until the first read, and with none paired. */
+  servers: ServerHealth[];
   /** Goes up by one each time another profile is in use. */
   generation: number;
   refresh(): Promise<ProfilesView | null>;
@@ -20,13 +22,14 @@ interface ProfilesState {
   switchTo(ref: string): Promise<void>;
 }
 
-const Context = createContext<ProfilesState>({ view: null, generation: 0, refresh: async () => null, switchTo: async () => {} });
+const Context = createContext<ProfilesState>({ view: null, servers: [], generation: 0, refresh: async () => null, switchTo: async () => {} });
 
 const activeDir = (view: ProfilesView | null): string | null => view?.profiles.find((profile) => profile.active)?.dir ?? null;
 
 export const ProfilesProvider = ({ children }: { children: ReactNode }) => {
   const [view, setView] = useState<ProfilesView | null>(null);
   const [generation, setGeneration] = useState(0);
+  const [servers, setServers] = useState<ServerHealth[]>([]);
   // The profile last seen in use: a change from one known profile to another is a switch.
   const seen = useRef<string | null | undefined>(undefined);
   const latest = useRef(0);
@@ -68,13 +71,16 @@ export const ProfilesProvider = ({ children }: { children: ReactNode }) => {
     window.addEventListener('focus', reread);
     const off = serra()?.on.profiles(reread);
     const offPresence = serra()?.on.presence((statuses) => setView((seen) => withPresence(seen, statuses)));
-    return () => { window.removeEventListener('focus', reread); off?.(); offPresence?.(); };
+    // Each paired server's state and profiles, pushed by main as they change.
+    const offServers = serra()?.on.servers(setServers);
+    serra()?.servers.status().then(setServers, () => {});
+    return () => { window.removeEventListener('focus', reread); off?.(); offPresence?.(); offServers?.(); };
   }, [refresh]);
 
   // The window's title names the profile once there are two (UX rule G5).
-  useEffect(() => { document.title = windowTitle(view); }, [view]);
+  useEffect(() => { document.title = windowTitle(view, servers); }, [view, servers]);
 
-  const value = useMemo(() => ({ view, generation, refresh, switchTo }), [view, generation, refresh, switchTo]);
+  const value = useMemo(() => ({ view, servers, generation, refresh, switchTo }), [view, servers, generation, refresh, switchTo]);
   return <Context.Provider value={value}>{children}</Context.Provider>;
 };
 

@@ -290,10 +290,11 @@ const JobTabs = ({ sections, group, onPick }: { sections: JobSection[]; group: J
  */
 const OthersNeedYou = () => {
   const status = useBotStatus();
-  const { view, switchTo } = useProfiles();
+  const { view, servers, switchTo } = useProfiles();
   const toast = useToast();
-  if (!showsSwitcher(view)) return null;
-  const { shown, more } = othersNeedingYou(profileRows(view, status ?? null, mod));
+  if (!showsSwitcher(view, servers)) return null;
+  // This Mac's profiles only: a server's can't be switched to yet, and it lists its own jobs (SB-33).
+  const { shown, more } = othersNeedingYou(profileRows(view, status ?? null, mod).filter((row) => !row.server));
   if (!shown.length) return null;
   return (
     <div className="-mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[13px] leading-5 text-muted" data-others-need-you>

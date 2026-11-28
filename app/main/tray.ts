@@ -28,7 +28,8 @@ const loadIcon = (iconsDir: string, icon: TrayIcon, size: number): NativeImage =
  * the dark menu. A menubar menu follows macOS's appearance, not the app's theme, so one set serves both. The dot is
  * also cut out of the avatar, so it never blends into it.
  */
-const DOT_COLORS: Record<Exclude<RowDot, 'none'>, string> = { up: '#22a06b', warn: '#d4880f', down: '#e5484d', faint: '#8b8b95' };
+const DOT_COLORS: Record<Exclude<RowDot, 'none'>, string> = { up: '#22a06b', warn: '#d4880f', down: '#e5484d', faint: '#8b8b95', hollow: '#8b8b95' };
+const DOTS = ['up', 'warn', 'down', 'faint', 'hollow', 'none'] as const satisfies readonly RowDot[];
 
 interface AvatarKey { letters: string; color: string; dot: RowDot }
 const avatarKey = ({ letters, color, dot }: AvatarKey): string => `${letters}|${color}|${dot}`;
@@ -38,7 +39,7 @@ const avatarKey = ({ letters, color, dot }: AvatarKey): string => `${letters}|${
  * the menubar keeps no second renderer around. Every dot of a look is drawn at once: a status change needs no redraw.
  */
 const drawAvatars = async (looks: readonly { letters: string; color: string }[]): Promise<Map<string, NativeImage>> => {
-  const jobs = looks.flatMap((look) => (['up', 'warn', 'down', 'faint', 'none'] as const).map((dot) => ({ ...look, dot })));
+  const jobs = looks.flatMap((look) => DOTS.map((dot) => ({ ...look, dot, hollow: dot === 'hollow' })));
   const painter = new BrowserWindow({
     show: false, width: 64, height: 64, paintWhenInitiallyHidden: true,
     webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false, javascript: true, offscreen: false },
@@ -61,6 +62,8 @@ const drawAvatars = async (looks: readonly { letters: string; color: string }[])
           g.beginPath(); g.arc(25, 25, 9, 0, Math.PI * 2); g.fill();
           g.globalCompositeOperation = 'source-over';
           g.fillStyle = dots[job.dot]; g.beginPath(); g.arc(25, 25, 6, 0, Math.PI * 2); g.fill();
+          // Offline is a ring (UX rule B1): the dot's middle is cut out again.
+          if (job.hollow) { g.globalCompositeOperation = 'destination-out'; g.beginPath(); g.arc(25, 25, 3, 0, Math.PI * 2); g.fill(); }
         }
         return c.toDataURL('image/png');
       });
@@ -85,6 +88,8 @@ const drawAvatars = async (looks: readonly { letters: string; color: string }[])
 /** What the menubar does for one profile. Each may fail; the failure is logged, the menu stays. */
 interface TrayProfileActions {
   open(dir: string): void;
+  /** Settings › Servers › that server: where a server's profile opens for now (SB-33). */
+  openServer(serverId: string): void;
   newTask(dir: string): void;
   restart(dir: string): Promise<void>;
   stop(dir: string): Promise<void>;
@@ -150,7 +155,7 @@ export const createTray = ({ iconsDir, status, profileSelected, restart, openWin
     const missing = view.rows.filter((row) => !avatars.has(avatarKey(row.avatar)) && !drawing.has(avatarKey(row.avatar)));
     if (!missing.length) return;
     const looks = [...new Map(missing.map((row) => [`${row.avatar.letters}|${row.avatar.color}`, { letters: row.avatar.letters, color: row.avatar.color }])).values()];
-    const keys = looks.flatMap((look) => (['up', 'warn', 'down', 'faint', 'none'] as const).map((dot) => avatarKey({ ...look, dot })));
+    const keys = looks.flatMap((look) => DOTS.map((dot) => avatarKey({ ...look, dot })));
     for (const key of keys) drawing.add(key);
     void drawAvatars(looks).then((drawn) => {
       for (const [key, image] of drawn) avatars.set(key, image);
@@ -166,7 +171,11 @@ export const createTray = ({ iconsDir, status, profileSelected, restart, openWin
     const template: MenuItemConstructorOptions[] = view.rows.map((row): MenuItemConstructorOptions => {
       const icon = avatars.get(avatarKey(row.avatar));
       const submenu: MenuItemConstructorOptions[] = [
-        { label: row.open, ...(row.shortcut ? { accelerator: `CommandOrControl+${row.shortcut.slice(1)}`, registerAccelerator: false } : {}), click: () => actions.open(row.dir) },
+        {
+          label: row.open,
+          ...(row.shortcut ? { accelerator: `CommandOrControl+${row.shortcut.slice(1)}`, registerAccelerator: false } : {}),
+          click: () => { if (row.serverId) actions.openServer(row.serverId); else actions.open(row.dir); },
+        },
         ...(row.newTask ? [{ label: row.newTask, click: () => actions.newTask(row.dir) }] : []),
       ];
       const service: MenuItemConstructorOptions[] = [

@@ -4,7 +4,7 @@ import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { homedir, hostname, tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, net, Notification, shell } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, net, Notification, powerMonitor, shell } from 'electron';
 import { defaultProfileRoot, profileArgument } from '../../src/config.ts';
 import { pushChannel } from './bridge.ts';
 import { createEngine } from '../../src/handlers/index.ts';
@@ -12,6 +12,7 @@ import type { CoreContext } from '../../src/handlers/context.ts';
 import { appHandlers, selectProfileIn, type HostContext } from './host.ts';
 import { serverHandlers } from './servers.ts';
 import { serverPairing } from '../../src/gateway/pairing.ts';
+import { serverHealth } from '../../src/gateway/health.ts';
 import { keychainStore } from '../../src/secrets.ts';
 import { registerHandlers, routeHandlers } from './router.ts';
 import { electronPrefs } from './prefs-store.ts';
@@ -211,7 +212,18 @@ const start = async (): Promise<void> => {
     // `Alexs-MacBook-Air.local` → `Alexs MacBook Air`: how the server lists this Mac.
     device: (hostname().split('.')[0] ?? '').replaceAll('-', ' '),
   });
-  const handlers = routeHandlers(appHandlers(host), serverHandlers(pairing), createEngine(context));
+  // How each paired server is doing (SB-33): one event stream per server, for the menubar and Settings › Servers.
+  const health = serverHealth({ servers: () => pairing.list(), client: (id) => pairing.client(id), log: (line) => console.error(line) });
+  let healthTimer: NodeJS.Timeout | null = null;
+  health.subscribe(() => {
+    // A burst (a server's profiles reporting in) is one push and one redraw.
+    if (healthTimer) return;
+    healthTimer = setTimeout(() => { healthTimer = null; push('servers', health.snapshot()); tray?.refresh(); }, 100);
+  });
+  if (!smoke) health.sync();
+  // After sleep the streams are stale: connect again now instead of waiting out the backoff.
+  powerMonitor.on('resume', () => health.retry());
+  const handlers = routeHandlers(appHandlers(host), serverHandlers(pairing, health), createEngine(context));
   // Stops the app causes itself don't notify; wrapped before registering so the window and menubar share it.
   expectStopsFrom(handlers, () => context.expectStop?.());
   /** Reads the list again (which also tells the presence map whom to follow), then redraws the menubar. */
@@ -228,10 +240,20 @@ const start = async (): Promise<void> => {
   }
   /** Profiles in ⌘ order for the menubar, with live status. Empty with one profile or when pinned. */
   const trayProfiles = (): TrayProfile[] => {
-    if (!listed || listed.pinned || listed.profiles.length < 2) return [];
-    return listed.profiles.map((profile) => ({
+    if (!listed || listed.pinned) return [];
+    const local: TrayProfile[] = listed.profiles.map((profile) => ({
       dir: profile.dir, name: profile.name, color: profile.color, setupDone: profile.setupDone, status: presence.status(profile.dir),
     }));
+    // A server's profiles follow this Mac's, in the order the server lists them, each with its server (SB-33).
+    const taken = new Set(local.map((profile) => profile.color));
+    const free = listed.palette.filter((color) => !taken.has(color));
+    const remote: TrayProfile[] = health.snapshot().flatMap((server) => server.profiles.map((profile) => ({
+      dir: `${server.id}/${profile.id}`, name: profile.name, color: '', setupDone: true, status: profile.status,
+      server: { id: server.id, name: server.name, state: server.state, skew: server.skew },
+    })));
+    remote.forEach((profile, index) => { profile.color = free[index % Math.max(1, free.length)] ?? listed?.palette[0] ?? '#2b2b30'; });
+    const all = [...local, ...remote];
+    return all.length < 2 ? [] : all;
   };
   const isActive = (dir: string): boolean => { const active = profileDirOrNull(); return active !== null && resolve(active) === resolve(dir); };
   /** Makes `dir` the profile in use. False when it can't be (pinned, a bot update under way): the window opens as it is. */
@@ -304,6 +326,8 @@ const start = async (): Promise<void> => {
     for (const timer of timers) clearTimeout(timer);
     stopToolChecks();
     notifications?.stop(); notifications = null; tray?.destroy(); tray = null; proposals?.close(); proposals = null; agentBackendWatch?.close(); agentBackendWatch = null; status.close();
+    health.close();
+    if (healthTimer) clearTimeout(healthTimer);
     pairing.close();
     if (presenceTimer) clearTimeout(presenceTimer);
     presence.close();
@@ -317,6 +341,7 @@ const start = async (): Promise<void> => {
       openWindow: () => { show(); app.focus({ steal: true }); },
       profiles: trayProfiles,
       actions: {
+        openServer: (id) => { void showAt(`/settings/servers?server=${id}`).catch((error: unknown) => console.error('[serra] could not open Servers:', error)); },
         open: (dir) => { void switchTo(dir).then(() => { show(); app.focus({ steal: true }); }); },
         newTask: (dir) => { void switchTo(dir).then((ok) => (ok ? showAt('/jobs/new') : undefined)).catch((error: unknown) => console.error('[serra] could not open New task:', error)); },
         // The profile in use goes through the window's handlers, so the two share one restart at a time.
@@ -366,6 +391,7 @@ const start = async (): Promise<void> => {
     agentBackendWatch?.close();
     status.close();
     presence.close();
+    health.close();
     pairing.close();
     rmSync(smokeUserData, { recursive: true, force: true });
     app.exit(ok ? 0 : 1);

@@ -58,6 +58,7 @@ export const routes = [
   { id: 'secrets', path: '/settings/secrets', label: 'Secrets', section: 'settings', group: 'Access', needs: 'profile', ticket: 'APP-15' },
   { id: 'tools', path: '/settings/tools', label: 'Tools', section: 'settings', group: 'Access', needs: 'profile', ticket: 'APP-23' },
   { id: 'settings-profiles', path: '/settings/profiles', label: 'Profiles', section: 'settings', group: 'App', needs: 'profile', ticket: 'SB-10' },
+  { id: 'settings-servers', path: '/settings/servers', label: 'Servers', section: 'settings', group: 'App', ticket: 'SB-33' },
   { id: 'settings-appearance', path: '/settings/appearance', label: 'Appearance', section: 'settings', group: 'App', ticket: 'APP-28' },
   { id: 'updates', path: '/settings/updates', label: 'Updates', section: 'settings', group: 'App', ticket: 'APP-19' },
   { id: 'diagnostics', path: '/settings/diagnostics', label: 'Diagnostics', section: 'settings', group: 'App', needs: 'profile', ticket: 'APP-22' },
