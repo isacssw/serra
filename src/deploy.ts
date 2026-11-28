@@ -362,7 +362,8 @@ export const activate = async (directory: string, options: DeployOptions = {}): 
     const backup = join(directory, 'backups', new Date().toISOString().replace(/[:.]/g, '-'));
     mkdirSync(backup, { recursive: true, mode: 0o700 });
     if (hadPlist) copyPrivate(plist, join(backup, 'service.plist'));
-    for (const name of ['profile.json', '.env', 'brief.md']) copyPrivate(join(directory, name), join(backup, name));
+    // A profile whose tokens are all in the Keychain or 1Password may have no `.env` (one moved here has none).
+    for (const name of ['profile.json', '.env', 'brief.md']) if (existsSync(join(directory, name))) copyPrivate(join(directory, name), join(backup, name));
     if (existsSync(activePath)) copyPrivate(activePath, join(backup, 'active.json'));
     const transaction: Activation = { version: 1, phase: 'switching', backup, plist, hadPlist, wasLoaded, profileIsAuthoritative: false, prepared: plan, previousActive };
     writeJson(join(directory, 'activation.json'), transaction);
