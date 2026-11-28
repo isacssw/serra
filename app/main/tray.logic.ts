@@ -59,6 +59,110 @@ export const trayView = ({ status, profileSelected, restarting, restartError }: 
   };
 };
 
+// ---------------------------------------------------------------------------------------------------------------
+// Two or more profiles (SB-11): one native row per profile in ⌘ order, and the icon carries the worst state
+// ---------------------------------------------------------------------------------------------------------------
+
+/** A dot's colour, as `presence.logic.ts` (the window's status table, UX rule B1) names it. */
+export type RowDot = 'up' | 'warn' | 'down' | 'faint' | 'none';
+
+/**
+ * A profile's dot and row phrase. The same table as the window's `presence()` (app/renderer/presence.logic.ts), which
+ * main can't import; `tests/app-profiles-live.test.ts` checks the two agree for every state.
+ */
+export const rowPresence = (status: BotStatus | null, setupDone = true): { dot: RowDot; phrase: string } => {
+  if (!setupDone) return { dot: 'none', phrase: 'Finish setup' };
+  if (!status) return { dot: 'faint', phrase: 'checking' };
+  if (status.state === 'stopped') return { dot: 'down', phrase: 'stopped' };
+  if (!status.slackConnected) return { dot: 'down', phrase: 'Slack disconnected' };
+  const { needsYou, running } = status.counts;
+  if (needsYou > 0) return { dot: 'warn', phrase: `${needsYou} ${needsYou === 1 ? 'needs' : 'need'} you` };
+  if (running > 0) return { dot: 'up', phrase: `${running} running` };
+  return { dot: 'up', phrase: 'up' };
+};
+
+/** An avatar's letters for `name`, given letters already taken. The window's `lettersFor`, checked equal in tests. */
+export const avatarLetters = (name: string, taken: ReadonlySet<string>): string => {
+  const clean = name.trim().replace(/[^\p{L}\p{N}]/gu, '').match(/[\p{L}\p{N}]/gu) ?? [];
+  const one = (clean[0] ?? '?').toUpperCase();
+  if (!taken.has(one) || clean.length < 2) return one;
+  const two = `${one}${clean[1]!.toLowerCase()}`;
+  if (!taken.has(two)) return two;
+  for (const next of clean.slice(2)) {
+    const pair = `${one}${next.toLowerCase()}`;
+    if (!taken.has(pair)) return pair;
+  }
+  return two;
+};
+
+/** A profile as the menubar lists it, in ⌘ order. */
+export interface TrayProfile {
+  dir: string;
+  name: string;
+  color: string;
+  setupDone: boolean;
+  /** The daemon's last report; null before the first one. */
+  status: BotStatus | null;
+}
+
+interface TrayRow {
+  dir: string;
+  /** Line 1: the profile's name. */
+  label: string;
+  /** Line 2 (macOS 14.4+): its phrase. */
+  sublabel: string;
+  /** Older macOS shows one line: `Scout — 2 running`. */
+  oneLine: string;
+  avatar: { letters: string; color: string; dot: RowDot };
+  /** `⌘2`, shown beside Open in its submenu; null from the tenth. */
+  shortcut: string | null;
+  open: string;
+  newTask: string | null;
+  /** Start when stopped, else Restart. Null for a profile left halfway: there is no bot to run yet. */
+  restart: { label: string; enabled: boolean } | null;
+  stop: { label: string; enabled: boolean } | null;
+}
+
+export interface MultiTrayView {
+  icon: TrayIcon;
+  tooltip: string;
+  rows: TrayRow[];
+}
+
+/** Worst first (UX rule B6): red, then amber, then green. Stopped-by-you, checking and halfway are neutral. */
+export const worstIcon = (dots: readonly RowDot[]): TrayIcon => {
+  if (dots.includes('down')) return 'down';
+  if (dots.includes('warn')) return 'needs-you';
+  if (dots.includes('up')) return 'up';
+  // Nothing is up: today's icon for a bot that isn't running.
+  return 'down';
+};
+
+export const multiTrayView = (profiles: readonly TrayProfile[], busy: ReadonlySet<string> = new Set()): MultiTrayView => {
+  const taken = new Set<string>();
+  const rows = profiles.map((profile, index): TrayRow => {
+    const letters = avatarLetters(profile.name, taken);
+    taken.add(letters);
+    const { dot, phrase } = rowPresence(profile.status, profile.setupDone);
+    const working = busy.has(profile.dir);
+    const running = profile.status?.state === 'up';
+    return {
+      dir: profile.dir,
+      label: profile.name,
+      sublabel: phrase,
+      oneLine: `${profile.name} — ${phrase}`,
+      avatar: { letters, color: profile.color, dot },
+      shortcut: index < 9 ? `⌘${index + 1}` : null,
+      open: `Open ${profile.name}`,
+      newTask: profile.setupDone ? `New task in ${profile.name}…` : null,
+      restart: profile.setupDone ? { label: working ? 'Restarting…' : running || !profile.status ? 'Restart' : 'Start', enabled: !working } : null,
+      stop: profile.setupDone && running ? { label: 'Stop', enabled: !working } : null,
+    };
+  });
+  const icon = worstIcon(rows.map((row) => row.avatar.dot));
+  return { icon, tooltip: rows.map((row) => row.oneLine).join('\n'), rows };
+};
+
 /** The status feed the controller needs; `StatusSource` in `status.ts` fits. */
 export interface TrayStatusFeed {
   current(): BotStatus;

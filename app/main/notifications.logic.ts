@@ -13,7 +13,9 @@ import { DM_LABEL } from '../../src/slack-names.ts';
 export type PlannedNotification =
   | { kind: 'needs-owner'; id: string; key: string }
   | { kind: 'failure'; id: string; key: string; error: string }
-  | { kind: 'stopped'; id: string };
+  | { kind: 'stopped'; id: string }
+  /** Several within one profile's quiet window (UX rule H2), shown as one. */
+  | { kind: 'burst'; id: string; needsYou: number; failed: number; stopped: boolean };
 
 export interface NotificationPlannerOptions {
   now?: () => Date;
@@ -141,24 +143,94 @@ const describeJob = (job: JobSummary | undefined): string | null => {
   return who ? `${who} · ${title}` : title;
 };
 
-export const notificationText = (plan: PlannedNotification, job?: JobSummary): { title: string; body: string } => {
+/**
+ * The notification's words. `profile`: the profile's name once there are two or more (UX rules H1, A4); with one,
+ * the titles are today's ("Serra needs you").
+ */
+export const notificationText = (plan: PlannedNotification, job?: JobSummary, profile: string | null = null): { title: string; body: string } => {
   switch (plan.kind) {
     case 'needs-owner':
-      return { title: 'Serra needs you', body: oneLine(describeJob(job) ?? 'A job is waiting for you.') };
+      return { title: `${profile ?? 'Serra'} needs you`, body: oneLine(describeJob(job) ?? 'A job is waiting for you.') };
     case 'failure': {
       const what = describeJob(job);
       const error = plan.error.trim() ? plan.error : 'no error message';
-      return { title: 'A job failed', body: oneLine(what ? `${what} — ${error}` : error) };
+      return { title: profile ? `${profile}: a job failed` : 'A job failed', body: oneLine(what ? `${what} — ${error}` : error) };
     }
     case 'stopped':
-      return { title: 'Serra stopped', body: 'The bot is no longer running. Open Diagnostics to see why.' };
+      return { title: `${profile ?? 'Serra'} stopped`, body: 'The bot is no longer running. Open Diagnostics to see why.' };
+    case 'burst': {
+      const parts = [
+        plan.needsYou > 0 ? `${plan.needsYou} ${plan.needsYou === 1 ? 'needs' : 'need'} you` : null,
+        plan.failed > 0 ? `${plan.failed} failed` : null,
+        plan.stopped ? 'stopped' : null,
+      ].filter(Boolean);
+      return { title: profile ?? 'Serra', body: parts.join(', ') };
+    }
   }
 };
 
-/** The window route a click opens: the job on the Jobs screen, or Diagnostics. */
-export const notificationTarget = (plan: PlannedNotification): string => (
-  plan.kind === 'stopped' ? '/settings/diagnostics' : `/jobs/needs-you?job=${encodeURIComponent(plan.key)}`
-);
+/** The window route a click opens: the job on the Jobs screen, its Needs you tab for a burst, or Diagnostics. */
+export const notificationTarget = (plan: PlannedNotification): string => {
+  switch (plan.kind) {
+    case 'stopped': return '/settings/diagnostics';
+    case 'burst': return plan.needsYou > 0 || plan.failed > 0 ? '/jobs/needs-you' : '/settings/diagnostics';
+    case 'needs-owner':
+    case 'failure':
+      return `/jobs/needs-you?job=${encodeURIComponent(plan.key)}`;
+  }
+};
+
+// ---------------------------------------------------------------------------------------------------------------
+// Bursts (UX rule H2): at most one notification per profile per 10 seconds
+// ---------------------------------------------------------------------------------------------------------------
+
+type Single = Exclude<PlannedNotification, { kind: 'burst' }>;
+
+export interface BurstGate {
+  /**
+   * A notification for `profile`. Returned when it may show now; null when the profile showed one within the window,
+   * in which case it is held and `dueAt` says when to `flush`.
+   */
+  offer(profile: string, plan: Single): Single | null;
+  /** When the held notifications of `profile` are due, or null with nothing held. */
+  dueAt(profile: string): number | null;
+  /** What to show for the held ones once due: the one itself, or one burst for several. Null with nothing held. */
+  flush(profile: string): PlannedNotification | null;
+  /** Forgets a profile (removed): its held notifications are dropped. */
+  forget(profile: string): void;
+}
+
+export const burstGate = ({ windowMs = 10_000, now = () => Date.now() }: { windowMs?: number; now?: () => number } = {}): BurstGate => {
+  const last = new Map<string, number>();
+  const held = new Map<string, Single[]>();
+  return {
+    offer: (profile, plan) => {
+      const at = now();
+      const shown = last.get(profile);
+      if (shown === undefined || at - shown >= windowMs) {
+        if (!held.get(profile)?.length) { last.set(profile, at); return plan; }
+      }
+      held.set(profile, [...(held.get(profile) ?? []), plan]);
+      return null;
+    },
+    dueAt: (profile) => (held.get(profile)?.length ? (last.get(profile) ?? now()) + windowMs : null),
+    flush: (profile) => {
+      const plans = held.get(profile) ?? [];
+      held.delete(profile);
+      if (!plans.length) return null;
+      last.set(profile, now());
+      if (plans.length === 1) return plans[0]!;
+      return {
+        kind: 'burst',
+        id: `burst:${plans.map((plan) => plan.id).join(',')}`,
+        needsYou: plans.filter((plan) => plan.kind === 'needs-owner').length,
+        failed: plans.filter((plan) => plan.kind === 'failure').length,
+        stopped: plans.some((plan) => plan.kind === 'stopped'),
+      };
+    },
+    forget: (profile) => { held.delete(profile); last.delete(profile); },
+  };
+};
 
 /** The route part of a target, for a window that opens fresh on the saved screen. */
 export const targetScreen = (target: string): string => target.split('?')[0] ?? target;

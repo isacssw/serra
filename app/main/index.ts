@@ -2,7 +2,7 @@
 // forwarded to both. The daemon itself keeps running under launchd and survives the window and the app closing.
 import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, net, Notification, shell } from 'electron';
 import { defaultProfileRoot, profileArgument } from '../../src/config.ts';
@@ -13,6 +13,10 @@ import { electronPrefs } from './prefs-store.ts';
 import { followTheme } from './native-theme.ts';
 import { profilesUnder, profileToRemember, startupProfile } from './profile-location.ts';
 import { forwardStatus, socketStatusSource } from './status.ts';
+import { presenceMap } from './presence-map.ts';
+import type { ProfilesView } from './bridge.ts';
+import type { TrayProfile } from './tray.logic.ts';
+import { restartBot, stopBot } from '../../src/bot-service.ts';
 import { createTray, type SerraTray } from './tray.ts';
 import { createMainWindow } from './window.ts';
 import { expectStopsFrom, jobFrom, startNotifications, type SerraNotifications } from './notifications.ts';
@@ -79,13 +83,17 @@ const start = async (): Promise<void> => {
   const profileDirOrNull = (): string | null => argument ?? stored.get().profileDir;
   // Live status from the profile's status.sock; it follows the profile when Settings picks another one.
   const status = socketStatusSource(profileDirOrNull());
+  // Every listed profile's status at once (SB-11): the switcher, the menubar rows and notifications.
+  const presence = presenceMap();
+  /** The last list of profiles main read, for the menubar's rows and the notifications' titles. */
+  let listed: ProfilesView | null = null;
   const prefs: typeof stored = {
     get: () => stored.get(),
     set: (next) => {
       const before = profileDirOrNull();
       stored.set(next);
-      // Switching profiles reports `stopped`; that isn't the daemon stopping.
-      if (profileDirOrNull() !== before) { notifications?.reset(); push('profiles', null); }
+      // Each profile's notifications follow its own daemon, so a switch reports nothing.
+      if (profileDirOrNull() !== before) { push('profiles', null); refreshProfiles(); }
       status.follow(profileDirOrNull());
       proposals?.follow(profileDirOrNull());
       agentBackendWatch?.follow(profileDirOrNull());
@@ -134,7 +142,9 @@ const start = async (): Promise<void> => {
     switchBlocked: () => (quitGuards.some((guard) => guard() !== null) ? 'A bot update is switching versions. Try again when it finishes.' : null),
     trashItem: (path) => shell.trashItem(path),
     every,
-    expectStop: () => notifications?.expectStop(),
+    expectStop: (dir) => { const target = dir ?? profileDirOrNull(); if (target) notifications?.expectStop(resolve(target)); },
+    presence,
+    profileDirs: () => (listed?.profiles ?? []).map((profile) => profile.dir),
     profileDirOrNull,
     profileDir: () => {
       const directory = profileDirOrNull();
@@ -165,7 +175,11 @@ const start = async (): Promise<void> => {
       const error = await shell.openPath(path);
       if (error) throw new Error(error);
     },
-    push,
+    push: (channel, payload) => {
+      push(channel, payload);
+      // Added, removed, moved or recoloured: the menubar lists them again.
+      if (channel === 'profiles') refreshProfiles();
+    },
   };
   proposals = followProposals(() => context.push?.('proposals', null));
   proposals.follow(profileDirOrNull());
@@ -173,7 +187,43 @@ const start = async (): Promise<void> => {
   agentBackendWatch.follow(profileDirOrNull());
   const handlers = createHandlers(context);
   // Stops the app causes itself don't notify; wrapped before registering so the window and menubar share it.
-  expectStopsFrom(handlers, () => notifications?.expectStop());
+  expectStopsFrom(handlers, () => context.expectStop?.());
+  /** Reads the list again (which also tells the presence map whom to follow), then redraws the menubar. */
+  let reading: Promise<void> | null = null;
+  let again = false;
+  function refreshProfiles(): void {
+    if (reading) { again = true; return; }
+    reading = Promise.resolve(handlers.profiles.list()).then((view) => { listed = view; tray?.refresh(); }, (error: unknown) => {
+      console.error('[serra] could not list profiles:', error);
+    }).finally(() => {
+      reading = null;
+      if (again) { again = false; refreshProfiles(); }
+    });
+  }
+  /** Profiles in ⌘ order for the menubar, with live status. Empty with one profile or when pinned. */
+  const trayProfiles = (): TrayProfile[] => {
+    if (!listed || listed.pinned || listed.profiles.length < 2) return [];
+    return listed.profiles.map((profile) => ({
+      dir: profile.dir, name: profile.name, color: profile.color, setupDone: profile.setupDone, status: presence.status(profile.dir),
+    }));
+  };
+  const isActive = (dir: string): boolean => { const active = profileDirOrNull(); return active !== null && resolve(active) === resolve(dir); };
+  /** Makes `dir` the profile in use. False when it can't be (pinned, a bot update under way): the window opens as it is. */
+  const switchTo = async (dir: string): Promise<boolean> => {
+    if (isActive(dir)) return true;
+    const ref = listed?.profiles.find((profile) => profile.dir === resolve(dir))?.ref;
+    if (!ref) return false;
+    try { await handlers.profiles.switch(ref); return true; }
+    catch (error) { console.error('[serra] could not switch profiles:', error); return false; }
+  };
+  // Another profile's status changed: the window's switcher and the menubar show it.
+  const pushPresence = (): void => { push('presence', presence.snapshot()); tray?.refresh(); };
+  let presenceTimer: NodeJS.Timeout | null = null;
+  presence.subscribe({
+    // Reports come in bursts (each job's counts); one push covers a burst.
+    status: () => { if (!presenceTimer) presenceTimer = setTimeout(() => { presenceTimer = null; pushPresence(); }, 100); },
+    profiles: () => { refreshProfiles(); },
+  });
   registerHandlers(ipcMain, handlers, isAppPage);
 
   let window: BrowserWindow | null = null;
@@ -228,6 +278,8 @@ const start = async (): Promise<void> => {
     for (const timer of timers) clearTimeout(timer);
     stopToolChecks();
     notifications?.stop(); notifications = null; tray?.destroy(); tray = null; proposals?.close(); proposals = null; agentBackendWatch?.close(); agentBackendWatch = null; status.close();
+    if (presenceTimer) clearTimeout(presenceTimer);
+    presence.close();
   });
   try {
     tray = createTray({
@@ -236,6 +288,24 @@ const start = async (): Promise<void> => {
       profileSelected: () => profileDirOrNull() !== null,
       restart: async () => { await handlers.bot.restart(); },
       openWindow: () => { show(); app.focus({ steal: true }); },
+      profiles: trayProfiles,
+      actions: {
+        open: (dir) => { void switchTo(dir).then(() => { show(); app.focus({ steal: true }); }); },
+        newTask: (dir) => { void switchTo(dir).then((ok) => (ok ? showAt('/jobs/new') : undefined)).catch((error: unknown) => console.error('[serra] could not open New task:', error)); },
+        // The profile in use goes through the window's handlers, so the two share one restart at a time.
+        restart: async (dir) => {
+          if (isActive(dir)) { await handlers.bot.restart(); return; }
+          if (process.platform !== 'darwin') throw new Error('Restarting a bot needs launchd.');
+          context.expectStop?.(dir);
+          await restartBot(dir);
+        },
+        stop: async (dir) => {
+          if (isActive(dir)) { await handlers.bot.stop(); return; }
+          if (process.platform !== 'darwin') throw new Error('Stopping a bot needs launchd.');
+          context.expectStop?.(dir);
+          await stopBot(dir);
+        },
+      },
     });
   } catch (error) {
     // The window still works without the menubar item; `--smoke` fails on it.
@@ -244,14 +314,19 @@ const start = async (): Promise<void> => {
   }
   try {
     notifications = startNotifications({
-      status,
-      describe: jobFrom(handlers),
-      open: (target) => { void showAt(target).catch((error: unknown) => console.error('[serra] could not open the window:', error)); },
+      feeds: presence,
+      describe: jobFrom(handlers, profileDirOrNull),
+      // Clicking switches to that profile first (UX rule G6). If it can't switch, the window opens without the job.
+      open: (dir, target) => {
+        void switchTo(dir).then((ok) => showAt(ok ? target : '/jobs/needs-you')).catch((error: unknown) => console.error('[serra] could not open the window:', error));
+      },
+      namesProfiles: () => listed !== null && !listed.pinned && listed.profiles.length > 1,
     });
   } catch (error) {
     if (smoke) throw error;
     console.error('[serra] could not start notifications:', error);
   }
+  refreshProfiles();
   // macOS keeps the app open with no window; clicking the Dock icon brings one back.
   app.on('activate', () => { if (!window) void open(); });
   const first = await open();
@@ -263,6 +338,7 @@ const start = async (): Promise<void> => {
     proposals?.close();
     agentBackendWatch?.close();
     status.close();
+    presence.close();
     rmSync(smokeUserData, { recursive: true, force: true });
     app.exit(ok ? 0 : 1);
   }

@@ -1,11 +1,12 @@
 // The profiles the window knows (SB-10): the list in ⌘ order, which one is in use, and switching. It rereads when
-// main says the profiles changed, and when the window regains focus (a daemon elsewhere may have started or stopped).
+// main says the profiles changed, and when the window regains focus. Every other profile's status comes live from
+// main's presence map (SB-11) and is merged in as it changes.
 // Each switch bumps `generation`, which the shell uses as its key: every screen mounts again on the new profile, so
 // no list, draft or cache from the old one is shown under the new name.
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { ProfilesView } from '../../main/bridge.ts';
 import { serra } from '../bridge.ts';
-import { windowTitle } from '../profiles.logic.ts';
+import { withPresence, windowTitle } from '../profiles.logic.ts';
 import { setupChanged } from '../setup/SetupState.tsx';
 import { PROFILE_SWITCHED } from './events.ts';
 
@@ -66,7 +67,8 @@ export const ProfilesProvider = ({ children }: { children: ReactNode }) => {
     const reread = (): void => { void refresh(); };
     window.addEventListener('focus', reread);
     const off = serra()?.on.profiles(reread);
-    return () => { window.removeEventListener('focus', reread); off?.(); };
+    const offPresence = serra()?.on.presence((statuses) => setView((seen) => withPresence(seen, statuses)));
+    return () => { window.removeEventListener('focus', reread); off?.(); offPresence?.(); };
   }, [refresh]);
 
   // The window's title names the profile once there are two (UX rule G5).

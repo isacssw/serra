@@ -77,6 +77,29 @@ export const profileRows = (view: ProfilesView | null, live: BotStatus | null, m
   }));
 };
 
+/**
+ * The view with the live statuses main pushed (SB-11), by folder. The profile in use keeps null: the window follows
+ * it itself. A profile the push doesn't name keeps what it had. Unchanged statuses keep the same view object.
+ */
+export const withPresence = (view: ProfilesView | null, statuses: Readonly<Record<string, BotStatus | null>>): ProfilesView | null => {
+  if (!view) return view;
+  let changed = false;
+  const profiles = view.profiles.map((profile) => {
+    if (profile.active || !(profile.dir in statuses)) return profile;
+    const status = statuses[profile.dir] ?? null;
+    if (JSON.stringify(status) === JSON.stringify(profile.status)) return profile;
+    changed = true;
+    return { ...profile, status };
+  });
+  return changed ? { ...view, profiles } : view;
+};
+
+/** Other profiles that need you, for the quiet line at the top of Jobs (UX rule C5): at most `max`, then how many more. */
+export const othersNeedingYou = (rows: readonly ProfileRow[], max = 3): { shown: ProfileRow[]; more: number } => {
+  const waiting = rows.filter((row) => !row.active && row.setupDone && row.presence.dot === 'warn');
+  return { shown: waiting.slice(0, max), more: Math.max(0, waiting.length - max) };
+};
+
 /** The name the window uses for the profile in use: "Serra" while there is one, the profile's name from two. */
 const activeName = (view: ProfilesView | null): string =>
   (showsSwitcher(view) ? view?.profiles.find((profile) => profile.active)?.name : null) ?? 'Serra';

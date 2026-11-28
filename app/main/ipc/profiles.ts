@@ -1,6 +1,7 @@
 // Profiles (SB-10): the switcher's list, switching, the order (⌘1…⌘9) and colour in `profiles.json`, Add… › Profile
-// and a remove that saves a checked backup first. One profile is followed live at a time: switching re-points the
-// app (prefs.profileDir), and every other handler reads the profile in use per call, so nothing carries over.
+// and a remove that saves a checked backup first. The window shows one profile at a time: switching re-points the app
+// (prefs.profileDir), and every other handler reads the profile in use per call, so nothing carries over. Every listed
+// profile stays live (SB-11): each list tells main's presence map which daemons to follow.
 import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, join, relative, resolve, sep } from 'node:path';
@@ -43,13 +44,17 @@ export const profilesHandlers = (context: HandlerContext, deps: ProfilesDeps = {
     const current = active ? resolve(active) : null;
     const found = findProfiles(root, current);
     const colors = resolveColors(found.map(({ ref }) => ref), readProfilesFile(root));
+    const presence = context.presence;
+    // Pinned with --profile, the app is about that one bot only: no other profile is followed or notifies.
+    const followed = context.profilePinned ? found.filter(({ dir }) => dir === current) : found;
+    presence?.follow(followed.map(({ dir }) => ({ dir, name: profileName(dir) })));
     const profiles = await Promise.all(found.map(async ({ ref, dir }): Promise<ProfileEntry> => ({
       ref, dir,
       name: profileName(dir),
       color: colors[ref]!,
       active: dir === current,
       setupDone: setupDone(dir, deps.launchAgentsDir),
-      status: dir === current ? null : await probeStatus(dir, deps.probeMs),
+      status: dir === current ? null : presence ? presence.status(dir) : await probeStatus(dir, deps.probeMs),
       agent: agentName(dir),
     })));
     return { profiles, pinned: context.profilePinned === true, palette: [...PROFILE_COLORS] };
@@ -151,7 +156,7 @@ export const profilesHandlers = (context: HandlerContext, deps: ProfilesDeps = {
       } catch { /* A profile.json that doesn't load has no service Serra can name. */ }
       if (plist) {
         if (context.runtime.platform !== 'darwin' && !deps.service) throw new Error('Stopping the bot needs launchd, so removing works on macOS only.');
-        context.expectStop?.();
+        context.expectStop?.(target.dir);
         await stopBot(target.dir, { launchAgentsDir: agents, ...(deps.service ? { driver: deps.service } : {}) });
       }
       // 2. A checked backup. If it fails, nothing is removed.

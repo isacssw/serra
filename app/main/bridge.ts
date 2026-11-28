@@ -89,7 +89,10 @@ export interface ProfileEntry {
   active: boolean;
   /** Every setup step is done. A profile left halfway shows "Finish setup". */
   setupDone: boolean;
-  /** The daemon's report, read when the list was asked for. Null for the active profile (the window follows it live). */
+  /**
+   * The daemon's last report, as main follows every profile live (SB-11); `presence` pushes each change. Null for the
+   * active profile (the window follows it live) and before a daemon's first report (`checking`).
+   */
   status: BotStatus | null;
   /** The agent new work uses: T3, or the ACP agent's name. */
   agent: string;
@@ -488,6 +491,8 @@ export interface SerraPushes {
   agentBackend: null;
   /** The profiles changed: another one is in use, or one was added, moved, recoloured or removed. */
   profiles: null;
+  /** Every listed profile's live status, by folder, whenever one changes (SB-11). Null: no report yet. */
+  presence: Record<string, BotStatus | null>;
 }
 
 export type Unsubscribe = () => void;
@@ -533,7 +538,7 @@ export const bridgeMethods = {
   meetings: methods<'meetings'>()(['settings', 'setEnabled', 'sources', 'testSource', 'list', 'history', 'approve', 'discard', 'discardMeeting', 'forget', 'agentBackend', 'setAgentBackend', 'addAcpAgent', 'removeAcpAgent', 'openAgentBackendConfig']),
 } satisfies { [N in Namespace]: readonly (keyof SerraApi[N])[] };
 
-const pushChannels = ['status', 'event', 'releaseLog', 'appUpdate', 'navigate', 'proposals', 'jobs', 'names', 'agentBackend', 'profiles'] as const satisfies readonly (keyof SerraPushes)[];
+const pushChannels = ['status', 'event', 'releaseLog', 'appUpdate', 'navigate', 'proposals', 'jobs', 'names', 'agentBackend', 'profiles', 'presence'] as const satisfies readonly (keyof SerraPushes)[];
 
 export const invokeChannel = (namespace: string, method: string): string => `serra:${namespace}.${method}`;
 export const pushChannel = (name: keyof SerraPushes): string => `serra:on.${name}`;
