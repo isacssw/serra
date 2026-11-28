@@ -3,6 +3,9 @@
 /** The sidebar's ⌘K hint dispatches this on `window`. The command palette (APP-16) listens for it. */
 export const OPEN_COMMAND_PALETTE = 'serra:open-command-palette';
 
+/** Add… (⌘⇧N): `detail` is `'server'` to open it at Server. The shell's Add sheet listens (shell/AddSheet.tsx). */
+export const OPEN_ADD = 'serra:open-add';
+
 /** A shortcut that opens another screen (⌘N, ⌘,) dispatches this first, so the palette doesn't stay over it. */
 export const CLOSE_COMMAND_PALETTE = 'serra:close-command-palette';
 

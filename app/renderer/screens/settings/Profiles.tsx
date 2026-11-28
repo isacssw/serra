@@ -8,7 +8,7 @@ import { profileRows, takenColors, type ProfileRow } from '../../profiles.logic.
 import { useBotStatus } from '../../shell/live.ts';
 import { mod } from '../../shell/keys.ts';
 import { useProfiles } from '../../shell/profiles.tsx';
-import { ADD_PROFILE_PATH } from '../../shell/shortcuts.logic.ts';
+import { openAdd } from '../../shell/AddSheet.tsx';
 import { Avatar, Button, cx, Dialog, Page, useToast } from '../../ui/index.ts';
 
 const message = (failure: unknown): string => (failure instanceof Error ? failure.message : String(failure));
@@ -197,7 +197,6 @@ const Detail = ({ row, onBack }: { row: ProfileRow; onBack: () => void }) => {
 };
 
 export const Profiles = () => {
-  const navigate = useNavigate();
   const status = useBotStatus();
   const { view } = useProfiles();
   const [open, setOpen] = useState<string | null>(null);
@@ -207,7 +206,7 @@ export const Profiles = () => {
   return (
     <Page
       title="Profiles"
-      actions={view && !view.pinned ? <Button icon={<Plus size={14} aria-hidden />} onClick={() => void navigate(ADD_PROFILE_PATH)}>Add…</Button> : undefined}
+      actions={view && !view.pinned ? <Button icon={<Plus size={14} aria-hidden />} onClick={() => openAdd()}>Add…</Button> : undefined}
     >
       {view === null ? <p role="status" className="text-[13px] text-muted">Loading…</p> : <List rows={rows} onOpen={setOpen} />}
     </Page>

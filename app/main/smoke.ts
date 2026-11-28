@@ -485,6 +485,27 @@ const runThemeChecks = async (window: BrowserWindow): Promise<string[]> => {
         }
       };
       await setupPass(withProfile, '');
+      // Add… and its Server step (SB-32), over Jobs: the dialog's own text against the overlay.
+      for (const [start, step] of [['add', 'add'], ['server', 'address'], ['ssh', 'ssh']] as const) {
+        await run(`(async () => {
+          const wait = async (check) => { for (let i = 0; i < 80 && !check(); i++) await new Promise((r) => setTimeout(r, 50)); return check(); };
+          location.hash = '#/jobs/needs-you';
+          await wait(() => document.querySelector('[data-serra-main] h1'));
+          // The shell may still be mounting after a profile switch: ask again until the sheet is there.
+          for (let i = 0; i < 20 && !document.querySelector('dialog[open] [data-pair-step]'); i++) {
+            window.dispatchEvent(new CustomEvent('serra:open-add', { detail: ${JSON.stringify(start === 'ssh' ? 'server' : start)} }));
+            await wait(() => document.querySelector('dialog[open] [data-pair-step]'));
+          }
+          ${start === 'ssh' ? `[...document.querySelectorAll('dialog[open] button')].find((b) => b.textContent.includes('SSH'))?.click(); await wait(() => document.querySelector('dialog[open] [data-pair-step="ssh"]'));` : ''}
+        })()`);
+        const report = await run<ContrastReport>(contrastScript('#/jobs/needs-you', 'dialog[open]'));
+        const name = `add-${step}`;
+        reports.push({ ...report, route: name });
+        if (shots) writeFileSync(join(shots, `${theme}-${name}.png`), (await window.webContents.capturePage()).toPNG());
+        if (report.checked === 0) failures.push(`${theme}: no text found on ${name}`);
+        for (const item of report.low) failures.push(`${theme}: "${item.text}" on ${name} reads at ${item.ratio}:1 (${item.color} on ${item.background})`);
+        await run(`(async () => { document.querySelector('dialog[open] button[aria-label="Close"]')?.click(); await new Promise((r) => setTimeout(r, 200)); })()`);
+      }
       await useProfile(null);
       await setupPass(withoutProfile, 'none-');
       await useProfile(directory);

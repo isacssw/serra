@@ -177,6 +177,37 @@ WantedBy=default.target
 `;
 };
 
+/** The gateway's label: one per server, for every profile on it. */
+export const GATEWAY_LABEL = 'dev.serra.gateway';
+
+/**
+ * The gateway's systemd user unit (SB-32): `serra server gateway` from this checkout, restarted after a crash, private
+ * files only, logging to `gateway/gateway.log` in the profiles folder. It listens on loopback and Tailscale only.
+ */
+export const gatewayUnit = ({ node, entry, root }: { node: string; entry: string; root: string }, home = homedir()): string => {
+  const path = `${dirname(node)}:${process.env.PATH ?? '/usr/local/bin:/usr/bin:/bin'}`;
+  const log = unitPath(join(root, 'gateway/gateway.log'));
+  return `[Unit]
+Description=Serra gateway
+After=network-online.target tailscaled.service
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+ExecStart=${[node, entry, 'server', 'gateway'].map(unitArg).join(' ')}
+Environment=${unitEnv(`HOME=${home}`)} ${unitEnv(`PATH=${path}`)}
+Restart=always
+RestartSec=10
+UMask=0077
+NoNewPrivileges=true
+StandardOutput=append:${log}
+StandardError=append:${log}
+
+[Install]
+WantedBy=default.target
+`;
+};
+
 /** `systemctl --user` can't reach a user manager: WSL without systemd, a container, or no login session. */
 const noUserManager = (error: unknown): boolean => /Failed to connect to (?:user scope )?bus|No medium found|\$DBUS_SESSION_BUS_ADDRESS|XDG_RUNTIME_DIR/i.test(String(error));
 const NO_USER_MANAGER = 'systemd user services aren’t available here. Run pnpm start --profile … in the foreground instead.';

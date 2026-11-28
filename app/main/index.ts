@@ -1,7 +1,7 @@
 // The Electron main process: one window, the menubar item, the typed bridge, app prefs and the daemon's status
 // forwarded to both. The daemon itself keeps running under launchd and survives the window and the app closing.
 import { existsSync, mkdtempSync, rmSync } from 'node:fs';
-import { homedir, tmpdir } from 'node:os';
+import { homedir, hostname, tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, net, Notification, shell } from 'electron';
@@ -10,6 +10,9 @@ import { pushChannel } from './bridge.ts';
 import { createEngine } from '../../src/handlers/index.ts';
 import type { CoreContext } from '../../src/handlers/context.ts';
 import { appHandlers, selectProfileIn, type HostContext } from './host.ts';
+import { serverHandlers } from './servers.ts';
+import { serverPairing } from '../../src/gateway/pairing.ts';
+import { keychainStore } from '../../src/secrets.ts';
 import { registerHandlers, routeHandlers } from './router.ts';
 import { electronPrefs } from './prefs-store.ts';
 import { followTheme } from './native-theme.ts';
@@ -201,7 +204,14 @@ const start = async (): Promise<void> => {
   proposals.follow(profileDirOrNull());
   agentBackendWatch = followAgentBackend(() => context.push?.('agentBackend', null));
   agentBackendWatch.follow(profileDirOrNull());
-  const handlers = routeHandlers(appHandlers(host), createEngine(context));
+  // Servers this Mac is paired with (SB-32). The smoke test pairs with nothing and keeps its file in its own folder.
+  const pairing = serverPairing({
+    root: smokeUserData ? join(smokeUserData, 'servers') : defaultProfileRoot,
+    secrets: keychainStore(),
+    // `Alexs-MacBook-Air.local` → `Alexs MacBook Air`: how the server lists this Mac.
+    device: (hostname().split('.')[0] ?? '').replaceAll('-', ' '),
+  });
+  const handlers = routeHandlers(appHandlers(host), serverHandlers(pairing), createEngine(context));
   // Stops the app causes itself don't notify; wrapped before registering so the window and menubar share it.
   expectStopsFrom(handlers, () => context.expectStop?.());
   /** Reads the list again (which also tells the presence map whom to follow), then redraws the menubar. */
@@ -294,6 +304,7 @@ const start = async (): Promise<void> => {
     for (const timer of timers) clearTimeout(timer);
     stopToolChecks();
     notifications?.stop(); notifications = null; tray?.destroy(); tray = null; proposals?.close(); proposals = null; agentBackendWatch?.close(); agentBackendWatch = null; status.close();
+    pairing.close();
     if (presenceTimer) clearTimeout(presenceTimer);
     presence.close();
   });
@@ -355,6 +366,7 @@ const start = async (): Promise<void> => {
     agentBackendWatch?.close();
     status.close();
     presence.close();
+    pairing.close();
     rmSync(smokeUserData, { recursive: true, force: true });
     app.exit(ok ? 0 : 1);
   }
