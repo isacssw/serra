@@ -66,4 +66,5 @@ A job that fails for one of these reasons shows the same line in Jobs. eve's own
 ## Limits
 
 The same as eve by URL over ACP: no images, a restart ends a running turn (eve can't reopen a session), no model or
-mode choice, and `ask_question` with options is refused by eve itself. Profiles on a paired server can't use eve yet.
+mode choice, and `ask_question` with options is refused by eve itself. Profiles on a paired server can't use eve yet, and a
+profile on eve can't move to a server until you remove eve.

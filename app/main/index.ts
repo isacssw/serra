@@ -2,7 +2,7 @@
 // forwarded to both. The daemon itself keeps running under launchd and survives the window and the app closing.
 import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { homedir, hostname, tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { basename, delimiter, dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, net, Notification, powerMonitor, shell } from 'electron';
 import { defaultProfileRoot, profileArgument } from '../../src/config.ts';
@@ -11,6 +11,11 @@ import { createEngine } from '../../src/handlers/index.ts';
 import type { CoreContext } from '../../src/handlers/context.ts';
 import { appHandlers, selectProfileIn, type HostContext } from './host.ts';
 import { serverHandlers } from './servers.ts';
+import { movesRunner } from './moves.ts';
+import { localMoveHost } from '../../src/moves/host.ts';
+import { secretPort } from '../../src/moves/secret-port.ts';
+import { findNode } from '../../src/releases.ts';
+import { installService } from '../../src/setup.ts';
 import { serverPairing } from '../../src/gateway/pairing.ts';
 import { serverHealth } from '../../src/gateway/health.ts';
 import { keychainStore } from '../../src/secrets.ts';
@@ -213,7 +218,7 @@ const start = async (): Promise<void> => {
     device: (hostname().split('.')[0] ?? '').replaceAll('-', ' '),
   });
   // How each paired server is doing (SB-33): one event stream per server, for the menubar and Settings › Servers.
-  const health = serverHealth({ servers: () => pairing.list(), client: (id) => pairing.client(id), log: (line) => console.error(line) });
+  const health = serverHealth({ servers: () => pairing.list(), client: (id) => pairing.client(id), log: (line) => console.error(line), appVersion: app.getVersion() });
   let healthTimer: NodeJS.Timeout | null = null;
   health.subscribe(() => {
     // A burst (a server's profiles reporting in) is one push and one redraw.
@@ -223,7 +228,46 @@ const start = async (): Promise<void> => {
   if (!smoke) health.sync();
   // After sleep the streams are stale: connect again now instead of waiting out the backoff.
   powerMonitor.on('resume', () => health.retry());
-  const handlers = routeHandlers(appHandlers(host), serverHandlers(pairing, health), createEngine(context));
+  // Moves and restores (SB-34): this Mac's side, and the runner that spans it and the servers.
+  const moves = movesRunner({
+    root: defaultProfileRoot,
+    pairing,
+    health,
+    local: localMoveHost({
+      root: defaultProfileRoot,
+      name: 'this Mac',
+      install: async (dir) => {
+        const node = await findNode(dir);
+        // launchd's plist and pnpm both find Node beside it, as the bot's own updates do.
+        if (!(process.env.PATH ?? '').split(delimiter).includes(dirname(node))) process.env.PATH = `${dirname(node)}${delimiter}${process.env.PATH ?? ''}`;
+        const outcome = await installService(dir, { node, log: (line) => console.log(`[serra] ${basename(dir)}: ${line}`) });
+        if (!outcome.ok) throw new Error(`It didn’t start on this Mac: ${outcome.error}`);
+      },
+      trash: (path) => shell.trashItem(path),
+      secrets: secretPort({ keychain: true }),
+      expectStop: (dir) => context.expectStop?.(dir),
+    }),
+    push: (view) => push('move', view),
+    changed: (left) => {
+      // The profile in use just left this Mac: the window shows another one.
+      const active = profileDirOrNull();
+      if (left && active && resolve(active) === resolve(left)) {
+        const next = listed?.profiles.find((profile) => resolve(profile.dir) !== resolve(left))?.dir ?? null;
+        context.selectProfile(next);
+      }
+      context.push?.('profiles', null);
+    },
+  });
+  // A move left part way (a quit, a server away) settles when the app is back, and when a server answers again.
+  let movesSeen = '';
+  health.subscribe(() => {
+    const up = health.snapshot().filter((server) => server.state === 'up').map((server) => server.id).join(',');
+    if (up === movesSeen) return;
+    movesSeen = up;
+    if (!smoke) void moves.settleAll();
+  });
+  if (!smoke) void moves.settleAll();
+  const handlers = routeHandlers(appHandlers(host), serverHandlers(pairing, health, app.getVersion()), moves.handlers, createEngine(context));
   // Stops the app causes itself don't notify; wrapped before registering so the window and menubar share it.
   expectStopsFrom(handlers, () => context.expectStop?.());
   /** Reads the list again (which also tells the presence map whom to follow), then redraws the menubar. */

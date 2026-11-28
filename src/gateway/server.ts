@@ -6,6 +6,10 @@
 //   POST   /rpc                 { profile, namespace, method, args } → the engine's answer, as the app's IPC gives it
 //   GET    /events              the event log as server-sent events; `Last-Event-ID` resumes after a reconnect
 //   GET    /devices             the paired devices;  DELETE /devices/<id> revokes one
+//   POST   /moves               { op, args } → one step of a move or restore on this server (SB-34, moves/host.ts)
+//   GET    /moves/<id>/file     ?path= → one file of a move's backup;  PUT the same to send one file of an arrival
+//   GET    /backups             the checked backups on this server
+//   GET    /update              how the last update went;  POST { version } starts one (gateway/update.ts)
 //
 // Everything but the first two needs `Authorization: Bearer <device token>`, checked against devices.json on every
 // call, so a revoke takes effect on the next one; an open event stream rechecks every few seconds. The token is never
@@ -17,6 +21,8 @@ import { isRecord, isString } from '../lib/guards.ts';
 import { eventLog, type EventLog, type GatewayEvent } from './events.ts';
 import type { ServerEngines } from './engines.ts';
 import { mayListenOn } from './listen.ts';
+import type { MoveHost } from '../moves/host.ts';
+import { readUpdateState } from './update.ts';
 import {
   addDevice, deviceForToken, GATEWAY_PROTOCOL, gatewayCert, listDevices, noteDeviceUse, revokeDevice, serverIdentity,
   useCode, type DeviceView,
@@ -44,7 +50,34 @@ export interface GatewayOptions {
   log?: (line: string) => void;
   /** How often an open event stream pings and rechecks its token. */
   heartbeatMs?: number;
+  /** This server's Serra version, said to every Mac (SB-34). */
+  version?: string;
+  /** Moves and restores on this server (SB-34). Without it, a move to or from here is refused. */
+  moves?: MoveHost;
+  /** Updates this server's Serra (SB-34). Without it, an update is refused. */
+  update?: { problem(version: string): string | null; launch(version: string): Promise<void> };
 }
+
+/** The steps a paired Mac can run here, each with the shape of its arguments. Files go by GET/PUT, not here. */
+const MOVE_OPS: Record<string, (args: unknown[]) => boolean> = {
+  facts: (a) => isString(a[0]),
+  check: (a) => isRecord(a[0]) && isString(a[0].profile) && typeof a[0].bytes === 'number' && Array.isArray(a[0].paths) && a[0].paths.every(isString),
+  drain: (a) => isString(a[0]),
+  later: (a) => isString(a[0]),
+  pause: (a) => isString(a[0]) && isString(a[1]),
+  hold: (a) => isString(a[0]) && isString(a[1]) && (a[2] === 'paused' || a[2] === 'committed'),
+  resume: (a) => isString(a[0]) && isString(a[1]),
+  backup: (a) => isString(a[0]) && isString(a[1]) && isRecord(a[2]) && Object.values(a[2]).every(isString) && (a[3] === 'moved' || a[3] === 'restore'),
+  secrets: (a) => isString(a[0]),
+  archive: (a) => isString(a[0]) && isString(a[1]),
+  receive: (a) => isString(a[0]) && isString(a[1]) && Array.isArray(a[2]),
+  stageBackup: (a) => isString(a[0]) && isString(a[1]) && isString(a[2]),
+  verify: (a) => isString(a[0]),
+  commit: (a) => isString(a[0]) && isRecord(a[1]) && Array.isArray(a[1].secrets) && isRecord(a[1].mapped) && typeof a[1].replace === 'boolean',
+  live: (a) => isString(a[0]),
+  fail: (a) => isString(a[0]) && isString(a[1]) && typeof a[2] === 'boolean',
+  discard: (a) => isString(a[0]),
+};
 
 export interface Gateway {
   port: number;
@@ -137,11 +170,54 @@ export const startGateway = async (options: GatewayOptions): Promise<Gateway> =>
     request.on('close', stop);
   };
 
+  /** A step's own refusal, said to the Mac in its words: what went wrong, never a token. */
+  const refused = (error: unknown): HttpError => new HttpError(409, { error: error instanceof Error ? error.message : String(error) });
+
+  const moveRoute = async (request: IncomingMessage, response: ServerResponse, method: string, path: string): Promise<void> => {
+    const moves = options.moves;
+    if (!moves) throw new HttpError(409, { error: `${identity.name} can’t take part in moves. Update it first.` });
+    if (method === 'GET' && path === '/backups') { send(response, 200, { backups: await moves.backups() }); return; }
+    if (method === 'POST' && path === '/moves') {
+      const body = await readBody(request);
+      if (!isRecord(body) || !isString(body.op) || !Array.isArray(body.args) || !Object.hasOwn(MOVE_OPS, body.op) || !MOVE_OPS[body.op]!(body.args)) {
+        throw new HttpError(400, { error: 'That isn’t a step of a move.' });
+      }
+      const op = body.op as keyof typeof MOVE_OPS;
+      // Never the arguments: a commit carries the tokens.
+      log(`move: ${op}${isString(body.args[0]) && /^[\w.-]{1,64}$/.test(body.args[0]) ? ` ${body.args[0]}` : ''}`);
+      let value: unknown;
+      try {
+        // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the op is one of MOVE_OPS and its arguments passed that op's check
+        value = await (moves[op as keyof MoveHost] as (...args: unknown[]) => Promise<unknown>)(...body.args);
+      } catch (error) { throw refused(error); }
+      // The server's list changes when a profile arrives, leaves or comes back: Macs read it again.
+      if (op === 'commit' || op === 'archive' || op === 'fail' || op === 'resume') events.publish(null, 'profiles', null);
+      send(response, 200, { ok: true, value: value ?? null });
+      return;
+    }
+    const file = /^\/moves\/(m_[a-z0-9]{12})\/file$/.exec(path);
+    const target = new URL(request.url ?? '/', 'https://gateway').searchParams.get('path') ?? '';
+    if (file && method === 'GET') {
+      let stream;
+      try { stream = await moves.readFile(file[1]!, target); } catch (error) { throw refused(error); }
+      response.writeHead(200, { 'content-type': 'application/octet-stream', 'cache-control': 'no-store' });
+      stream.on('error', () => response.destroy());
+      stream.pipe(response);
+      return;
+    }
+    if (file && method === 'PUT') {
+      try { await moves.writeFile(file[1]!, target, request); } catch (error) { throw refused(error); }
+      send(response, 200, { ok: true });
+      return;
+    }
+    throw new HttpError(404, { error: 'Not found.' });
+  };
+
   const route = async (request: IncomingMessage, response: ServerResponse): Promise<void> => {
     const path = new URL(request.url ?? '/', 'https://gateway').pathname;
     const method = request.method ?? 'GET';
     if (method === 'GET' && path === '/.well-known/serra') {
-      send(response, 200, { serra: true, id: identity.id, name: identity.name, protocol: GATEWAY_PROTOCOL, minProtocol: MIN_PROTOCOL });
+      send(response, 200, { serra: true, id: identity.id, name: identity.name, protocol: GATEWAY_PROTOCOL, minProtocol: MIN_PROTOCOL, ...(options.version ? { version: options.version } : {}) });
       return;
     }
     if (method === 'POST' && path === '/pair') {
@@ -162,7 +238,7 @@ export const startGateway = async (options: GatewayOptions): Promise<Gateway> =>
     }
     const device = authenticate(request);
     if (method === 'GET' && path === '/profiles') {
-      send(response, 200, { server: { ...identity, protocol: GATEWAY_PROTOCOL }, profiles: engines.profiles() });
+      send(response, 200, { server: { ...identity, protocol: GATEWAY_PROTOCOL, ...(options.version ? { version: options.version } : {}) }, profiles: engines.profiles() });
       return;
     }
     if (method === 'POST' && path === '/rpc') {
@@ -177,6 +253,21 @@ export const startGateway = async (options: GatewayOptions): Promise<Gateway> =>
       return;
     }
     if (method === 'GET' && path === '/events') { stream(request, response, device); return; }
+    if (path === '/moves' || path.startsWith('/moves/') || path === '/backups') { await moveRoute(request, response, method, path); return; }
+    if (path === '/update') {
+      if (method === 'GET') { send(response, 200, { update: readUpdateState(root), version: options.version ?? null }); return; }
+      if (method === 'POST') {
+        const body = await readBody(request, 4096);
+        if (!options.update) throw new HttpError(409, { error: `Update ${identity.name} from its terminal: serra server update.` });
+        const version = isRecord(body) && isString(body.version) ? body.version : '';
+        const problem = options.update.problem(version);
+        if (problem) throw new HttpError(409, { error: problem });
+        try { await options.update.launch(version); } catch (error) { throw refused(error); }
+        log(`updating to ${version} for ${device.name}`);
+        send(response, 202, { update: readUpdateState(root) });
+        return;
+      }
+    }
     if (method === 'GET' && path === '/devices') { send(response, 200, { devices: listDevices(root) }); return; }
     const revoke = /^\/devices\/(d_[a-f0-9]{12})$/.exec(path);
     if (method === 'DELETE' && revoke) {

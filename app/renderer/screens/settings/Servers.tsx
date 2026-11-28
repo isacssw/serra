@@ -4,11 +4,12 @@
 import { useCallback, useEffect, useState } from 'react';
 import { ChevronLeft, ChevronRight, Laptop, Plus, RotateCw, Server } from 'lucide-react';
 import { useNavigate, useSearchParams } from 'react-router';
-import type { ServerDevice, ServerHealth } from '../../../main/bridge.ts';
+import type { ServerDevice, ServerHealth, ServerUpdateView } from '../../../main/bridge.ts';
 import { serra } from '../../bridge.ts';
 import { profileRows } from '../../profiles.logic.ts';
 import {
   ago, deviceLine, forgetBody, forgetToast, newProfileHint, serverAction, serverDiagnostics, serverPath, serverPresence, serverSubtitle,
+  updateAction, updateEnding,
 } from '../../servers.logic.ts';
 import { useBotStatus } from '../../shell/live.ts';
 import { useProfiles } from '../../shell/profiles.tsx';
@@ -140,6 +141,55 @@ const ForgetDialog = ({ server, onClose }: { server: ServerHealth; onClose: () =
   );
 };
 
+/** Update t480: one confirm, then `Updating t480` until it says how it went. Its bots keep running their own copy. */
+const UpdateDialog = ({ server, onClose }: { server: ServerHealth; onClose: () => void }) => {
+  const toast = useToast();
+  const [state, setState] = useState<ServerUpdateView | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const updating = busy || state?.state === 'updating';
+  useEffect(() => {
+    if (!updating) return;
+    // The gateway restarts on the way: a call that fails meanwhile is just asked again.
+    const timer = setInterval(() => {
+      serra()?.servers.updateState(server.id).then((next) => {
+        if (next.state && next.state !== 'updating') {
+          setBusy(false);
+          setState(next);
+          if (next.state === 'done') { toast({ message: `${server.name} is updated`, tone: 'success' }); void serra()?.servers.retry(server.id); onClose(); }
+        }
+      }, () => {});
+    }, 3000);
+    return () => clearInterval(timer);
+  }, [updating, server.id, server.name, toast, onClose]);
+  const start = async (): Promise<void> => {
+    setBusy(true);
+    setError(null);
+    try { setState(await serra()!.servers.update(server.id)); } catch (failure) { setError(message(failure)); setBusy(false); }
+  };
+  const ended = state?.state && state.state !== 'updating' && state.state !== 'done' ? updateEnding(server.name, state.state, state.message) : null;
+  return (
+    <Dialog
+      open
+      onClose={() => { if (!updating) onClose(); }}
+      title={ended ? ended.title : updating ? `Updating ${server.name}` : `Update ${server.name}?`}
+      actions={ended
+        ? <Button variant="primary" data-autofocus onClick={onClose}>Close</Button>
+        : (
+          <>
+            <Button data-autofocus onClick={onClose} disabled={updating}>Cancel</Button>
+            <Button variant="primary" onClick={() => void start()} disabled={updating}>{updating ? 'Updating…' : `Update ${server.name}`}</Button>
+          </>
+        )}
+    >
+      <p className="text-[13px] text-muted" data-server-update={state?.state ?? 'confirm'}>
+        {ended ? ended.body : `${server.name} is out of reach for about a minute. Its profiles keep running.`}
+      </p>
+      {error && <p role="alert" className="text-[13px] text-down">{error}</p>}
+    </Dialog>
+  );
+};
+
 const Detail = ({ server }: { server: ServerHealth }) => {
   const navigate = useNavigate();
   const toast = useToast();
@@ -149,6 +199,8 @@ const Detail = ({ server }: { server: ServerHealth }) => {
   const [revoking, setRevoking] = useState<ServerDevice | null>(null);
   const [forgetting, setForgetting] = useState(false);
   const [retrying, setRetrying] = useState(false);
+  const [updating, setUpdating] = useState(false);
+  const update = updateAction(server);
   const now = useNow();
   const up = server.state === 'up';
   const rows = profileRows(view, status, '⌘', servers).filter((row) => row.server?.id === server.id);
@@ -187,6 +239,8 @@ const Detail = ({ server }: { server: ServerHealth }) => {
           </span>
           {action === 'retry' && <Button size="sm" icon={<RotateCw size={13} aria-hidden />} disabled={retrying} onClick={() => void retry()}>{retrying ? 'Retrying…' : 'Retry'}</Button>}
           {action === 'pair' && <Button size="sm" variant="primary" onClick={() => openAdd('server')}>Pair again</Button>}
+          {!action && update?.target === 'server' && <Button size="sm" variant="primary" onClick={() => setUpdating(true)}>{update.label}</Button>}
+          {!action && update?.target === 'app' && <Button size="sm" onClick={() => void navigate('/settings/updates')}>{update.label}</Button>}
         </div>
         <div className={line}>
           <span className="w-24 shrink-0 self-start pt-0.5 text-[13px] text-muted">Profiles</span>
@@ -235,6 +289,7 @@ const Detail = ({ server }: { server: ServerHealth }) => {
       </section>
       {revoking && <RevokeDialog server={server} device={revoking} onClose={() => setRevoking(null)} onDone={(next) => { setDevices(next); setRevoking(null); toast({ message: `${revoking.name} revoked`, tone: 'success' }); }} />}
       {forgetting && <ForgetDialog server={server} onClose={() => setForgetting(false)} />}
+      {updating && <UpdateDialog server={server} onClose={() => setUpdating(false)} />}
     </div>
   );
 };

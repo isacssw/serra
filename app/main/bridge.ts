@@ -16,7 +16,7 @@ import { bridgeMethods, type InvokeResult, type Namespace, type SerraApi, type S
 import { SETUP_INCOMPLETE, SetupIncomplete } from '../../src/setup-incomplete.ts';
 
 export type {
-  AppInfo, AppPrefs, BriefDocument, Handlers, InvokeResult, Namespace, ProfileEntry, ProfilesView, SavedSection, SerraApi, SerraPushes, ServerDevice, ServerHealth,
+  AppInfo, AppPrefs, BriefDocument, Handlers, InvokeResult, Namespace, ProfileEntry, ProfilesView, SavedSection, SerraApi, SerraPushes, ServerDevice, ServerHealth, MoveView, MovePreflight, BackupView, ServerUpdateView,
   SetupDetection, StarPromptState, Theme, UndoHandle,
 } from '../../src/api.ts';
 
@@ -33,7 +33,7 @@ export type SerraBridge = { [N in Namespace]: Promisified<SerraApi[N]> } & {
 // Channels
 // ---------------------------------------------------------------------------------------------------------------
 
-const pushChannels = ['status', 'event', 'releaseLog', 'appUpdate', 'navigate', 'proposals', 'jobs', 'names', 'agentBackend', 'profiles', 'presence', 'servers'] as const satisfies readonly (keyof SerraPushes)[];
+const pushChannels = ['status', 'event', 'releaseLog', 'appUpdate', 'navigate', 'proposals', 'jobs', 'names', 'agentBackend', 'profiles', 'presence', 'servers', 'move'] as const satisfies readonly (keyof SerraPushes)[];
 
 export const invokeChannel = (namespace: string, method: string): string => `serra:${namespace}.${method}`;
 export const pushChannel = (name: keyof SerraPushes): string => `serra:on.${name}`;

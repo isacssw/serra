@@ -37,6 +37,7 @@ import { Servers } from './screens/settings/Servers.tsx';
 import { ProfilesProvider, useProfiles } from './shell/profiles.tsx';
 import { ProfileShortcuts } from './shell/ProfileShortcuts.tsx';
 import { AddSheet } from './shell/AddSheet.tsx';
+import { MoveDialog } from './shell/MoveDialog.tsx';
 import { useBadgeCounts, useBotStatus } from './shell/live.ts';
 import { FollowNavigation } from './shell/navigate.ts';
 import { focusScreen, Shortcuts } from './shell/Shortcuts.tsx';
@@ -127,6 +128,7 @@ const Shell = () => {
       <Shortcuts />
       <ProfileShortcuts status={status} />
       <AddSheet />
+      <MoveDialog />
       <ScrollToTop />
       <StarPrompt status={status} jobs={currentJobs} />
     </div>
