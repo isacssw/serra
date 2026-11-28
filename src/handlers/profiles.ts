@@ -38,7 +38,7 @@ export interface ProfilesDeps {
 const PINNED = 'Serra was started with a profile given on the command line, so it can’t switch here. Quit and open it without --profile.';
 
 export const profilesHandlers = (context: CoreContext, deps: ProfilesDeps = {}): Handlers<'profiles'> => {
-  const root = resolve(deps.root ?? defaultProfileRoot);
+  const root = resolve(deps.root ?? context.profileRoot ?? defaultProfileRoot);
   const agents = deps.launchAgentsDir ?? join(homedir(), 'Library/LaunchAgents');
   const changed = (): void => context.push?.('profiles', null);
 

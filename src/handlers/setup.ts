@@ -80,7 +80,7 @@ const nodeOnPath = (node: string): void => {
 };
 
 export const setupHandlers = (context: CoreContext, deps: SetupDeps = {}): Handlers<'setup'> => {
-  const root = deps.root ?? defaultProfileRoot;
+  const root = deps.root ?? context.profileRoot ?? defaultProfileRoot;
   const find = deps.findNode ?? ((profileDir: string) => findNode(profileDir));
   const echo = deps.echo ?? ((line: string) => console.log(`[serra] ${line}`));
   let installing = false;
