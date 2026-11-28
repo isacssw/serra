@@ -1,19 +1,19 @@
 // Knowledge pages (APP-20), on the services in src/knowledge.ts. Handlers only check input and call them.
 import { join } from 'node:path';
-import { readProfileFile } from '../../../src/config.ts';
-import { createKnowledge, profileRoots, type KnowledgeRoot } from '../../../src/knowledge.ts';
-import { createJournal } from '../../../src/knowledge-journal.ts';
-import { createMeetingStore } from '../../../src/meeting-store.ts';
-import { knowledgeGraph, knowledgeOverview, listKnowledgeFiles } from '../../../src/knowledge-overview.ts';
-import { assessKnowledge, confirmHeldBack } from '../../../src/knowledge-health.ts';
-import { dismissedPairs, dismissPair, restorePair } from '../../../src/knowledge-dismissals.ts';
-import { runKnowledgeReview } from '../../../src/knowledge-review.ts';
-import { setReviewWeekly, type KnowledgeReview } from '../../../src/knowledge-review-store.ts';
-import { createMeetingRuns } from '../../../src/meeting-runs.ts';
-import { chosenBackend } from '../../../src/agent/select.ts';
-import { profileT3Bin } from '../../../src/cleanup.ts';
-import type { Handlers } from '../bridge.ts';
-import type { HandlerContext } from './context.ts';
+import { readProfileFile } from '../config.ts';
+import { createKnowledge, profileRoots, type KnowledgeRoot } from '../knowledge.ts';
+import { createJournal } from '../knowledge-journal.ts';
+import { createMeetingStore } from '../meeting-store.ts';
+import { knowledgeGraph, knowledgeOverview, listKnowledgeFiles } from '../knowledge-overview.ts';
+import { assessKnowledge, confirmHeldBack } from '../knowledge-health.ts';
+import { dismissedPairs, dismissPair, restorePair } from '../knowledge-dismissals.ts';
+import { runKnowledgeReview } from '../knowledge-review.ts';
+import { setReviewWeekly, type KnowledgeReview } from '../knowledge-review-store.ts';
+import { createMeetingRuns } from '../meeting-runs.ts';
+import { chosenBackend } from '../agent/select.ts';
+import { profileT3Bin } from '../cleanup.ts';
+import type { Handlers } from '../api.ts';
+import type { CoreContext } from './context.ts';
 
 const pagePath = (value: unknown): string => {
   if (typeof value !== 'string' || value.trim() === '') throw new Error('Page is missing.');
@@ -23,7 +23,7 @@ const pagePath = (value: unknown): string => {
 /** The review under way, per profile: one at a time each, and never another profile's digest. */
 const reviewRuns = new Map<string, Promise<KnowledgeReview>>();
 
-export const pagesHandlers = (context: HandlerContext): Handlers<'pages'> => {
+export const pagesHandlers = (context: CoreContext): Handlers<'pages'> => {
   // A new service per call: the profile folder can change while the app runs.
   const service = () => createKnowledge(join(context.profileDir(), 'knowledge'));
   /** The checkouts named paths are checked against. A profile.json that doesn't load just skips that check. */

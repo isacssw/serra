@@ -8,10 +8,9 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, 
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import test, { type TestContext } from 'node:test';
-import { pagesHandlers } from '../app/main/ipc/pages.ts';
-import type { HandlerContext } from '../app/main/ipc/context.ts';
+import { pagesHandlers } from '../src/handlers/pages.ts';
 import { memoryPrefs } from '../app/main/prefs.ts';
-import { stoppedStatusSource } from '../app/main/status.ts';
+import { stoppedStatusSource } from '../src/status-source.ts';
 import { checkReason, groupLine, groupPairs, repeatsLine, isSafe, keepNewerForAll, sideNames, versus, wordDiff, type PairIssue } from '../app/renderer/screens/conflicts.logic.ts';
 import { keepNewerOnPages, keepOne, keepOver } from '../app/renderer/screens/keep.ts';
 import { fixItems, needsYou } from '../app/renderer/screens/overview.logic.ts';
@@ -21,6 +20,7 @@ import { assessKnowledge, findOverlaps, knowledgeHistory, learnedOn, markIndexRo
 import { knowledgeGraph, knowledgeOverview } from '../src/knowledge-overview.ts';
 import { createKnowledge } from '../src/knowledge.ts';
 import { oldFormatKnowledge, OLD_FORMAT_PAGES } from './fakes/kb-conflicts.ts';
+import { engineContext, type AppContext } from './fakes/app-context.ts';
 
 const NOW = new Date('2026-11-27T12:00:00Z');
 const TODAY = '2026-11-27';
@@ -37,13 +37,13 @@ const profile = (t: TestContext) => {
     mkdirSync(dirname(join(knowledge, file.path)), { recursive: true });
     writeFileSync(join(knowledge, file.path), file.text);
   }
-  const context: HandlerContext = {
+  const context: AppContext = {
     profileDir: () => dir, profileDirOrNull: () => dir, prefs: memoryPrefs(), status: stoppedStatusSource(),
     runtime: { version: '0.0.0', electron: '45.4.1', node: '24.0.0', platform: 'darwin' }, openExternal: async () => {}, openPath: async () => {},
   };
   // As the app does on first open: the approved copy the bot reads, so an edit outside Serra shows as one.
   createKnowledge(knowledge).seedApproved();
-  const handlers = pagesHandlers(context);
+  const handlers = pagesHandlers(engineContext(context));
   // The renderer's bridge, as far as keep.ts uses it: the same handlers the app calls.
   const bridge = { pages: { read: async (path: string) => handlers.read(path), save: async (path: string, text: string, expected?: string) => handlers.save(path, text, expected) } } as Parameters<typeof keepOne>[0];
   return { dir, knowledge, handlers, bridge, backups: join(dir, 'backups', 'knowledge') };

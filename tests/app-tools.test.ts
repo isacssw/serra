@@ -3,13 +3,13 @@ import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:f
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test, { type TestContext } from 'node:test';
-import type { HandlerContext } from '../app/main/ipc/context.ts';
-import { toolsHandlers } from '../app/main/ipc/tools.ts';
+import { toolsHandlers } from '../src/handlers/tools.ts';
 import { memoryPrefs } from '../app/main/prefs.ts';
-import { stoppedStatusSource } from '../app/main/status.ts';
+import { stoppedStatusSource } from '../src/status-source.ts';
 import { writeProfileFile, type Profile } from '../src/config.ts';
 import type { Exec } from '../src/exec.ts';
 import { runCli } from '../src/manage.ts';
+import { engineContext, type AppContext } from './fakes/app-context.ts';
 
 const TOKEN = 'sntrys_fixture-secret-value';
 
@@ -28,7 +28,7 @@ const setup = (t: TestContext) => {
     messageTriggers: [{ channel: 'C0123456789', botId: 'B0123456789', instructions: 'Investigate this Sentry alert.' }],
   };
   writeProfileFile(profileDir, profile);
-  const context: HandlerContext = {
+  const context: AppContext = {
     profileDir: () => profileDir, profileDirOrNull: () => profileDir, prefs: memoryPrefs(), status: stoppedStatusSource(),
     runtime: { version: '0.0.0', electron: '45.4.1', node: '24.0.0', platform: 'darwin' },
     openExternal: async () => {}, openPath: async () => {},
@@ -50,7 +50,7 @@ const fakeRun: Exec = async (command, args) => {
 test('tools.overview lists the provider CLI servers and the warning, structured-clone safe and without secrets', async (t) => {
   const f = setup(t);
   f.install('claude');
-  const overview = structuredClone(await toolsHandlers(f.context, { home: f.home, env: {}, run: fakeRun, path: f.bin }).overview());
+  const overview = structuredClone(await toolsHandlers(engineContext(f.context), { home: f.home, env: {}, run: fakeRun, path: f.bin }).overview());
   assert.deepEqual(overview.servers.map((server) => [server.name, server.scope, server.health]), [['github', 'provider', 'connected'], ['claude.ai Gmail', 'connector', 'connected']]);
   assert.deepEqual(overview.warnings.map((warning) => [warning.tool, warning.driver, warning.channels]), [['Sentry', 'claude', ['C0123456789']]]);
   assert.ok(!JSON.stringify(overview).includes(TOKEN));
@@ -59,7 +59,7 @@ test('tools.overview lists the provider CLI servers and the warning, structured-
 test('tools.clis reports installed tools with version and account, and missing ones', async (t) => {
   const f = setup(t);
   f.install('gh');
-  const overview = structuredClone(await toolsHandlers(f.context, { home: f.home, run: fakeRun, path: f.bin }).clis());
+  const overview = structuredClone(await toolsHandlers(engineContext(f.context), { home: f.home, run: fakeRun, path: f.bin }).clis());
   const gh = overview.clis.find((entry) => entry.id === 'gh')!;
   assert.deepEqual([gh.version, gh.check?.state, gh.check?.account], ['2.83.0', 'yes', 'alex']);
   assert.equal(overview.clis.find((entry) => entry.id === 'vercel')!.path, null);
@@ -67,7 +67,7 @@ test('tools.clis reports installed tools with version and account, and missing o
 
 test('tools handlers without a selected profile throw the context message', (t) => {
   const f = setup(t);
-  const handlers = toolsHandlers({ ...f.context, profileDir: () => { throw new Error('No bot profile selected.'); } });
+  const handlers = toolsHandlers(engineContext({ ...f.context, profileDir: () => { throw new Error('No bot profile selected.'); } }));
   assert.throws(() => handlers.overview(), /No bot profile selected/);
   assert.throws(() => handlers.clis(), /No bot profile selected/);
 });

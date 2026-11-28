@@ -3,7 +3,7 @@ import test from 'node:test';
 import {
   notificationPlanner, notificationTarget, notificationText, redact, targetScreen, type PlannedNotification,
 } from '../app/main/notifications.logic.ts';
-import { socketStatusSource, STOPPED, type StatusSubscriber } from '../app/main/status.ts';
+import { socketStatusSource, STOPPED, type StatusSubscriber } from '../src/status-source.ts';
 import type { BotEvent, BotStatus, JobSummary, StatusMessage } from '../src/contracts.ts';
 
 const START = Date.parse('2026-11-19T10:00:00.000Z');

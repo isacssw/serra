@@ -5,10 +5,9 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test, { type TestContext } from 'node:test';
-import type { HandlerContext } from '../app/main/ipc/context.ts';
-import { meetingsHandlers } from '../app/main/ipc/meetings.ts';
+import { meetingsHandlers } from '../src/handlers/meetings.ts';
 import { memoryPrefs } from '../app/main/prefs.ts';
-import { stoppedStatusSource } from '../app/main/status.ts';
+import { stoppedStatusSource } from '../src/status-source.ts';
 import { writeProfileFile, type Profile } from '../src/config.ts';
 import { readAgentBackend } from '../src/agent/acp-agents.ts';
 import type { MeetingRunOptions } from '../src/meeting-runs.ts';
@@ -19,6 +18,7 @@ import {
   validateCustomAgentForm,
 } from '../app/renderer/screens/settings/agent-backend.logic.ts';
 import { t3Providers } from '../src/t3-providers.ts';
+import { engineContext, type AppContext } from './fakes/app-context.ts';
 
 const setup = (t: TestContext, options: { binDir?: string } = {}) => {
   const root = mkdtempSync(join(tmpdir(), 'serra-app-meetings-'));
@@ -34,7 +34,7 @@ const setup = (t: TestContext, options: { binDir?: string } = {}) => {
   const opened: string[] = [];
   const asked: { message: string; detail: string }[] = [];
   const answer = { confirm: true };
-  const context: HandlerContext = {
+  const context: AppContext = {
     profileDir: () => profileDir, profileDirOrNull: () => profileDir, prefs: memoryPrefs(), status: stoppedStatusSource(),
     confirm: async ({ message, detail }) => { asked.push({ message, detail }); return answer.confirm; },
     runtime: { version: '0.0.0', electron: '45.4.1', node: '24.0.0', platform: 'darwin' },
@@ -42,7 +42,7 @@ const setup = (t: TestContext, options: { binDir?: string } = {}) => {
   };
   const made: MeetingRunOptions[] = [];
   const tested: string[] = [];
-  const handlers = meetingsHandlers(context, {
+  const handlers = meetingsHandlers(engineContext(context), {
     readProviders: () => t3Providers({ providerInstances: { cursor: { driver: 'cursor', enabled: true } } }),
     ...(options.binDir ? { searchPath: async () => options.binDir! } : {}),
     runs: (runOptions) => {
@@ -214,7 +214,7 @@ test('adding an ACP agent shows its exact command in a native confirm first; can
   assert.equal(added.agents.some((entry) => entry.id === 'harness'), true);
 
   // Without a way to ask, nothing is added.
-  const bare = meetingsHandlers({ ...f.context, confirm: undefined });
+  const bare = meetingsHandlers(engineContext({ ...f.context, confirm: undefined }));
   await assert.rejects(async () => bare.addAcpAgent({ name: 'Other', command: 'other', args: [] }), /Not added/);
   assert.equal(readAgentBackend(f.profileDir).custom.some((entry) => entry.id === 'other'), false);
 });

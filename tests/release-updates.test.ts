@@ -9,7 +9,8 @@ import {
   compareVersions, dmgFor, download, DownloadStalledError, fetchReleases, includePrereleases, isPrerelease, parseSums, pickUpdate, releasesUrl, verifyChecksum,
   type GithubRelease,
 } from '../src/app-updates.ts';
-import { createAppUpdater, installPlan, SWAP_SCRIPT, type AppUpdateView, type InstallPlan } from '../app/main/app-updater.ts';
+import { createAppUpdater, installPlan, SWAP_SCRIPT } from '../app/main/app-updater.ts';
+import type { AppUpdateView, InstallPlan } from '../src/app-updates.ts';
 
 // ---------------------------------------------------------------------------------------------------------------
 // Versions

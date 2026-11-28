@@ -7,13 +7,17 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, net, Notification, shell } from 'electron';
 import { defaultProfileRoot, profileArgument } from '../../src/config.ts';
 import { pushChannel } from './bridge.ts';
-import { createHandlers, registerHandlers } from './ipc/index.ts';
-import type { HandlerContext } from './ipc/context.ts';
+import { createEngine } from '../../src/handlers/index.ts';
+import type { CoreContext } from '../../src/handlers/context.ts';
+import { appHandlers, selectProfileIn, type HostContext } from './host.ts';
+import { registerHandlers, routeHandlers } from './router.ts';
 import { electronPrefs } from './prefs-store.ts';
 import { followTheme } from './native-theme.ts';
-import { profilesUnder, profileToRemember, startupProfile } from './profile-location.ts';
-import { forwardStatus, socketStatusSource } from './status.ts';
-import { presenceMap } from './presence-map.ts';
+import { profileToRemember, startupProfile } from './profile-location.ts';
+import { profilesUnder } from '../../src/profiles.ts';
+import { forwardStatus } from './status.ts';
+import { socketStatusSource } from '../../src/status-source.ts';
+import { presenceMap } from '../../src/presence-map.ts';
 import type { ProfilesView } from './bridge.ts';
 import type { TrayProfile } from './tray.logic.ts';
 import { restartBot, stopBot } from '../../src/bot-service.ts';
@@ -75,7 +79,7 @@ const start = async (): Promise<void> => {
     const remember = profileToRemember(startupProfile({ argument, saved, discovered }), saved);
     if (remember) stored.set({ ...stored.get(), profileDir: remember });
   }
-  const push: NonNullable<HandlerContext['push']> = (channel, payload) => {
+  const push: NonNullable<CoreContext['push']> = (channel, payload) => {
     for (const target of BrowserWindow.getAllWindows()) {
       if (!target.isDestroyed() && !target.webContents.isDestroyed()) target.webContents.send(pushChannel(channel), payload);
     }
@@ -134,25 +138,21 @@ const start = async (): Promise<void> => {
   // Look for a new release 15 seconds after launch, then every 6 hours. Nothing downloads without a click.
   every(15_000, 6 * 60 * 60_000, () => { void appUpdater.check(); });
   const quitGuards: (() => Promise<unknown> | null)[] = [];
-  const context: HandlerContext = {
-    appUpdater,
-    botFollowsApp: app.isPackaged,
-    guardQuit: (pending) => { quitGuards.push(pending); },
-    // A bot update switching releases holds its profile's folder; the window waits for it before switching away.
-    switchBlocked: () => (quitGuards.some((guard) => guard() !== null) ? 'A bot update is switching versions. Try again when it finishes.' : null),
-    trashItem: (path) => shell.trashItem(path),
-    every,
-    expectStop: (dir) => { const target = dir ?? profileDirOrNull(); if (target) notifications?.expectStop(resolve(target)); },
-    presence,
-    profileDirs: () => (listed?.profiles ?? []).map((profile) => profile.dir),
+  const profileDir = (): string => {
+    const directory = profileDirOrNull();
+    // The window shows its setup state for this, never the message.
+    if (!directory) throw new SetupIncomplete();
+    return directory;
+  };
+  const runtime = { version: app.getVersion(), electron: process.versions.electron ?? '', node: process.versions.node, platform: process.platform };
+  // What only this Mac can do: its dialogs, the Finder, the Trash and the browser, and the app's own prefs.
+  const host: HostContext = {
+    prefs,
+    runtime,
     profileDirOrNull,
-    profileDir: () => {
-      const directory = profileDirOrNull();
-      // The window shows its setup state for this, never the message.
-      if (!directory) throw new SetupIncomplete();
-      return directory;
-    },
-    profilePinned: argument !== undefined,
+    profileDir,
+    appUpdater,
+    trashItem: (path) => shell.trashItem(path),
     chooseFolder: async ({ title, buttonLabel, defaultPath }) => {
       const options = { title, buttonLabel, properties: ['openDirectory' as const, 'createDirectory' as const], ...(defaultPath && existsSync(defaultPath) ? { defaultPath } : {}) };
       const owner = BrowserWindow.getFocusedWindow();
@@ -167,14 +167,30 @@ const start = async (): Promise<void> => {
       const result = owner ? await dialog.showMessageBox(owner, options) : await dialog.showMessageBox(options);
       return result.response === 0;
     },
-    prefs,
-    status,
-    runtime: { version: app.getVersion(), electron: process.versions.electron ?? '', node: process.versions.node, platform: process.platform },
     openExternal: (url) => shell.openExternal(url),
     openPath: async (path) => {
       const error = await shell.openPath(path);
       if (error) throw new Error(error);
     },
+  };
+  // The engine, in this process: every profile on this Mac.
+  const context: CoreContext = {
+    host,
+    appUpdater,
+    botFollowsApp: app.isPackaged,
+    guardQuit: (pending) => { quitGuards.push(pending); },
+    // A bot update switching releases holds its profile's folder; the window waits for it before switching away.
+    switchBlocked: () => (quitGuards.some((guard) => guard() !== null) ? 'A bot update is switching versions. Try again when it finishes.' : null),
+    every,
+    expectStop: (dir) => { const target = dir ?? profileDirOrNull(); if (target) notifications?.expectStop(resolve(target)); },
+    presence,
+    profileDirs: () => (listed?.profiles ?? []).map((profile) => profile.dir),
+    profileDirOrNull,
+    profileDir,
+    profilePinned: argument !== undefined,
+    selectProfile: selectProfileIn(prefs),
+    status,
+    runtime: { version: runtime.version, platform: runtime.platform },
     push: (channel, payload) => {
       push(channel, payload);
       // Added, removed, moved or recoloured: the menubar lists them again.
@@ -185,7 +201,7 @@ const start = async (): Promise<void> => {
   proposals.follow(profileDirOrNull());
   agentBackendWatch = followAgentBackend(() => context.push?.('agentBackend', null));
   agentBackendWatch.follow(profileDirOrNull());
-  const handlers = createHandlers(context);
+  const handlers = routeHandlers(appHandlers(host), createEngine(context));
   // Stops the app causes itself don't notify; wrapped before registering so the window and menubar share it.
   expectStopsFrom(handlers, () => context.expectStop?.());
   /** Reads the list again (which also tells the presence map whom to follow), then redraws the menubar. */

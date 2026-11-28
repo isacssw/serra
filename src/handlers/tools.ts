@@ -2,13 +2,13 @@
 // `codex mcp list`, or their config files), and the command-line tools on this Mac. Serra never adds, removes or
 // signs in to anything here: servers are managed in Claude or Codex. Only names, transports, hosts, versions and
 // statuses reach the window; never a command, an environment, a header or a full URL.
-import { readProfileFile } from '../../../src/config.ts';
-import { cliOverview, type CliOverview } from '../../../src/clis.ts';
-import type { Exec } from '../../../src/exec.ts';
-import { liveMcpOverview } from '../../../src/mcp-live.ts';
-import type { McpOptions, McpOverview } from '../../../src/mcp.ts';
-import type { Handlers } from '../bridge.ts';
-import type { HandlerContext } from './context.ts';
+import { readProfileFile } from '../config.ts';
+import { cliOverview, type CliOverview } from '../clis.ts';
+import type { Exec } from '../exec.ts';
+import { liveMcpOverview } from '../mcp-live.ts';
+import type { McpOptions, McpOverview } from '../mcp.ts';
+import type { Handlers } from '../api.ts';
+import type { CoreContext } from './context.ts';
 
 /** Tests point these at a temp home, a fake PATH and fake commands. */
 export interface ToolsHandlerOptions extends McpOptions {
@@ -16,7 +16,7 @@ export interface ToolsHandlerOptions extends McpOptions {
   path?: string;
 }
 
-export const toolsHandlers = (context: HandlerContext, options: ToolsHandlerOptions = {}): Handlers<'tools'> => ({
+export const toolsHandlers = (context: CoreContext, options: ToolsHandlerOptions = {}): Handlers<'tools'> => ({
   overview: (request?: { fresh?: boolean }): Promise<McpOverview> =>
     liveMcpOverview(readProfileFile(context.profileDir()), { ...options, fresh: request?.fresh === true }),
   clis: (request?: { fresh?: boolean }): Promise<CliOverview> => {

@@ -4,24 +4,24 @@
 // only in `testSource`, on the owner's button.
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { profileT3Bin } from '../../../src/cleanup.ts';
-import { readProfileFile } from '../../../src/config.ts';
-import { isRecord } from '../../../src/json-guards.ts';
-import { errorMessage, shortError } from '../../../src/lib/errors.ts';
-import { createMeetingStore, type MeetingReviewed } from '../../../src/meeting-store.ts';
-import { MEETING_NOTICE, readMeetingSettings, writeMeetingSettings } from '../../../src/meeting-settings.ts';
-import { createMeetingRuns, meetingRunner, runnerIdentity } from '../../../src/meeting-runs.ts';
-import { saveSourceTest, sourceStatuses } from '../../../src/meeting-source-tests.ts';
-import { PROVIDER_IDS, type MeetingProvider } from '../../../src/meeting-sources.ts';
-import { readT3Providers } from '../../../src/t3-providers.ts';
+import { profileT3Bin } from '../cleanup.ts';
+import { readProfileFile } from '../config.ts';
+import { isRecord } from '../json-guards.ts';
+import { errorMessage, shortError } from '../lib/errors.ts';
+import { createMeetingStore, type MeetingReviewed } from '../meeting-store.ts';
+import { MEETING_NOTICE, readMeetingSettings, writeMeetingSettings } from '../meeting-settings.ts';
+import { createMeetingRuns, meetingRunner, runnerIdentity } from '../meeting-runs.ts';
+import { saveSourceTest, sourceStatuses } from '../meeting-source-tests.ts';
+import { PROVIDER_IDS, type MeetingProvider } from '../meeting-sources.ts';
+import { readT3Providers } from '../t3-providers.ts';
 import {
   addCustomAcpAgent, agentBackendConfigError, agentBackendPath, agentChoices, ensureAgentBackendFile,
   readAgentBackend, removeCustomAcpAgent, writeAgentBackend, type AgentBackendView,
-} from '../../../src/agent/acp-agents.ts';
-import { acpRunner, chosenAcpAgent, chosenBackend } from '../../../src/agent/select.ts';
-import { toolSearchPath } from '../../../src/shell-path.ts';
-import type { Handlers } from '../bridge.ts';
-import type { HandlerContext } from './context.ts';
+} from '../agent/acp-agents.ts';
+import { acpRunner, chosenAcpAgent, chosenBackend } from '../agent/select.ts';
+import { toolSearchPath } from '../shell-path.ts';
+import type { Handlers } from '../api.ts';
+import type { CoreContext } from './context.ts';
 
 const id = (value: unknown, what: string): string => {
   if (typeof value !== 'string' || !/^[\w-]{1,40}$/.test(value)) throw new Error(`${what} is missing.`);
@@ -52,7 +52,7 @@ export interface MeetingsHandlerOptions {
 const commandLine = (command: string, args: readonly string[]): string =>
   [command, ...args].map((part) => (/^[\w./:=@%+,-]+$/.test(part) ? part : `'${part.replaceAll("'", "'\\''")}'`)).join(' ');
 
-export const meetingsHandlers = (context: HandlerContext, options: MeetingsHandlerOptions = {}): Handlers<'meetings'> => {
+export const meetingsHandlers = (context: CoreContext, options: MeetingsHandlerOptions = {}): Handlers<'meetings'> => {
   const makeRuns = options.runs ?? createMeetingRuns;
   const readProviders = options.readProviders ?? readT3Providers;
   const searchPath = options.searchPath ?? toolSearchPath;
@@ -129,7 +129,7 @@ export const meetingsHandlers = (context: HandlerContext, options: MeetingsHandl
       const args = Array.isArray(input.args) ? input.args.filter((arg): arg is string => typeof arg === 'string' && arg.length > 0) : [];
       const profileDir = context.profileDir();
       // The window can't add a command Serra will run on its own say: the owner sees it, exactly, in a native dialog.
-      const confirmed = await context.confirm?.({
+      const confirmed = await context.host.confirm?.({
         message: `Add ${input.name.trim()} as an ACP agent?`,
         detail: `Serra will run this command, with your access, when you pick it:\n\n${commandLine(input.command.trim(), args)}`,
         confirmLabel: 'Add agent',
@@ -150,7 +150,7 @@ export const meetingsHandlers = (context: HandlerContext, options: MeetingsHandl
     },
     openAgentBackendConfig: async () => {
       const file = ensureAgentBackendFile(context.profileDir());
-      await context.openPath(file);
+      await context.host.openPath(file);
     },
     list: () => store().listMeetings(),
     history: () => store().history(),

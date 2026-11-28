@@ -1,11 +1,11 @@
 // New task (APP-25) and the knowledge interview (APP-26), on src/tasks.ts. Handlers only check what the window sent and call the service, which starts the
 // T3 thread exactly as the daemon does for a Slack request. The profile's tokens are never read here: a task needs no
 // Slack, and nothing from the config but the thread's details goes back to the window.
-import { readAgentBackend } from '../../../src/agent/acp-agents.ts';
-import { requestRun } from '../../../src/status-socket.ts';
-import { previewInterview, previewTask, startInterview, startTask, taskRequest, type StartedTask, type TaskDeps } from '../../../src/tasks.ts';
-import type { Handlers } from '../bridge.ts';
-import type { HandlerContext } from './context.ts';
+import { readAgentBackend } from '../agent/acp-agents.ts';
+import { requestRun } from '../status-socket.ts';
+import { previewInterview, previewTask, startInterview, startTask, taskRequest, type StartedTask, type TaskDeps } from '../tasks.ts';
+import type { Handlers } from '../api.ts';
+import type { CoreContext } from './context.ts';
 
 /** Tests swap the daemon. */
 export interface TasksDaemon { run: typeof requestRun }
@@ -20,7 +20,7 @@ const startedFrom = (value: unknown): StartedTask => {
   return { threadId, title, branch, requester, createdAt, ...(backend ? { backend } : {}) };
 };
 
-export const tasksHandlers = (context: HandlerContext, deps: TaskDeps = {}, daemon: TasksDaemon = { run: requestRun }): Handlers<'tasks'> => {
+export const tasksHandlers = (context: CoreContext, deps: TaskDeps = {}, daemon: TasksDaemon = { run: requestRun }): Handlers<'tasks'> => {
   /** On an ACP agent the bot starts it: the agent lives in the bot's process, which follows it to the end. */
   const onAcp = (): boolean => readAgentBackend(context.profileDir()).backend === 'acp';
   // One start at a time, task or interview: a double click must not start two threads.

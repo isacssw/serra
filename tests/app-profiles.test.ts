@@ -7,15 +7,13 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpath
 import { tmpdir } from 'node:os';
 import { basename, join, relative } from 'node:path';
 import test, { type TestContext } from 'node:test';
-import type { HandlerContext } from '../app/main/ipc/context.ts';
-import { createHandlers } from '../app/main/ipc/index.ts';
-import { profilesHandlers } from '../app/main/ipc/profiles.ts';
-import { profileSlackNames } from '../app/main/ipc/slack-names.ts';
-import { setupHandlers } from '../app/main/ipc/setup.ts';
+import { profilesHandlers } from '../src/handlers/profiles.ts';
+import { profileSlackNames } from '../src/handlers/slack-names.ts';
+import { setupHandlers } from '../src/handlers/setup.ts';
 import { defaultPrefs, memoryPrefs } from '../app/main/prefs.ts';
-import { arrange, emptyProfilesFile, moveRef, parseProfilesFile, PROFILE_COLORS, resolveColors, withLooks, withoutRef, withOrder } from '../app/main/profiles.logic.ts';
+import { arrange, emptyProfilesFile, moveRef, parseProfilesFile, PROFILE_COLORS, resolveColors, withLooks, withoutRef, withOrder } from '../src/profile-order.ts';
 import { createActionRegistry, searchActions } from '../app/renderer/commands/registry.ts';
-import { socketStatusSource, stoppedStatusSource, type StatusSubscriber } from '../app/main/status.ts';
+import { socketStatusSource, stoppedStatusSource, type StatusSubscriber } from '../src/status-source.ts';
 import type { ProfilesView } from '../app/main/bridge.ts';
 import { presence } from '../app/renderer/presence.logic.ts';
 import { lettersFor, newProfileLook, profileLooks, profileRows, rowLabel, showsSwitcher, takenColors, windowTitle } from '../app/renderer/profiles.logic.ts';
@@ -25,6 +23,7 @@ import type { BotStatus, StatusMessage } from '../src/contracts.ts';
 import type { ServiceDriver } from '../src/service.ts';
 import { MANIFEST_FILE } from '../src/profile-backup.ts';
 import { createProfile } from '../src/setup.ts';
+import { createHandlers, engineContext, type AppContext } from './fakes/app-context.ts';
 
 const BOT = 'xoxb-1111-2222-fixturevalue';
 const APP = 'xapp-1-A111-2222-fixturevalue';
@@ -61,7 +60,7 @@ const fixture = (t: TestContext) => {
   const driver: ServiceDriver = {
     loaded: async () => true, stop: async (label) => { stopped.push(label); }, start: async () => {}, ready: async () => {},
   };
-  const context = (active: string | null, extra: Partial<HandlerContext> = {}): HandlerContext & { pushed: string[]; opened: string[] } => {
+  const context = (active: string | null, extra: Partial<AppContext> = {}): AppContext & { pushed: string[]; opened: string[] } => {
     const prefs = memoryPrefs({ ...defaultPrefs, profileDir: active });
     const pushed: string[] = [];
     const opened: string[] = [];
@@ -79,7 +78,7 @@ const fixture = (t: TestContext) => {
       ...extra,
     };
   };
-  const handlers = (ctx: HandlerContext) => profilesHandlers(ctx, {
+  const handlers = (ctx: AppContext) => profilesHandlers(engineContext(ctx), {
     root, launchAgentsDir: agents, service: driver, probeMs: 200, searchPath: async () => '', now: () => new Date('2026-11-28T12:00:00Z'),
   });
   return { base, root, agents, trash, profile, context, handlers, stopped };
@@ -241,7 +240,7 @@ test('an alpha.9 install opens unchanged: one profile, no profiles.json, and not
   assert.equal(windowTitle(listed), 'Serra');
   await profiles.switch('local/saitama');
   await createHandlers(ctx).bot.status();
-  await setupHandlers(ctx, { root: f.root, launchAgentsDir: f.agents }).progress();
+  await setupHandlers(engineContext(ctx), { root: f.root, launchAgentsDir: f.agents }).progress();
   assert.equal(ctx.prefs.get().profileDir, dir);
   assert.equal(existsSync(join(f.root, 'profiles.json')), false, 'no profiles.json until the owner changes something');
   assert.deepEqual(snapshot(f.root), before, 'the profile folder is exactly as it was');
@@ -288,7 +287,7 @@ test('switching shows the other profile’s knowledge, jobs, settings and secret
   writeFileSync(join(scout, '.env'), 'SLACK_APP_TOKEN=xapp-replace-me\nSLACK_BOT_TOKEN=xoxb-replace-me\n');
 
   const ctx = f.context(saitama);
-  const all = createHandlers(ctx, profileSlackNames(ctx, { ask: () => async () => null, log: () => {} }));
+  const all = createHandlers(ctx, profileSlackNames(engineContext(ctx), { ask: () => async () => null, log: () => {} }));
   const profiles = f.handlers(ctx);
   const seen = async () => ({
     bot: (await all.settings.read()).bot.name,

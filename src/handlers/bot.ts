@@ -1,8 +1,8 @@
 // The daemon. Status comes from the profile's status socket (APP-6's client, see `status.ts`); start, stop and
 // restart go through `src/bot-service.ts`, which drives launchd through `deploy.ts` (APP-11).
-import { restartBot, startBot, stopBot } from '../../../src/bot-service.ts';
-import type { Handlers } from '../bridge.ts';
-import type { HandlerContext } from './context.ts';
+import { restartBot, startBot, stopBot } from '../bot-service.ts';
+import type { Handlers } from '../api.ts';
+import type { CoreContext } from './context.ts';
 
 /** The service calls, replaceable in tests. */
 export interface BotService {
@@ -17,7 +17,7 @@ const launchdService: BotService = { start: startBot, stop: stopBot, restart: re
  * One start, stop or restart at a time: the window and the menubar share these handlers, and a second click while
  * launchd is still working gets a message instead of a second bootout.
  */
-export const botHandlers = (context: HandlerContext, service: BotService = launchdService): Handlers<'bot'> => {
+export const botHandlers = (context: CoreContext, service: BotService = launchdService): Handlers<'bot'> => {
   let busy = false;
   const exclusive = (action: keyof BotService) => async (): Promise<void> => {
     if (context.runtime.platform !== 'darwin') throw new Error('Starting and stopping the bot needs launchd, so it works on macOS only.');

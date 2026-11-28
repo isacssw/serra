@@ -7,8 +7,8 @@ import { resolve } from 'node:path';
 import { Notification } from 'electron';
 import type { BotEvent, BotStatus, JobSummary } from '../../src/contracts.ts';
 import { listJobs } from '../../src/jobs.ts';
-import type { AllHandlers } from './ipc/index.ts';
-import type { FollowedProfile } from './presence-map.ts';
+import type { AllHandlers } from './router.ts';
+import type { FollowedProfile } from '../../src/presence-map.ts';
 import {
   burstGate, notificationPlanner, notificationTarget, notificationText, type NotificationPlanner, type PlannedNotification,
 } from './notifications.logic.ts';

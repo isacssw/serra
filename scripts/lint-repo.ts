@@ -85,12 +85,12 @@ check('app window: context isolation, sandbox, no Node integration, preload only
   });
 });
 
-check('app preload: bundles only itself, the bridge, its pure setup error and electron', async () => {
+check('app preload: bundles only itself, the bridge, the pure API (src/api.ts) and its setup error, and electron', async () => {
   const result = await build({
     entryPoints: [join(codeRoot, 'app/preload.ts')], absWorkingDir: codeRoot,
     bundle: true, platform: 'node', format: 'cjs', external: ['electron'], write: false, metafile: true, logLevel: 'silent',
   });
-  assert.deepEqual(Object.keys(result.metafile.inputs).sort(), ['app/main/bridge.ts', 'app/preload.ts', 'src/setup-incomplete.ts']);
+  assert.deepEqual(Object.keys(result.metafile.inputs).sort(), ['app/main/bridge.ts', 'app/preload.ts', 'src/api.ts', 'src/setup-incomplete.ts']);
   const required = [...(result.outputFiles[0]?.text ?? '').matchAll(/require\("([^"]+)"\)/g)].map((match) => match[1]);
   assert.deepEqual([...new Set(required)], ['electron']);
 });

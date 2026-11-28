@@ -2,16 +2,15 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { Theme } from '../app/main/bridge.ts';
-import type { HandlerContext } from '../app/main/ipc/context.ts';
-import { createHandlers } from '../app/main/ipc/index.ts';
 import { followTheme, type NativeThemeTarget } from '../app/main/native-theme.ts';
 import { defaultPrefs, memoryPrefs, readPrefs } from '../app/main/prefs.ts';
-import { stoppedStatusSource } from '../app/main/status.ts';
+import { stoppedStatusSource } from '../src/status-source.ts';
 import { builtinActions } from '../app/renderer/commands/builtin.ts';
 import { createActionRegistry, searchActions, type ActionContext } from '../app/renderer/commands/registry.ts';
 import { applyTheme, createThemeStore, switchThemeAction, themes, type ThemeRoot } from '../app/renderer/theme.logic.ts';
+import { createHandlers, type AppContext } from './fakes/app-context.ts';
 
-const handlersWith = (prefs: HandlerContext['prefs']) => createHandlers({
+const handlersWith = (prefs: AppContext['prefs']) => createHandlers({
   profileDirOrNull: () => null,
   profileDir: () => { throw new Error('no profile'); },
   prefs,

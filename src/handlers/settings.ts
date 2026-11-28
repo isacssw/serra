@@ -1,17 +1,17 @@
 // Settings pages (APP-14), on APP-4's services in src/profile-settings.ts. Handlers check the shape of what the
 // window sent, call the service and return its result. The service validates the whole profile with
 // `validateProfile` before its atomic write, so an invalid value throws here and never reaches disk.
-import { readProfileFile } from '../../../src/config.ts';
-import type { ProfileSection } from '../../../src/contracts.ts';
+import { readProfileFile } from '../config.ts';
+import type { ProfileSection } from '../contracts.ts';
 import {
-  addAllowedUser, isProfileSection, PROFILE_SECTIONS, PROFILE_SETTINGS, removeAllowedUser, updateProfileSection,
+  addAllowedUser, isProfileSection, PROFILE_SECTIONS, PROFILE_SETTINGS, removeAllowedUser, updateProfileSectionInput,
   type SettingChange,
-} from '../../../src/profile-settings.ts';
-import { isSlackUserId } from '../../../src/slack-names.ts';
-import { readT3Providers } from '../../../src/t3-providers.ts';
-import { MAX_NAME_IDS } from '../../../src/status-socket.ts';
-import type { Handlers, SavedSection } from '../bridge.ts';
-import type { HandlerContext } from './context.ts';
+} from '../profile-settings.ts';
+import { isSlackUserId } from '../slack-names.ts';
+import { readT3Providers } from '../t3-providers.ts';
+import { MAX_NAME_IDS } from '../status-socket.ts';
+import type { Handlers, SavedSection } from '../api.ts';
+import type { CoreContext } from './context.ts';
 import { profileSlackNames, type ProfileNames } from './slack-names.ts';
 
 const saved = ({ profile, appliesWhen, changed }: SettingChange): SavedSection => ({ profile, applies: appliesWhen, changed });
@@ -41,13 +41,13 @@ export interface SettingsDeps {
   readProviders?: typeof readT3Providers;
 }
 
-export const settingsHandlers = (context: HandlerContext, { names = profileSlackNames(context), readProviders = readT3Providers }: SettingsDeps = {}): Handlers<'settings'> => ({
+export const settingsHandlers = (context: CoreContext, { names = profileSlackNames(context), readProviders = readT3Providers }: SettingsDeps = {}): Handlers<'settings'> => ({
   read: () => readProfileFile(context.profileDir()),
   sections: () => ({ ...PROFILE_SETTINGS }),
   saveSection: (section, value) => {
     const name = sectionName(section);
     // IPC carries `undefined` inside objects poorly; the window sends `null` to remove an optional section.
-    return saved(updateProfileSection(context.profileDir(), name, value === null ? undefined : value as never));
+    return saved(updateProfileSectionInput(context.profileDir(), name, value === null ? undefined : value));
   },
   addPerson: (slackUserId) => saved(addAllowedUser(context.profileDir(), memberId(slackUserId))),
   removePerson: (slackUserId) => saved(removeAllowedUser(context.profileDir(), memberId(slackUserId))),

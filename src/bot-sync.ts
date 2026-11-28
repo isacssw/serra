@@ -1,8 +1,8 @@
 // Keeping the bot on the app's version (SERRA-46). In release mode the bot follows the app: after the app updates,
 // the bot is rebuilt from the new app's code and restarted, but only while no job is running. Pure decisions here;
-// `ipc/updates.ts` runs them on a timer with the release service.
-import { compareVersions, parseVersion } from '../../src/app-updates.ts';
-import type { Prepared } from '../../src/deploy.ts';
+// `handlers/updates.ts` runs them on a timer with the release service.
+import { compareVersions, parseVersion } from './app-updates.ts';
+import type { Prepared } from './deploy.ts';
 
 /** What the Updates screen says about the bot. */
 export type BotSync =

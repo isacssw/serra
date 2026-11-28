@@ -3,15 +3,15 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import test, { type TestContext } from 'node:test';
-import { pagesHandlers } from '../app/main/ipc/pages.ts';
-import type { HandlerContext } from '../app/main/ipc/context.ts';
+import { pagesHandlers } from '../src/handlers/pages.ts';
 import { memoryPrefs } from '../app/main/prefs.ts';
-import { stoppedStatusSource } from '../app/main/status.ts';
+import { stoppedStatusSource } from '../src/status-source.ts';
 import {
   badgeCounts, badgeLabel, badgeTitle, badgeTone, editorState, filterPages, groupByFolder, keepSelection, localDate, markVerified,
   pagesSummary,
 } from '../app/renderer/screens/pages.logic.ts';
 import type { KnowledgePage, PageBadge } from '../src/contracts.ts';
+import { engineContext, type AppContext } from './fakes/app-context.ts';
 
 const header = (verified: string): string =>
   ['---', 'type: product', 'description: Billing rules', 'written: 2026-11-01', `verified: ${verified}`, 'sources: code', '---', ''].join('\n');
@@ -88,7 +88,7 @@ const profile = (t: TestContext) => {
   };
   write('index.md', '# Index\n\n| `product/billing.md` |\n');
   write('product/billing.md', `${header('no')}Invoices go out monthly.\n`);
-  const context: HandlerContext = {
+  const context: AppContext = {
     profileDir: () => dir,
     profileDirOrNull: () => dir,
     prefs: memoryPrefs(),
@@ -97,7 +97,7 @@ const profile = (t: TestContext) => {
     openExternal: async () => {},
     openPath: async () => {},
   };
-  return { knowledge, handlers: pagesHandlers(context) };
+  return { knowledge, handlers: pagesHandlers(engineContext(context)) };
 };
 
 test('handlers: list, read and save a page without a profile.json', async (t) => {

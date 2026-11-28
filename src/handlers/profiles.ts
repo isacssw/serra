@@ -1,22 +1,21 @@
 // Profiles (SB-10): the switcher's list, switching, the order (⌘1…⌘9) and colour in `profiles.json`, Add… › Profile
 // and a remove that saves a checked backup first. The window shows one profile at a time: switching re-points the app
-// (prefs.profileDir), and every other handler reads the profile in use per call, so nothing carries over. Every listed
+// (`selectProfile`), and every other handler reads the profile in use per call, so nothing carries over. Every listed
 // profile stays live (SB-11): each list tells main's presence map which daemons to follow.
 import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, join, relative, resolve, sep } from 'node:path';
-import { agentChoices, readAgentBackend, writeAgentBackend } from '../../../src/agent/acp-agents.ts';
-import { stopBot, type BotServiceOptions } from '../../../src/bot-service.ts';
-import { defaultProfileRoot, loadConfig } from '../../../src/config.ts';
-import { backupProfile } from '../../../src/profile-backup.ts';
-import { createSetupProfile, setupProgress } from '../../../src/setup.ts';
-import { toolSearchPath } from '../../../src/shell-path.ts';
-import type { Handlers, NewProfile, ProfileEntry, ProfilesView } from '../bridge.ts';
-import { mergePrefs } from '../prefs.ts';
+import { agentChoices, readAgentBackend, writeAgentBackend } from '../agent/acp-agents.ts';
+import { stopBot, type BotServiceOptions } from '../bot-service.ts';
+import { defaultProfileRoot, loadConfig } from '../config.ts';
+import { backupProfile } from '../profile-backup.ts';
+import { createSetupProfile, setupProgress } from '../setup.ts';
+import { toolSearchPath } from '../shell-path.ts';
+import type { Handlers, NewProfile, ProfileEntry, ProfilesView } from '../api.ts';
 import { agentName, findProfiles, inRoot, probeStatus, profileName, readProfilesFile, setupDone, writeProfilesFile } from '../profiles.ts';
-import { isColor, localRef, moveRef, PROFILE_COLORS, resolveColors, withColor, withLooks, withOrder, withoutRef } from '../profiles.logic.ts';
+import { isColor, localRef, moveRef, PROFILE_COLORS, resolveColors, withColor, withLooks, withOrder, withoutRef } from '../profile-order.ts';
 import { parseDraft } from './setup.ts';
-import type { HandlerContext } from './context.ts';
+import type { CoreContext } from './context.ts';
 
 export interface ProfilesDeps {
   /** The profiles folder (tests: a temp folder). */
@@ -34,7 +33,7 @@ export interface ProfilesDeps {
 
 const PINNED = 'Serra was started with a profile given on the command line, so it can’t switch here. Quit and open it without --profile.';
 
-export const profilesHandlers = (context: HandlerContext, deps: ProfilesDeps = {}): Handlers<'profiles'> => {
+export const profilesHandlers = (context: CoreContext, deps: ProfilesDeps = {}): Handlers<'profiles'> => {
   const root = resolve(deps.root ?? defaultProfileRoot);
   const agents = deps.launchAgentsDir ?? join(homedir(), 'Library/LaunchAgents');
   const changed = (): void => context.push?.('profiles', null);
@@ -69,9 +68,7 @@ export const profilesHandlers = (context: HandlerContext, deps: ProfilesDeps = {
   /** The refs `profiles.json` can order, as listed now. */
   const listedRefs = (): string[] => findProfiles(root, context.profileDirOrNull()).filter(({ dir }) => inRoot(root, dir)).map(({ ref }) => ref);
 
-  const use = (dir: string | null): void => {
-    context.prefs.set(mergePrefs(context.prefs.get(), { profileDir: dir }));
-  };
+  const use = (dir: string | null): void => { context.selectProfile(dir); };
 
   return {
     list: view,
@@ -133,7 +130,7 @@ export const profilesHandlers = (context: HandlerContext, deps: ProfilesDeps = {
         writeProfilesFile(root, withLooks(file, [...others, ref]));
       }
       if (agent !== null) writeAgentBackend(directory, { backend: 'acp', agent });
-      context.prefs.set(mergePrefs(context.prefs.get(), { profileDir: directory, setupDraft: null }));
+      context.selectProfile(directory, { setupFinished: true });
       changed();
       return setupProgress(directory, { ...(deps.launchAgentsDir ? { launchAgentsDir: deps.launchAgentsDir } : {}), running: false });
     },
@@ -145,7 +142,7 @@ export const profilesHandlers = (context: HandlerContext, deps: ProfilesDeps = {
       if (context.profilePinned && active) throw new Error(PINNED);
       const blocked = context.switchBlocked?.();
       if (blocked) throw new Error(blocked);
-      if (!context.trashItem) throw new Error('Removing a profile needs the Trash, which isn’t available here.');
+      if (!context.host.trashItem) throw new Error('Removing a profile needs the Trash, which isn’t available here.');
       const name = profileName(target.dir);
       // 1. Stop it, and take its service out of launchd so it doesn't start again at login.
       let plist: string | null = null;
@@ -168,8 +165,8 @@ export const profilesHandlers = (context: HandlerContext, deps: ProfilesDeps = {
       }
       // The others keep the colours they show now.
       if (inRoot(root, target.dir)) writeProfilesFile(root, withoutRef(withLooks(withOrder(readProfilesFile(root), listedRefs()), listedRefs()), target.ref));
-      if (plist) await context.trashItem(plist);
-      await context.trashItem(target.dir);
+      if (plist) await context.host.trashItem(plist);
+      await context.host.trashItem(target.dir);
       changed();
       return { backup: backup.path, view: await view() };
     },
@@ -179,7 +176,7 @@ export const profilesHandlers = (context: HandlerContext, deps: ProfilesDeps = {
       if (typeof path !== 'string' || relative(backups, resolve(path)).startsWith('..') || !resolve(path).startsWith(`${backups}${sep}`)) {
         throw new Error('That isn’t a Serra backup.');
       }
-      await context.openPath(resolve(path));
+      await context.host.openPath(resolve(path));
     },
   };
 };

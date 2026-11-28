@@ -13,15 +13,15 @@ import { delimiter, dirname, join, resolve } from 'node:path';
 import {
   activateRelease, findNode, prepareNextRelease, releaseStatus, rollbackRelease, runningJobs,
   type StatusOptions,
-} from '../../../src/releases.ts';
-import { preparedProblems, type DeployOptions, type PrepareOptions } from '../../../src/deploy.ts';
-import { serviceHost } from '../../../src/service.ts';
-import { pauseIntake, readAck, readPause, readPauseFile, resumeIntake } from '../../../src/intake.ts';
-import { isRecord, isString, readJsonOrNull } from '../../../src/lib/guards.ts';
-import type { Handlers } from '../bridge.ts';
-import { clearUpdateSource, forgetCleared, lastCleared, sourceProblem, staleSource } from '../../../src/update-migration.ts';
+} from '../releases.ts';
+import { preparedProblems, type DeployOptions, type PrepareOptions } from '../deploy.ts';
+import { serviceHost } from '../service.ts';
+import { pauseIntake, readAck, readPause, readPauseFile, resumeIntake } from '../intake.ts';
+import { isRecord, isString, readJsonOrNull } from '../lib/guards.ts';
+import type { Handlers } from '../api.ts';
+import { clearUpdateSource, forgetCleared, lastCleared, sourceProblem, staleSource } from '../update-migration.ts';
 import { botSyncDecision, type BotSync } from '../bot-sync.ts';
-import type { HandlerContext } from './context.ts';
+import type { CoreContext } from './context.ts';
 
 export type UpdateAction = 'prepare' | 'activate' | 'rollback' | 'sync';
 
@@ -60,7 +60,7 @@ const nodeOnPath = (node: string): void => {
 const busyName = (action: UpdateAction): string => action === 'sync' ? 'The bot update' : `${action[0]!.toUpperCase()}${action.slice(1)}`;
 const errorText = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
-export const updatesService = (context: HandlerContext, deps: UpdatesDeps = {}) => {
+export const updatesService = (context: CoreContext, deps: UpdatesDeps = {}) => {
   const find = deps.findNode ?? ((profileDir: string) => findNode(profileDir));
   const echo = deps.echo ?? ((line: string) => console.log(`[serra] ${line}`));
   let running: UpdateAction | null = null;
@@ -382,4 +382,4 @@ export const updatesService = (context: HandlerContext, deps: UpdatesDeps = {}) 
   return { handlers, tick };
 };
 
-export const updatesHandlers = (context: HandlerContext, deps: UpdatesDeps = {}): Handlers<'updates'> => updatesService(context, deps).handlers;
+export const updatesHandlers = (context: CoreContext, deps: UpdatesDeps = {}): Handlers<'updates'> => updatesService(context, deps).handlers;

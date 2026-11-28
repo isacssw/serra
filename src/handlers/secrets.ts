@@ -1,14 +1,14 @@
 // Secrets (APP-15), on APP-8's token sources in `src/secrets.ts`. Only sources and check results go back to the
 // window, never a token's value. A value the owner types for a Keychain item arrives here in `setSource`, goes to
 // `setSecret` (which hands it to `security` on stdin) and is never returned, logged or echoed in an error.
-import { readProfileFile } from '../../../src/config.ts';
-import type { SecretName, SecretSource, SecretStatus } from '../../../src/contracts.ts';
+import { readProfileFile } from '../config.ts';
+import type { SecretName, SecretSource, SecretStatus } from '../contracts.ts';
 import {
   checkSecret, defaultKeychainSource, isSecretName, scrub, SECRET_NAMES, secretStatus, setSecret,
   type SecretOptions, type SlackVerify,
-} from '../../../src/secrets.ts';
-import type { Handlers } from '../bridge.ts';
-import type { HandlerContext } from './context.ts';
+} from '../secrets.ts';
+import type { Handlers } from '../api.ts';
+import type { CoreContext } from './context.ts';
 
 /** Tests swap the `security`/`op` binaries and Slack's verification for fakes. */
 export interface SecretsHandlerOptions extends SecretOptions {
@@ -40,7 +40,7 @@ const hiding = async <T>(value: string | undefined, action: () => Promise<T>): P
   catch (error) { throw new Error(scrub(error instanceof Error ? error.message : String(error), [value])); }
 };
 
-export const secretsHandlers = (context: HandlerContext, options: SecretsHandlerOptions = {}): Handlers<'secrets'> => ({
+export const secretsHandlers = (context: CoreContext, options: SecretsHandlerOptions = {}): Handlers<'secrets'> => ({
   list: async () => (await secretStatus(context.profileDir(), options)).map(plainStatus),
 
   setSource: async (name, source, value) => {
