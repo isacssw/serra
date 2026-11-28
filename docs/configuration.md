@@ -88,7 +88,7 @@ The service label defaults to dev.serra.<bot-id>. Do not change a deployed bot's
 
 Each Slack token (`SLACK_BOT_TOKEN`, `SLACK_APP_TOKEN`) has a source:
 
-- **Keychain**: a generic password item, read with the macOS `security` CLI. The default item is the bot's service label (`dev.serra.<bot-id>`) as the service and the token name as the account.
+- **Keychain** (macOS only): a generic password item, read with the macOS `security` CLI. The default item is the bot's service label (`dev.serra.<bot-id>`) as the service and the token name as the account.
 - **1Password**: a secret reference like `op://vault/item/field`, read with the 1Password CLI (`op read`). Turn on the 1Password app's CLI integration so `op` can unlock.
 - **.env**: the profile's `.env`, the fallback when no source is set.
 

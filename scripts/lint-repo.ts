@@ -63,7 +63,7 @@ check('src/commands: every file has exactly one line in the command table, and e
     assert.equal(typeof command.run, 'function', name);
   }
   for (const name of ['prepare', 'activate', 'rollback', 'status', 'stop', 'start', 'cleanup']) assert.ok(name in commands, name);
-  for (const name of ['activate', 'rollback', 'status', 'stop', 'start']) assert.equal((await commands[name]!()).default.macOnly, true, name);
+  for (const name of ['activate', 'rollback', 'status', 'stop', 'start']) assert.equal((await commands[name]!()).default.service, true, name);
 });
 
 // --- App security and packaging ------------------------------------------------------------------------------------
@@ -258,7 +258,7 @@ const exceptionsNow = (): Set<string> => {
 // A reviewed change to the gates (any change but removing exceptions): the fingerprint the check below prints for it.
 // It covers main's version and this one, so it only ever matches the change it was made for.
 // Changing this line is how a PR says "this changes what the gates enforce, on purpose"; the reviewer sees both.
-const ACKNOWLEDGED_GATE_CHANGE = '27b0d35f76df841d';
+const ACKNOWLEDGED_GATE_CHANGE = '8018bf5374d672a9';
 
 check('gates: unchanged against main, except exceptions removed (lint, knip, tsconfigs, scripts, gitleaks, CI)', () => {
   const commit = base();

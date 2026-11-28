@@ -6,11 +6,15 @@ import { join } from 'node:path';
 import test from 'node:test';
 import { codeRoot } from '../src/config.ts';
 import { createProfile } from '../src/setup.ts';
-import { activate, canRollBack, defaultNode, PACKAGED_SOURCE, pruneReleases, RELEASE_INFO, startupError, pnpmCommand, prepareRelease, releaseSourceRoot, rollback, servicePlist, type ServiceDriver } from '../src/deploy.ts';
+import { activate, canRollBack, defaultNode, PACKAGED_SOURCE, pruneReleases, RELEASE_INFO, pnpmCommand, prepareRelease, releaseSourceRoot, rollback } from '../src/deploy.ts';
+import { servicePlist, serviceHost, startupError, type ServiceDriver } from '../src/service.ts';
 import { activateRelease, activationPreflight, findNode, nvmNodes, prepareNextRelease, releaseStatus, rollbackRelease, supportedNode } from '../src/releases.ts';
 
+/** This computer's service files (launchd's on macOS, systemd's on Linux); the driver is always a fake. */
+const host = serviceHost();
+
 /**
- * A fresh profile with a prepared release and no service yet. The fake launchd knows a service by its plist, and
+ * A fresh profile with a prepared release and no service yet. The fake driver knows a service by its file, and
  * reports each start as the prepared release (`start-new`) or the earlier one put back by a rollback (`start-old`).
  */
 const fixture = async (t: { after: (fn: () => void) => void }) => {
@@ -27,9 +31,9 @@ const fixture = async (t: { after: (fn: () => void) => void }) => {
   mkdirSync(join(plan.release, 'node_modules/@slack/bolt'), { recursive: true });
   const label = plan.label;
   const events: string[] = []; let readyError = false;
-  const prepared = (): string => readFileSync(join(JSON.parse(readFileSync(join(directory, 'prepared.json'), 'utf8')).release, 'service.plist'), 'utf8');
+  const prepared = (): string => readFileSync(join(JSON.parse(readFileSync(join(directory, 'prepared.json'), 'utf8')).release, host.releaseFile), 'utf8');
   const driver: ServiceDriver = {
-    loaded: async (name) => existsSync(join(agents, `${name}.plist`)),
+    loaded: async (name) => existsSync(join(agents, host.fileName(name))),
     stop: async () => { events.push('stop'); },
     start: async (path) => { events.push(readFileSync(path, 'utf8') === prepared() ? 'start-new' : 'start-old'); },
     ready: async () => { events.push('ready'); if (readyError) throw new Error('bad app token'); },
@@ -52,17 +56,17 @@ const upgrade = async (f: Awaited<ReturnType<typeof fixture>>) => {
 test('preparation changes no service: nothing is installed or started', async (t) => {
   const f = await fixture(t);
   assert.deepEqual(f.events, []);
-  assert.equal(existsSync(join(f.agents, `${f.label}.plist`)), false);
+  assert.equal(existsSync(join(f.agents, host.fileName(f.label))), false);
   assert.equal(existsSync(join(f.directory, 'active.json')), false);
   assert.equal(f.label, 'dev.serra.friday');
 });
 
 test('a fresh install never takes over an existing service with the same label', async (t) => {
   const f = await fixture(t);
-  writeFileSync(join(f.agents, `${f.label}.plist`), 'someone else');
+  writeFileSync(join(f.agents, host.fileName(f.label)), 'someone else');
   await assert.rejects(activate(f.directory, f.opts), /already exists/);
   assert.deepEqual(f.events, ['preflight']);
-  assert.equal(readFileSync(join(f.agents, `${f.label}.plist`), 'utf8'), 'someone else');
+  assert.equal(readFileSync(join(f.agents, host.fileName(f.label)), 'utf8'), 'someone else');
 });
 
 test('failed preflight or a modified release never stops the live service', async (t) => {
@@ -87,13 +91,13 @@ test('a failed first start removes the new service again', async (t) => {
   const f = await fixture(t); f.failReady();
   await assert.rejects(activate(f.directory, f.opts), /previous installation restored/);
   assert.deepEqual(f.events, ['preflight', 'stop', 'start-new', 'ready', 'stop']);
-  assert.equal(existsSync(join(f.agents, `${f.label}.plist`)), false);
+  assert.equal(existsSync(join(f.agents, host.fileName(f.label))), false);
   assert.equal(existsSync(join(f.directory, 'active.json')), false);
 });
 
 test('an edited service plist cannot reach cutover', async (t) => {
   const f = await fixture(t);
-  writeFileSync(join(f.plan.release, 'service.plist'), 'different executable');
+  writeFileSync(join(f.plan.release, host.releaseFile), 'different executable');
   await assert.rejects(activate(f.directory, f.opts), /release changed/);
   assert.deepEqual(f.events, []);
 });
@@ -322,7 +326,7 @@ test('a failed start restores the previous bot, and offers rollback when the res
   assert.match(activationPreflight(f.directory).problems[0] ?? '', /needs rollback first/);
   assert.deepEqual(await rollbackRelease(f.directory, f.opts), { ok: true, release: null });
   assert.equal(f.events.at(-1), 'stop', 'there was no earlier service to start again');
-  assert.equal(existsSync(join(f.agents, `${f.label}.plist`)), false);
+  assert.equal(existsSync(join(f.agents, host.fileName(f.label))), false);
 });
 
 test('rollback with nothing activated says so', async (t) => {
@@ -334,13 +338,12 @@ test('the release records and uses the given Node binary, and refuses to default
   const f = await fixture(t);
   const plan = await prepareRelease(f.directory, { install: false, node: '/opt/node/bin/node' });
   assert.equal(plan.node, '/opt/node/bin/node');
-  assert.match(readFileSync(join(plan.release, 'service.plist'), 'utf8'), /<string>\/opt\/node\/bin\/node<\/string>/);
+  assert.match(readFileSync(join(plan.release, host.releaseFile), 'utf8'), /\/opt\/node\/bin\/node/);
   assert.match(readFileSync(join(f.directory, 'activate.sh'), 'utf8'), /exec '\/opt\/node\/bin\/node' /);
   assert.equal(defaultNode(), process.execPath);
   Object.defineProperty(process.versions, 'electron', { value: '45.4.1', configurable: true });
   try {
     assert.throws(() => defaultNode(), /pass the Node binary path/);
-    assert.throws(() => servicePlist({ directory: '/tmp/p', release: '/tmp/r', label: 'dev.serra.test' }), /Electron/);
     await assert.rejects(prepareRelease(f.directory, { install: false }), /Electron/);
     // The app's wrapper finds a real Node instead: here the one the prepared release already uses.
     const fake = join(f.root, 'bin'); mkdirSync(fake);

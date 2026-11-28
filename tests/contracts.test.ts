@@ -90,12 +90,13 @@ test('the CLI dispatches through the command table and gives each command its pa
   let seen: Parameters<Command['run']>[0] | undefined;
   const table = {
     hello: fake('Say hello', async (context) => { seen = context; context.log('hi'); }, { usage: ['pnpm bot hello --profile /p'] }),
-    deploy: fake('Mac only', async () => {}, { macOnly: true }),
+    deploy: fake('Background', async (context) => { context.log('deployed'); }, { service: true }),
+    host: fake('This computer', async (context) => { context.log(`profile=${context.profileDir}`); }, { profile: false }),
     broken: fake('Fails', async () => { throw new Error('went wrong'); }),
   };
   const help = await cli(['--help'], table);
   assert.equal(help.code, 0);
-  assert.match(help.out, /hello\s+Say hello/); assert.match(help.out, /deploy\s+Mac only \(macOS\)/); assert.match(help.out, /pnpm bot hello --profile \/p/);
+  assert.match(help.out, /hello\s+Say hello/); assert.match(help.out, /deploy\s+Background \(macOS, Linux\)/); assert.match(help.out, /pnpm bot hello --profile \/p/);
 
   const ok = await cli(['--', 'hello', '--profile', '/Users/you/profile', '--days', '3', '--apply'], table);
   assert.deepEqual([ok.code, ok.out, ok.err], [0, 'hi', '']);
@@ -106,10 +107,15 @@ test('the CLI dispatches through the command table and gives each command its pa
 
   assert.deepEqual(await cli(['nope', '--profile', '/p'], table), { code: 1, out: '', err: 'Unknown bot command: nope. Run pnpm bot --help.' });
   assert.match((await cli(['toString', '--profile', '/p'], table)).err, /Unknown bot command/);
-  assert.match((await cli(['deploy', '--profile', '/p'], table, 'linux')).err, /supports macOS/);
+  assert.equal((await cli(['deploy', '--profile', '/p'], table, 'linux')).out, 'deployed');
+  assert.match((await cli(['deploy', '--profile', '/p'], table, 'win32')).err, /supports macOS and Linux/);
   assert.equal((await cli(['hello', '--profile', '/p'], table, 'linux')).code, 0);
   const saved = process.env.BOT_PROFILE; delete process.env.BOT_PROFILE;
-  try { assert.match((await cli(['hello'], table)).err, /--profile \/absolute\/profile\/folder is required/); }
+  try {
+    assert.match((await cli(['hello'], table)).err, /--profile \/absolute\/profile\/folder is required/);
+    // A command about this computer runs without a profile, and never gets one.
+    assert.deepEqual(await cli(['host'], table), { code: 0, out: 'profile=', err: '' });
+  }
   finally { if (saved !== undefined) process.env.BOT_PROFILE = saved; }
   assert.deepEqual(await cli(['broken', '--profile', '/p'], table), { code: 1, out: '', err: 'went wrong' });
 });

@@ -12,7 +12,8 @@ import {
   activateRelease, findNode, prepareNextRelease, releaseStatus, rollbackRelease, runningJobs,
   type StatusOptions,
 } from '../../../src/releases.ts';
-import { launchd, preparedProblems, type DeployOptions, type PrepareOptions } from '../../../src/deploy.ts';
+import { preparedProblems, type DeployOptions, type PrepareOptions } from '../../../src/deploy.ts';
+import { serviceHost } from '../../../src/service.ts';
 import { pauseIntake, readAck, readPause, readPauseFile, resumeIntake } from '../../../src/intake.ts';
 import { isRecord, isString, readJsonOrNull } from '../../../src/lib/guards.ts';
 import type { Handlers } from '../bridge.ts';
@@ -67,7 +68,7 @@ export const updatesService = (context: HandlerContext, deps: UpdatesDeps = {}) 
   /** The bot switch under way (activate, rollback or the bot update), which quitting the app must not cut short. */
   let cutover: Promise<unknown> | null = null;
   context.guardQuit?.(() => cutover);
-  const driver = deps.deploy?.driver ?? launchd;
+  const driver = deps.deploy?.driver ?? serviceHost().driver;
   /** Pauses this app started, per profile, and when one lapsed with jobs still running (no new pause for a while). */
   const ourPauses = new Set<string>();
   const lapsed = new Map<string, number>();
