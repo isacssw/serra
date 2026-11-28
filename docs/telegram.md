@@ -15,7 +15,9 @@ Picked **Telegram** on setup's first screen? Setup walks you through the same st
 3. **Open in Telegram**, and tap **Start**. The link carries a one-time code (good for a day), so the first person to
    open it is you: Telegram can't tell Serra who made a bot. From then on the bot is yours there.
 
-Connecting restarts the bot when it's running. **Disconnect** forgets the bot and its owner; the Keychain item stays
+Connecting restarts the bot when it's running. Right after Serra updates, the bot may still run the older version
+for a while (it updates once no job is running): Connect then asks you to update the bot first, in **Settings ›
+Updates**. **Disconnect** forgets the bot and its owner; the Keychain item stays
 until you connect again.
 
 ## Using it

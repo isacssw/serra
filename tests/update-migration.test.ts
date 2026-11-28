@@ -274,3 +274,40 @@ test('a folder that is not Serra’s code is cleared only if it still is a minut
   assert.equal((await handlers.status()).releases?.mode, 'developer', 'the copy finished: it is Serra’s code now, and stays');
   assert.deepEqual(f.profile().updates, { source: copying });
 });
+
+test('a bot still on a release from before Telegram and Discord is never handed them, so it keeps starting', async (t) => {
+  const { channelsHandlers } = await import('../src/handlers/channels.ts');
+  const { readSecretsFile } = await import('../src/secrets.ts');
+  const { DISCORD_BOT, DISCORD_TOKEN } = await import('./fakes/discord.ts');
+  const { TELEGRAM_BOT, TELEGRAM_TOKEN } = await import('./fakes/telegram.ts');
+  const f = fixture(t);
+  // The installed bot's release, as alpha.9 left it: no Telegram or Discord code, so it refuses a profile naming them.
+  const release = join(f.directory, 'releases/alpha-9');
+  mkdirSync(join(release, 'src'), { recursive: true });
+  writeFileSync(join(f.directory, 'active.json'), JSON.stringify({ version: 1, release, label: 'dev.serra.friday', appVersion: '0.1.0-alpha.9' }));
+  const op = join(f.root, 'op');
+  writeFileSync(op, `#!${process.execPath}\nprocess.stdout.write(process.argv.at(-1).includes('Discord') ? ${JSON.stringify(DISCORD_TOKEN)} : ${JSON.stringify(TELEGRAM_TOKEN)});\n`);
+  chmodSync(op, 0o755);
+  const context = engineContext({
+    profileDir: () => f.directory, profileDirOrNull: () => f.directory, prefs: memoryPrefs(), status: stoppedStatusSource(),
+    runtime: { version: '0.1.0-alpha.10', electron: '45.4.1', node: '24.0.0', platform: 'darwin' }, openExternal: async () => {}, openPath: async () => {},
+  });
+  const handlers = channelsHandlers(context, {
+    getMe: async () => ({ id: String(TELEGRAM_BOT.id), username: TELEGRAM_BOT.username, name: 'Friday' }),
+    whoAmI: async () => ({ id: DISCORD_BOT.id, username: DISCORD_BOT.username, applicationId: DISCORD_BOT.id, messageContent: true, publicBot: false }),
+    tools: { security: join(f.root, 'no-security'), op, timeoutMs: 5_000 },
+  });
+  const profileBefore = readFileSync(join(f.directory, 'profile.json'), 'utf8');
+  await assert.rejects(async () => handlers.connectTelegram('op://Private/Telegram bot/token'), /Update the bot first/);
+  await assert.rejects(async () => handlers.connectDiscord('op://Private/Discord bot/token'), /Update the bot first/);
+  // Nothing the old bot would choke on was written.
+  assert.equal(readFileSync(join(f.directory, 'profile.json'), 'utf8'), profileBefore);
+  assert.deepEqual(Object.keys(readSecretsFile(f.directory).sources).filter((name) => !name.startsWith('SLACK_')), []);
+  f.unchanged();
+
+  // Once the bot runs a release with each chat's code, connecting works.
+  mkdirSync(join(release, 'src/telegram'));
+  mkdirSync(join(release, 'src/discord'));
+  assert.equal((await handlers.connectTelegram('op://Private/Telegram bot/token')).telegram.state, 'pairing');
+  assert.equal((await handlers.connectDiscord('op://Private/Discord bot/token')).discord.state, 'pairing');
+});

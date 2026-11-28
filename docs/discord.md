@@ -21,7 +21,9 @@ Picked **Discord** on setup's first screen? Setup walks you through the same ste
 5. DM your bot the code Settings › Channels shows (good for a day). That makes you its owner: anyone could paste a bot
    token, so Serra doesn't take the owner from Discord.
 
-Connecting restarts the bot when it's running. **Disconnect** forgets the bot and its owner; the Keychain item stays
+Connecting restarts the bot when it's running. Right after Serra updates, the bot may still run the older version
+for a while (it updates once no job is running): Connect then asks you to update the bot first, in **Settings ›
+Updates**. **Disconnect** forgets the bot and its owner; the Keychain item stays
 until you connect again. To revoke the token itself, **Reset Token** in the portal.
 
 ## Using it
