@@ -830,14 +830,14 @@ export const createBot = ({
         .catch((error: unknown) => { logger.warn(`Couldn't copy the approval in ${key} to ${kindOf(conversation)}: ${errorMessage(error)}`); return null; });
       if (sent?.ok) {
         copies.push({ conversation, id: sent.value });
+        // Saved as each one goes out: a tap on this copy while the next is still being sent is found.
+        updateJob(key, (latest) => {
+          const open = cardOf(latest);
+          return open?.requestId === card.requestId && open.nonce === card.nonce ? { phase: waitFor(latest.phase, { ...open, mirrors: [...copies] }) } : {};
+        });
         events('approval_copied', { key, requestId: card.requestId, chat: kindOf(conversation) });
       } else if (sent) logger.info(`Didn't copy the approval in ${key} to ${kindOf(conversation)}: ${sent.why}.`);
     }
-    if (!copies.length) return;
-    updateJob(key, (latest) => {
-      const open = cardOf(latest);
-      return open?.requestId === card.requestId && open.nonce === card.nonce ? { phase: waitFor(latest.phase, { ...open, mirrors: copies }) } : {};
-    });
   };
 
   const showQuestion = async (key: string, job: Job, thread: T3Thread, request: T3QuestionRequest): Promise<void> => {

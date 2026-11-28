@@ -219,7 +219,8 @@ export const createDiscordConnection = (options: DiscordConnectionOptions): Chat
       report('disconnected');
     },
 
-    watch(listener) { listeners.push(listener); },
+    // A state known already (a failed sign-in in identify) is told at once, so the daemon doesn't miss it.
+    watch(listener) { listeners.push(listener); if (state !== null) listener(state); },
 
     async hold(ref, on) {
       // The request is the thread's first message, or a message in a DM: in its conversation either way, unless it was

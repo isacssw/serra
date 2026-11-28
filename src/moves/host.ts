@@ -31,6 +31,8 @@ import {
 } from '../profile-backup.ts';
 import { serviceHost, type ServiceDriver, type ServiceHost } from '../service.ts';
 import { createStore } from '../state.ts';
+import { readTasks } from '../tasks.ts';
+import { acpRunState } from '../agent/runs-view.ts';
 import { holdPath, isHold, type Hold, type HoldStep } from './hold.ts';
 import { SECRET_NAMES } from '../secrets.ts';
 
@@ -165,6 +167,22 @@ const jobCounts = (profileDir: string): { running: number; waiting: number } => 
   return { running, waiting };
 };
 
+/**
+ * The app's tasks and interviews (`tasks.json`) on an ACP agent that are still going, from their run records. A T3
+ * task's state is only known to T3, so it isn't counted here.
+ */
+const appTaskRuns = (profileDir: string): { running: number; waiting: number } => {
+  let running = 0;
+  let waiting = 0;
+  for (const task of readTasks(profileDir)) {
+    if (!task.backend?.startsWith('acp')) continue;
+    const state = acpRunState(profileDir, task.threadId);
+    if (state?.waiting) waiting += 1;
+    else if (state?.running) running += 1;
+  }
+  return { running, waiting };
+};
+
 /** The folders a profile works in, which must be on the computer it runs on. */
 const workPaths = (profile: Profile): string[] => [...new Set([profile.project.path, ...(profile.repositories ?? []).map((repo) => repo.path)])];
 
@@ -263,8 +281,10 @@ export const localMoveHost = (deps: LocalMoveDeps): MoveHost => {
       // Renewed on every look, so a long drain never outlives it. `bot-update` is the reason every daemon knows.
       pauseIntake(dir, 'bot-update', { now: now() });
       const counts = jobCounts(dir);
+      // The app's own tasks and interviews on an ACP agent run outside state.json: wait for them too.
+      const runs = appTaskRuns(dir);
       const ack = readAck(dir, now());
-      return { running: counts.running + (ack?.starting ?? 0), waiting: counts.waiting };
+      return { running: counts.running + runs.running + (ack?.starting ?? 0), waiting: counts.waiting + runs.waiting };
     },
 
     async later(profile) {
@@ -422,8 +442,8 @@ export const localMoveHost = (deps: LocalMoveDeps): MoveHost => {
         fixPaths(dir, mapped);
         await deps.secrets.write(dir, secrets);
         await deps.install(dir);
-        // Up: the arrival's record has done its job.
-        rmSync(staging, { recursive: true, force: true });
+        // Up. The arrival's record stays until the move ends (`discard`): if this answer is lost, `fail` still knows
+        // the folder is this move's arrival and stops it before the source runs again.
         return;
       }
       // A restore: today's folder goes aside with the host's own files (the bot's code, its tokens) carried over.
@@ -438,10 +458,17 @@ export const localMoveHost = (deps: LocalMoveDeps): MoveHost => {
         renameSync(dir, join(staging, 'old'));
         renameSync(data, dir);
       }
+      // The pause the drain left came over with the host's files: the restored bot takes new requests again.
+      resumeIntake(dir);
       const hold = readHold(meta.profile);
       const file = hold?.serviceFile ?? null;
       if (file && existsSync(`${file}.held`)) renameSync(`${file}.held`, file);
-      if (file && existsSync(file)) await startService(dir, file);
+      // Started only if it ran before the restore, as `resume` does.
+      if (hold?.wasLoaded && file && existsSync(file)) {
+        // The committed hold stays (archive ends it), but the restored copy itself may start.
+        writeHold(meta.profile, { ...hold, starting: true });
+        await startService(dir, file);
+      }
     },
 
     async live(profile) {
@@ -473,6 +500,9 @@ export const localMoveHost = (deps: LocalMoveDeps): MoveHost => {
       }
       // A restore that didn't start: today's copy goes back, with its own files.
       if (!existsSync(join(staging, 'old'))) return;
+      // Held again, so nothing starts the copy that failed; `resume` starts today's copy and ends the hold.
+      const held = readHold(profile);
+      if (held?.starting) writeHold(profile, { ...held, starting: false });
       try { await driver.stop(label(dir)); } catch { /* not running */ }
       if (existsSync(dir)) renameSync(dir, join(staging, 'failed'));
       for (const name of meta?.carried ?? []) {

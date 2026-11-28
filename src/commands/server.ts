@@ -133,14 +133,14 @@ const runGateway = async (context: CommandContext, root: string): Promise<void> 
 };
 
 /** Writes the gateway's systemd user unit and starts it (Linux). No root: the user's own manager. */
-const installGateway = async (root: string, log: (text: string) => void): Promise<void> => {
+const installGateway = async (root: string, flags: readonly string[], log: (text: string) => void): Promise<void> => {
   if (process.platform !== 'linux') throw new Error('--install sets up a systemd user service, on Linux. On a Mac, the app runs the profiles.');
   const entry = fileURLToPath(new URL('../manage.ts', import.meta.url));
   const unitDir = join(process.env.XDG_CONFIG_HOME || join(homedir(), '.config'), 'systemd/user');
   mkdirSync(unitDir, { recursive: true });
   mkdirSync(join(root, 'gateway'), { recursive: true, mode: 0o700 });
   const path = join(unitDir, `${GATEWAY_LABEL}.service`);
-  writeFileSync(path, gatewayUnit({ node: process.execPath, entry, root }), { mode: 0o644 });
+  writeFileSync(path, gatewayUnit({ node: process.execPath, entry, root, flags }), { mode: 0o644 });
   await systemdDriver().start(path);
   log(`The gateway runs as ${GATEWAY_LABEL}. Logs: ${join(root, 'gateway/gateway.log')}`);
 };
@@ -243,7 +243,11 @@ const command: Command = {
         return;
       }
       case 'gateway':
-        if (flag('--install')) { await installGateway(root, log); return; }
+        if (flag('--install')) {
+          const port = option('--port');
+          await installGateway(root, [...(port === undefined ? [] : ['--port', port]), ...all(args, '--listen').flatMap((address) => ['--listen', address])], log);
+          return;
+        }
         await runGateway(context, root);
         return;
       case 'pair':

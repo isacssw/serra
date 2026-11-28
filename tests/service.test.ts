@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import test, { type TestContext } from 'node:test';
 import { restartBot, startBot, stopBot } from '../src/bot-service.ts';
 import { activate, prepareRelease, rollback } from '../src/deploy.ts';
-import { hasServiceHost, serviceHost, serviceUnit, systemdDriver, systemdHost, type ServiceDriver } from '../src/service.ts';
+import { gatewayUnit, hasServiceHost, serviceHost, serviceUnit, systemdDriver, systemdHost, type ServiceDriver } from '../src/service.ts';
 import { createProfile } from '../src/setup.ts';
 
 const spec = { directory: '/home/you/.local/share/serra/friday', release: '/home/you/.local/share/serra/friday/releases/r1', label: 'dev.serra.friday', node: '/home/you/.local/share/serra/runtime/node-v24/bin/node' };
@@ -23,6 +23,13 @@ test('each supported system gets its own service manager, and others are told to
 test('the systemd unit lives in the user config folder, and XDG_CONFIG_HOME moves it', () => {
   assert.equal(systemdHost('/home/you', {}).dir, '/home/you/.config/systemd/user');
   assert.equal(systemdHost('/home/you', { XDG_CONFIG_HOME: '/home/you/cfg' }).dir, '/home/you/cfg/systemd/user');
+});
+
+test('the gateway unit serves the profiles folder it was installed for, on the port and addresses it was given', () => {
+  const unit = gatewayUnit({ node: '/usr/bin/node', entry: '/home/you/serra/src/manage.ts', root: '/srv/serra', flags: ['--port', '47821', '--listen', '100.64.0.2'] }, '/home/you');
+  const exec = unit.split('\n').find((line) => line.startsWith('ExecStart='));
+  assert.match(exec ?? '', /"server" "gateway" "--root" "\/srv\/serra" "--port" "47821" "--listen" "100\.64\.0\.2"$/);
+  assert.match(unit, /\/srv\/serra\/gateway\/gateway\.log/);
 });
 
 test('the systemd unit runs the release daemon for the profile, restarts it and logs to the profile', () => {

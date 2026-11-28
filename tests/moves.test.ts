@@ -23,6 +23,7 @@ import { newJournal, readJournal, runMove, saveJournal, settle, type MoveJournal
 import { secretPort } from '../src/moves/secret-port.ts';
 import { backupProfile, listBackups } from '../src/profile-backup.ts';
 import { createProfile } from '../src/setup.ts';
+import { startTask } from '../src/tasks.ts';
 import type { ServiceDriver, ServiceHost } from '../src/service.ts';
 import { startDaemon } from '../src/daemon.ts';
 import { loadConfig } from '../src/config.ts';
@@ -51,7 +52,11 @@ const fakeService = (dir: string) => {
     loaded: async (label) => loaded.has(label),
     stop: async (label) => { loaded.delete(label); },
     start: async (path) => { const label = basename(path, '.plist'); loaded.add(label); started.push(label); },
-    ready: async (profileDir) => { writeFileSync(join(profileDir, 'ready.json'), JSON.stringify({ pid: process.pid })); },
+    // Like the real daemon (`startDaemon`), a held profile never comes up.
+    ready: async (profileDir) => {
+      if (heldForMove(profileDir)) throw new Error('This profile is being moved or restored, so it doesn’t start here.');
+      writeFileSync(join(profileDir, 'ready.json'), JSON.stringify({ pid: process.pid }));
+    },
     forget: async () => {},
   };
   const host: ServiceHost = { kind: 'launchd', dir, releaseFile: 'service.plist', fileName: (label) => `${label}.plist`, unit: () => '', driver };
@@ -314,6 +319,38 @@ test('a target that doesn’t start sets its copy aside without tokens, and the 
   assert.doesNotMatch(allText(join(t480.root, 'backups')), /fixturevalue/, 'no token stays on the target');
 });
 
+test('a commit whose answer is lost is undone on the target before the source runs again, so only one side runs', async (t) => {
+  const mac = computer(t, 'this Mac');
+  const t480 = await server(t);
+  const dir = await runningProfile(mac.root, mac.service, folder(t, 'serra-project-'));
+  // The target commits and starts, then the answer never reaches the Mac.
+  const lossy: MoveHost = { ...t480.remote, commit: async (...args) => { await t480.remote.commit(...args); throw new Error('socket hang up'); } };
+  const ended = await move(mac.root, mac.host, lossy).done;
+  assert.equal(ended.state, 'stopped');
+  assert.ok(mac.service.loaded.has('dev.serra.friday'), 'the source runs again');
+  assert.ok(existsSync(join(dir, 'profile.json')));
+  assert.equal(t480.service.loaded.has('dev.serra.friday'), false, 'the target was stopped first');
+  assert.equal(existsSync(join(t480.root, 'friday')), false);
+  assert.equal(readdirSync(join(t480.root, 'backups')).filter((name) => name.endsWith('-failed-move')).length, 1);
+});
+
+test('a move waits for the app’s own tasks on an ACP agent, and no task starts while the profile is held', async (t) => {
+  const mac = computer(t, 'this Mac');
+  const dir = await runningProfile(mac.root, mac.service, folder(t, 'serra-project-'));
+  const task = (threadId: string) => ({ threadId, backend: 'acp:claude', title: 'x', branch: 'serra/x', requester: 'Alex', createdAt: '2026-11-28T10:00:00.000Z' });
+  writeFileSync(join(dir, 'tasks.json'), JSON.stringify([task('s-run'), task('s-ask'), task('s-done')]));
+  mkdirSync(join(dir, 'agent-runs'), { recursive: true });
+  const record = (sessionId: string, extra: object) => writeFileSync(join(dir, 'agent-runs', `${sessionId}.json`),
+    JSON.stringify({ version: 1, sessionId, cwd: dir, entries: [], active: null, ...extra }));
+  record('s-run', { active: 'turn-1' });
+  record('s-ask', { active: 'turn-1', waiting: [{ requestId: 'q1', questions: [] }] });
+  record('s-done', {});
+  assert.deepEqual(await mac.host.drain('friday'), { running: 1, waiting: 1 });
+  await mac.host.later('friday');
+  await mac.host.pause('friday', 'm_abcdefghijkl');
+  await assert.rejects(startTask(dir, 'fix the docs', { fetchBase: async () => {} }), /being moved or restored/);
+});
+
 test('a hold keeps the daemon from starting; it lapses after 10 minutes and the host starts the profile again', async (t) => {
   const t480 = computer(t, 't480');
   const dir = await runningProfile(t480.root, t480.service, folder(t, 'serra-project-'));
@@ -405,6 +442,7 @@ test('a restore puts a backup back in place, saves today’s copy first, and ref
   assert.ok(existsSync(join(dir, 'active.json')));
   assert.ok(mac.service.loaded.has('dev.serra.friday'));
   assert.equal(heldForMove(dir), false);
+  assert.equal(existsSync(join(dir, 'intake-paused.json')), false, 'the restored bot takes new requests');
   const listed = listBackups(join(mac.root, 'backups'));
   const before = listed.find((entry) => entry.kind === 'restore')!;
   assert.equal(before.detail, basename(backup.path));
@@ -484,8 +522,26 @@ test('an update is refused for an older version, a branch, or a folder that isn�
   await assert.rejects(t480.client.update('main'), /isn’t a Serra version/);
   await t480.client.update('0.1.0-alpha.10');
   assert.equal(updateProblem({ root: folder(t, 'serra-x-'), code: folder(t, 'serra-y-'), current: '0.1.0-alpha.9', version: '0.1.0-alpha.10' }), 'Serra on this server isn’t a git checkout. Update it from its terminal.');
-  const state = await t480.client.updateState();
-  assert.deepEqual(state, { update: null, version: '0.1.0-alpha.9' });
+  // The answer already says this update is going, never the last one's ending; a second one waits for it.
+  const state = await t480.client.updateState() as { update: { state: string; to: string } | null };
+  assert.equal(state.update?.state, 'updating');
+  assert.equal(state.update?.to, '0.1.0-alpha.10');
+  await assert.rejects(t480.client.update('0.1.0-alpha.10'), /already running/);
+  // A gateway that can't launch it leaves the state as it was.
+  const away = await server(t, 'x220');
+  mkdirSync(join(away.root, '.git'));
+  await away.gateway.close();
+  const refusing = await startGateway({
+    root: away.root, addresses: ['127.0.0.1'], port: 0, version: '0.1.0-alpha.9',
+    engines: serverEngines({ root: away.root, runtime: { version: '0.1.0-alpha.9', platform: 'linux' }, events: eventLog(), subscribe: () => ({ close() {} }) }),
+    update: { problem: (to) => updateProblem({ root: away.root, code: away.root, current: '0.1.0-alpha.9', version: to }), launch: async () => { throw new Error('Update x220 from its terminal.'); } },
+  });
+  t.after(() => refusing.close());
+  const { cert, fingerprint } = gatewayCert(away.root, 'x220');
+  const token = addDevice(away.root, 'Test Mac 2').token;
+  const client = gatewayClient({ endpoint: async () => ({ host: '127.0.0.1', port: refusing.port }), pin: { cert, fingerprint }, token: async () => token, name: 'x220' });
+  await assert.rejects(client.update('0.1.0-alpha.10'), /from its terminal/);
+  assert.equal(readUpdateState(away.root), null);
 });
 
 test('the window says it in a few words: titles, steps, the stop button, the away line and the update button', () => {

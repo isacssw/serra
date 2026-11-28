@@ -18,6 +18,20 @@ import { receiveTelegramFiles } from './files.ts';
 import { escapeHtml, link, markdownToHtml, messageHtml, plain } from './markup.ts';
 import type { ThreadStore } from '../chat/threads.ts';
 
+/** The most a card's HTML may be: under Telegram's 4096, with room for its entities. */
+const CARD_LIMIT = 4000;
+
+/** `build`'s HTML from `text`, cut until it fits: the text is cut, never the HTML, which Telegram refuses half closed. */
+const fitted = (text: string, build: (text: string) => string): string => {
+  let cut = text;
+  let html = build(cut);
+  while (html.length > CARD_LIMIT && cut.length > 0) {
+    cut = cut.slice(0, Math.floor(cut.length * 0.8));
+    html = build(`${cut}…`);
+  }
+  return html;
+};
+
 export const TELEGRAM = 'telegram';
 /** A Telegram ID (chat or user) as the core keeps it. */
 export const telegramId = (raw: string | number): string => chatId(TELEGRAM, String(raw));
@@ -131,7 +145,6 @@ export const createTelegramChat = ({ api, store, botId, username, owner, names, 
   const questionHtml = (card: QuestionCard, copyOf?: { chat: string; link: string | null }): { html: string; keyboard?: InlineKeyboard } => {
     const question = card.questions[card.index];
     if (!question) throw new Error(`The card has no question ${card.index + 1}`);
-    const head = `<b>I need your input${card.questions.length > 1 ? ` (${card.index + 1}/${card.questions.length})` : ''}.</b>\n${markdownToHtml(question.question)}`;
     const buttons = question.options.length > 0 && !question.multiSelect && question.options.length <= MAX_BUTTONS;
     const listed = question.options.length > 0 && !buttons
       ? `\n\n${question.options.map((option, index) => `${index + 1}. ${escapeHtml(option.label)}${option.description && option.description !== option.label ? ` — ${escapeHtml(option.description)}` : ''}`).join('\n')}`
@@ -142,19 +155,30 @@ export const createTelegramChat = ({ api, store, botId, username, owner, names, 
         : question.multiSelect ? 'Reply with the numbers, like 1,3.' : 'Reply with a number.';
     const who = question.id === 'permission' ? ' Only the bot owner can answer.' : '';
     // A copy is answered by its buttons only: a message here would be a new request, not an answer.
-    const html = (copyOf ? `${head}${listed}\n\n${fromLine(copyOf)}` : `${head}${listed}\n\n<i>${how}${who}</i>`).slice(0, 4000);
+    const cardHtml = (text: string, list = listed): string => {
+      const top = `<b>I need your input${card.questions.length > 1 ? ` (${card.index + 1}/${card.questions.length})` : ''}.</b>\n${markdownToHtml(text)}`;
+      return copyOf ? `${top}${list}\n\n${fromLine(copyOf)}` : `${top}${list}\n\n<i>${how}${who}</i>`;
+    };
+    // The question is cut to fit, never the HTML (a cut tag is refused); a list too long for any room goes, the buttons stay.
+    let html = fitted(question.question, (text) => cardHtml(text));
+    if (html.length > CARD_LIMIT) html = fitted(question.question, (text) => cardHtml(text, ''));
     if (!buttons) return { html };
     return { html, keyboard: question.options.map((option, index) => [{ text: option.label.slice(0, 60), callback_data: questionData(card.nonce, index) }]) };
   };
 
   const answeredHtml = (card: QuestionCard, by?: PersonId, via?: string): string => {
-    const lines = card.questions.flatMap((question) => {
+    const head = via ? `Answered in ${chatName(via)}.` : by ? 'Answer sent. Continuing…' : 'This question is no longer waiting for an answer.';
+    /** Each question cut to `room` characters (an ellipsis after a cut), its answer whole. */
+    const build = (room: number): string => [escapeHtml(head), ...card.questions.flatMap((question) => {
       const answer = Object.hasOwn(card.answers, question.id) ? card.answers[question.id] : undefined;
       const label = (value: string): string => question.options.find((option) => (option.value ?? option.label) === value)?.label ?? value;
-      return answer === undefined ? [] : [`${markdownToHtml(question.question)}\n<b>${escapeHtml(Array.isArray(answer) ? answer.map(label).join(', ') : label(answer))}</b>`];
-    });
-    const head = via ? `Answered in ${chatName(via)}.` : by ? 'Answer sent. Continuing…' : 'This question is no longer waiting for an answer.';
-    return [escapeHtml(head), ...lines].join('\n\n').slice(0, 4000);
+      const text = question.question.length > room ? `${question.question.slice(0, room)}…` : question.question;
+      return answer === undefined ? [] : [`${markdownToHtml(text)}\n<b>${escapeHtml((Array.isArray(answer) ? answer.map(label).join(', ') : label(answer)).slice(0, 300))}</b>`];
+    })].join('\n\n');
+    let room = Math.max(0, ...card.questions.map((question) => question.question.length));
+    let html = build(room);
+    while (html.length > CARD_LIMIT && room > 0) { room = Math.floor(room * 0.8); html = build(room); }
+    return html;
   };
 
   const render = (out: WorkerOut): { html: string; keyboard?: InlineKeyboard } => {

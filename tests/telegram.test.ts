@@ -277,6 +277,29 @@ test('a tool approval in a group shows buttons; only the owner\'s press answers 
   assert.equal(h.slack.callsTo('chat.postMessage').length, 0);
 });
 
+test('a very long approval fits Telegram whole: the question is cut, never a tag, and the answered card too', async (t) => {
+  const { h, tg } = await withTelegram(t);
+  await tg.say({ from: ME, text: 'clean the build folder' });
+  await h.clock.settle();
+  // Under the 2,500 characters a card may show, but longer than Telegram takes once it is HTML.
+  const long = `Run this? ${'**rm** `build/x` and *more* '.repeat(87)}`;
+  h.t3.ask({ requestId: 'req-long', questions: [{ ...approval.questions[0]!, question: long }] });
+  await h.advance(15_000);
+  const card = tg.sent.find((message) => message.keyboard);
+  assert.ok(card?.keyboard, 'the card went out');
+  const balanced = (html: string): void => {
+    assert.ok(html.length <= 4000, `fits (${html.length})`);
+    for (const tag of ['b', 'i', 'code', 'a']) assert.equal((html.match(new RegExp(`<${tag}[ >]`, 'g')) ?? []).length, (html.match(new RegExp(`</${tag}>`, 'g')) ?? []).length, `<${tag}> closed`);
+  };
+  balanced(card.text);
+  assert.match(card.text, /Only the bot owner can answer\.<\/i>$/, 'the end of the card is kept');
+  await tg.click({ from: ME, message: card, data: card.keyboard[0]?.[0]?.callback_data ?? '' });
+  await h.clock.settle();
+  const answered = tg.edits.find((edit) => edit.id === card.id && /Answer sent/.test(edit.text));
+  assert.ok(answered);
+  balanced(answered.text);
+});
+
 test('a photo sent to the bot reaches the worker as a local file, without the token in the brief', async (t) => {
   const { h, tg } = await withTelegram(t);
   await tg.say({ from: ME, text: 'what is on this screen?', photo: true });
@@ -378,6 +401,20 @@ test('a Telegram job shows as Telegram in Jobs, with no Slack link', async () =>
   const { slackThreadLink } = await import('../src/jobs.ts');
   assert.equal(channelTag({ channel: `${TELEGRAM}:${ME}` } as Parameters<typeof channelTag>[0]), 'Telegram');
   assert.equal(slackThreadLink('https://acme.slack.com', `${TELEGRAM}:${ME}`, '105'), undefined);
+});
+
+test('a Telegram that couldn\'t sign in at start says so to a watcher added afterwards, so the app shows it down', async (t) => {
+  const profileDir = mkdtempSync(join(tmpdir(), 'serra-tg-'));
+  t.after(() => rmSync(profileDir, { recursive: true, force: true }));
+  const tg = createFakeTelegram({ token: '3333333:fixturevalue-telegram-2222222222222' });
+  const { connection } = createTelegramConnection({
+    token: () => TELEGRAM_TOKEN, profileDir, bot: { id: String(TELEGRAM_BOT.id), username: TELEGRAM_BOT.username },
+    logger: quiet, clock: { now: () => Date.now() }, fetch: tg.fetch, retryMs: 5,
+  });
+  await connection.identify();
+  const seen: string[] = [];
+  connection.watch((state) => seen.push(state));
+  assert.deepEqual(seen, ['disconnected']);
 });
 
 test('a Telegram token that is refused at start leaves Telegram down and retrying, and Slack starts and answers anyway', async (t) => {
