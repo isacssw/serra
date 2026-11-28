@@ -48,6 +48,8 @@ Rules a tool checks are left out here; `pnpm check` and CI tell you. Humans: [CO
 
 - One problem per PR. Title `type(scope): subject` and branch `type/short-name`: [CONTRIBUTING.md › Naming](CONTRIBUTING.md#naming).
   The `title` check enforces the title. Say in the description which agent and model did the work.
+- No flaky tests. An agent watching or babysitting a PR or CI that meets one fixes its root cause, with a deterministic
+  wait or a proper test, in its own PR. Never rerun, retry, add retries or skip it to get past it; rerun only to diagnose.
 
 ## Never
 
