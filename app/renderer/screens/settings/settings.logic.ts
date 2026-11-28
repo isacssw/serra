@@ -183,7 +183,7 @@ export const ownerForm: SectionForm<'owner'> = {
     const value = { name: form.name ?? '', slackUserId: (form.slackUserId ?? '').trim(), githubLogin: form.githubLogin ?? '' };
     return {
       value,
-      errors: collect({ name: textProblem(value.name, 'Name'), slackUserId: memberIdProblem(value.slackUserId), githubLogin: githubLoginProblem(value.githubLogin) }),
+      errors: collect({ name: textProblem(value.name, 'Name'), slackUserId: value.slackUserId ? memberIdProblem(value.slackUserId) : null, githubLogin: githubLoginProblem(value.githubLogin) }),
     };
   },
 };

@@ -11,10 +11,11 @@ import { DoneStep } from './DoneStep.tsx';
 import { OwnerStep } from './OwnerStep.tsx';
 import { ServiceStep } from './ServiceStep.tsx';
 import {
-  announcement, capitalize, DONE_PATH, FLOW, hasProfile, isNewProfilePath, lockedReason, resumePath, stepDone, stepOpen, SETUP_PATH,
+  announcement, capitalize, DONE_PATH, flowFor, hasProfile, isNewProfilePath, lockedReason, resumePath, stepDone, stepOpen, SETUP_PATH,
 } from './setup.logic.ts';
 import { NewProfileStep } from './NewProfileStep.tsx';
-import type { SetupStepId } from '../../../src/setup.ts';
+import type { SetupChat, SetupStepId } from '../../../src/setup.ts';
+import { ChatTokenStep, YoursStep } from './ChatStep.tsx';
 import type { ReactElement } from 'react';
 import { useSetup } from './SetupState.tsx';
 import { SlackStep } from './SlackStep.tsx';
@@ -26,12 +27,12 @@ const Rail = ({ pathname }: { pathname: string }) => {
   const navigate = useNavigate();
   // Adding a profile: the rail is the new one's, so nothing is done yet and only its first step is open.
   const adding = isNewProfilePath(pathname);
-  const { progress: inUse } = useSetup();
+  const { progress: inUse, chat } = useSetup();
   const progress = adding ? null : inUse;
   return (
     <nav aria-label="Setup steps" className="no-drag">
       <ol className="flex items-center gap-1">
-        {FLOW.map((step, index) => {
+        {flowFor(adding ? 'slack' : chat).map((step, index) => {
           const current = step.path === pathname || (adding && step.id === 'profile');
           const done = stepDone(progress, step.id);
           const open = stepOpen(progress, step.id);
@@ -75,7 +76,7 @@ const Rail = ({ pathname }: { pathname: string }) => {
 export const SetupFlow = () => {
   const { pathname } = useLocation();
   const navigate = useNavigate();
-  const { progress } = useSetup();
+  const { progress, chat } = useSetup();
   const main = useRef<HTMLDivElement>(null);
   const first = useRef(true);
   const onStart = pathname === SETUP_PATH;
@@ -97,8 +98,8 @@ export const SetupFlow = () => {
 
   const profile = hasProfile(progress);
   /** A step not open yet (its prerequisite isn't done) sends the owner to the first one that is. */
-  const guard = (id: SetupStepId, element: ReactElement): ReactElement =>
-    (stepOpen(progress, id) ? element : <Navigate to={resumePath(progress)} replace />);
+  const guard = (id: SetupStepId, element: ReactElement, only?: SetupChat): ReactElement =>
+    (stepOpen(progress, id) && (!only || progress?.chat === only) ? element : <Navigate to={resumePath(progress)} replace />);
   return (
     <div className="flex h-full flex-col bg-canvas" data-serra-main data-serra-setup data-path={pathname}>
       {/* Equal side tracks keep the rail centred on the window; the left one keeps clear of the traffic lights. */}
@@ -114,7 +115,7 @@ export const SetupFlow = () => {
           )}
         </div>
       </div>
-      <p aria-live="polite" className="sr-only">{announcement(pathname)}</p>
+      <p aria-live="polite" className="sr-only">{announcement(pathname, chat)}</p>
       <div ref={main} className="min-h-0 flex-1 overflow-y-auto [scrollbar-gutter:stable]">
         <div key={pathname} className="mx-auto flex min-h-full w-full max-w-[560px] flex-col px-6 pt-6 pb-14 motion-safe:animate-[serra-rise_260ms_ease-out]">
           <Routes>
@@ -122,8 +123,12 @@ export const SetupFlow = () => {
             <Route path="you" element={<YouStep />} />
             <Route path="new" element={<NewProfileStep />} />
             <Route path="new/you" element={<NewProfileForm />} />
-            <Route path="slack" element={guard('slack', <SlackStep />)} />
-            <Route path="owner" element={guard('owner', <OwnerStep />)} />
+            <Route path="slack" element={guard('chat', <SlackStep />, 'slack')} />
+            <Route path="owner" element={guard('owner', <OwnerStep />, 'slack')} />
+            <Route path="telegram" element={guard('chat', <ChatTokenStep chat="telegram" />, 'telegram')} />
+            <Route path="discord" element={guard('chat', <ChatTokenStep chat="discord" />, 'discord')} />
+            <Route path="telegram/yours" element={guard('owner', <YoursStep chat="telegram" />, 'telegram')} />
+            <Route path="discord/yours" element={guard('owner', <YoursStep chat="discord" />, 'discord')} />
             <Route path="service" element={guard('service', <ServiceStep />)} />
             <Route path="done" element={progress && !progress.next ? <DoneStep /> : <Navigate to={progress ? resumePath(progress) : SETUP_PATH} replace />} />
             <Route path="*" element={<Navigate to={SETUP_PATH} replace />} />

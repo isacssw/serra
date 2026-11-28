@@ -16,6 +16,7 @@ import { mod } from '../shell/keys.ts';
 import { othersNeedingYou, profileRows, showsSwitcher } from '../profiles.logic.ts';
 import { resumePath } from '../setup/setup.logic.ts';
 import { useSetup } from '../setup/SetupState.tsx';
+import { useFirstTry } from '../setup/ChatStep.tsx';
 import { Avatar, Badge, BrandMark, Button, Dialog, EmptyState, Page, Select, cx, useToast } from '../ui/index.ts';
 import { registerActions } from '../commands/registry.ts';
 import { RunChat, type ChatRun } from './chat/RunChat.tsx';
@@ -323,6 +324,7 @@ export const Jobs = ({ group }: { group: JobGroup }) => {
   const setup = useSetup();
   // Before setup is done, an empty Needs you isn't good news: say what's missing instead.
   const setupLeft = setup.progress?.next != null;
+  const tryIt = useFirstTry();
   const { load, reload } = useJobs(status?.state);
   const now = useNow(30_000);
   const toast = useToast();
@@ -452,10 +454,10 @@ export const Jobs = ({ group }: { group: JobGroup }) => {
                     <EmptyState
                       className={EMPTY_CLASS}
                       icon={<MessageSquareText size={18} strokeWidth={1.75} />}
-                      title={`Mention @${setup.progress.bot.id} in Slack`}
+                      title={tryIt ? 'Send your first request' : 'No jobs yet'}
                       action={<Button size="sm" icon={<Plus size={14} />} onClick={() => void navigate('/jobs/new')}>New task</Button>}
                     >
-                      Invite it to a channel, then try <span className="whitespace-nowrap text-ink">“@{setup.progress.bot.id} what does this repo do?”</span>
+                      {tryIt && <>{tryIt.lead}{' '}<span className="whitespace-nowrap text-ink">{tryIt.example}</span></>}
                     </EmptyState>
                   )
                   : setupLeft && current.group === 'needs you'

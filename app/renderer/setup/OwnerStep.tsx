@@ -15,7 +15,7 @@ export const OwnerStep = () => {
   const navigate = useNavigate();
   const { progress, refresh } = useSetup();
   const owner = progress?.owner ?? null;
-  const slackReady = stepDone(progress, 'slack');
+  const slackReady = stepDone(progress, 'chat');
   const confirmed = stepDone(progress, 'owner');
   const [id, setId] = useState(owner?.slackUserId ?? '');
   const [busy, setBusy] = useState(false);
@@ -62,7 +62,7 @@ export const OwnerStep = () => {
             {owner && <p className="font-mono text-[12px] text-muted">{owner.slackUserId}</p>}
           </div>
           {confirmed && !editing && <Button size="sm" variant="ghost" onClick={() => setEditing(true)}>Use another ID</Button>}
-          {!slackReady && <Button size="sm" onClick={() => void navigate(pathForStep('slack'))}>Connect Slack</Button>}
+          {!slackReady && <Button size="sm" onClick={() => void navigate(pathForStep('chat'))}>Connect Slack</Button>}
         </div>
         {editing && slackReady && (
           <form className="flex items-start gap-2 pl-8" onSubmit={(event) => { event.preventDefault(); void confirm(id); }}>

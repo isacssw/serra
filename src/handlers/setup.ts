@@ -13,7 +13,7 @@ import type { SecretName } from '../contracts.ts';
 import { secretStatus, type SecretOptions } from '../secrets.ts';
 import {
   certainPresence, confirmOwner, createSetupProfile, detectGithubLogin, detectProject, installService, recordServiceAnswered, setupProgress, slackManifest,
-  summarizeProfile, type InstallOptions, type MemberLookup, type ProfileDraft, type SetupProgress,
+  isSetupChat, summarizeProfile, type InstallOptions, type MemberLookup, type ProfileDraft, type SetupProgress,
 } from '../setup.ts';
 import { run } from '../t3.ts';
 import type { Handlers, SetupDetection } from '../api.ts';
@@ -47,7 +47,7 @@ export interface SetupDeps {
 }
 
 const DRAFT_FIELDS = [
-  'botName', 'botId', 'ownerName', 'ownerSlackUserId', 'githubLogin', 'projectPath', 'remote', 'baseRef', 'githubRepo', 't3Bin', 'directory',
+  'botName', 'botId', 'ownerName', 'ownerSlackUserId', 'githubLogin', 'projectPath', 'remote', 'baseRef', 'githubRepo', 't3Bin', 'directory', 'chat',
 ] as const satisfies readonly (keyof ProfileDraft)[];
 
 /** Copies only the known text fields, so nothing else from the window reaches the service. */
@@ -68,6 +68,11 @@ export const parseDraft = (value: unknown): ProfileDraft => {
   for (const field of ['botId', 'remote', 'baseRef', 'githubRepo', 't3Bin', 'directory'] as const) {
     const item = given.get(field);
     if (item !== undefined) draft[field] = item;
+  }
+  const chat = given.get('chat');
+  if (chat !== undefined && chat !== '') {
+    if (!isSetupChat(chat)) throw new Error('Pick Slack, Telegram or Discord.');
+    draft.chat = chat;
   }
   return draft;
 };
@@ -139,7 +144,9 @@ export const setupHandlers = (context: CoreContext, deps: SetupDeps = {}): Handl
     const directory = context.profileDirOrNull();
     if (!directory) return setupProgress(null, lookup);
     let present: Partial<Record<SecretName, boolean>> | undefined;
-    if (setupProgress(directory, { ...lookup, running: false }).steps.find((step) => step.id === 'slack')?.done) {
+    // Only Slack's tokens are looked for in the Keychain here; a Telegram or Discord bot's chat step reads profile.json.
+    const first = setupProgress(directory, { ...lookup, running: false });
+    if (first.chat === 'slack' && first.steps.find((step) => step.id === 'chat')?.done) {
       present = await presence(directory);
     }
     const base = { ...lookup, ...(present ? { present } : {}) };

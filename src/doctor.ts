@@ -63,7 +63,8 @@ export const diagnose = async (config: Config, { offline = false, nodeBinary, sl
     if (problem) throw new Error(`${path} is Node ${version}. ${problem}`);
     return `${version} (${path}, the Node the bot runs on)`;
   });
-  await check('Tokens', () => {
+  // A bot that isn't on Slack (Telegram or Discord only) has no Slack tokens or account to check.
+  if (config.slack) await check('Tokens', () => {
     if (!/^xoxb-.+/.test(config.botToken) || !/^xapp-.+/.test(config.appToken) || /replace-me|\.\.\./.test(config.botToken + config.appToken)) throw new Error('Set real xoxb and xapp tokens in the profile .env or with pnpm bot secrets set');
     const from = (name: SecretName): string => sourceLabel(secretSource(config.profileDir, name));
     return `Both token types present (bot token from ${from('SLACK_BOT_TOKEN')}, app token from ${from('SLACK_APP_TOKEN')}); values hidden`;
@@ -112,7 +113,7 @@ export const diagnose = async (config: Config, { offline = false, nodeBinary, sl
       if (config.githubLogin && login.toLowerCase() !== config.githubLogin.toLowerCase()) throw new Error(`Expected ${config.githubLogin}; gh uses ${login}`);
       return login;
     });
-    await check('Slack account', () => slack(config.botToken, config.owner));
+    if (config.slack) await check('Slack account', () => slack(config.botToken, config.owner));
   }
   return results;
 };

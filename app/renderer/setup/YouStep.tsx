@@ -13,6 +13,7 @@ import {
   type DraftForm, type NewProfileChoice,
 } from './setup.logic.ts';
 import { setupChanged, useSetup } from './SetupState.tsx';
+import type { SetupChat } from '../../../src/setup.ts';
 
 const step = FLOW[0]!;
 /** The fields under More options. */
@@ -30,7 +31,7 @@ const Existing = () => {
   }, []);
   const rows = [
     ['Bot', progress?.bot ? `${progress.bot.name} · ${progress.bot.id}` : ''],
-    ['You', progress?.owner ? `${progress.owner.name} · ${progress.owner.slackUserId}` : ''],
+    ['You', progress?.owner ? [progress.owner.name, progress.owner.slackUserId].filter(Boolean).join(' · ') : ''],
     ['Repository', repo ?? '…'],
   ];
   return (
@@ -55,7 +56,9 @@ const Existing = () => {
 
 const ProfileForm = ({ adding }: { adding?: NewProfileChoice }) => {
   const navigate = useNavigate();
-  const { refresh } = useSetup();
+  const { refresh, chat: picked } = useSetup();
+  // A new profile from Add… is a Slack bot; first setup uses the chat picked on the first screen.
+  const chat: SetupChat = adding ? 'slack' : picked ?? 'slack';
   const [draft, setDraft] = useState<DraftForm | null>(null);
   const [root, setRoot] = useState('');
   const [touched, setTouched] = useState(false);
@@ -125,7 +128,8 @@ const ProfileForm = ({ adding }: { adding?: NewProfileChoice }) => {
 
   if (!draft) return <p className="text-[13px] text-muted" role="status">Loading…</p>;
 
-  const errors = touched ? draftErrors(draft) : {};
+  const form: DraftForm = { ...draft, chat: adding ? '' : chat, ...(chat === 'slack' ? {} : { ownerSlackUserId: '' }) };
+  const errors = touched ? draftErrors(form) : {};
   const set = (key: keyof DraftForm) => (event: { target: { value: string } }) => {
     setDraft({ ...draft, [key]: event.target.value });
     setError(null);
@@ -152,7 +156,7 @@ const ProfileForm = ({ adding }: { adding?: NewProfileChoice }) => {
 
   const create = async () => {
     setTouched(true);
-    const problems = draftErrors(draft);
+    const problems = draftErrors(form);
     if (Object.keys(problems).length) {
       // Fields Serra fills in itself wait under More options; one to fix there opens it first, so focus can land on it.
       // The GitHub login is in view when `gh` didn't find it.
@@ -171,9 +175,9 @@ const ProfileForm = ({ adding }: { adding?: NewProfileChoice }) => {
       created.current = true;
       if (adding) {
         const eve = adding.eve ? { url: adding.eve.url, team: adding.eve.team, secret, accept: adding.eve.host } : null;
-        await bridge.profiles.create({ draft: draftRequest(draft), color: adding.color, agent: adding.agent, ...(eve ? { eve } : {}) });
+        await bridge.profiles.create({ draft: draftRequest(form), color: adding.color, agent: adding.agent, ...(eve ? { eve } : {}) });
       }
-      else await bridge.setup.create(draftRequest(draft));
+      else await bridge.setup.create(draftRequest(form));
       setupChanged();
       const progress = await refresh();
       void navigate(nextPath(progress, step.path));
@@ -181,12 +185,19 @@ const ProfileForm = ({ adding }: { adding?: NewProfileChoice }) => {
     finally { setBusy(false); }
   };
 
+  const botNameInput = (
+    <Input label="Bot name" placeholder="Friday" value={draft.botName} onChange={set('botName')} error={errors.botName}
+      hint={chat === 'slack' ? 'How it appears in Slack' : undefined} />
+  );
   return (
     <form className="flex flex-1 flex-col gap-5 pb-10" noValidate onSubmit={(event) => { event.preventDefault(); void create(); }}>
       <div className="grid gap-5 sm:grid-cols-2">
         <Input label="Your name" autoComplete="name" placeholder="Alex Morgan" value={draft.ownerName} onChange={set('ownerName')} error={errors.ownerName} />
-        <Input label="Slack member ID" placeholder="U0123456789" inputClassName="font-mono" value={draft.ownerSlackUserId}
-          onChange={set('ownerSlackUserId')} error={errors.ownerSlackUserId} hint="Slack: your profile › ⋮ › Copy member ID" spellCheck={false} />
+        {/* Only Slack needs to know who you are up front; on Telegram and Discord you message the bot later. */}
+        {chat === 'slack' ? (
+          <Input label="Slack member ID" placeholder="U0123456789" inputClassName="font-mono" value={draft.ownerSlackUserId}
+            onChange={set('ownerSlackUserId')} error={errors.ownerSlackUserId} hint="Slack: your profile › ⋮ › Copy member ID" spellCheck={false} />
+        ) : botNameInput}
       </div>
       <div className="flex items-start gap-2">
         <Input label="Repository" placeholder="/Users/you/project" inputClassName="font-mono" className="min-w-0 flex-1" value={draft.projectPath}
@@ -195,11 +206,12 @@ const ProfileForm = ({ adding }: { adding?: NewProfileChoice }) => {
         {/* Level with the field: its label (16px) and the gap under it (6px). */}
         <Button className="mt-[22px]" icon={<FolderOpen size={14} aria-hidden />} onClick={() => void choose()}>Choose…</Button>
       </div>
-      <div className="grid gap-5 sm:grid-cols-2">
-        <Input label="Bot name" placeholder="Friday" value={draft.botName} onChange={set('botName')} error={errors.botName}
-          hint="How it appears in Slack" />
-        {!loginFound && loginInput(draft, set, errors.githubLogin)}
-      </div>
+      {(chat === 'slack' || !loginFound) && (
+        <div className="grid gap-5 sm:grid-cols-2">
+          {chat === 'slack' && botNameInput}
+          {!loginFound && loginInput(draft, set, errors.githubLogin)}
+        </div>
+      )}
       <details ref={more} className="group text-[13px]">
         <summary className="flex w-fit cursor-pointer list-none items-center gap-1 rounded text-[13px] font-medium text-muted hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus [&::-webkit-details-marker]:hidden"><ChevronRight size={13} aria-hidden className="transition-transform group-open:rotate-90" />More options</summary>
         <div className="mt-4 grid gap-4 sm:grid-cols-2">
@@ -225,7 +237,9 @@ const ProfileForm = ({ adding }: { adding?: NewProfileChoice }) => {
 };
 
 export const YouStep = () => {
-  const { progress } = useSetup();
+  const { progress, chat } = useSetup();
+  // Opened before a chat was picked (an old link, a reload of an old draft): the first screen asks first.
+  if (!hasProfile(progress) && chat === null && progress) return <Navigate to={SETUP_PATH} replace />;
   return (
     <div className="flex flex-1 flex-col gap-8">
       <StepHeader step={step} icon={<UserRound size={18} strokeWidth={1.75} />} summary={hasProfile(progress) ? 'Already set up.' : undefined} />

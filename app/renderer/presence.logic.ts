@@ -2,6 +2,7 @@
 // switcher, ⌘K and Settings › Profiles all show. Only the daemon's report decides it, never a timer or a guess: with
 // no report yet it says `checking`. Pure: imported by `node --test` as well as the renderer.
 import type { BotStatus } from '../../src/contracts.ts';
+import { statusChat } from './status.logic.ts';
 
 /** The dot's colour token (`--color-up`, `--color-warn`, `--color-down`, `--color-faint`), a hollow ring (offline), or none. */
 export type Dot = 'up' | 'warn' | 'down' | 'faint' | 'hollow' | 'none';
@@ -33,7 +34,7 @@ export const presence = (status: BotStatus | null, { setupDone = true, server = 
   }
   if (!status) return { dot: 'faint', pulse: true, word: 'checking', phrase: 'checking' };
   if (status.state === 'stopped') return { dot: 'down', pulse: false, word: 'stopped', phrase: 'stopped' };
-  if (!status.slackConnected) return { dot: 'down', pulse: false, word: 'disconnected', phrase: 'Slack disconnected' };
+  if (!status.slackConnected) return { dot: 'down', pulse: false, word: 'disconnected', phrase: `${statusChat(status)} disconnected` };
   const { needsYou, running } = status.counts;
   if (needsYou > 0) return { dot: 'warn', pulse: false, word: 'up', phrase: `${needsYou} ${needsYou === 1 ? 'needs' : 'need'} you` };
   if (running > 0) return { dot: 'up', pulse: false, word: 'up', phrase: `${running} running` };

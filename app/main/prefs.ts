@@ -23,7 +23,7 @@ export interface PrefsStore {
 const themes: readonly Theme[] = ['system', 'light', 'dark'];
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 /** The setup form's fields (`ProfileDraft`), the only keys a saved draft may hold. */
-const DRAFT_FIELDS = ['botName', 'botId', 'ownerName', 'ownerSlackUserId', 'githubLogin', 'projectPath', 'remote', 'baseRef', 'githubRepo', 't3Bin', 'directory'];
+const DRAFT_FIELDS = ['botName', 'botId', 'ownerName', 'ownerSlackUserId', 'githubLogin', 'projectPath', 'remote', 'baseRef', 'githubRepo', 't3Bin', 'directory', 'chat'];
 const MIN_WIDTH = 640;
 const MIN_HEIGHT = 420;
 

@@ -125,7 +125,9 @@ export const validateProfile = (value: unknown): Profile => {
   string(bot, 'name');
   const owner = object('owner');
   string(owner, 'name');
-  if (!/^[UW][A-Z0-9]+$/.test(string(owner, 'slackUserId'))) throw new Error('Invalid owner Slack member ID');
+  // Empty when the owner talks to the bot only on Telegram or Discord: the bot then runs without Slack.
+  const slackUserId = owner.slackUserId;
+  if (slackUserId !== '' && !/^[UW][A-Z0-9]+$/.test(string(owner, 'slackUserId'))) throw new Error('Invalid owner Slack member ID');
   if (!/^[\w-]+$/.test(string(owner, 'githubLogin'))) throw new Error('Invalid GitHub login');
   const project = object('project');
   if (!isAbsolute(string(project, 'path'))) throw new Error('Project path must be absolute');
@@ -263,6 +265,8 @@ export interface Config {
   telegram?: TelegramChannel & { token: string };
   /** The Discord bot, when the owner connected one. Its token is read on first use. */
   discord?: DiscordChannel & { token: string };
+  /** Whether the bot is on Slack: the owner has a Slack member ID. A Telegram- or Discord-only bot has none. */
+  slack: boolean;
 }
 
 /** Every bot runs from a profile. The code checkout holds no owner settings, brief, knowledge, or state. */
@@ -302,13 +306,14 @@ export const loadConfig = ({ profileDir = profileArgument(), env = process.env }
     reviewChannel: profile.review?.channel, reviewRepos: profile.review?.repositories ?? [],
     repositories,
     workerProvider: profile.worker?.provider, workerModel: profile.worker?.model,
-    allowed: new Set([owner, ...profile.allowedUsers]),
+    allowed: new Set([...(owner ? [owner] : []), ...profile.allowedUsers]),
     messageTriggers: profile.messageTriggers ?? [],
     briefPath: join(directory, 'brief.md'), knowledgeDir: join(directory, 'knowledge'),
     statePath: join(directory, 'state.json'),
     t3Bin: profile.t3Bin ?? values.T3_BIN?.trim() ?? join(homedir(), '.t3/bin/t3'),
     serviceLabel: profile.serviceLabel ?? `dev.serra.${profile.bot.id}`,
     branchPattern: profile.branchPattern ?? DEFAULT_BRANCH_PATTERN,
+    slack: owner !== '',
     ...(telegram ? { telegram: { ...telegram, get token() { return telegramToken(); } } } : {}),
     ...(discord ? { discord: { ...discord, get token() { return discordToken(); } } } : {}),
   };

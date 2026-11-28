@@ -1142,13 +1142,17 @@ interface FirstRunScreen {
   heading: string | null;
   /** Enabled primary buttons in view: each step has exactly one way on. */
   primary: string[];
+  /** The welcome's chat choices: three equals, none picked. */
+  choices: number;
   words: number;
-  /** Power features a first run must not mention (profiles, servers, other chats, cloud agents). */
+  /** Wording a first run must not show: power features (profiles, servers, cloud agents) and their jargon. */
   extras: string[];
 }
 
-/** What a first-run screen shows, read in the page. */
-const firstRunScreenScript = `(() => {
+/** What a first-run screen shows, read in the page. Toasts left by earlier checks are dismissed first. */
+const firstRunScreenScript = `(async () => {
+  for (const b of document.querySelectorAll('button[aria-label="Dismiss"]')) b.click();
+  await new Promise((r) => setTimeout(r, 250));
   const main = document.querySelector('[data-serra-main]');
   const visible = (el) => el.checkVisibility ? el.checkVisibility({ visibilityProperty: true }) : el.offsetParent !== null;
   const primary = [...document.querySelectorAll('button')].filter((b) => /(^|\\s)bg-accent(\\s|$)/.test(b.className) && !b.disabled && b.getAttribute('aria-disabled') !== 'true' && visible(b)).map((b) => b.textContent.trim());
@@ -1162,15 +1166,16 @@ const firstRunScreenScript = `(() => {
     if (!visible(el)) continue;
     words += count(node.textContent); shown += ' ' + node.textContent;
   }
-  const extras = ['server', 'telegram', 'discord', 'eve', 'vercel', 'profiles', '1password'].filter((w) => new RegExp('\\\\b' + w + '\\\\b', 'i').test(shown));
-  return { hash: location.hash, heading: main?.querySelector('h1')?.textContent ?? null, primary, words, extras };
+  const extras = ['server', 'servers', 'host', 'pairing', 'paired', 'cloud', 'eve', 'vercel', 'profiles', '1password'].filter((w) => new RegExp('\\\\b' + w + '\\\\b', 'i').test(shown));
+  return { hash: location.hash, heading: main?.querySelector('h1')?.textContent ?? null, primary, choices: document.querySelectorAll('[data-chat]').length, words, extras };
 })()`;
 
 /**
- * A brand-new owner's first run, end to end, with fakes (no Slack, Keychain or launchd): the welcome, the profile
- * form, Slack with no tokens and then with fixture tokens checked, the owner confirmed, the install, the end, and the
- * screen setup lands on. Each screen has one primary action, few words, and says nothing of profiles, servers, other
- * chats or cloud agents. `SERRA_SMOKE_SHOTS` saves each in light and dark as `first-run-<theme>-<n>-<step>.png`.
+ * A brand-new owner's first run, end to end, with fakes (no Slack, Telegram, Keychain or launchd), once on Slack and
+ * once on Telegram: the welcome's one question (where to talk to the agent), the profile form, connecting the chat
+ * (fixture tokens marked checked; a fixture Telegram bot), the install, making it yours, the end, and where setup
+ * lands. Each screen has one primary action and few words, and never says server, host, pairing, cloud or profiles.
+ * `SERRA_SMOKE_SHOTS` saves each in light and dark as `first-run-<theme>-<n>-<step>.png`.
  */
 const runFirstRunChecks = async (window: BrowserWindow): Promise<string[]> => {
   const failures: string[] = [];
@@ -1180,7 +1185,7 @@ const runFirstRunChecks = async (window: BrowserWindow): Promise<string[]> => {
   const repo = join(root, 'project');
   mkdirSync(repo, { recursive: true });
   const run = async <T>(script: string): Promise<T> => await window.webContents.executeJavaScript(script) as T;
-  const helpers = `const wait = async (check) => { for (let i = 0; i < 100 && !check(); i++) await new Promise((r) => setTimeout(r, 50)); return check(); };
+  const helpers = `const wait = async (check, tries = 100) => { for (let i = 0; i < tries && !check(); i++) await new Promise((r) => setTimeout(r, 50)); return check(); };
     const settle = () => new Promise((r) => setTimeout(r, 450));
     const button = (text) => [...document.querySelectorAll('button')].find((b) => b.textContent.trim().startsWith(text));
     const type = (input, value) => { if (!input) return; Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, value); input.dispatchEvent(new Event('input', { bubbles: true })); };
@@ -1195,7 +1200,7 @@ const runFirstRunChecks = async (window: BrowserWindow): Promise<string[]> => {
     screens[step] = screen;
     if (want.primary !== null && screen.primary.length !== want.primary) failures.push(`first run ${step}: ${screen.primary.length} primary buttons (${screen.primary.join(', ')}), not ${want.primary}`);
     if (screen.words > want.maxWords) failures.push(`first run ${step}: ${screen.words} words on screen, more than ${want.maxWords}`);
-    if (screen.extras.length) failures.push(`first run ${step}: mentions ${screen.extras.join(', ')}`);
+    if (screen.extras.length) failures.push(`first run ${step}: says ${screen.extras.join(', ')}`);
     // Setup has no sidebar, so the theme is picked on Appearance (opened by its address) and the step opened again.
     const pick = async (theme: 'light' | 'dark' | 'system'): Promise<void> => {
       await run(`(async () => { ${helpers} location.hash = '#/settings/appearance'; await wait(() => document.querySelector('[data-serra-sidebar]')); })()`);
@@ -1205,97 +1210,141 @@ const runFirstRunChecks = async (window: BrowserWindow): Promise<string[]> => {
       await pick(theme);
       const report = await run<ContrastReport>(contrastScript(screen.hash));
       for (const item of report.low) failures.push(`first run ${theme} ${step}: "${item.text}" reads at ${item.ratio}:1`);
-      if (shots) writeFileSync(join(shots, `first-run-${theme}-${n}-${step}.png`), (await window.webContents.capturePage()).toPNG());
+      if (shots) writeFileSync(join(shots, `first-run-${theme}-${String(n).padStart(2, '0')}-${step}.png`), (await window.webContents.capturePage()).toPNG());
     }
     await pick('system');
     await run(`(async () => { ${helpers} location.hash = ${JSON.stringify(screen.hash)}; await settle(); })()`);
   };
-  let server: Awaited<ReturnType<typeof startStatusServer>> | null = null;
-  let directory = '';
-  // A new owner's window: the size prefs start with.
-  const [width, height] = window.getSize();
-  window.setSize(1100, 720);
-  try {
-    // 1. The welcome, with no profile anywhere.
+  const servers: Awaited<ReturnType<typeof startStatusServer>>[] = [];
+  const now = new Date().toISOString();
+  /** The installed bot answering on its chat: `active.json`, the answer in setup.json, and a fake status socket. */
+  const answering = async (directory: string, chat: string, setup: Record<string, unknown>): Promise<void> => {
+    writeFileSync(join(directory, 'active.json'), `${JSON.stringify({ version: 1 })}\n`);
+    writeFileSync(join(directory, 'setup.json'), `${JSON.stringify({ version: 1, ...setup, serviceAnsweredAt: now }, null, 2)}\n`);
+    servers.push(await startStatusServer({ profileDir: directory, status: () => ({ state: 'up', pid: process.pid, startedAt: now, slackConnected: true, chats: [{ kind: chat, connected: true }], counts: { needsYou: 0, running: 0 } }) }));
+  };
+  /** From a clean slate to the welcome, then the chat picked and the form filled; the profile's folder, or null. */
+  const start = async (chat: 'slack' | 'telegram' | 'discord', bot: string, welcome: boolean): Promise<string | null> => {
     await run(`(async () => { ${helpers}
       await window.serra.app.setPrefs({ profileDir: null, setupDraft: null });
       window.dispatchEvent(new Event('serra:setup-changed'));
-      location.hash = '#/setup';
-      await wait(() => button('Get started'));
+      location.hash = '#/jobs/needs-you'; await settle(); location.hash = '#/setup';
+      // The first screen waits for the profile folders to be read; a busy machine can take a few seconds.
+      await wait(() => document.querySelectorAll('[data-chat]').length === 3, 400);
     })()`);
-    await capture('welcome', { primary: 1, maxWords: 45 });
-    // 2. The profile form: fill what Serra can't find, in a throwaway folder.
+    if (welcome) {
+      await capture('welcome', { primary: 0, maxWords: 45 });
+      if (screens.welcome?.choices !== 3) failures.push(`first run: the welcome offers ${screens.welcome?.choices} chats, not Slack, Telegram and Discord`);
+    }
     await run(`(async () => { ${helpers}
-      button('Get started')?.click();
+      document.querySelector('[data-chat="${chat}"]')?.click();
       await wait(() => document.querySelector('[data-serra-setup] form'));
       await settle();
     })()`);
-    await capture('you', { primary: 1, maxWords: 70 });
-    const created = await run<string | null>(`(async () => { ${helpers}
+    await capture(`${chat}-you`, { primary: 1, maxWords: 50 });
+    const askedForId = await run<boolean>(`Boolean([...document.querySelectorAll('label')].find((l) => l.textContent.trim() === 'Slack member ID'))`);
+    if (askedForId !== (chat === 'slack')) failures.push(`first run ${chat}: the form ${askedForId ? 'asks' : 'doesn’t ask'} for a Slack member ID`);
+    const path = `#/setup/${chat}`;
+    return run<string | null>(`(async () => { ${helpers}
       type(field('Your name'), 'Alex Morgan');
       type(field('GitHub login'), 'octocat');
       type(field('Slack member ID'), 'U0123456789');
-      type(field('Folder') ?? field('Repository'), ${JSON.stringify(repo)});
-      type(field('Base branch (optional)') ?? field('Base branch'), 'origin/main');
-      type(field('GitHub repository (optional)') ?? field('GitHub repository'), 'acme/project');
-      type(field('Name') ?? field('Bot name'), 'Friday');
-      type(field('Profile folder'), ${JSON.stringify(join(root, 'friday'))});
+      type(field('Repository'), ${JSON.stringify(repo)});
+      type(field('Base branch'), 'origin/main');
+      type(field('GitHub repository'), 'acme/project');
+      type(field('Bot name'), ${JSON.stringify(bot)});
+      type(field('Profile folder'), ${JSON.stringify(join(root, bot.toLowerCase()))});
       await settle();
       document.querySelector('[data-serra-setup] form button[type="submit"]')?.click();
-      await wait(() => location.hash === '#/setup/slack');
-      return location.hash === '#/setup/slack' ? (await window.serra.app.getPrefs()).profileDir : null;
+      await wait(() => location.hash === '${path}');
+      return location.hash === '${path}' ? (await window.serra.app.getPrefs()).profileDir : null;
     })()`);
-    if (!created) { failures.push('first run: Create profile did not go on to Slack'); return failures; }
-    directory = created;
-    // 3. Slack, nothing pasted yet.
+  };
+  /** Open Serra from the end, and check where it lands. */
+  const home = async (chat: string): Promise<void> => {
+    await run(`(async () => { ${helpers} button('Open Serra')?.click(); await wait(() => document.querySelector('[data-serra-sidebar]')); })()`);
+    await capture(`${chat}-home`, { primary: null, maxWords: 90 });
+    if (!screens[`${chat}-home`]?.hash.startsWith('#/jobs')) failures.push(`first run ${chat}: Open Serra opened ${screens[`${chat}-home`]?.hash}, not Jobs`);
+  };
+  const [width, height] = window.getSize();
+  window.setSize(1100, 720);
+  try {
+    // Slack: the app and its two tokens, your member ID, the install.
+    const slack = await start('slack', 'Friday', true);
+    if (!slack) { failures.push('first run slack: the form did not go on to Slack'); return failures; }
     await run(`(async () => { ${helpers} await wait(() => document.querySelector('[data-token]')); })()`);
-    await capture('slack', { primary: 1, maxWords: 70 });
-    // 3b. Fixture tokens, already checked (as if pasted and accepted), and the owner Slack confirmed.
-    const now = new Date().toISOString();
-    writeFileSync(join(directory, '.env'), 'SLACK_BOT_TOKEN=xoxb-1111-2222-fixturevalue\nSLACK_APP_TOKEN=xapp-1-1111-2222-fixturevalue\n', { mode: 0o600 });
-    writeFileSync(join(directory, 'secrets.json'), `${JSON.stringify({ version: 1, sources: { SLACK_BOT_TOKEN: { kind: 'env' }, SLACK_APP_TOKEN: { kind: 'env' } }, checks: { SLACK_BOT_TOKEN: { verifiedAt: now, error: null }, SLACK_APP_TOKEN: { verifiedAt: now, error: null } } }, null, 2)}\n`);
-    writeFileSync(join(directory, 'setup.json'), `${JSON.stringify({ version: 1, owner: { slackUserId: 'U0123456789', slackName: 'alex', checkedAt: now } }, null, 2)}\n`);
+    await capture('slack-connect', { primary: 1, maxWords: 60 });
+    // Fixture tokens, already checked (as if pasted and accepted), and the owner Slack confirmed.
+    const owner = { slackUserId: 'U0123456789', slackName: 'alex', checkedAt: now };
+    writeFileSync(join(slack, '.env'), 'SLACK_BOT_TOKEN=xoxb-1111-2222-fixturevalue\nSLACK_APP_TOKEN=xapp-1-A111-2222-fixturevalue\n', { mode: 0o600 });
+    writeFileSync(join(slack, 'secrets.json'), `${JSON.stringify({ version: 1, sources: { SLACK_BOT_TOKEN: { kind: 'env' }, SLACK_APP_TOKEN: { kind: 'env' } }, checks: { SLACK_BOT_TOKEN: { verifiedAt: now, error: null }, SLACK_APP_TOKEN: { verifiedAt: now, error: null } } }, null, 2)}\n`);
+    writeFileSync(join(slack, 'setup.json'), `${JSON.stringify({ version: 1, owner }, null, 2)}\n`);
     await run(`(async () => { ${helpers}
       location.hash = '#/setup/you'; await settle(); location.hash = '#/setup/slack';
       window.dispatchEvent(new Event('serra:setup-changed'));
       await wait(() => [...document.querySelectorAll('[data-token]')].every((row) => row.dataset.state === 'verified'));
     })()`);
-    await capture('slack-connected', { primary: 1, maxWords: 70 });
-    // 4. The owner (already confirmed by the fixture), then the install.
-    const reached = await run<string>(`(async () => { ${helpers}
-      button('Continue')?.click();
-      await wait(() => location.hash !== '#/setup/slack');
-      await settle();
-      return location.hash;
-    })()`);
-    if (reached === '#/setup/owner') {
-      await capture('owner', { primary: 1, maxWords: 40 });
-      await run(`(async () => { ${helpers} button('Continue')?.click(); await wait(() => location.hash === '#/setup/service'); })()`);
-    }
-    const onService = await run<boolean>(`(async () => { ${helpers} await wait(() => location.hash === '#/setup/service'); return location.hash === '#/setup/service'; })()`);
-    if (!onService) { failures.push(`first run: Slack's Continue went to ${reached}, not the next step`); return failures; }
-    await capture('install', { primary: 1, maxWords: 45 });
-    // 5. Installed and answering: a fake status socket says the bot is up and on Slack.
-    writeFileSync(join(directory, 'active.json'), `${JSON.stringify({ version: 1 })}\n`);
-    writeFileSync(join(directory, 'setup.json'), `${JSON.stringify({ version: 1, owner: { slackUserId: 'U0123456789', slackName: 'alex', checkedAt: now }, serviceAnsweredAt: now }, null, 2)}\n`);
-    server = await startStatusServer({ profileDir: directory, status: () => ({ state: 'up', pid: process.pid, startedAt: now, slackConnected: true, chats: [{ kind: 'slack', connected: true }], counts: { needsYou: 0, running: 0 } }) });
-    const done = await run<boolean>(`(async () => { ${helpers}
+    await capture('slack-connected', { primary: 1, maxWords: 60 });
+    // The owner is already confirmed by the fixture, so Continue goes straight to the install.
+    const onService = await run<boolean>(`(async () => { ${helpers} button('Continue')?.click(); await wait(() => location.hash === '#/setup/service'); return location.hash === '#/setup/service'; })()`);
+    if (!onService) { failures.push('first run slack: Continue did not open the install'); return failures; }
+    await capture('slack-install', { primary: 1, maxWords: 45 });
+    await answering(slack, 'slack', { owner });
+    const slackDone = await run<boolean>(`(async () => { ${helpers}
       window.dispatchEvent(new Event('serra:setup-changed'));
-      await wait(() => button('Continue') && button('Continue').getAttribute('aria-disabled') !== 'true');
+      await wait(() => button('Continue'));
       button('Continue')?.click();
-      // The end's main button is Open Serra once the status says the bot is up and on Slack.
+      // The end's main button is Open Serra once the status says the bot is up and on its chat.
       await wait(() => location.hash === '#/setup/done' && /bg-accent/.test(button('Open Serra')?.className ?? ''));
       return location.hash === '#/setup/done';
     })()`);
-    if (!done) { failures.push('first run: the install step did not reach the end'); return failures; }
-    await capture('done', { primary: 1, maxWords: 30 });
-    // 6. Where setup lands: the shell, with nothing of profiles, servers or other chats in view.
-    await run(`(async () => { ${helpers} button('Open Serra')?.click(); await wait(() => document.querySelector('[data-serra-sidebar]')); })()`);
-    await capture('home', { primary: null, maxWords: 90 });
-    if (!screens.home?.hash.startsWith('#/jobs')) failures.push(`first run: Open Serra opened ${screens.home?.hash}, not Jobs`);
+    if (!slackDone) { failures.push('first run slack: the install step did not reach the end'); return failures; }
+    await capture('slack-done', { primary: 1, maxWords: 30 });
+    await home('slack');
+
+    // Telegram and Discord: the bot's token, the install, then you make it yours in the chat (tap Start; send the code).
+    const other = async (chat: 'telegram' | 'discord', name: string, bot: Record<string, string>, ownerId: string, open: string): Promise<boolean> => {
+      const directory = await start(chat, name, false);
+      if (!directory) { failures.push(`first run ${chat}: the form did not go on to ${chat}`); return false; }
+      await capture(`${chat}-connect`, { primary: 1, maxWords: 45 });
+      // A fixture bot, as Connect leaves it once the chat accepted the token.
+      const profile = JSON.parse(readFileSync(join(directory, 'profile.json'), 'utf8')) as Record<string, unknown>;
+      writeFileSync(join(directory, 'profile.json'), `${JSON.stringify({ ...profile, channels: { [chat]: { bot } } }, null, 2)}\n`);
+      const service = await run<boolean>(`(async () => { ${helpers}
+        location.hash = '#/setup/you'; window.dispatchEvent(new Event('serra:setup-changed')); await settle(); location.hash = '#/setup/${chat}';
+        await wait(() => button('Continue'));
+        button('Continue')?.click();
+        await wait(() => location.hash === '#/setup/service');
+        return location.hash === '#/setup/service';
+      })()`);
+      if (!service) { failures.push(`first run ${chat}: connecting did not open the install`); return false; }
+      await capture(`${chat}-install`, { primary: 1, maxWords: 45 });
+      await answering(directory, chat, { chat });
+      const yours = await run<boolean>(`(async () => { ${helpers}
+        window.dispatchEvent(new Event('serra:setup-changed'));
+        await wait(() => button('Continue'));
+        button('Continue')?.click();
+        await wait(() => location.hash === '#/setup/${chat}/yours' && button(${JSON.stringify(open)}));
+        return Boolean(button(${JSON.stringify(open)}));
+      })()`);
+      if (!yours) { failures.push(`first run ${chat}: the install did not open Make it yours`); return false; }
+      await capture(`${chat}-yours`, { primary: 1, maxWords: 40 });
+      // Made yours in the chat: the step sees it and opens the end by itself.
+      writeFileSync(join(directory, 'profile.json'), `${JSON.stringify({ ...profile, channels: { [chat]: { bot, ownerId } } }, null, 2)}\n`);
+      const done = await run<boolean>(`(async () => { ${helpers}
+        await wait(() => location.hash === '#/setup/done' && /bg-accent/.test(button('Open Serra')?.className ?? ''), 200);
+        return location.hash === '#/setup/done';
+      })()`);
+      if (!done) { failures.push(`first run ${chat}: making it yours did not open the end by itself`); return false; }
+      await capture(`${chat}-done`, { primary: 1, maxWords: 30 });
+      await home(chat);
+      return true;
+    };
+    if (!await other('telegram', 'Scout', { id: '1111111', username: 'scout_serra_bot' }, '2222222', 'Open in Telegram')) return failures;
+    if (!await other('discord', 'Atlas', { id: '1111111111111111111', username: 'atlas-serra', applicationId: '1111111111111111111' }, '3333333333333333333', 'Add to Discord')) return failures;
     console.log('[serra] smoke first run:', JSON.stringify(Object.fromEntries(Object.entries(screens).map(([step, s]) => [step, { words: s.words, primary: s.primary }]))));
   } finally {
-    if (server) await server.close().catch(() => {});
+    for (const server of servers) await server.close().catch(() => {});
     await run(themeControlScript('system')).catch(() => null);
     await run(`(async () => { await window.serra.app.setPrefs({ profileDir: null, setupDraft: null }); window.dispatchEvent(new Event('serra:setup-changed')); })()`).catch(() => null);
     window.setSize(width ?? 1100, height ?? 720);

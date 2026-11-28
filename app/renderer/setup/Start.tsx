@@ -1,32 +1,22 @@
 // Setup's first screen. A first-time owner gets a short welcome and what they'll need. When a profile already exists
 // (made by the CLI, an older app, or a setup left halfway) it shows what was found and resumes at the first missing
 // step; with several profiles and none chosen, it asks which one.
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
-import { ArrowRight, FolderOpen, SquareTerminal } from 'lucide-react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { ArrowRight, FolderOpen } from 'lucide-react';
 import { useNavigate } from 'react-router';
 import type { SetupDetection } from '../../main/bridge.ts';
-import type { ProfileSummary } from '../../../src/setup.ts';
+import type { ProfileSummary, SetupChat } from '../../../src/setup.ts';
 import { serra } from '../bridge.ts';
 import { defaultPath } from '../routes.ts';
 import { BrandMark, Button, cx } from '../ui/index.ts';
 import serraIcon from '../../../assets/brand/serra-icon.png';
 import { Alert, Card, errorText, StateIcon } from './parts.tsx';
-import { FLOW, foundLine, hasProfile, pickable, resumePath, shortPath, slackRefused, startView, summaryRows, type StartView } from './setup.logic.ts';
+import { CHAT_CHOICES, FLOW, foundLine, hasProfile, pickable, resumePath, shortPath, slackRefused, startView, summaryRows, type StartView } from './setup.logic.ts';
 import { setupChanged, useSetup } from './SetupState.tsx';
-
-const Need = ({ icon, title, detail }: { icon: ReactNode; title: string; detail: string }) => (
-  <li className="flex items-center gap-3.5 px-4 py-3.5">
-    <span aria-hidden className="grid size-9 shrink-0 place-items-center rounded-lg border border-line bg-canvas text-ink">{icon}</span>
-    <span className="flex min-w-0 flex-col">
-      <span className="text-[14px] font-medium">{title}</span>
-      <span className="text-[13px] text-muted">{detail}</span>
-    </span>
-  </li>
-);
 
 const Found = ({ summary, home }: { summary: ProfileSummary; home: string }) => {
   // A row with something to fix (a refused token, a bot not connected to Slack) says so, done or not.
-  const problem = (id: string): boolean => (id === 'slack' && slackRefused(summary.tokens)) || (id === 'service' && summary.service === 'disconnected');
+  const problem = (id: string): boolean => (id === 'chat' && summary.chat === 'slack' && slackRefused(summary.tokens)) || (id === 'service' && summary.service === 'disconnected');
   return (
   <Card>
     <div className="flex items-baseline justify-between gap-3 border-b border-line-subtle px-4 py-3.5">
@@ -53,7 +43,7 @@ const Found = ({ summary, home }: { summary: ProfileSummary; home: string }) => 
 
 const Picker = ({ profiles, chosen, onChoose }: { profiles: ProfileSummary[]; chosen: string | null; onChoose: (dir: string) => void }) => (
   <fieldset className="flex flex-col gap-2">
-    <legend className="mb-2 text-[13px] text-muted">Serra found {profiles.length === 1 ? 'a bot' : `${profiles.length} bots`} on this Mac. Which one is this?</legend>
+    <legend className="mb-2 text-[13px] text-muted">Pick your bot. Serra found {profiles.length === 1 ? 'one' : profiles.length} on this Mac.</legend>
     {profiles.map((profile) => {
       const id = `pick-${profile.bot?.id ?? profile.profileDir}`;
       const selected = chosen === profile.profileDir;
@@ -83,7 +73,8 @@ const Picker = ({ profiles, chosen, onChoose }: { profiles: ProfileSummary[]; ch
 
 export const Start = () => {
   const navigate = useNavigate();
-  const { progress, refresh } = useSetup();
+  const { progress, refresh, chooseChat } = useSetup();
+  const pick = async (chat: SetupChat): Promise<void> => { await chooseChat(chat); void navigate(FLOW[0]!.path); };
   const [detection, setDetection] = useState<SetupDetection | null>(null);
   const [view, setView] = useState<StartView | null>(null);
   const [chosen, setChosen] = useState<string | null>(null);
@@ -150,21 +141,34 @@ export const Start = () => {
       {error && <Alert>{error}</Alert>}
 
       {view === 'fresh' && (
-        <div className="flex flex-col gap-6">
-          <section aria-labelledby="needs" className="flex flex-col gap-2">
-            <h2 id="needs" className="px-1 text-[13px] text-muted">You’ll need</h2>
-            <Card>
-              <ul className="flex flex-col divide-y divide-line-subtle">
-                <Need icon={<BrandMark brand="slack" />} title="A Slack workspace" detail="Where you can add an app" />
-                <Need icon={<BrandMark brand="github" />} title="A repository" detail="Open in T3 Code" />
-                <Need icon={<SquareTerminal size={16} strokeWidth={1.75} />} title="A coding agent" detail="Signed in, like Claude or Codex" />
-              </ul>
-            </Card>
+        <div className="flex flex-col gap-7">
+          {/* The one question a first run asks. Three equal choices, none picked for you. */}
+          <section aria-labelledby="where" className="flex flex-col gap-3">
+            <h2 id="where" className="text-center text-[15px] font-medium">Where do you want to talk to your agent?</h2>
+            <ul className="grid gap-3 sm:grid-cols-3">
+              {CHAT_CHOICES.map((choice) => (
+                <li key={choice.id}>
+                  <button
+                    type="button"
+                    data-chat={choice.id}
+                    onClick={() => void pick(choice.id)}
+                    className={cx(
+                      'flex w-full flex-col items-center gap-2.5 rounded-xl border border-line-strong bg-panel px-4 py-5 shadow-field transition-colors duration-150',
+                      'hover:border-line-strong hover:bg-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus',
+                    )}
+                  >
+                    <span aria-hidden className="grid size-10 place-items-center rounded-[10px] border border-line bg-canvas text-ink"><BrandMark brand={choice.id} size={20} /></span>
+                    <span className="flex flex-col gap-0.5">
+                      <span className="text-[14px] font-medium">{choice.name}</span>
+                      <span className="text-[13px] text-muted">{choice.detail}</span>
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
           </section>
-          <div className="flex flex-col items-center gap-3">
-            <Button variant="primary" className="h-10 px-5 text-[14px]" onClick={() => void navigate(FLOW[0]!.path)}>
-              Get started<ArrowRight size={16} aria-hidden />
-            </Button>
+          <div className="flex flex-col items-center gap-2">
+            <p className="max-w-sm text-center text-xs text-faint">Needs a repository in T3 Code and a signed-in coding agent.</p>
             <Button variant="ghost" size="sm" className="text-muted" icon={<FolderOpen size={14} aria-hidden />} onClick={() => void openFolder()} disabled={busy}>
               Open an existing profile…
             </Button>
@@ -204,7 +208,7 @@ export const Start = () => {
               {busy ? 'Opening…' : `Continue with ${profiles.find((p) => p.profileDir === chosen)?.bot?.name ?? 'this bot'}`}<ArrowRight size={16} aria-hidden />
             </Button>
             <div className="flex flex-wrap justify-center gap-1">
-              {!selected && <Button variant="ghost" size="sm" className="text-muted" onClick={() => void navigate(FLOW[0]!.path)}>Set up a new bot</Button>}
+              {!selected && <Button variant="ghost" size="sm" className="text-muted" onClick={() => setView('fresh')}>Set up a new bot</Button>}
               <Button variant="ghost" size="sm" className="text-muted" icon={<FolderOpen size={14} aria-hidden />} onClick={() => void openFolder()} disabled={busy}>
                 Open another profile…
               </Button>
