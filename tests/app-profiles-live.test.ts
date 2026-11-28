@@ -20,7 +20,7 @@ import { avatarLetters, multiTrayView, rowPresence, trayView, worstIcon, type Tr
 import { presence } from '../app/renderer/presence.logic.ts';
 import { lettersFor, othersNeedingYou, profileRows, withPresence } from '../app/renderer/profiles.logic.ts';
 import type { BotEvent, BotStatus, StatusMessage } from '../src/contracts.ts';
-import type { ServiceDriver } from '../src/deploy.ts';
+import type { ServiceDriver } from '../src/service.ts';
 import { readPause } from '../src/intake.ts';
 import { createProfile } from '../src/setup.ts';
 import { startStatusServer, type UpStatus } from '../src/status-socket.ts';
