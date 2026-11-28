@@ -8,7 +8,9 @@
 // `answer` field titled with the question). `session/load` reopens a session (writes
 // `load-<id>`). Images a prompt carries are written to `images-<n>` (their MIME types); `IMAGE_OUT` sends a PNG back.
 // `STREAM` sends part of the reply and starts a tool before the turn's text is known; the tool fails when it ends.
-// FAKE_ACP_NO_IMAGES: the agent says it takes no images. Run: node tests/fakes/acp-agent.ts
+// `OPTS:<kind>,<kind>` sets the permission choices `ASK` offers (default: allow_once and reject_once).
+// FAKE_ACP_NO_IMAGES: the agent says it takes no images. FAKE_ACP_MODES=none: it has no modes, like eve.
+// FAKE_ACP_NO_SET_MODE: it refuses every mode switch. Run: node tests/fakes/acp-agent.ts
 import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { Readable, Writable } from 'node:stream';
@@ -25,6 +27,12 @@ const next = (name: string): number => {
   return value;
 };
 const cancelled = new Set<string>();
+/** FAKE_ACP_MODES as JSON, like Claude Code's (starting in `auto`); `none`, like eve; a default and a read-only mode otherwise. */
+const modes = (): acp.SessionModeState | undefined => {
+  const raw = process.env.FAKE_ACP_MODES;
+  if (raw === 'none') return undefined;
+  return raw ? JSON.parse(raw) as acp.SessionModeState : { currentModeId: 'default', availableModes: [{ id: 'default', name: 'Default' }, { id: 'read-only', name: 'Read only' }] };
+};
 
 const waitFor = async (file: string, sessionId: string): Promise<string | null> => {
   for (;;) {
@@ -40,16 +48,14 @@ const app = acp.agent({ name: 'fake-acp' })
     const session = next('session');
     put(join(dir, `session-${session}`), params.cwd);
     put(join(dir, `process-cwd-${session}`), process.cwd());
-    // FAKE_ACP_MODES: the agent's modes as JSON, like Claude Code's (starting in `auto`); a default and a read-only mode otherwise.
-    const modes = process.env.FAKE_ACP_MODES ? JSON.parse(process.env.FAKE_ACP_MODES) as acp.SessionModeState : { currentModeId: 'default', availableModes: [{ id: 'default', name: 'Default' }, { id: 'read-only', name: 'Read only' }] };
-    return { sessionId: `session-${session}`, modes };
+    return { sessionId: `session-${session}`, modes: modes() };
   })
   .onRequest(acp.methods.agent.session.load, ({ params }) => {
     put(join(dir, `load-${params.sessionId}`), params.cwd);
-    const modes = process.env.FAKE_ACP_MODES ? JSON.parse(process.env.FAKE_ACP_MODES) as acp.SessionModeState : { currentModeId: 'default', availableModes: [{ id: 'default', name: 'Default' }, { id: 'read-only', name: 'Read only' }] };
-    return { modes };
+    return { modes: modes() };
   })
   .onRequest(acp.methods.agent.session.setMode, ({ params }) => {
+    if (process.env.FAKE_ACP_NO_SET_MODE) throw acp.RequestError.internalError(undefined, 'no mode switch');
     put(join(dir, `mode-${params.sessionId}`), params.modeId);
     return {};
   })
@@ -72,10 +78,13 @@ const app = acp.agent({ name: 'fake-acp' })
     if (codexFail) throw acp.RequestError.internalError({ message: `SECRET-TRANSCRIPT ${text.slice(0, 40)}`, codexErrorInfo: codexFail });
     const ask = /ASK:(\w+)/.exec(text)?.[1];
     if (ask) {
+      // Option ids: `yes`/`no` for the once kinds, `always-yes`/`always-no` for the always ones.
+      const ids: Record<string, string> = { allow_once: 'yes', reject_once: 'no', allow_always: 'always-yes', reject_always: 'always-no' };
+      const kinds = (/OPTS:([\w,]+)/.exec(text)?.[1] ?? 'allow_once,reject_once').split(',') as acp.PermissionOptionKind[];
       const answer = await client.request(acp.methods.client.session.requestPermission, {
         sessionId: params.sessionId,
-        toolCall: { toolCallId: `ask-${turn}`, title: `a ${ask} tool`, kind: ask as acp.ToolKind },
-        options: [{ optionId: 'yes', name: 'Allow', kind: 'allow_once' }, { optionId: 'no', name: 'Reject', kind: 'reject_once' }],
+        toolCall: { toolCallId: `ask-${turn}`, title: ask === 'restart' ? 'restart_service' : `a ${ask} tool`, kind: (ask === 'restart' ? 'other' : ask) as acp.ToolKind },
+        options: kinds.map((kind): acp.PermissionOption => ({ optionId: ids[kind] ?? kind, name: kind, kind })),
       });
       put(join(dir, `permission-${turn}`), answer.outcome.outcome === 'selected' ? answer.outcome.optionId : 'cancelled');
     }

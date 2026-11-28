@@ -489,6 +489,134 @@ test('ACP: a streaming turn is written to its record as it goes, and the chat re
   } finally { await backend.close(); }
 });
 
+/** A git repo with one commit, for job runs in a worktree. */
+const gitRepo = (dir: string): string => {
+  const repo = join(dir, 'repo');
+  mkdirSync(repo, { recursive: true });
+  execFileSync('git', ['-C', repo, 'init', '-q', '-b', 'main']);
+  execFileSync('git', ['-C', repo, '-c', 'user.name=You', '-c', 'user.email=you@example.com', 'commit', '-q', '--allow-empty', '-m', 'start']);
+  return repo;
+};
+
+/** Agents that can't be put in a full-access mode: none of them may run a tool before a person allows it. */
+const askingAgents = (agent: AcpAgent, app: string): [string, AcpAgent][] => [
+  ['eve by URL, no folder', { ...agent, args: [...agent.args, 'acp', '--url', 'http://127.0.0.1:2417'], env: { ...agent.env, FAKE_ACP_MODES: 'none' } }],
+  ['a local agent with no modes, no folder', { ...agent, env: { ...agent.env, FAKE_ACP_MODES: 'none' } }],
+  ['a local agent with no full-access mode', agent],
+  ['an agent that refuses the switch to full access', { ...agent, env: { ...agent.env, FAKE_ACP_NO_SET_MODE: '1', FAKE_ACP_MODES: JSON.stringify({ currentModeId: 'default', availableModes: [{ id: 'default', name: 'Default' }, { id: 'bypassPermissions', name: 'Bypass' }] }) } }],
+  ['eve in its own folder', { ...agent, cwd: app, env: { ...agent.env, FAKE_ACP_MODES: 'none' } }],
+];
+
+test('ACP: a job on an agent with no full-access mode (eve, by URL or local, with or without a folder) runs a tool only after a person allows it', async (t) => {
+  const fake = fakeAcp(t);
+  const repo = gitRepo(fake.dir);
+  const app = join(fake.dir, 'eve-app');
+  mkdirSync(app);
+  let turn = 0;
+  for (const [name, agent] of askingAgents(fake.agent, app)) {
+    const backend = fake.backend({ agent });
+    try {
+      turn += 1;
+      const threadId = await backend.start({ workspace: { kind: 'worktree', project: repo, baseRef: 'main', branch: `serra/${turn}` }, title: name, brief: 'ASK:restart' });
+      const request = await waitingOn(backend, threadId);
+      assert.ok(request, `${name}: the approval waits as a card`);
+      assert.deepEqual(request.questions.map((question) => [question.id, question.question, question.options.map((option) => option.label)]),
+        [['permission', 'Fake Agent wants to: restart_service', ['Allow', 'Deny']]], name);
+      await new Promise((resolve) => { setTimeout(resolve, 50); });
+      assert.equal(fake.read(`permission-${turn}`), null, `${name}: nothing is allowed before a person answers`);
+      assert.equal((await backend.read(threadId)).thread.pendingRequestCount, 1, `${name}: the job waits`);
+      await backend.questions!.answer(threadId, request.requestId, { permission: 'yes' });
+      await until(() => fake.read(`permission-${turn}`) !== null);
+      assert.equal(fake.read(`permission-${turn}`), 'yes', `${name}: Allow allows once`);
+      fake.reply('restarted', turn);
+      assert.equal((await backend.wait(threadId, { ...fast, after: null })).kind, 'settled');
+
+      turn += 1;
+      await backend.send(threadId, 'ASK:restart again');
+      const second = await waitingOn(backend, threadId);
+      assert.ok(second, `${name}: asked again, a card again`);
+      await backend.questions!.answer(threadId, second.requestId, { permission: 'no' });
+      await until(() => fake.read(`permission-${turn}`) !== null);
+      assert.equal(fake.read(`permission-${turn}`), 'no', `${name}: Deny refuses`);
+      fake.reply('ok', turn);
+      await backend.wait(threadId, { ...fast, after: 'run-1' });
+    } finally { await backend.close(); }
+  }
+});
+
+test('ACP: the card maps Allow and Deny to the choices the agent offers, and a request without both is refused, never allowed', async (t) => {
+  const fake = fakeAcp(t);
+  const repo = gitRepo(fake.dir);
+  const backend = fake.backend({ runsDir: agentRunsDir(fake.dir), agent: { ...fake.agent, env: { ...fake.agent.env, FAKE_ACP_MODES: 'none' } } });
+  try {
+    // Only "always" choices: Allow and Deny answer with them.
+    const threadId = await backend.start({ workspace: { kind: 'worktree', project: repo, baseRef: 'main', branch: 'serra/opts' }, title: 'opts', brief: 'ASK:restart OPTS:allow_always,reject_always' });
+    const request = await waitingOn(backend, threadId);
+    assert.deepEqual(request!.questions[0]!.options.map((option) => [option.label, option.value]), [['Allow', 'always-yes'], ['Deny', 'always-no']]);
+    await backend.questions!.answer(threadId, request!.requestId, { permission: 'always-yes' });
+    await until(() => fake.read('permission-1') !== null);
+    assert.equal(fake.read('permission-1'), 'always-yes');
+    fake.reply('ok', 1);
+    await backend.wait(threadId, { ...fast, after: null });
+
+    // Both kinds: Allow is the once choice, never the always one.
+    await backend.send(threadId, 'ASK:restart OPTS:allow_always,allow_once,reject_always,reject_once');
+    const both = await waitingOn(backend, threadId);
+    assert.deepEqual(both!.questions[0]!.options.map((option) => option.value), ['yes', 'no']);
+    await backend.questions!.answer(threadId, both!.requestId, { permission: 'no' });
+    await until(() => fake.read('permission-2') !== null);
+    assert.equal(fake.read('permission-2'), 'no');
+    fake.reply('ok', 2);
+    await backend.wait(threadId, { ...fast, after: 'run-1' });
+
+    // No reject choice to put on a card: refused at once, and the chat says it was denied.
+    await backend.send(threadId, 'ASK:restart OPTS:allow_once,allow_always');
+    await until(() => fake.read('permission-3') !== null);
+    assert.equal(fake.read('permission-3'), 'cancelled', 'not allowed');
+    fake.reply('ok', 3);
+    await backend.wait(threadId, { ...fast, after: 'run-2' });
+    const asked = acpChat(fake.dir, threadId)!.lines.filter((line) => line.ask === 'permission').map((line) => line.outcome);
+    assert.deepEqual(asked, ['allowed', 'denied', 'denied']);
+  } finally { await backend.close(); }
+});
+
+test('ACP: an approval no one answers is never allowed: a wait times out still waiting, and a stop, a close or the agent going away refuse it', async (t) => {
+  const fake = fakeAcp(t);
+  const repo = gitRepo(fake.dir);
+  const agent = { ...fake.agent, env: { ...fake.agent.env, FAKE_ACP_MODES: 'none' } };
+  const start = async (backend: AgentBackend, branch: string): Promise<string> => {
+    const threadId = await backend.start({ workspace: { kind: 'worktree', project: repo, baseRef: 'main', branch }, title: branch, brief: 'ASK:restart' });
+    assert.ok(await waitingOn(backend, threadId));
+    return threadId;
+  };
+  const backend = fake.backend({ agent });
+  try {
+    const stopped = await start(backend, 'serra/stop');
+    const timedOut = await backend.wait(stopped, { ...fast, after: null, timeoutMs: 50 });
+    assert.equal(timedOut.kind, 'pending', 'a wait ends on the approval, not on an answer');
+    assert.equal(fake.read('permission-1'), null, 'and nothing is allowed');
+    await backend.interrupt(stopped, 'job timed out');
+    await until(() => fake.read('permission-1') !== null);
+    assert.equal(fake.read('permission-1'), 'cancelled', 'a stop refuses it');
+    assert.deepEqual(await backend.questions!.list(stopped), []);
+    await start(backend, 'serra/close');
+  } finally { await backend.close(); }
+  await until(() => fake.read('permission-2') !== null || fake.children.every((child) => !alive(child)));
+  assert.notEqual(fake.read('permission-2'), 'yes', 'closing Serra never allows it');
+  const gone = fake.backend({ agent });
+  try {
+    const threadId = await start(gone, 'serra/gone');
+    fake.children.at(-1)!.kill('SIGKILL');
+    let left = 1;
+    for (const end = Date.now() + 10_000; left > 0 && Date.now() < end;) {
+      left = (await gone.questions!.list(threadId)).length;
+      await new Promise((resolve) => { setTimeout(resolve, 5); });
+    }
+    assert.equal(left, 0, 'the card goes away with the agent');
+    assert.equal(fake.read('permission-3'), null, 'and the tool never ran');
+  } finally { await gone.close(); }
+});
+
 /** A Slack attachment line as `receiveAttachments` writes it, for a PNG saved in `root`. */
 const attachment = (root: string, name: string): string => {
   mkdirSync(root, { recursive: true });
