@@ -153,7 +153,7 @@ check('lint: every suppression covers one line, names its rule and says why, aft
 
 check('imports: the core reaches Slack and the WorkerWriter by no dynamic import() or require() either', () => {
   // .oxlintrc.json's import rules see static imports only. These files may load Slack (see the overrides there).
-  const boltOk = /^src\/(slack\/|daemon\.ts$|index\.ts$|setup\.ts$|doctor\.ts$|secrets\.ts$|slack-names\.ts$|logging\.ts$)/;
+  const boltOk = /^src\/(slack\/|daemon\.ts$|setup\.ts$|doctor\.ts$|secrets\.ts$|slack-names\.ts$)/;
   const adapterOk = /^src\/(slack\/|daemon\.ts$)/;
   // Any dynamic import, a template or a variable included: only a literal can be checked, so the core may use none of
   // the others to reach Slack.
@@ -258,7 +258,7 @@ const exceptionsNow = (): Set<string> => {
 // A reviewed change to the gates (any change but removing exceptions): the fingerprint the check below prints for it.
 // It covers main's version and this one, so it only ever matches the change it was made for.
 // Changing this line is how a PR says "this changes what the gates enforce, on purpose"; the reviewer sees both.
-const ACKNOWLEDGED_GATE_CHANGE = '05571595774c0bb7';
+const ACKNOWLEDGED_GATE_CHANGE = '27b0d35f76df841d';
 
 check('gates: unchanged against main, except exceptions removed (lint, knip, tsconfigs, scripts, gitleaks, CI)', () => {
   const commit = base();

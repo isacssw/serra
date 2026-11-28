@@ -76,6 +76,8 @@ export interface DaemonHarnessOptions {
   meetings?: DaemonDeps['meetings'];
   /** Downloads a message's files. None by default. */
   receive?: DaemonDeps['receive'];
+  /** More chats beside Slack (`second-chat.ts`), connected on every boot. */
+  chats?: DaemonDeps['chats'];
 }
 
 export interface DaemonHarness {
@@ -117,6 +119,7 @@ export const startTestDaemon = async (t: TestContext, options: DaemonHarnessOpti
         reviewRequest: async (text) => ({ reply: text, postedFor: null }), ...options.bot,
       },
       receive: options.receive ?? (async () => ''),
+      ...(options.chats ? { chats: options.chats } : {}),
       checkAccess: options.checkAccess ?? (async () => {}), lock: () => () => {}, statusSocket: false, watchProfile: false, pid: 4242,
       // Never the real Claude Code: a test that sends a meeting passes its own extractor.
       meetings: { extractor: { extract: async () => { throw new Error('no extractor in this test'); } }, sources: { fetchTranscript: async () => { throw new Error('no sources in this test'); } }, ...options.meetings },

@@ -56,7 +56,7 @@
       }
     },
     {
-      // The daemon wires the Slack adapter in.
+      // The daemon wires the chat adapters in (src/slack/connection.ts builds Bolt's app).
       "files": ["src/daemon.ts"],
       "rules": {
         "react/rules-of-hooks": "off",
@@ -68,10 +68,9 @@
       }
     },
     {
-      // Setup, doctor, secrets, Slack names and the Bolt logger still call Slack's API themselves until the profile is
-      // per channel (architecture review, seam F). They use @slack/bolt, not the adapter.
-      // index.ts builds Bolt's app for the daemon.
-      "files": ["src/index.ts", "src/setup.ts", "src/doctor.ts", "src/secrets.ts", "src/slack-names.ts", "src/logging.ts"],
+      // Setup, doctor, secrets and Slack names still call Slack's API themselves until the profile is per chat
+      // (architecture review, seam F). They use @slack/bolt, not the adapter.
+      "files": ["src/setup.ts", "src/doctor.ts", "src/secrets.ts", "src/slack-names.ts"],
       "rules": {
         "react/rules-of-hooks": "off",
         "no-restricted-imports": ["error", { "patterns": [

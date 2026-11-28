@@ -239,7 +239,8 @@ export const createSlackChat = ({ client, owner, botUserId, botToken, profileDir
   });
 
   const chat: ChatPort = {
-    self: botUserId,
+    self: () => botUserId(),
+    owner: () => owner,
 
     async displayName(person) {
       const known = displayNames.get(person);
@@ -251,9 +252,9 @@ export const createSlackChat = ({ client, owner, botUserId, botToken, profileDir
       return name;
     },
 
-    parse,
+    parse: (_conversation, text) => parse(text),
 
-    async read(text, nameOf) {
+    async read(_conversation, text, nameOf) {
       const { mentions, prose } = parse(text);
       const names = new Map<string, string>();
       for (const person of mentions) if (person !== botUserId()) names.set(person, await nameOf(person));
@@ -285,7 +286,7 @@ export const createSlackChat = ({ client, owner, botUserId, botToken, profileDir
       return { lines, more: replies.has_more === true };
     },
 
-    receiveFiles: (files, limit) => receive(client, files, profileDir, botToken, { limit }),
+    receiveFiles: (_conversation, files, limit) => receive(client, files, profileDir, botToken, { limit }),
 
     permalink: (ref) => client.chat.getPermalink({ channel: ref.conversation, message_ts: ref.id })
       .then((result) => result.permalink ?? null, () => null),

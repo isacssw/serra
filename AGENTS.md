@@ -20,11 +20,18 @@ Rules a tool checks are left out here; `pnpm check` and CI tell you. Humans: [CO
   `src/` only from the pure modules listed in `.oxlintrc.json`. Everything else goes through `window.serra`, typed by
   `SerraApi` in `app/main/bridge.ts`.
 - `*.logic.ts` is the pure, tested half of a screen or service: no React, Electron or `node:` values. Put logic there.
-- The core reaches Slack only through `ChatPort` (`src/chat/port.ts`), implemented in `src/slack/`; `src/daemon.ts`
-  wires it in, and still parses Slack's inbound events. Worker words go out only through `deliver`
-  (`src/chat/deliver.ts`), the one holder of a `WorkerWriter`: it asks who can see the target, and runs the page
-  check, right before each write. `index.ts`, setup, doctor, secrets, Slack names and logging still use `@slack/bolt`
-  directly (one exception list).
+- The core reaches a chat only through `ChatPort` (`src/chat/port.ts`). Each chat is a `ChatConnection`
+  (`src/chat/connection.ts`: sign-in, inbound messages and card answers, the ⏳ hold, meeting capture's seam), made
+  by its adapter as a `ChatAdapter` with its `WorkerWriter` (`src/chat/deliver.ts`). Slack's is
+  `src/slack/connection.ts`, which owns Bolt. `src/daemon.ts` starts every connection and gives the bot one port over
+  all of them (`src/chat/router.ts`), routed by the chat each ID names: `kind:id`, Slack's bare (`kindOf`, `chatId`).
+  The bot's owner checks use `chat.owner(id)`, the owner's ID in that chat, never `config.owner` (Slack's).
+- Worker words go out only through `deliver` (`src/chat/deliver.ts`), the one holder of the writers: it picks the
+  target's chat's writer, asks that chat who can see the target, and runs the page check, right before each write.
+  Setup, doctor, secrets and Slack names still use `@slack/bolt` directly (one exception list).
+- A new chat is an adapter folder beside `src/slack/` (with `src/slack/**`'s lint override, so it may hold a writer)
+  returning a `ChatAdapter`, passed to the daemon's `chats`; no change to the core. `tests/fakes/second-chat.ts` is
+  one, and `tests/chats.test.ts` shows what each must do.
 
 ## Rules the tools don't check
 
