@@ -380,6 +380,20 @@ test('a Telegram job shows as Telegram in Jobs, with no Slack link', async () =>
   assert.equal(slackThreadLink('https://acme.slack.com', `${TELEGRAM}:${ME}`, '105'), undefined);
 });
 
+test('a Telegram that couldn\'t sign in at start says so to a watcher added afterwards, so the app shows it down', async (t) => {
+  const profileDir = mkdtempSync(join(tmpdir(), 'serra-tg-'));
+  t.after(() => rmSync(profileDir, { recursive: true, force: true }));
+  const tg = createFakeTelegram({ token: '3333333:fixturevalue-telegram-2222222222222' });
+  const { connection } = createTelegramConnection({
+    token: () => TELEGRAM_TOKEN, profileDir, bot: { id: String(TELEGRAM_BOT.id), username: TELEGRAM_BOT.username },
+    logger: quiet, clock: { now: () => Date.now() }, fetch: tg.fetch, retryMs: 5,
+  });
+  await connection.identify();
+  const seen: string[] = [];
+  connection.watch((state) => seen.push(state));
+  assert.deepEqual(seen, ['disconnected']);
+});
+
 test('a Telegram token that is refused at start leaves Telegram down and retrying, and Slack starts and answers anyway', async (t) => {
   const tg = createFakeTelegram({ token: '3333333:fixturevalue-telegram-2222222222222' });
   const warnings: string[] = [];
