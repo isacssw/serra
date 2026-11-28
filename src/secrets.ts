@@ -11,8 +11,9 @@
  */
 import { execFile, spawnSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { isAbsolute, join, resolve } from 'node:path';
 import type { Profile, SecretName, SecretSource, SecretStatus } from './contracts.ts';
+import { findExecutable } from './exec.ts';
 import { writeFileAtomic } from './lib/atomic.ts';
 import { readEnv } from './lib/env.ts';
 
@@ -21,18 +22,19 @@ export const SECRET_NAMES: readonly SecretName[] = ['SLACK_BOT_TOKEN', 'SLACK_AP
 
 /** The external tools and how long each may take. Tests point these at fake binaries. */
 export interface SecretTools {
-  /** The macOS `security` CLI, or null where there is no Keychain (Linux). */
-  security: string | null;
+  /** The macOS `security` CLI. Where it can't be found (Linux) there is no Keychain. */
+  security: string;
   /** The 1Password CLI. */
   op: string;
   timeoutMs: number;
 }
 // 30 s leaves time for a 1Password unlock prompt.
-const DEFAULT_SECRET_TOOLS: SecretTools = { security: process.platform === 'darwin' ? 'security' : null, op: 'op', timeoutMs: 30_000 };
+const DEFAULT_SECRET_TOOLS: SecretTools = { security: 'security', op: 'op', timeoutMs: 30_000 };
 
-/** The `security` CLI, or a clear error where there is no Keychain. */
+/** The `security` CLI, or a clear error where there is none, so no Keychain (Linux). */
 const keychain = (tools: SecretTools): string => {
-  if (tools.security === null) throw new Error('The Keychain is only on macOS. Use 1Password or the profile .env here.');
+  const found = isAbsolute(tools.security) ? existsSync(tools.security) : findExecutable(tools.security, process.env.PATH ?? '') !== null;
+  if (!found) throw new Error('The Keychain is only on macOS. Use 1Password or the profile .env here.');
   return tools.security;
 };
 

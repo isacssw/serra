@@ -111,7 +111,7 @@ test('setSecret stores a Keychain value through stdin, never argv, and loadConfi
 
 test('without a Keychain (Linux), a Keychain source is refused with the alternatives and nothing changes', async (t) => {
   const f = fixture(t);
-  const linux = { tools: { ...f.tools, security: null } };
+  const linux = { tools: { ...f.tools, security: join(f.bin, 'no-security-here') } };
   const source = { kind: 'keychain' as const, service: 'dev.serra.friday', account: 'SLACK_BOT_TOKEN' };
   await assert.rejects(setSecret(f.dir, 'SLACK_BOT_TOKEN', source, BOT, linux), /Keychain is only on macOS\. Use 1Password or the profile \.env/);
   await assert.rejects(setSecret(f.dir, 'SLACK_BOT_TOKEN', source, undefined, linux), /only on macOS/);
