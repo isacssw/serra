@@ -44,3 +44,28 @@ Without systemd (WSL, a container), run the bot in the foreground: `pnpm start -
 
 Put the Slack tokens in the profile's `.env` (created private, mode 600) or point them at 1Password
 (`serra secrets set SLACK_BOT_TOKEN --1password op://vault/item/field --profile …`). The Keychain is macOS only.
+
+## Pair the Mac app
+
+The Mac app can reach the server's profiles through Serra's gateway. It listens only on the server's own
+`127.0.0.1` and its [Tailscale](https://tailscale.com) address, over TLS with the server's own certificate. It never
+listens on your LAN or the internet, and it needs no root and no firewall change.
+
+```sh
+serra server gateway --install   # a systemd user service, dev.serra.gateway (or: serra server gateway, in the foreground)
+serra server pair                # a code, three words and the address to type on the Mac
+```
+
+On the Mac: **Add… › Server**, type the address and the code, check the three words match what the server shows,
+then **They match**. Without Tailscale, pick **Pair over SSH instead** and type the SSH address you already use
+(`you@t480`): the app uses your own keys and SSH agent and never asks for a password, then reaches the gateway
+through an SSH tunnel.
+
+- A code works once, for 10 minutes, and five wrong tries end it. Nothing secret leaves the Mac before you say the
+  words match.
+- The Mac keeps its key in the Keychain; the server keeps only a hash of it. `serra server devices` lists the paired
+  Macs, and `serra server devices revoke <id or name>` cuts one off on its next call.
+- The gateway's files are in `~/.local/share/serra` (`server.json`, `devices.json`, `gateway/`), readable by you only.
+  Its log is `gateway/gateway.log`. Neither the code nor a key is ever written there.
+
+The app lists the server's profiles once paired. Working with them from the app comes next.

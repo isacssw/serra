@@ -23,8 +23,11 @@ import { setupHandlers } from './setup.ts';
 import { profileSlackNames } from './slack-names.ts';
 import { updatesHandlers } from './updates.ts';
 
-/** The namespaces the engine answers: all but `app`. */
-export type EngineHandlers = { [N in Exclude<Namespace, 'app'>]: Handlers<N> };
+/** The namespaces the Mac app answers itself: its prefs and links, and the servers it is paired with. */
+type HostNamespace = 'app' | 'servers';
+
+/** The namespaces the engine answers: all but the app's own. */
+export type EngineHandlers = { [N in Exclude<Namespace, HostNamespace>]: Handlers<N> };
 
 /** Every namespace's handlers over one context. Jobs and Settings share one Slack names cache. */
 export const createEngine = (context: CoreContext, names = profileSlackNames(context)): EngineHandlers => ({

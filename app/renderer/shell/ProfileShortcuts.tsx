@@ -1,7 +1,6 @@
 // Profiles from the keyboard (SB-10): ⌘1…⌘9 switch (from the second profile), ⌘⇧N opens Add…, and ⌘K lists
-// "Switch to {profile}" with its phrase and ⌘ number, plus Add…. Pinned with --profile, none of them exist.
+// "Switch to {profile}" with its phrase and ⌘ number, plus Add… and Add server… (SB-32). Pinned with --profile, none of them exist.
 import { useEffect, useRef } from 'react';
-import { useNavigate } from 'react-router';
 import type { BotStatus } from '../../../src/contracts.ts';
 import { registerActions, type Action } from '../commands/registry.ts';
 import { profileRows, showsSwitcher } from '../profiles.logic.ts';
@@ -9,10 +8,10 @@ import { useToast } from '../ui/index.ts';
 import { CLOSE_COMMAND_PALETTE } from './events.ts';
 import { isMac, mod } from './keys.ts';
 import { useProfiles } from './profiles.tsx';
-import { ADD_PROFILE_PATH, profileShortcut } from './shortcuts.logic.ts';
+import { profileShortcut } from './shortcuts.logic.ts';
+import { openAdd } from './AddSheet.tsx';
 
 export const ProfileShortcuts = ({ status }: { status: BotStatus | null }) => {
-  const navigate = useNavigate();
   const toast = useToast();
   const { view, switchTo } = useProfiles();
   const rows = profileRows(view, status, mod);
@@ -40,7 +39,7 @@ export const ProfileShortcuts = ({ status }: { status: BotStatus | null }) => {
       if (shortcut.kind === 'add') {
         event.preventDefault();
         window.dispatchEvent(new Event(CLOSE_COMMAND_PALETTE));
-        void navigate(ADD_PROFILE_PATH);
+        openAdd();
         return;
       }
       const row = now.many ? now.rows[shortcut.index] : undefined;
@@ -51,7 +50,7 @@ export const ProfileShortcuts = ({ status }: { status: BotStatus | null }) => {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [navigate]);
+  }, []);
 
   // ⌘K rows follow the list: registered again whenever a name, phrase or place changes.
   const key = pinned ? 'pinned' : JSON.stringify(rows.map((row) => [row.ref, row.name, row.presence.phrase, row.shortcut]));
@@ -64,7 +63,14 @@ export const ProfileShortcuts = ({ status }: { status: BotStatus | null }) => {
       hint: isMac ? '⌘⇧N' : 'Ctrl+Shift+N',
       keywords: ['add', 'new', 'profile', 'bot', 'another'],
       button: 'Title row › Add…',
-      run: (context) => context.navigate(ADD_PROFILE_PATH),
+      run: () => openAdd(),
+    }, {
+      id: 'servers:add',
+      title: 'Add server…',
+      group: 'Profiles',
+      keywords: ['add', 'server', 'pair', 'ssh', 'linux', 'remote'],
+      button: 'Add… › Server',
+      run: () => openAdd('server'),
     }];
     if (many) {
       actions.unshift(...latest.current.rows.map((row): Action => ({

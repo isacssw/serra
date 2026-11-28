@@ -11,7 +11,7 @@ import { statusView, type StatusTone } from '../status.logic.ts';
 import { Avatar, cx, useToast } from '../ui/index.ts';
 import { ariaMod, isMac, mod } from './keys.ts';
 import { useProfiles } from './profiles.tsx';
-import { ADD_PROFILE_PATH } from './shortcuts.logic.ts';
+import { openAdd } from './AddSheet.tsx';
 import downIcon from '../../../assets/brand/serra-status-down.png';
 import needsYouIcon from '../../../assets/brand/serra-status-needs-you.png';
 import upIcon from '../../../assets/brand/serra-status-up.png';
@@ -127,7 +127,7 @@ const Menu = ({ anchor, rows, many, icon, onClose }: {
         role="menuitem"
         data-label="Add"
         aria-keyshortcuts={`${ariaMod}+Shift+N`}
-        onClick={() => { onClose(false); void navigate(ADD_PROFILE_PATH); }}
+        onClick={() => { onClose(false); openAdd(); }}
         className={itemClass}
       >
         <span aria-hidden className="grid size-7 shrink-0 place-items-center rounded-[7px] border border-dashed border-line-strong text-muted"><Plus size={14} /></span>

@@ -8,6 +8,16 @@ import { routeHandlers, type AllHandlers } from '../../app/main/router.ts';
 import type { CoreContext, HostPort } from '../../src/handlers/context.ts';
 import { createEngine } from '../../src/handlers/index.ts';
 import type { ProfileNames } from '../../src/handlers/slack-names.ts';
+import type { Handlers } from '../../src/api.ts';
+
+/** No server pairing in tests that don't need it: each call says so. */
+const noServers: Handlers<'servers'> = {
+  probe: () => { throw new Error('No servers in this test.'); },
+  pair: () => { throw new Error('No servers in this test.'); },
+  cancel: () => {},
+  pairOverSsh: () => { throw new Error('No servers in this test.'); },
+  list: () => [],
+};
 
 /** Everything either half may need. */
 export type AppContext = Omit<CoreContext, 'host' | 'selectProfile' | 'runtime' | 'appUpdater'> & HostPort & {
@@ -50,5 +60,5 @@ export const engineContext = (app: AppContext): CoreContext => ({
 });
 
 /** Every namespace, routed as the app routes them. */
-export const createHandlers = (app: AppContext, names?: ProfileNames): AllHandlers =>
-  routeHandlers(appHandlers(hostContext(app)), createEngine(engineContext(app), names));
+export const createHandlers = (app: AppContext, names?: ProfileNames, servers: Handlers<'servers'> = noServers): AllHandlers =>
+  routeHandlers(appHandlers(hostContext(app)), servers, createEngine(engineContext(app), names));
