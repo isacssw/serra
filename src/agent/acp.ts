@@ -356,15 +356,30 @@ export const createAcpBackend = ({
     return entry;
   };
 
-  /** The agent went away: in-flight turns end, or with a record, are carried on when the run is next read. */
+  /**
+   * Why a turn that ended with a card open failed: a plain sentence, as the agent can't ask again. Its cards are
+   * refused (`cancel`), never allowed. Null when nothing waited.
+   */
+  const endAsks = (current: Session): string | null => {
+    const asked = [...current.waiting.values()].some((waiting) => waiting.request.questions[0]?.id === 'permission') ? 'approval' : current.waiting.size ? 'answer' : null;
+    for (const waiting of current.waiting.values()) waiting.cancel();
+    current.waiting.clear();
+    return asked && `${agent.name} stopped while waiting for your ${asked}.`;
+  };
+
+  /**
+   * The agent went away: in-flight turns end Failed, or with a record on an agent that can reopen runs, are carried on
+   * when the run is next read.
+   */
   const agentGone = (why: string): void => {
+    const carryOn = runsDir !== undefined && hello?.agentCapabilities?.loadSession === true;
     for (const [id, current] of sessions) {
-      for (const waiting of current.waiting.values()) waiting.cancel();
-      current.waiting.clear();
-      if (runsDir) { sessions.delete(id); continue; }
-      if (current.active) current.failed = why;
+      const asked = endAsks(current);
+      if (carryOn) { sessions.delete(id); continue; }
+      if (current.active) current.failed = asked ?? why;
       current.active = null;
       current.queue = [];
+      save(current);
     }
     child = null;
     connection = null;
@@ -562,16 +577,17 @@ export const createAcpBackend = ({
           if (done.stopReason !== 'end_turn') log(`${agent.name}'s turn ${runId} ended: ${done.stopReason}.`);
         } catch (error) {
           // The agent went away mid-turn (its exit can come just after the broken pipe): with a record, the turn is
-          // carried on when the run is next read.
+          // carried on when the run is next read, if the agent can reopen it; else agentGone ended it.
           if (runsDir) await new Promise((resolve) => { setTimeout(resolve, 300); });
-          if (runsDir && sessions.get(current.sessionId) !== current) return;
-          current.failed = exited ?? turnFailure(error, agent.name);
+          if ((runsDir && sessions.get(current.sessionId) !== current) || current.active !== runId) return;
+          current.failed = endAsks(current) ?? exited ?? turnFailure(error, agent.name);
           log(`${agent.name}'s turn ${runId} failed: ${current.failed}`);
         }
       }
       if (current.active !== runId) return;
       if (current.cost) log(`${agent.name}'s turn ${runId} cost ${current.cost.amount.toFixed(4)} ${current.cost.currency}.`);
       if (current.reply) note(current, 'assistant', runId, current.reply);
+      endAsks(current);
       current.active = null;
       save(current);
       changed();
@@ -615,7 +631,17 @@ export const createAcpBackend = ({
     if (!record || (record.agent && record.agent !== agent.id)) return Promise.reject(new Error(`${agent.name} has no run ${threadId}: it ended when Serra restarted.`));
     const pending = reopening.get(threadId) ?? (async () => {
       const open = await connect().catch((error: unknown) => { throw plain(error); });
-      if (!hello?.agentCapabilities?.loadSession) throw new Error(`${agent.name} can't reopen a run after a restart.`);
+      if (!hello?.agentCapabilities?.loadSession) {
+        // The turn a restart cut off can't be carried on: it ends Failed, and a card it left is closed, never allowed.
+        const why = `${agent.name} can't reopen a run after a restart.`;
+        if (record.active && runsDir) {
+          const cut = record.entries.filter((entry) => entry.runId === record.active).at(-1);
+          const asked = cut?.ask && (cut.outcome === undefined || cut.outcome === 'cancelled') ? cut.ask : null;
+          for (const entry of record.entries) if (entry.ask && !entry.outcome) entry.outcome = 'cancelled';
+          save({ ...newSession({ ...record, waiting: [] }), failed: asked ? `${agent.name} stopped while waiting for your ${asked === 'permission' ? 'approval' : 'answer'}.` : why });
+        }
+        throw new Error(why);
+      }
       let loaded: acp.LoadSessionResponse;
       try { loaded = await open.agent.request(acp.methods.agent.session.load, { sessionId: threadId, cwd: record.cwd, mcpServers }); } catch (error) { throw plain(error); }
       await configure(open, threadId, loaded.modes, loaded.configOptions, record.access);

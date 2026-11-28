@@ -617,6 +617,63 @@ test('ACP: an approval no one answers is never allowed: a wait times out still w
   } finally { await gone.close(); }
 });
 
+test('ACP: a run whose agent (eve) goes away while a card waits ends Failed, never Working, and the tool never runs', async (t) => {
+  const fake = fakeAcp(t);
+  const repo = gitRepo(fake.dir);
+  const runsDir = agentRunsDir(fake.dir);
+  const eve = { ...fake.agent, env: { ...fake.agent.env, FAKE_ACP_MODES: 'none', FAKE_ACP_NO_LOAD: '1' } };
+  const byUrl = { ...eve, args: [...eve.args, 'acp', '--url', 'http://127.0.0.1:2417'] };
+  const start = async (backend: AgentBackend, branch: string, brief = 'ASK:restart'): Promise<string> => {
+    const threadId = await backend.start({ workspace: { kind: 'worktree', project: repo, baseRef: 'main', branch }, title: branch, brief });
+    assert.ok(await waitingOn(backend, threadId), `${branch}: the card waits`);
+    return threadId;
+  };
+  const endedFailed = (threadId: string, name: string): void => {
+    const chat = acpChat(fake.dir, threadId)!;
+    assert.deepEqual([chat.status, chat.error, chat.waiting, chat.live], ['failed', 'Fake Agent stopped while waiting for your approval.', [], null], name);
+    assert.equal(chat.lines.find((line) => line.ask === 'permission')?.outcome, 'cancelled', `${name}: the card is closed`);
+  };
+
+  // The agent process dies while the card waits.
+  const killed = fake.backend({ agent: eve, runsDir });
+  try {
+    const threadId = await start(killed, 'serra/killed');
+    fake.children.at(-1)!.kill('SIGKILL');
+    await until(() => acpChat(fake.dir, threadId)!.status !== 'waiting');
+    const settled = await killed.wait(threadId, { ...fast, after: null });
+    assert.deepEqual(settled.kind === 'settled' ? [settled.detail.thread.status, settled.detail.thread.error] : settled.kind,
+      ['failed', 'Fake Agent stopped while waiting for your approval.'], 'the run ends Failed with a plain reason');
+    assert.deepEqual(await killed.questions!.list(threadId), []);
+    assert.equal(killed.busy!(threadId), false);
+    endedFailed(threadId, 'killed');
+    assert.equal(fake.read('permission-1'), null, 'the tool never ran');
+  } finally { await killed.close(); }
+
+  // eve by URL loses its server: the turn fails while the card is still up.
+  const dropped = fake.backend({ agent: byUrl, runsDir });
+  try {
+    const threadId = await start(dropped, 'serra/dropped', 'ASK:restart DROP');
+    await until(() => acpChat(fake.dir, threadId)!.status !== 'waiting');
+    const settled = await dropped.wait(threadId, { ...fast, after: null });
+    assert.equal(settled.kind === 'settled' ? settled.detail.thread.error : settled.kind, 'Fake Agent stopped while waiting for your approval.');
+    assert.deepEqual(await dropped.questions!.list(threadId), [], 'the card closes');
+    endedFailed(threadId, 'dropped');
+    await until(() => fake.read('permission-2') !== null);
+    assert.equal(fake.read('permission-2'), 'cancelled', 'refused, never allowed');
+  } finally { await dropped.close(); }
+
+  // Serra quits while the card waits, and can't reopen the run when it starts again.
+  const quit = fake.backend({ agent: eve, runsDir });
+  let threadId = '';
+  try { threadId = await start(quit, 'serra/quit'); } finally { await quit.close(); }
+  const restarted = fake.backend({ agent: eve, runsDir });
+  try {
+    await assert.rejects(restarted.read(threadId), /can't reopen a run after a restart/);
+    endedFailed(threadId, 'restarted');
+    assert.notEqual(fake.read('permission-3'), 'yes');
+  } finally { await restarted.close(); }
+});
+
 /** A Slack attachment line as `receiveAttachments` writes it, for a PNG saved in `root`. */
 const attachment = (root: string, name: string): string => {
   mkdirSync(root, { recursive: true });

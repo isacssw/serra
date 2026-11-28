@@ -54,6 +54,7 @@ the weekly review. A job keeps the backend it started on, so switching never mov
   there too, with its messages and an **Open in T3** link for the rest.
 - **Restarts.** The agent runs inside Serra. When Serra restarts, it reopens the run (`session/load`) and the agent
   carries on the turn that was cut off. A question that was waiting is closed; the agent asks again if it still needs to.
+  An agent that can't reopen a run (eve) ends it as **Failed** instead, and so does one that stops while a card waits.
 - **Steering.** ACP has no way to add to a turn that's going, so a message waits for the turn to end.
 - **Failures.** A turn that fails (the agent needs a sign-in, hit its usage limit, or stopped) shows as **Failed** in
   Jobs › Chat with the reason, and the job waits under **Needs you** until a follow-up runs.
