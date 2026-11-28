@@ -4,6 +4,7 @@ import type { PrefsStore } from '../prefs.ts';
 import type { StatusSource } from '../status.ts';
 import type { AppInfo, SerraPushes } from '../bridge.ts';
 import type { AppUpdater } from '../app-updater.ts';
+import type { PresenceMap } from '../presence-map.ts';
 
 export interface HandlerContext {
   /** The profile folder in use. Throws `SetupIncomplete` (src/setup-incomplete.ts) when none is selected. */
@@ -33,8 +34,12 @@ export interface HandlerContext {
   appUpdater?: AppUpdater;
   /** Runs `task` after `firstMs`, then every `everyMs` (the bot's version check). Absent in tests: nothing is scheduled. */
   every?(firstMs: number, everyMs: number, task: () => void): void;
-  /** Tells notifications that the app is about to restart the bot itself, so the stop isn't reported. */
-  expectStop?(): void;
+  /** Tells notifications that the app is about to restart a bot itself (default: the profile in use), so the stop isn't reported. */
+  expectStop?(profileDir?: string): void;
+  /** Every profile's live status (SB-11). Absent in tests that don't need it: the list reads each daemon once instead. */
+  presence?: PresenceMap;
+  /** Every profile folder the window can list, in ⌘ order (the bot update looks after each one). Absent: only the one in use. */
+  profileDirs?(): string[];
   /** The bot follows this app's version: a packaged build (release-source). A copy run from source doesn't lead it. */
   botFollowsApp?: boolean;
   /** Registers what quitting must wait for: a promise while a bot switch is under way, else null. */

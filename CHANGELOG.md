@@ -5,6 +5,7 @@ Serra follows [Semantic Versioning](https://semver.org) once it reaches 1.0. Unt
 ## Unreleased
 
 - **Profiles:** run more than one bot from one app. Click the name at the top of the sidebar (or ⌘⇧N) and pick **Add…** to set up another bot with its own Slack app, knowledge, agent and settings. From the second one the top row shows the bot in use, and its menu, ⌘1…⌘9 and ⌘K switch between them without mixing anything. **Settings › Profiles** orders them, picks each one's colour, and removes one after saving a checked backup (tokens left out) and moving its folder to the Trash. With one bot, the app looks as before, and nothing in your profile folder changes.
+- **All profiles live:** with two or more bots, the app follows every one at once. The switcher shows each bot's state as it changes, the menubar lists every bot with its state (open it, start a task, restart or stop it) and its icon shows the worst one, notifications name their bot (several within 10 seconds come as one, and a click opens that bot), and Jobs shows one quiet line when another bot needs you. Every bot now follows app updates, not only the one on screen. With one bot, the menubar and notifications read as before.
 
 ## 0.1.0-alpha.9 (2026-11-28)
 

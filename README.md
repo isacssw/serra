@@ -126,7 +126,10 @@ Each bot is a **profile**: its own Slack app, knowledge, agent, settings and ser
 top of the sidebar, or press ⌘⇧N, and pick **Add…**: a name, a colour and an agent, then the usual setup.
 
 With two or more, the top row shows the bot you're looking at. Its menu, ⌘1…⌘9 and ⌘K switch; every screen then
-shows only that bot. Each bot keeps running in the background whichever one you look at. **Settings › Profiles**
+shows only that bot. Each bot keeps running in the background whichever one you look at, and the app follows all of
+them live: the switcher shows each one's state, the menubar lists every bot (open it, start a task, restart or stop it)
+with its icon showing the worst state, notifications say which bot they're from, and Jobs shows a quiet line when
+another bot needs you. Each bot also follows the app's updates on its own. **Settings › Profiles**
 sets the order (which is ⌘1…⌘9) and colours, and **Remove** stops a bot, saves a checked backup in
 `~/.local/share/serra/backups/` (tokens are left out) and moves its folder to the Trash. Its Slack app stays in Slack.
 

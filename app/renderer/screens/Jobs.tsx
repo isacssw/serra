@@ -11,9 +11,12 @@ import { useSearchParams } from 'react-router';
 import type { CleanupVerdict, JobGroup } from '../../../src/contracts.ts';
 import { serra } from '../bridge.ts';
 import { useBotStatus } from '../shell/live.ts';
+import { useProfiles } from '../shell/profiles.tsx';
+import { mod } from '../shell/keys.ts';
+import { othersNeedingYou, profileRows, showsSwitcher } from '../profiles.logic.ts';
 import { resumePath } from '../setup/setup.logic.ts';
 import { useSetup } from '../setup/SetupState.tsx';
-import { Badge, BrandMark, Button, Dialog, EmptyState, Page, Select, cx, useToast } from '../ui/index.ts';
+import { Avatar, Badge, BrandMark, Button, Dialog, EmptyState, Page, Select, cx, useToast } from '../ui/index.ts';
 import { registerActions } from '../commands/registry.ts';
 import { RunChat, type ChatRun } from './chat/RunChat.tsx';
 import {
@@ -281,6 +284,37 @@ const JobTabs = ({ sections, group, onPick }: { sections: JobSection[]; group: J
   );
 };
 
+/**
+ * One quiet line for other profiles that need you (UX rule C5): avatar, name, phrase and ⌘ number, at most three,
+ * then `+n`. A click switches to that profile on the same screen. Nothing with one profile or none waiting.
+ */
+const OthersNeedYou = () => {
+  const status = useBotStatus();
+  const { view, switchTo } = useProfiles();
+  const toast = useToast();
+  if (!showsSwitcher(view)) return null;
+  const { shown, more } = othersNeedingYou(profileRows(view, status ?? null, mod));
+  if (!shown.length) return null;
+  return (
+    <div className="-mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[13px] leading-5 text-muted" data-others-need-you>
+      {shown.map((row) => (
+        <button
+          key={row.ref}
+          type="button"
+          className="inline-flex items-center gap-2 rounded-md outline-none hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
+          aria-label={`Switch to ${row.name}, ${row.presence.phrase}`}
+          onClick={() => { switchTo(row.ref).catch((error: unknown) => toast({ message: message(error), tone: 'error' })); }}
+        >
+          <Avatar letters={row.letters} color={row.color} size={18} dot={row.presence.dot} surface="canvas" />
+          <span><span className="font-medium text-ink">{row.name}</span> · {row.presence.phrase}</span>
+          {row.shortcut && <kbd className="font-sans text-[11px] text-faint" aria-hidden>{row.shortcut}</kbd>}
+        </button>
+      ))}
+      {more > 0 && <span>+{more}</span>}
+    </div>
+  );
+};
+
 /** One screen for every Jobs state: `group` is the tab shown. The sidebar's Jobs item opens Needs you. */
 export const Jobs = ({ group }: { group: JobGroup }) => {
   const status = useBotStatus();
@@ -385,6 +419,7 @@ export const Jobs = ({ group }: { group: JobGroup }) => {
             Bot is stopped. Showing saved jobs.
           </p>
         )}
+        <OthersNeedYou />
         {load.state === 'loading' && <p className="flex items-center gap-2 text-sm text-muted"><LoaderCircle size={14} className="animate-spin" /> Loading jobs…</p>}
         {load.state === 'error' && (
           <div role="alert" className="flex items-center justify-between gap-4 rounded-lg border border-down/40 px-3 py-2 text-sm text-down">

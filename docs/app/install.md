@@ -120,6 +120,8 @@ The first screen looks for what already exists: the profile in use and every pro
 
 The app shows live status when the daemon for that profile is running: the header and menubar read **Serra · up** with the job counts. The daemon serves it on `status.sock` in the profile (owner only, no network port). When the daemon is stopped the app shows **stopped**, and Restart bot in the menubar starts it through launchd, the same as `pnpm bot restart`.
 
+With two or more profiles the app follows every profile's `status.sock` at once (one connection each, read only). The menubar then lists each profile in ⌘ order with its avatar, name and state (`up`, `2 running`, `1 needs you`, `stopped`), and a submenu to open it, start a new task in it, restart or stop it. Its icon shows the worst state across them: red, then amber, then green. Notifications are titled with the profile's name, and several from one profile within 10 seconds come as one.
+
 The app doesn't run the bot. Quitting it leaves the daemon running under launchd.
 
 ## Tools the app calls

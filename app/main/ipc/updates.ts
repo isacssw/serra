@@ -3,11 +3,13 @@
 // - the bot, on APP-18's release service in src/releases.ts. In release mode it follows the app's version on its own
 //   (bot-sync.ts), restarting only while no job runs. In developer mode (`updates.source` set) the owner builds and
 //   switches releases by hand, as before.
-// Bot actions run one at a time; their log lines go to the window and are kept so the screen shows them again after
-// navigating away. Everything reads and writes the profile's files and launchd directly, so it works while the
+// Bot actions run one at a time, across every profile; their log lines are kept per profile, so the Updates screen
+// shows its own profile's again after navigating away, and only the profile in use streams them to the window. The
+// timer looks after every profile on this Mac (SB-11), not only the one in use, so a bot in the background follows the
+// app too. Everything reads and writes the profile's files and launchd directly, so it works while the
 // daemon is stopped.
 import { existsSync } from 'node:fs';
-import { delimiter, dirname, join } from 'node:path';
+import { delimiter, dirname, join, resolve } from 'node:path';
 import {
   activateRelease, findNode, prepareNextRelease, releaseStatus, rollbackRelease, runningJobs,
   type StatusOptions,
@@ -61,7 +63,13 @@ export const updatesService = (context: HandlerContext, deps: UpdatesDeps = {}) 
   const find = deps.findNode ?? ((profileDir: string) => findNode(profileDir));
   const echo = deps.echo ?? ((line: string) => console.log(`[serra] ${line}`));
   let running: UpdateAction | null = null;
-  let log: string[] = [];
+  /** The profile the running action is for. */
+  let runningDir: string | null = null;
+  /** Log lines per profile. */
+  const logs = new Map<string, string[]>();
+  const same = (a: string | null, b: string | null): boolean => a !== null && b !== null && resolve(a) === resolve(b);
+  /** The running action, when it is this profile's. */
+  const runningFor = (profileDir: string | null): UpdateAction | null => (same(runningDir, profileDir) ? running : null);
   /** The app version the last automatic bot update failed for, per profile; not retried until the owner asks or the app restarts. */
   const failures = new Map<string, { version: string; message: string }>();
   /** The bot switch under way (activate, rollback or the bot update), which quitting the app must not cut short. */
@@ -97,25 +105,35 @@ export const updatesService = (context: HandlerContext, deps: UpdatesDeps = {}) 
     } catch (error) { echo(`Couldn't clear the update source ${stale.source}: ${errorText(error)}`); }
   };
 
-  const line = (text: string): void => {
+  const lineFor = (profileDir: string | null, text: string): void => {
+    const key = profileDir ? resolve(profileDir) : '';
+    const log = logs.get(key) ?? [];
+    logs.set(key, log);
+    const shown = same(profileDir, context.profileDirOrNull());
     for (const part of text.split('\n')) {
       log.push(part);
       if (log.length > MAX_LOG_LINES) log.splice(0, log.length - MAX_LOG_LINES);
       echo(part);
-      context.push?.('releaseLog', part);
+      if (shown) context.push?.('releaseLog', part);
     }
   };
+  /** A line for the running action's profile (else the one in use). */
+  const line = (text: string): void => lineFor(runningDir ?? context.profileDirOrNull(), text);
 
   /** Runs one action at a time: a second one while the first runs is refused before anything changes. */
   const exclusive = async <T>(action: UpdateAction, work: (profileDir: string) => Promise<T>, profile?: string): Promise<T> => {
-    if (running) throw new Error(`${busyName(running)} is still running. Wait for it to finish.`);
     const profileDir = profile ?? context.profileDir();
+    if (running) {
+      if (!same(runningDir, profileDir)) throw new Error('Another profile’s bot update is running. Wait for it to finish.');
+      throw new Error(`${busyName(running)} is still running. Wait for it to finish.`);
+    }
     running = action;
-    log = [];
+    runningDir = profileDir;
+    logs.set(resolve(profileDir), []);
     const task = work(profileDir);
     if (action !== 'prepare') cutover = task;
     try { return await task; }
-    finally { running = null; cutover = null; }
+    finally { running = null; runningDir = null; cutover = null; }
   };
 
   const prepareWithNode = async (profileDir: string) => {
@@ -145,7 +163,7 @@ export const updatesService = (context: HandlerContext, deps: UpdatesDeps = {}) 
     return botSyncDecision({
       honorsPause: honorsPause(profileDir, status.active), mode: status.mode, follows: context.botFollowsApp === true, serviceLoaded, appVersion: context.runtime.version,
       active: status.active, prepared: status.prepared, preparedReady,
-      activation: status.activation, jobs, running, failed: failures.get(profileDir) ?? null, paused, mayPause,
+      activation: status.activation, jobs, running: runningFor(profileDir), failed: failures.get(profileDir) ?? null, paused, mayPause,
     });
   };
 
@@ -157,6 +175,7 @@ export const updatesService = (context: HandlerContext, deps: UpdatesDeps = {}) 
     (typeof active?.release === 'string' && existsSync(join(active.release, 'src/intake.ts'))) || readAck(profileDir, now()) !== null;
   /** `active`: the bot's active.json as the caller read it; read here when not given. */
   const pause = (profileDir: string, active?: { release?: string } | null): void => {
+    const line = (text: string): void => lineFor(profileDir, text);
     if (!readPause(profileDir, now())) {
       // Read here when not given; no readable active.json means no bot yet, so the usual line is kept.
       const file = active !== undefined ? active : readJsonOrNull(join(profileDir, 'active.json'), isRecord);
@@ -169,7 +188,7 @@ export const updatesService = (context: HandlerContext, deps: UpdatesDeps = {}) 
     ourPauses.add(profileDir);
   };
   const resume = (profileDir: string): void => {
-    if (readPause(profileDir, now())) line('New requests start again.');
+    if (readPause(profileDir, now())) lineFor(profileDir, 'New requests start again.');
     resumeIntake(profileDir);
     ourPauses.delete(profileDir);
   };
@@ -211,7 +230,7 @@ export const updatesService = (context: HandlerContext, deps: UpdatesDeps = {}) 
           // the paused daemon let through before the pause and is still starting (it says so in its acknowledgment).
           if (!force && runningJobs(profileDir).length > 0) throw new Error(jobStarted);
           if (!force && (readAck(profileDir, now())?.starting ?? 0) > 0) throw new Error(jobStarted);
-          context.expectStop?.();
+          context.expectStop?.(profileDir);
         },
       });
       if (!outcome.ok && outcome.error === jobStarted) { line(outcome.error); return { ok: true as const, waiting: true }; }
@@ -241,11 +260,21 @@ export const updatesService = (context: HandlerContext, deps: UpdatesDeps = {}) 
     }
   }, profile);
 
-  /** One look by the timer: starts the bot update when it is due. Never throws. */
+  /** Every profile the timer looks after: each one on this Mac, else the one in use. */
+  const profileDirs = (): string[] => {
+    const active = context.profileDirOrNull();
+    const all = context.profileDirs?.() ?? [];
+    return [...new Set([...(active ? [resolve(active)] : []), ...all.map((dir) => resolve(dir))])];
+  };
+
+  /** One look by the timer at every profile, one after the other: starts a bot update when it is due. Never throws. */
   const tick = async (): Promise<void> => {
-    const profileDir = context.profileDirOrNull();
+    for (const profileDir of profileDirs()) await tickOne(profileDir);
+  };
+
+  const tickOne = async (profileDir: string): Promise<void> => {
     // Not while Serra is quitting to install its own update.
-    if (!profileDir || running || context.appUpdater?.view().state === 'installing') return;
+    if (running || context.appUpdater?.view().state === 'installing') return;
     try {
       migrate(profileDir);
       const status = await releaseStatus(profileDir);
@@ -279,8 +308,8 @@ export const updatesService = (context: HandlerContext, deps: UpdatesDeps = {}) 
         app: context.appUpdater?.view() ?? null,
         releases,
         bot,
-        running,
-        log: [...log],
+        running: runningFor(profileDir),
+        log: [...(profileDir ? logs.get(resolve(profileDir)) ?? [] : [])],
         followsApp: context.botFollowsApp === true,
         // Not once back in developer mode (the owner set a source again): the notice no longer applies.
         sourceCleared: profileDir && releases?.mode === 'release' ? lastCleared(profileDir, new Date(now())) : null,
@@ -311,7 +340,7 @@ export const updatesService = (context: HandlerContext, deps: UpdatesDeps = {}) 
       if (running) throw new Error(`${busyName(running)} is still running. Wait for it to finish.`);
       const profileDir = context.profileDir();
       const done = clearUpdateSource(profileDir, '', new Date(now()));
-      if (done) { log = []; line(`The bot follows the app again. profile.json was copied to ${done.backup}.`); }
+      if (done) { logs.set(resolve(profileDir), []); lineFor(profileDir, `The bot follows the app again. profile.json was copied to ${done.backup}.`); }
       return done;
     },
     // The owner asked: update now even with jobs running (the confirm dialog names them), and retry after a failure.
@@ -325,16 +354,22 @@ export const updatesService = (context: HandlerContext, deps: UpdatesDeps = {}) 
       // The bot follows the new version next: from now on new requests wait, so the running jobs are the last ones on
       // the old bot. The pause lapses on its own if the new version never gets to it.
       // Written before Serra quits; if it can't be, the restart doesn't happen.
-      const profileDir = context.profileDirOrNull();
-      const leads = profileDir !== null && context.botFollowsApp === true && existsSync(join(profileDir, 'active.json'));
-      const before = leads ? readPause(profileDir, now()) : null;
-      if (leads) {
-        try { pauseIntake(profileDir, 'app-update', { now: now() }); }
-        catch (error) { throw new Error(`Serra couldn't hold new requests for the update, so it didn't restart: ${errorText(error)}`); }
+      // Every profile's bot follows the app, so each one holds new requests.
+      const leading = context.botFollowsApp === true ? profileDirs().filter((dir) => existsSync(join(dir, 'active.json'))) : [];
+      const started: string[] = [];
+      try {
+        for (const dir of leading) {
+          if (readPause(dir, now())) continue;
+          pauseIntake(dir, 'app-update', { now: now() });
+          started.push(dir);
+        }
+      } catch (error) {
+        for (const dir of started) resumeIntake(dir);
+        throw new Error(`Serra couldn't hold new requests for the update, so it didn't restart: ${errorText(error)}`);
       }
       const view = app().install();
-      // Not installing after all (nothing ready, a swap already waiting): lift a pause this call started.
-      if (leads && view.state !== 'installing' && !before) resumeIntake(profileDir);
+      // Not installing after all (nothing ready, a swap already waiting): lift the pauses this call started.
+      if (view.state !== 'installing') for (const dir of started) resumeIntake(dir);
       return view;
     },
     openInstaller: () => app().openInstaller(),
