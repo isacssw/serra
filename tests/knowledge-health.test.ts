@@ -399,6 +399,9 @@ test('an old rule is replaced from the date the kept rule gives, as the weekly r
   assert.equal(replacedOn('Risky releases ship on Thursday since 2026-10-01.', '2026-11-25'), '2026-10-01');
   assert.equal(replacedOn('Risky releases ship on Thursday now.', '2026-11-25'), '2026-11-25');
   assert.equal(replacedOn('From 2027-01-01 releases ship on Monday.', '2026-11-25'), '2026-11-25', 'a plan, not a start');
+  // Keep older: the newer rule it drops was learned after the kept one, so it held until today, not before it existed.
+  assert.equal(replacedOn('Tag the release manager on hotfixes (2026-11-16)', '2026-11-28', 'Tag the release manager or the on-call on hotfixes (2026-11-17)'), '2026-11-28');
+  assert.equal(replacedOn('Tag the release manager on hotfixes (2026-11-17)', '2026-11-28', 'Tag the release manager on hotfixes (2026-11-16)'), '2026-11-17');
 });
 
 test('Overview leads with one number: replies the notes shaped this week, else over the usage window, else nothing', () => {
