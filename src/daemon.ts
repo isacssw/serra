@@ -345,10 +345,12 @@ export const startDaemon = async (deps: DaemonDeps): Promise<Daemon> => {
     try {
       for (const { connection } of adapters) {
         connected.set(connection.kind, false);
-        connection.watch((state: ConnectionState) => { connected.set(connection.kind, state === 'connected'); status?.refresh(); });
+        let reported = false;
+        connection.watch((state: ConnectionState) => { reported = true; connected.set(connection.kind, state === 'connected'); status?.refresh(); });
         await connection.listen(inbound);
         listening.push(connection);
-        connected.set(connection.kind, true);
+        // Up once listening, unless the chat said otherwise (it couldn't sign in and keeps trying in the background).
+        if (!reported) connected.set(connection.kind, true);
       }
     } catch (error) {
       // A chat that can't start fails the daemon, and the ones already listening stop: no half-started bot.

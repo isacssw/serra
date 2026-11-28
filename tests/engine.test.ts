@@ -1,7 +1,8 @@
 // The engine (src/handlers) on its own, the way a server runs it: no Electron and nothing from app/, just a core
 // context over profile folders. Linux CI runs this file with the rest of the core.
 import assert from 'node:assert/strict';
-import { existsSync, readFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import { bridgeMethods } from '../src/api.ts';
@@ -48,6 +49,19 @@ test('the engine answers every namespace of the API but the Mac’s own (app, se
   assert.equal((await engine.meetings.settings()).enabled, false);
   assert.deepEqual(await engine.diagnostics.logTail(10), []);
   assert.ok((await engine.setup.progress()).steps.length > 0);
+});
+
+test('an engine given a profiles folder finds and lists profiles there, never in ~/.local/share/serra', async (t) => {
+  // The packaged smoke test runs on a Mac that may have its own bots: it gives the engine a throwaway folder.
+  const { root: made } = testProfile(t);
+  const profileRoot = mkdtempSync(join(tmpdir(), 'serra-profiles-'));
+  t.after(() => rmSync(profileRoot, { recursive: true, force: true }));
+  cpSync(made, join(profileRoot, 'friday'), { recursive: true });
+  const engine = createEngine({ ...headless(null).context, profileRoot });
+  const detection = await engine.setup.detect();
+  assert.equal(detection.profileRoot, profileRoot);
+  assert.deepEqual(detection.others.map((profile) => profile.profileDir), [join(profileRoot, 'friday')]);
+  assert.deepEqual((await engine.profiles.list()).profiles.map((profile) => [profile.ref, profile.name]), [['local/friday', 'Friday']]);
 });
 
 test('a call comes back as a value or a message: never a stack, no profile as setup, nothing outside the API', async (t) => {

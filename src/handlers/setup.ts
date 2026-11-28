@@ -91,7 +91,7 @@ const nodeOnPath = (node: string): void => {
 };
 
 export const setupHandlers = (context: CoreContext, deps: SetupDeps = {}): Handlers<'setup'> => {
-  const root = deps.root ?? defaultProfileRoot;
+  const root = deps.root ?? context.profileRoot ?? defaultProfileRoot;
   const home = deps.home ?? homedir();
   const searchPath = deps.searchPath ?? toolSearchPath;
   /** The coding agents on this Mac: T3 first when it's there, then each known ACP agent whose command is installed. */

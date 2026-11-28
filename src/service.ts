@@ -46,13 +46,20 @@ export interface ServiceHost {
 const delay = (ms: number): Promise<void> => new Promise((done) => setTimeout(done, ms));
 const isReady = (value: unknown): value is { pid: number } => isRecord(value) && Number.isSafeInteger(value.pid);
 
+/**
+ * How far before `since` a log line or the log's modification time may be and still count as this start. A file's
+ * time comes from a coarser clock than `Date.now()` (a kernel tick on Linux, a whole second on some volumes), so a log
+ * written right after `since` can carry a time just before it.
+ */
+const STARTUP_SLACK_MS = 1000;
+
 /** The last error the daemon logged while it was starting, so a failed start says why. Older lines are ignored. */
 export const startupError = (logPath: string, since: number): string | undefined => {
   try {
-    if (statSync(logPath).mtimeMs < since) return undefined;
+    if (statSync(logPath).mtimeMs < since - STARTUP_SLACK_MS) return undefined;
     const line = readFileSync(logPath, 'utf8').trimEnd().split('\n').slice(-50).findLast((l) => l.includes('[ERROR]'));
     const at = line ? Date.parse(line.slice(0, line.indexOf(' '))) : NaN;
-    return line && !(at < since - 1000) ? line.replace(/^\S+ \[ERROR\] (?:\S+ )?/, '') : undefined;
+    return line && !(at < since - STARTUP_SLACK_MS) ? line.replace(/^\S+ \[ERROR\] (?:\S+ )?/, '') : undefined;
   } catch { return undefined; }
 };
 
@@ -183,8 +190,9 @@ export const GATEWAY_LABEL = 'dev.serra.gateway';
 /**
  * The gateway's systemd user unit (SB-32): `serra server gateway` from this checkout, restarted after a crash, private
  * files only, logging to `gateway/gateway.log` in the profiles folder. It listens on loopback and Tailscale only.
+ * It serves the same profiles folder, and keeps the `--port` and `--listen` it was installed with (`flags`).
  */
-export const gatewayUnit = ({ node, entry, root }: { node: string; entry: string; root: string }, home = homedir()): string => {
+export const gatewayUnit = ({ node, entry, root, flags = [] }: { node: string; entry: string; root: string; flags?: readonly string[] }, home = homedir()): string => {
   const path = `${dirname(node)}:${process.env.PATH ?? '/usr/local/bin:/usr/bin:/bin'}`;
   const log = unitPath(join(root, 'gateway/gateway.log'));
   return `[Unit]
@@ -194,7 +202,7 @@ StartLimitIntervalSec=0
 
 [Service]
 Type=simple
-ExecStart=${[node, entry, 'server', 'gateway'].map(unitArg).join(' ')}
+ExecStart=${[node, entry, 'server', 'gateway', '--root', root, ...flags].map(unitArg).join(' ')}
 Environment=${unitEnv(`HOME=${home}`)} ${unitEnv(`PATH=${path}`)}
 Restart=always
 RestartSec=10

@@ -24,10 +24,16 @@ export interface SecondChatOptions {
   audiences?: Record<string, Audience | null>;
   /** The owner's own conversation (raw ID), for copies of approvals. Absent: the chat takes no copies. */
   ownerSpace?: string;
+  /** The chat's kind. Two second chats beside Slack need two kinds. */
+  kind?: string;
+  /** Awaited before each write goes out, to hold one open. */
+  beforeSend?: () => Promise<void>;
 }
 
-export const createSecondChat = ({ owner = '1', audiences = {}, ownerSpace }: SecondChatOptions = {}) => {
-  const self = fake('bot');
+export const createSecondChat = ({ owner = '1', audiences = {}, ownerSpace, kind = FAKE, beforeSend }: SecondChatOptions = {}) => {
+  /** An ID in this chat, as the core sees it. */
+  const local = (raw: string): string => chatId(kind, raw);
+  const self = local('bot');
   let next = 0;
   const id = (): string => `${++next}`;
   let inbound: Inbound | null = null;
@@ -46,14 +52,14 @@ export const createSecondChat = ({ owner = '1', audiences = {}, ownerSpace }: Se
   const reachable = (): void => { if (offline) throw new Error('the fake chat is unreachable'); };
 
   const audienceOf = (target: Target): Result<Audience> => {
-    const found = audiences[rawId(FAKE, target.conversation)];
+    const found = audiences[rawId(kind, target.conversation)];
     return found === null ? { ok: false, error: { kind: 'retry' } } : { ok: true, value: found ?? 'team' };
   };
   const mentions = (text: string): string[] => [...new Set([...text.matchAll(/@(fake:\w+|bot)\b/g)].map((match) => (match[1] === 'bot' ? self : match[1] ?? '')))];
 
   const writer: WorkerWriter = {
     clear: async (target) => { const looked = audienceOf(target); return looked.ok ? { ok: true, value: clearedFor(target, looked.value, Date.now()) } : looked; },
-    send: async (proof, out) => { reachable(); const message = id(); sent.push({ target: proof.target, out, id: message }); return message; },
+    send: async (proof, out) => { await beforeSend?.(); reachable(); const message = id(); sent.push({ target: proof.target, out, id: message }); return message; },
     revise: async (_proof, ref, out) => { reachable(); revised.push({ ref, out }); },
     upload: async (proof, file) => { uploads.push({ target: proof.target, file }); return null; },
   };
@@ -61,11 +67,11 @@ export const createSecondChat = ({ owner = '1', audiences = {}, ownerSpace }: Se
   const adapter: ChatAdapter = {
     writer,
     connection: {
-      kind: FAKE,
+      kind: kind,
       chat: {
         self: () => self,
-        owner: () => fake(owner),
-        displayName: async (person) => `Person ${rawId(FAKE, person)}`,
+        owner: () => local(owner),
+        displayName: async (person) => `Person ${rawId(kind, person)}`,
         parse: (_conversation, text) => ({ mentions: mentions(text), prose: text.replace(/@(fake:\w+|bot)\b/g, ' ') }),
         read: async (_conversation, text, nameOf) => {
           let readable = text;
@@ -76,7 +82,7 @@ export const createSecondChat = ({ owner = '1', audiences = {}, ownerSpace }: Se
         },
         history: async () => ({ lines: [], more: false }),
         receiveFiles: async () => '',
-        permalink: async (ref) => `https://chat.example/${rawId(FAKE, ref.conversation)}/${ref.id}`,
+        permalink: async (ref) => `https://chat.example/${rawId(kind, ref.conversation)}/${ref.id}`,
         findReply: async () => null,
         audience: async (target) => audienceOf(target),
         notice: async (target, notice, inPlaceOf) => { const message = id(); notices.push({ target, notice, ...(inPlaceOf ? { inPlaceOf } : {}), id: message }); return message; },
@@ -85,13 +91,13 @@ export const createSecondChat = ({ owner = '1', audiences = {}, ownerSpace }: Se
         acknowledge: async (ref, on) => { acknowledged.push({ ref, on }); },
         setWorking: async (target, on) => { working.push({ target, on }); },
       },
-      identify: async (): Promise<ChatIdentity> => ({ self, lock: `${FAKE}-bot`, describe: '@bot in the fake chat' }),
+      identify: async (): Promise<ChatIdentity> => ({ self, lock: `${kind}-bot`, describe: '@bot in the fake chat' }),
       listen: async (handlers) => { inbound = handlers; },
       stop: async () => { stopped = true; },
       watch: () => {},
       hold: async (ref, on) => { held.push({ ref, on }); },
       saw: (msg) => { seen.push(msg.user); },
-      ...(ownerSpace === undefined ? {} : { ownerSpace: async () => fake(ownerSpace) }),
+      ...(ownerSpace === undefined ? {} : { ownerSpace: async () => local(ownerSpace) }),
     },
   };
 
@@ -108,18 +114,18 @@ export const createSecondChat = ({ owner = '1', audiences = {}, ownerSpace }: Se
      */
     say: async ({ from, text, conversation = 'dm', thread, ts, dm = false }:
       { from: string; text: string; conversation?: string; thread?: string; ts: string; dm?: boolean }): Promise<boolean> => {
-      const channel = fake(conversation);
+      const channel = local(conversation);
       const threadTs = thread ?? ts;
       const direct = dm || text.includes('@bot');
       if (!direct && !listening().owns(channel, threadTs)) return false;
-      const msg: IncomingMessage = { channel, threadTs, messageTs: ts, user: fake(from), text, direct, ...(dm ? { im: true } : {}) };
+      const msg: IncomingMessage = { channel, threadTs, messageTs: ts, user: local(from), text, direct, ...(dm ? { im: true } : {}) };
       await listening().message(msg);
       return true;
     },
     /** Someone presses answers on a question card. */
     click: (interaction: Omit<QuestionInteraction, 'channel' | 'user'> & { conversation?: string; from: string }): Promise<void> => {
       const { conversation = 'dm', from, ...rest } = interaction;
-      return listening().answer({ ...rest, channel: fake(conversation), user: fake(from) });
+      return listening().answer({ ...rest, channel: local(conversation), user: local(from) });
     },
     stopped: (): boolean => stopped,
     /** The chat becomes unreachable (`true`) or comes back. */

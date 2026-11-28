@@ -80,7 +80,7 @@ export interface ChatConnection {
   listen(inbound: Inbound): Promise<void>;
   /** Stops delivering events. A chat paused for a move or an update stops here; work in flight finishes. */
   stop(): Promise<void>;
-  /** Tells `listener` each time the connection drops or comes back. */
+  /** Tells `listener` each time the connection drops or comes back, and the state now if the connection knows it already. */
   watch(listener: (state: ConnectionState) => void): void;
   /** Marks a request held until an update is over (Slack: ⏳), or takes the mark away. Best effort. */
   hold(ref: MessageRef, on: boolean): Promise<void>;

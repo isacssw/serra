@@ -22,7 +22,7 @@ import { eventLog, type EventLog, type GatewayEvent } from './events.ts';
 import type { ServerEngines } from './engines.ts';
 import { mayListenOn } from './listen.ts';
 import type { MoveHost } from '../moves/host.ts';
-import { readUpdateState } from './update.ts';
+import { markUpdateStarted, putBackUpdateState, readUpdateState } from './update.ts';
 import {
   addDevice, deviceForToken, GATEWAY_PROTOCOL, gatewayCert, listDevices, noteDeviceUse, revokeDevice, serverIdentity,
   useCode, type DeviceView,
@@ -262,7 +262,10 @@ export const startGateway = async (options: GatewayOptions): Promise<Gateway> =>
         const version = isRecord(body) && isString(body.version) ? body.version : '';
         const problem = options.update.problem(version);
         if (problem) throw new HttpError(409, { error: problem });
-        try { await options.update.launch(version); } catch (error) { throw refused(error); }
+        // In the same turn as the check, so two requests can't both pass it.
+        const before = readUpdateState(root);
+        markUpdateStarted(root, version);
+        try { await options.update.launch(version); } catch (error) { putBackUpdateState(root, before); throw refused(error); }
         log(`updating to ${version} for ${device.name}`);
         send(response, 202, { update: readUpdateState(root) });
         return;

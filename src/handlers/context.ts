@@ -40,6 +40,11 @@ export interface CoreContext {
   profileDir(): string;
   /** Like `profileDir()`, but null instead of throwing. */
   profileDirOrNull(): string | null;
+  /**
+   * The folder profiles are made and found in (default `~/.local/share/serra`). The packaged `--smoke` gives a
+   * throwaway one, so it never sees, or changes, the profiles on the Mac it runs on.
+   */
+  profileRoot?: string;
   /** True when `--profile` or `BOT_PROFILE` names the profile, so the window can't switch to another. */
   profilePinned?: boolean;
   /**
